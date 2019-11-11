@@ -594,14 +594,11 @@ public:
                  const ColumnsWithTypeAndName & extras,
                  const Join & join_,
                  const ColumnRawPtrs & key_columns_,
-                 const Sizes & key_sizes_,
-                 ConstNullMapPtr null_map_)
+                 const Sizes & key_sizes_)
         : join(join_)
         , key_columns(key_columns_)
         , key_sizes(key_sizes_)
-        , null_map(null_map_)
         , rows_to_add(block.rows())
-        , filter(rows_to_add, 0)
     {
         size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
@@ -660,9 +657,7 @@ public:
     const Join & join;
     const ColumnRawPtrs & key_columns;
     const Sizes & key_sizes;
-    ConstNullMapPtr null_map;
     size_t rows_to_add;
-    IColumn::Filter filter;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
 private:
@@ -703,7 +698,7 @@ void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & cur
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool _has_null_map>
-void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
+NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map [[maybe_unused]])
 {
     constexpr bool is_any_join = STRICTNESS == ASTTableJoin::Strictness::Any;
     constexpr bool is_all_join = STRICTNESS == ASTTableJoin::Strictness::All;
@@ -715,9 +710,11 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
     constexpr bool need_replication = is_all_join || (is_any_join && right);
 
     size_t rows = added_columns.rows_to_add;
-
-    IColumn::Filter & filter = added_columns.filter;
+    IColumn::Filter filter(rows, 0);
     Arena pool;
+
+    if constexpr (need_replication)
+        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
     if constexpr (is_asof_join)
@@ -729,98 +726,104 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        if (_has_null_map && (*added_columns.null_map)[i])
+        if constexpr (_has_null_map)
         {
-            addNotFoundRow<add_missing>(added_columns, current_offset);
-        }
-        else
-        {
-            auto find_result = key_getter.findKey(map, i, pool);
-
-            if (find_result.isFound())
+            if ((*null_map)[i])
             {
-                auto & mapped = find_result.getMapped();
+                addNotFoundRow<add_missing>(added_columns, current_offset);
 
-                if constexpr (is_asof_join)
-                {
-                    const Join & join = added_columns.join;
-                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofInequality(), asof_column, i))
-                    {
-                        filter[i] = 1;
-                        mapped.setUsed();
-                        added_columns.appendFromBlock<add_missing>(*found->block, found->row_num);
-                    }
-                    else
-                    {
-                        filter[i] = 0;
-                        addNotFoundRow<add_missing>(added_columns, current_offset);
-                    }
-                }
-                else if constexpr (is_all_join)
+                if constexpr (need_replication)
+                    (*added_columns.offsets_to_replicate)[i] = current_offset;
+                continue;
+            }
+        }
+
+        auto find_result = key_getter.findKey(map, i, pool);
+
+        if (find_result.isFound())
+        {
+            auto & mapped = find_result.getMapped();
+
+            if constexpr (is_asof_join)
+            {
+                const Join & join = added_columns.join;
+                if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofInequality(), asof_column, i))
                 {
                     filter[i] = 1;
                     mapped.setUsed();
+                    added_columns.appendFromBlock<add_missing>(*found->block, found->row_num);
+                }
+                else
+                {
+                    filter[i] = 0;
+                    addNotFoundRow<add_missing>(added_columns, current_offset);
+                }
+            }
+            else if constexpr (is_all_join)
+            {
+                filter[i] = 1;
+                mapped.setUsed();
+                addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
+            }
+            else if constexpr (is_any_join && right)
+            {
+                /// Use first appered left key + it needs left columns replication
+                if (mapped.setUsedOnce())
+                {
+                    filter[i] = 1;
                     addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
                 }
-                else if constexpr (is_any_join && right)
-                {
-                    /// Use first appered left key + it needs left columns replication
-                    if (mapped.setUsedOnce())
-                    {
-                        filter[i] = 1;
-                        addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
-                    }
-                }
-                else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
-                {
-                    /// Use first appered left key only
-                    if (mapped.setUsedOnce())
-                    {
-                        filter[i] = 1;
-                        added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
-                    }
-                }
-                else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Full)
-                {
-                    /// TODO
-                }
-                else /// ANY LEFT + old ANY (RightAny)
+            }
+            else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
+            {
+                /// Use first appered left key only
+                if (mapped.setUsedOnce())
                 {
                     filter[i] = 1;
-                    mapped.setUsed();
                     added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
                 }
             }
-            else
-                addNotFoundRow<add_missing>(added_columns, current_offset);
+            else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Full)
+            {
+                /// TODO
+            }
+            else /// ANY LEFT + old ANY (RightAny)
+            {
+                filter[i] = 1;
+                mapped.setUsed();
+                added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
+            }
         }
+        else
+            addNotFoundRow<add_missing>(added_columns, current_offset);
 
         if constexpr (need_replication)
             (*added_columns.offsets_to_replicate)[i] = current_offset;
     }
 
     added_columns.applyLazyDefaults();
+    return filter;
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-void joinRightColumnsSwitchNullability(const Map & map, AddedColumns & added_columns)
+IColumn::Filter joinRightColumnsSwitchNullability(const Map & map, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
 {
-    if (added_columns.null_map)
-        joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true>(map, added_columns);
+    if (null_map)
+        return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true>(map, added_columns, null_map);
     else
-        joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false>(map, added_columns);
+        return joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, false>(map, added_columns, nullptr);
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-void switchJoinRightColumns(const Maps & maps_, AddedColumns & added_columns, Join::Type type)
+IColumn::Filter switchJoinRightColumns(const Maps & maps_, AddedColumns & added_columns, Join::Type type, const ConstNullMapPtr & null_map)
 {
     switch (type)
     {
     #define M(TYPE) \
         case Join::Type::TYPE: \
-            joinRightColumnsSwitchNullability<KIND, STRICTNESS,\
+            return joinRightColumnsSwitchNullability<KIND, STRICTNESS,\
                 typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, added_columns);\
+                *maps_.TYPE, added_columns, null_map);\
             break;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
@@ -882,13 +885,9 @@ void Join::joinBlockImpl(
         extras.push_back(right_table_keys.getByName(key_names_right.back()));
 
     AddedColumns added_columns(sample_block_with_columns_to_add, block_with_columns_to_add, block, saved_block_sample,
-                               extras, *this, key_columns, key_sizes, null_map);
+                               extras, *this, key_columns, key_sizes);
 
-    if constexpr (need_replication)
-        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(block.rows());
-
-    switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, type);
-    IColumn::Filter & row_filter = added_columns.filter;
+    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, type, null_map);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
