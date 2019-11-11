@@ -431,7 +431,10 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
 }
 
 template <typename T, typename U>
-bool sliceEqualElements(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second, size_t first_ind, size_t second_ind)
+bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+                        const NumericArraySlice<U> & second [[maybe_unused]],
+                        size_t first_ind [[maybe_unused]],
+                        size_t second_ind [[maybe_unused]])
 {
     /// TODO: Decimal scale
     if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
