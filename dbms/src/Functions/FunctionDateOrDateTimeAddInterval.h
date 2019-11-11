@@ -428,6 +428,9 @@ public:
         {
             static_assert("Failed to resolve return type.");
         }
+
+        //to make PVS and GCC happy.
+        return nullptr;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
