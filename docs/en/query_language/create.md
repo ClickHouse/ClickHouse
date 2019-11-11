@@ -271,3 +271,27 @@ Views look the same as normal tables. For example, they are listed in the result
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```
+
+Creates [external dictionary](dicts/external_dicts.md) with given [structure](dicts/external_dicts_dict_structure.md), [source](dicts/external_dicts_dict_sources.md), [layout](dicts/external_dicts_dict_layout.md) and [lifetime](dicts/external_dicts_dict_lifetime.md). 
+
+External dictionary structure consists of attributes. Attribute properties are specified similarly to table columns. The only required property is attribute type, all other properties may have default values.
+
+Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
+
+For more information, see https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts/.
