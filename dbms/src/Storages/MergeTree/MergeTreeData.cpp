@@ -1177,17 +1177,14 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
 }
 
 void MergeTreeData::rename(
-    const String & /*new_path_to_db*/, const String & new_database_name,
+    const String & new_path_to_table_data, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto new_file_db_name = escapeForFileName(new_database_name);
-    auto new_file_table_name = escapeForFileName(new_table_name);
-
     auto disks = storage_policy->getDisks();
 
     for (const auto & disk : disks)
     {
-        auto new_full_path = disk->getClickHouseDataPath() + new_file_db_name + '/' + new_file_table_name + '/';
+        auto new_full_path = disk->getPath() + new_path_to_table_data;
 
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
@@ -1196,21 +1193,19 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto full_path = disk->getPath() + relative_data_path;
-        auto new_db_path = disk->getClickHouseDataPath() + new_file_db_name + '/';
+        auto new_full_path = disk->getPath() + new_path_to_table_data;
 
-        Poco::File db_file{new_db_path};
-        if (!db_file.exists())
-            db_file.createDirectory();
+        Poco::File new_full_path_parent{Poco::Path(new_full_path).makeParent()};
+        if (!new_full_path_parent.exists())
+            new_full_path_parent.createDirectories();
 
-        auto new_full_path = new_db_path + new_file_table_name + '/';
         Poco::File{full_path}.renameTo(new_full_path);
     }
 
     global_context.dropCaches();
 
     database_name = new_database_name;
-    table_name = new_table_name;
-    relative_data_path = "data/" + new_file_db_name + '/' + new_file_table_name + '/';
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void MergeTreeData::dropAllData()

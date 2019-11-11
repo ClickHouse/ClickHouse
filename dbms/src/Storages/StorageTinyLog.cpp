@@ -331,7 +331,7 @@ StorageTinyLog::StorageTinyLog(
     bool attach,
     size_t max_compress_block_size_,
     const Context & context_)
-    : path(context_.getPath() + relative_path_), table_name(table_name_), database_name(database_name_),
+    : base_path(context_.getPath()), path(base_path + relative_path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
@@ -373,17 +373,16 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageTinyLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
-    String new_path = new_path_to_db + escapeForFileName(new_table_name) + "/";
+    String new_path = base_path + new_path_to_table_data;
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
     file_checker.setPath(path + "sizes.json");
 
     for (Files_t::iterator it = files.begin(); it != files.end(); ++it)

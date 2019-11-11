@@ -21,6 +21,13 @@ public:
             const StoragePtr & table,
             const ASTPtr & query) override;
 
+    void renameTable(
+            const Context & context,
+            const String & table_name,
+            IDatabase & to_database,
+            const String & to_table_name,
+            TableStructureWriteLockHolder & lock) override;
+
     void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path = {}) override;
     StoragePtr detachTable(const String & name) override;
 

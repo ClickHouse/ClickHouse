@@ -44,7 +44,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    void renameInMemory(const String & new_database_name, const String & new_table_name) override
     {
         table_name = new_table_name;
         database_name = new_database_name;

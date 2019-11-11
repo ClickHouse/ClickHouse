@@ -38,7 +38,13 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+
+    void renameInMemory(const String & new_database_name, const String & new_table_name) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
@@ -63,6 +69,7 @@ protected:
         const Context & context_);
 
 private:
+    String base_path;
     String path;
     String table_name;
     String database_name;

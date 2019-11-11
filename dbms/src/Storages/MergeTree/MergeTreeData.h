@@ -538,8 +538,14 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_db, const String & new_database_name,
+    void rename(const String & new_path_to_table_data, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
+
+    void renameInMemory(const String & new_database_name, const String & new_table_name) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.

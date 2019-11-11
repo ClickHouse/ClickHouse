@@ -22,7 +22,13 @@ public:
     String getTableName() const override { return table_name; }
     String getDatabaseName() const override { return database_name; }
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+
+    void renameInMemory(const String & new_database_name, const String & new_table_name) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -37,6 +43,7 @@ protected:
         const ConstraintsDescription & constraints_,
         const Context & context_);
 
+    String base_path;
     String path;
     String table_name;
     String database_name;

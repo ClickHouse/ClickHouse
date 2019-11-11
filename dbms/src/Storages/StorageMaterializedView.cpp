@@ -299,8 +299,7 @@ static void executeRenameQuery(Context & global_context, const String & database
 }
 
 
-void StorageMaterializedView::rename(
-    const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
     if (has_inner_table && tryGetTargetTable())
     {
