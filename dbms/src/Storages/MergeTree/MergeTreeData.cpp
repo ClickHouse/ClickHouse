@@ -3159,7 +3159,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(U
     auto reservation = tryReserveSpaceOnMoveDestination(expected_size, ttl_infos, minimum_time);
     if (reservation)
         return reservation;
-    
+
     reservation = storage_policy->reserve(expected_size);
 
     return returnReservationOrThrowError(expected_size, std::move(reservation));
