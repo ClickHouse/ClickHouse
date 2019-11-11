@@ -62,7 +62,7 @@ public:
               file_segmentation_engine(builder.file_segmentation_engine)
     {
         //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream()"), "Constructor");
-
+        exceptions.resize(max_threads_to_use);
         for (size_t i = 0; i < max_threads_to_use; ++i)
             processing_units.emplace_back(builder);
 
@@ -184,6 +184,7 @@ private:
         char is_last{false};
     };
 
+    /// We use separate exceptions because there is convenient rethrowFirstException function.
     Exceptions exceptions;
     std::deque<ProcessingUnit> processing_units;
 
