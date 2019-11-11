@@ -734,11 +734,14 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     {
         buf.write(fractional_time_delimiter);
 
-        // trenary to fix GCC-9 build error:
-        // error: '%0*ld' directive writing between 1 and 20 bytes into a region of size 18 [-Werror=format-overflow=]
-        char data[MaxScale > 20 ? MaxScale : 20];
-        int written = sprintf(data, "%0*ld", scale, c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
-        writeString(&data[0], static_cast<size_t>(written), buf);
+        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+        static_assert(sizeof(data) >= MaxScale);
+
+        auto fractional = c.fractional;
+        for (Int32 pos = scale - 1; pos >= 0; --pos, fractional /= DateTime64(10))
+            data[pos] += fractional % DateTime64(10);
+
+        writeString(&data[0], static_cast<size_t>(scale), buf);
     }
 }
 
