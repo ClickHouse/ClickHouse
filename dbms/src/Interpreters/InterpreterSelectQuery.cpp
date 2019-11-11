@@ -271,8 +271,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (is_table_func)
         {
-            /// Read from table function.
-            storage = context.getQueryContext().executeTableFunction(table_expression);
+            /// Read from table function. propagate all settings from initSettings(),
+            /// alternative is to call on current `context`, but that can potentially pollute it.
+            storage = getSubqueryContext(context).executeTableFunction(table_expression);
         }
         else
         {
