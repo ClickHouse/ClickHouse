@@ -42,6 +42,14 @@ void MarkTableIdentifiersMatcher::visit(const ASTFunction & func, ASTPtr &, Data
             if (!data.aliases.count(*opt_name))
                 setIdentifierSpecial(ast);
     }
+
+    // first argument of joinGet can be a table identifier
+    if (func.name == "joinGet")
+    {
+        auto & ast = func.arguments->children.at(0);
+        if (auto opt_name = tryGetIdentifierName(ast))
+            setIdentifierSpecial(ast);
+    }
 }
 
 }
