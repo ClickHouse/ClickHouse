@@ -1344,7 +1344,7 @@ private:
 
         for (; it != end; ++it)
         {
-            const Mapped & mapped = it->getSecond();
+            const Mapped & mapped = it->getMapped();
             if (mapped.getUsed())
                 continue;
 

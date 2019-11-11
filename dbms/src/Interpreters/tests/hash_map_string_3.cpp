@@ -442,8 +442,8 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     {
         map.emplace(static_cast<const Key &>(data[i]), it, inserted);
         if (inserted)
-            *lookupResultGetMapped(it) = 0;
-        ++*lookupResultGetMapped(it);
+            it->getMapped() = 0;
+        ++it->getMapped();
     }
 
     watch.stop();

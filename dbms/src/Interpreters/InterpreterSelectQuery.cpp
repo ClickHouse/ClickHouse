@@ -92,6 +92,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -285,8 +286,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (is_table_func)
         {
-            /// Read from table function.
-            storage = context.getQueryContext().executeTableFunction(table_expression);
+            /// Read from table function. propagate all settings from initSettings(),
+            /// alternative is to call on current `context`, but that can potentially pollute it.
+            storage = getSubqueryContext(context).executeTableFunction(table_expression);
         }
         else
         {
@@ -1034,7 +1036,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     if (options.only_analyze)
     {
         if constexpr (pipeline_with_processors)
-            pipeline.init({std::make_shared<NullSource>(source_header)});
+            pipeline.init(Pipe(std::make_shared<NullSource>(source_header)));
         else
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
 
@@ -1075,7 +1077,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (prepared_input)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(prepared_input)});
+                pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
             else
                 pipeline.streams.push_back(prepared_input);
         }
@@ -1401,7 +1403,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(istream)});
+                pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(istream)));
             else
                 pipeline.streams.emplace_back(istream);
             from_stage = QueryProcessingStage::WithMergeableState;
@@ -1666,9 +1668,19 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.prewhere_info = prewhere_info;
         query_info.sorting_info = sorting_info;
 
-        auto streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        BlockInputStreams streams;
+        Pipes pipes;
 
-        if (streams.empty())
+        /// Will work with pipes directly if storage support processors.
+        /// Code is temporarily copy-pasted while moving to new pipeline.
+        bool use_pipes = pipeline_with_processors && storage->supportProcessorsPipeline();
+
+        if (use_pipes)
+            pipes = storage->readWithProcessors(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        else
+            streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+
+        if (streams.empty() && !use_pipes)
         {
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
@@ -1691,8 +1703,35 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
         }
 
+        /// Copy-paste from prev if.
+        if (pipes.empty() && use_pipes)
+        {
+            Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
+
+            if (query_info.prewhere_info)
+            {
+                pipe.addSimpleTransform(std::make_shared<FilterTransform>(
+                        pipe.getHeader(),
+                        prewhere_info->prewhere_actions,
+                        prewhere_info->prewhere_column_name,
+                        prewhere_info->remove_prewhere_column));
+
+                if (query_info.prewhere_info->remove_columns_actions)
+                    pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
+            }
+
+            pipes.emplace_back(std::move(pipe));
+        }
+
         for (auto & stream : streams)
             stream->addTableLock(table_lock);
+
+        if constexpr (pipeline_with_processors)
+        {
+            /// Table lock is stored inside pipeline here.
+            if (use_pipes)
+                pipeline.addTableLock(table_lock);
+        }
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         {
@@ -1728,11 +1767,21 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (options.to_stage == QueryProcessingStage::Complete)
                     stream->setQuota(quota);
             }
+
+            /// Copy-paste
+            for (auto & pipe : pipes)
+            {
+                if (!options.ignore_limits)
+                    pipe.setLimits(limits);
+
+                if (options.to_stage == QueryProcessingStage::Complete)
+                    pipe.setQuota(quota);
+            }
         }
 
         if constexpr (pipeline_with_processors)
         {
-            if (streams.size() == 1)
+            if (streams.size() == 1 || pipes.size() == 1)
                 pipeline.setMaxThreads(streams.size());
 
             /// Unify streams. They must have same headers.
@@ -1744,21 +1793,14 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (first_header.columns() > 1 && first_header.has("_dummy"))
                     first_header.erase("_dummy");
 
-                for (size_t i = 0; i < streams.size(); ++i)
+                for (auto & stream : streams)
                 {
-                    auto & stream = streams[i];
                     auto header = stream->getHeader();
                     auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
                     if (!blocksHaveEqualStructure(first_header, header))
                         stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
                 }
             }
-
-            Processors sources;
-            sources.reserve(streams.size());
-
-            /// Pin sources for merge tree tables.
-            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
 
             for (auto & stream : streams)
             {
@@ -1768,13 +1810,18 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();
 
-                if (pin_sources)
-                    source->setStream(sources.size());
-
-                sources.emplace_back(std::move(source));
+                pipes.emplace_back(std::move(source));
             }
 
-            pipeline.init(std::move(sources));
+            /// Pin sources for merge tree tables.
+            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+            if (pin_sources)
+            {
+                for (size_t i = 0; i < pipes.size(); ++i)
+                    pipes[i].pinSources(i);
+            }
+
+            pipeline.init(std::move(pipes));
         }
         else
             pipeline.streams = std::move(streams);
