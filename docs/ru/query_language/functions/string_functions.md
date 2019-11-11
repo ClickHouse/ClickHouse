@@ -132,8 +132,104 @@ SELECT format('{} {}', 'Hello', 'World')
 ```
 
 
-## concat(s1, s2, ...)
-Склеивает строки, перечисленные в аргументах, без разделителей.
+## concat
+
+Склеивает строки переданные в аргументы в одну строку без разделителей.
+
+**Cинтаксис** 
+
+```sql
+concat(s1, s2, ...)
+```
+Алиас: `CONCAT`.
+
+**Параметры**
+
+- `si` – строка или ключ. Значение ключа может быть любого [типа](https://clickhouse.yandex/docs/en/data_types/).
+
+**Возвращаемые значения**
+
+Возвращает строку, полученную в результате объединения аргументов. 
+
+Если любой из аргументов имеет значение null `concat` возвращает значение null.
+
+Тип: `String`.
+
+**Пример**
+
+Вводная таблица:
+
+```sql
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog
+INSERT INTO key_val VALUES ('Hello, ','World',1)('Hello, ','World',2)('Hello, ','World!',3)('Hello',', World!',2)
+SELECT * from key_val
+```
+
+```text
+┌─key1────┬─key2─────┬─value─┐
+│ Hello,  │ World    │     1 │
+│ Hello,  │ World    │     2 │
+│ Hello,  │ World!   │     3 │
+│ Hello   │ , World! │     2 │
+└─────────┴──────────┴───────┘
+```
+
+Запрос:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concat(key1, key2)
+```
+
+Ответ:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          5 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Аналогична [concat](#concat). Разница заключается в том, что вам нужно убедиться, что concat(s1, s2, ...) → sn является инъективным, он будет использоваться для оптимизации GROUP BY.
+
+**Синтаксис** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Параметры**
+
+- `si` – строка или ключ. Значение ключа может быть любого [типа](https://clickhouse.yandex/docs/en/data_types/).
+
+**Возвращаемые значения**
+
+Возвращает строку, полученную в результате объединения аргументов. 
+
+Если любой из аргументов имеет значение null `concatAssumeInjective` возвращает значение null.
+
+Тип: `String`.
+
+**Пример**
+
+Вводная таблица аналогичная [concat](./string_functions.md#concat).
+
+Запрос:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+```
+
+Ответ:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
 
 ## substring(s, offset, length)
 Возвращает подстроку, начиная с байта по индексу offset, длины length байт. Индексация символов - начиная с единицы (как в стандартном SQL). Аргументы offset и length должны быть константами.
