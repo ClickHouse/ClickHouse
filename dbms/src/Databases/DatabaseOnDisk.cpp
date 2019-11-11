@@ -110,8 +110,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     if (!create)
     {
         std::ostringstream query_stream;
-        //FIXME WTF
-        formatAST(*create, query_stream, true);
+        formatAST(*query, query_stream, true);
         throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
     }
 

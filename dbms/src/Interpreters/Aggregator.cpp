@@ -26,6 +26,8 @@
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
 #include <common/config_common.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 
 
 namespace ProfileEvents
@@ -450,7 +452,7 @@ void NO_INLINE Aggregator::executeImplCase(
 
         /// Add values to the aggregate functions.
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-            (*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
+            (*inst->funcs.add)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
     }
 }
 
@@ -492,7 +494,10 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     /// Add values to the aggregate functions.
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-        inst->that->addBatch(rows, places.data(), inst->state_offset, inst->arguments, aggregates_pool);
+    {
+        (*inst->batch_funcs.add_batch)(
+            inst->batch_that, rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+    }
 }
 
 
@@ -504,7 +509,13 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 {
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-        inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
+    {
+        if (inst->offsets)
+            (*inst->batch_funcs.add_batch_single_place)(
+                inst->batch_that, inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+        else
+            (*inst->batch_funcs.add_batch_single_place)(inst->batch_that, rows, res + inst->state_offset, inst->batch_arguments, arena);
+    }
 }
 
 
@@ -564,6 +575,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     AggregateFunctionInstructions aggregate_functions_instructions(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
 
+    std::vector<std::vector<const IColumn *>> nested_columns_holder;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
@@ -579,10 +591,31 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             }
         }
 
-        aggregate_functions_instructions[i].that = aggregate_functions[i];
-        aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
-        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+        auto that = aggregate_functions[i];
+        /// Unnest consecutive trailing -State combinators
+        while (auto func = typeid_cast<const AggregateFunctionState *>(that))
+            that = func->getNestedFunction().get();
+        aggregate_functions_instructions[i].that = that;
+        aggregate_functions_instructions[i].funcs = that->getAddressOfAddFunctions();
+
+        if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
+        {
+            /// Unnest consecutive -State combinators before -Array
+            that = func->getNestedFunction().get();
+            while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
+                that = nested_func->getNestedFunction().get();
+            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+            nested_columns_holder.push_back(std::move(nested_columns));
+            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+            aggregate_functions_instructions[i].offsets = offsets;
+        }
+        else
+            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+        aggregate_functions_instructions[i].batch_that = that;
+        aggregate_functions_instructions[i].batch_funcs = that->getAddressOfAddFunctions();
     }
 
     if (isCancelled())
