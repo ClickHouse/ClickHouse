@@ -794,7 +794,7 @@ Returns the capacity of the filesystem in bytes. For evaluation, the [path](../.
 **Syntax**
 
 ```sql
-filesystemcapacity()
+filesystemCapacity()
 ```
 
 **Returned value**

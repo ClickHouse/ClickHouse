@@ -776,7 +776,7 @@ SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesyst
 **Синтаксис**
 
 ```sql
-filesystemcapacity()
+filesystemCapacity()
 ```
 
 **Возвращаемое значение**
