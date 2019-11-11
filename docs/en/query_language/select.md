@@ -114,12 +114,9 @@ If a query does not list any columns (for example, `SELECT count() FROM t`), som
 
 #### FINAL Modifier {#select-from-final}
 
-Supported for:
+Appliable when selecting data from tables of the [MergeTree](../operations/table_engines/mergetree.md)-engine family excepting `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse select fully merged data.
 
-- Engines of the [MergeTree](../operations/table_engines/mergetree.md) family excepting `GraphiteMergeTree`.
-
-    When you specify `FINAL`, data is selected fully merged.
-
+Also supported for:
 - [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
 - [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, if they created over `MergeTree`-engine tables.
 
