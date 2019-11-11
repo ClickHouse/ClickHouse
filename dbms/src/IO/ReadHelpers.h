@@ -581,9 +581,6 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T exactParse(const char * data, size_t size);
-
-template <typename T>
 inline T parseFromString(const String & str)
 {
     return parse<T>(str.data(), str.size());
@@ -885,7 +882,6 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 template <typename T>
 inline T parse(const char * data, size_t size)
 {
-    std::cerr << "\n\n!!!enter_in_parse_function!!!\n\n";
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
@@ -896,7 +892,6 @@ template <typename T>
 std::enable_if_t<is_integral_v<T>, T>
 inline completeParse(const char * data, size_t size)
 {
-    std::cerr << "\n\nenter in exact parse function\n\n";
     T res;
     ReadBufferFromMemory buf(data, size);
     completeReadIntTextImpl<T>(res, buf);
@@ -913,7 +908,6 @@ inline completeParse(const char * data, size_t size)
 template <typename T>
 inline T completeParse(const String & s)
 {
-    std::cerr << "\n\nenter in exact parse function_for_string\n\n";
     return completeParse<T>(s.data(), s.size());
 }
 
@@ -932,7 +926,6 @@ inline T parse(const char * data)
 template <typename T>
 inline T parse(const String & s)
 {
-    std::cerr << "\n\n!!!enter_in_parse_function_for_string!!!\n\n";
     return parse<T>(s.data(), s.size());
 }
 
