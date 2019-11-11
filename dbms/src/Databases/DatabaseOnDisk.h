@@ -63,6 +63,8 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
+    String getDataPath(const String & table_name) const override;
+    String getDataPath(const ASTCreateQuery & query) const override;
     String getMetadataPath() const override { return metadata_path; }
 
 protected:
@@ -80,7 +82,7 @@ protected:
 
 
     const String metadata_path;
-    const String data_path;
+    /*const*/ String data_path;
 };
 
 }

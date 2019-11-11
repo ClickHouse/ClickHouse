@@ -52,7 +52,7 @@ void loadObject(
     Context & context,
     const ASTCreateQuery & query,
     DatabaseOrdinary & database,
-    const String & database_data_path_relative,
+    const String & /*database_data_path_relative*/,
     const String & database_name,
     bool has_force_restore_data_flag)
 try
@@ -64,9 +64,11 @@ try
     }
     else
     {
-        String table_data_path_relative = database_data_path_relative + escapeForFileName(query.table) + '/';
+        //FIMXE
+        //String table_data_path_relative = database_data_path_relative + escapeForFileName(query.table) + '/';
+        String table_data_path_relative = database.getDataPath(query);
         auto [table_name, table] = createTableFromAST(query, database_name, table_data_path_relative, context, has_force_restore_data_flag);
-        database.attachTable(table_name, table);
+        database.attachTable(table_name, table, database.getDataPath(query));
     }
 }
 catch (const Exception & e)
@@ -141,7 +143,8 @@ void DatabaseOrdinary::loadStoredObjects(
 
     auto loadOneObject = [&](const ASTCreateQuery & query)
     {
-        loadObject(context, query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
+        //FIXME
+        loadObject(context, query, *this, getDataPath(query), getDatabaseName(), has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
         if (query.is_dictionary)

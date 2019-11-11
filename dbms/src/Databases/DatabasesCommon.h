@@ -30,7 +30,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    void attachTable(const String & table_name, const StoragePtr & table) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path = {}) override;
 
     StoragePtr detachTable(const String & table_name) override;
 

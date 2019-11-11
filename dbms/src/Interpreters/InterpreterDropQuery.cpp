@@ -113,6 +113,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
 
             /// Try to rename metadata file and delete the data
+            //TODO move this logic to DatabaseOnDisk
             try
             {
                 /// There some kind of tables that have no metadata - ignore renaming
@@ -128,16 +129,16 @@ BlockIO InterpreterDropQuery::executeToTable(
                 throw;
             }
 
+            String table_data_path = database_and_table.first->getDataPath(table_name);
+
             /// Delete table metadata and table itself from memory
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             database_and_table.second->is_dropped = true;
 
-            String database_data_path = context.getPath() + database_and_table.first->getDataPath();
-
             /// If it is not virtual database like Dictionary then drop remaining data dir
-            if (!database_data_path.empty())
+            if (!table_data_path.empty())
             {
-                String table_data_path = database_data_path + "/" + escapeForFileName(database_and_table.second->getTableName());
+                table_data_path = context.getPath() + table_data_path;
 
                 if (Poco::File(table_data_path).exists())
                     Poco::File(table_data_path).remove(true);

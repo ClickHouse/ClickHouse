@@ -160,7 +160,7 @@ bool DatabaseLazy::empty(const Context & /* context */) const
     return tables_cache.empty();
 }
 
-void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table)
+void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
     LOG_DEBUG(log, "Attach table " << backQuote(table_name) << ".");
     std::lock_guard lock(mutex);
@@ -239,7 +239,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         if (ast)
         {
             auto & ast_create = ast->as<const ASTCreateQuery &>();
-            String table_data_path_relative = getDataPath() + escapeForFileName(ast_create.table) + '/';
+            String table_data_path_relative = getDataPath(table_name);
             table = createTableFromAST(ast_create, database_name, table_data_path_relative, context_copy, false).second;
         }
 

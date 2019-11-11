@@ -48,6 +48,8 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace DB
 {
@@ -545,6 +547,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.to_table.empty())
             databases.emplace(create.to_database);
 
+        /// NOTE: if it's CREATE query and create.database is DatabaseAtomic, different UUIDs will be generated on all servers.
+        /// However, it allows to use UUID as replica name.
+
         return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
@@ -587,7 +592,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return fillTableIfNeeded(create, database_name);
 }
 
-bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
+bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            const String & database_name)
 {
@@ -601,16 +606,32 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     if (need_add_to_database)
     {
         database = context.getDatabase(database_name);
-        if (!create.uuid.empty() && database->getEngineName() != "Atomic")
-            throw Exception("Table UUID specified, but engine of database " + database_name + " is not Atomic",
-                            ErrorCodes::INCORRECT_QUERY);
+        if (database->getEngineName() == "Atomic")
+        {
+            //TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
+            if (create.attach && create.uuid.empty())
+                throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
+            if (!create.attach && create.uuid.empty())
+                create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+        }
+        else
+        {
+            if (!create.uuid.empty())
+                throw Exception("Table UUID specified, but engine of database " + database_name + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
+        }
 
-        data_path = database->getDataPath();
+        if (!create.attach && create.uuid.empty() && database->getEngineName() == "Atomic")
+            create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+
+        data_path = database->getDataPath(create);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
         guard = context.getDDLGuard(database_name, table_name);
+
+        if (!create.attach && !data_path.empty() && Poco::File(context.getPath() + data_path).exists())
+            throw Exception("Directory for table data " + data_path + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))
@@ -646,7 +667,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     else
     {
         res = StorageFactory::instance().get(create,
-            data_path + escapeForFileName(table_name) + "/",
+            data_path,
             table_name,
             database_name,
             context,

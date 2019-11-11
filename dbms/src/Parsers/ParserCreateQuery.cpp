@@ -401,7 +401,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (attach && s_uuid.ignore(pos, expected))
     {
-        /// For CREATE query uuid will be generated
         if (!uuid_p.parse(pos, uuid, expected))
             return false;
     }
@@ -505,6 +504,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_uuid("UUID");
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -515,9 +515,11 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
+    ParserStringLiteral uuid_p;
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr uuid;
     ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
@@ -560,6 +562,12 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     {
         database = table;
         if (!name_p.parse(pos, table, expected))
+            return false;
+    }
+
+    if (attach && s_uuid.ignore(pos, expected))
+    {
+        if (!uuid_p.parse(pos, uuid, expected))
             return false;
     }
 
@@ -615,6 +623,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     tryGetIdentifierNameInto(to_database, query->to_database);
     tryGetIdentifierNameInto(to_table, query->to_table);
+    if (uuid)
+        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
 
     query->set(query->columns_list, columns_list);
 
@@ -687,6 +697,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_uuid("UUID");
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
@@ -700,9 +711,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
     ParserNameList names_p;
+    ParserStringLiteral uuid_p;
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr uuid;
     ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
@@ -753,6 +766,12 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         database = table;
         if (!name_p.parse(pos, table, expected))
+            return false;
+    }
+
+    if (attach && s_uuid.ignore(pos, expected))
+    {
+        if (!uuid_p.parse(pos, uuid, expected))
             return false;
     }
 
@@ -816,6 +835,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
+    if (uuid)
+        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
     query->cluster = cluster_str;
 
     tryGetIdentifierNameInto(to_database, query->to_database);
@@ -898,10 +919,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->is_dictionary = true;
     query->attach = attach;
 
-    if (database)
-        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
-
-    query->table = typeid_cast<const ASTIdentifier &>(*name).name;
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(name, query->table);
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

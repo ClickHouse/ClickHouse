@@ -66,7 +66,7 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path = {}) override;
 
     StoragePtr detachTable(const String & table_name) override;
 

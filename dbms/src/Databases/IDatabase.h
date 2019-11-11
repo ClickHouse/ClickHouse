@@ -21,6 +21,7 @@ class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
 using Dictionaries = std::set<String>;
+class ASTCreateQuery;
 
 namespace ErrorCodes
 {
@@ -184,7 +185,7 @@ public:
     }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
-    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/)
+    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -269,6 +270,10 @@ public:
     String getDatabaseName() const { return database_name; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
+    /// Returns path for persistent data storage for table if the database supports it, empty string otherwise
+    virtual String getDataPath(const String & /*table_name*/) const { return {}; }
+    /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
+    virtual String getDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise

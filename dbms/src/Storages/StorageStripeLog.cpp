@@ -214,12 +214,7 @@ StorageStripeLog::StorageStripeLog(
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     if (!attach)
-    {
-        /// create files if they do not exist
-        if (0 != mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrnoWithPath("Cannot create directory " + path, path,
-                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
-    }
+        Poco::File(path).createDirectories();
 }
 
 

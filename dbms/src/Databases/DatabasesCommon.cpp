@@ -83,7 +83,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
+void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
     std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
