@@ -2,10 +2,7 @@
 
 You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Sources for external dictionaries](external_dicts_dict_sources.md)".
 
-ClickHouse:
-
-> - Fully or partially stores dictionaries in RAM.
-- Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
+ClickHouse fully or partially stores dictionaries in RAM. Dictionaries can be loaded dynamically, ClickHouse periodically updates dictionaries, and dynamically loads missing values. 
 
 The configuration of external dictionaries is located in one or more files. The path to the configuration is specified in the [dictionaries_config](../../operations/server_settings/settings.md#server_settings-dictionaries_config) parameter.
 
