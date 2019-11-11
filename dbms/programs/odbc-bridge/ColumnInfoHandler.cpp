@@ -19,6 +19,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
@@ -37,12 +38,16 @@ namespace
 
         switch (type)
         {
+            case SQL_TINYINT:
+                return factory.get("Int8");
             case SQL_INTEGER:
                 return factory.get("Int32");
             case SQL_SMALLINT:
                 return factory.get("Int16");
+            case SQL_BIGINT:
+                return factory.get("Int64");
             case SQL_FLOAT:
-                return factory.get("Float32");
+                return factory.get("Float64");
             case SQL_REAL:
                 return factory.get("Float32");
             case SQL_DOUBLE:
@@ -154,9 +159,19 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             SQLSMALLINT type = 0;
             /// TODO Why 301?
             SQLCHAR column_name[301];
-            /// TODO Result is not checked.
-            POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
-            columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
+
+            SQLSMALLINT nullable;
+            const auto result = POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, &nullable);
+            if (POCO_SQL_ODBC_CLASS::Utility::isError(result))
+                throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
+
+            auto column_type = getDataType(type);
+            if (nullable == SQL_NULLABLE)
+            {
+                column_type = std::make_shared<DataTypeNullable>(column_type);
+            }
+
+            columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
         }
 
         WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
