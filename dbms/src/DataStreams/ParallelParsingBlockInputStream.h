@@ -41,7 +41,7 @@ public:
 
     struct Builder
     {
-        ReadBuffer &read_buffer;
+        ReadBuffer & read_buffer;
         const InputProcessorCreator &input_processor_creator;
         const InputCreatorParams &input_creator_params;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
@@ -62,23 +62,9 @@ public:
               file_segmentation_engine(builder.file_segmentation_engine)
     {
         //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream()"), "Constructor");
-        segments.resize(max_threads_to_use);
-        blocks.resize(max_threads_to_use);
-        exceptions.resize(max_threads_to_use);
-        buffers.reserve(max_threads_to_use);
-        readers.reserve(max_threads_to_use);
-        is_last.assign(max_threads_to_use, false);
 
         for (size_t i = 0; i < max_threads_to_use; ++i)
-        {
-            status.emplace_back(ProcessingUnitStatus::READY_TO_INSERT);
-            buffers.emplace_back(std::make_unique<ReadBuffer>(segments[i].memory.data(), segments[i].used_size, 0));
-            readers.emplace_back(std::make_unique<InputStreamFromInputFormat>(builder.input_processor_creator(*buffers[i],
-                    builder.input_creator_params.sample,
-                    builder.input_creator_params.context,
-                    builder.input_creator_params.row_input_format_params,
-                    builder.input_creator_params.settings)));
-        }
+            processing_units.emplace_back(builder);
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
     }
@@ -102,9 +88,9 @@ public:
 
         executed = true;
 
-        for (auto& reader: readers)
-            if (!reader->isCancelled())
-                reader->cancel(kill);
+        for (auto& unit: processing_units)
+            if (!unit.parser->isCancelled())
+                unit.parser->cancel(kill);
 
         waitForAllThreads();
         //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Cancelled succsessfully.");
@@ -116,7 +102,6 @@ public:
     }
 
 protected:
-
     //Reader routine
     Block readImpl() override;
 
@@ -179,23 +164,28 @@ private:
         std::vector<BlockMissingValues> block_missing_values;
     };
 
-    using Blocks = std::vector<BlockExt>;
-    using ReadBuffers = std::vector<std::unique_ptr<ReadBuffer>>;
-    using Segments = std::vector<MemoryExt>;
-    using Status = std::deque<std::atomic<ProcessingUnitStatus>>;
-    using InputStreamFromInputFormats = std::vector<std::unique_ptr<InputStreamFromInputFormat>>;
+    struct ProcessingUnit
+    {
+        explicit ProcessingUnit(const Builder & builder) : status(ProcessingUnitStatus::READY_TO_INSERT)
+        {
+            readbuffer = std::make_unique<ReadBuffer>(segment.memory.data(), segment.used_size, 0);
+            parser = std::make_unique<InputStreamFromInputFormat>(builder.input_processor_creator(*readbuffer,
+                                                                                                  builder.input_creator_params.sample,
+                                                                                                  builder.input_creator_params.context,
+                                                                                                  builder.input_creator_params.row_input_format_params,
+                                                                                                  builder.input_creator_params.settings));
+        }
 
-    //We cannot use std::vector<bool> because it is equal to bitset (which stores 8 bool in one byte).
-    //That's why dataraces occured.
-    using IsLastFlags = std::vector<char>;
+        BlockExt block_ext;
+        std::unique_ptr<ReadBuffer> readbuffer;
+        MemoryExt segment;
+        std::unique_ptr<InputStreamFromInputFormat> parser;
+        std::atomic<ProcessingUnitStatus> status;
+        char is_last{false};
+    };
 
-    Segments segments;
-    ReadBuffers buffers;
-    Blocks blocks;
     Exceptions exceptions;
-    Status status;
-    InputStreamFromInputFormats readers;
-    IsLastFlags is_last;
+    std::deque<ProcessingUnit> processing_units;
 
     void scheduleParserThreadForUnitWithNumber(size_t unit_number)
     {
