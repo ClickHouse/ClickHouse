@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -185,6 +186,30 @@ void validateFunctionArgumentTypes(const IFunction & func,
     {
         validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
     }
+}
+
+std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
+{
+    assert(num_arguments > 0);
+    std::vector<const IColumn *> nested_columns(num_arguments);
+    const ColumnArray::Offsets * offsets = nullptr;
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const ColumnArray::Offsets * offsets_i = nullptr;
+        if (const ColumnArray * arr = checkAndGetColumn<const ColumnArray>(columns[i]))
+        {
+            nested_columns[i] = &arr->getData();
+            offsets_i = &arr->getOffsets();
+        }
+        else
+            throw Exception("Illegal column " + columns[i]->getName() + " as argument of function", ErrorCodes::ILLEGAL_COLUMN);
+        if (i == 0)
+            offsets = offsets_i;
+        else if (*offsets_i != *offsets)
+            throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+    }
+    return {nested_columns, offsets->data()};
 }
 
 }
