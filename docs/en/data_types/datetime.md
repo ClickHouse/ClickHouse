@@ -50,7 +50,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 - [Functions for Working with Arrays](../query_language/functions/array_functions.md)
 - [The `date_time_input_format` setting](../operations/settings/settings.md#settings-date_time_input_format)
 - [The `timezone` server configuration parameter](../operations/server_settings/settings.md#server_settings-timezone)
-- [Operator for Working with Dates and Times](../query_language/operators.md#operators-datetime)
+- [Operators for Working with Dates and Times](../query_language/operators.md#operators-datetime)
 - [The `Date` data type](date.md)
 
 [Original article](https://clickhouse.yandex/docs/en/data_types/datetime/) <!--hide-->
