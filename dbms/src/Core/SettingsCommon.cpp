@@ -65,7 +65,7 @@ template <typename Type>
 void SettingNumber<Type>::set(const String & x)
 {
     std::cerr << "\n\nEnter in set_function_for_string\n\n";
-    set(parse<Type>(x));
+    set(completeParse<Type>(x));
 }
 
 template <>
