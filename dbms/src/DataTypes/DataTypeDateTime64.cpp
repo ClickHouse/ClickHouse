@@ -69,7 +69,7 @@ void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, W
 
 void DataTypeDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    DateTime64 result;
+    DateTime64 result = 0;
     readDateTime64Text(result, this->getScale(), istr, time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(result);
 }
@@ -86,7 +86,7 @@ void DataTypeDateTime64::serializeTextEscaped(const IColumn & column, size_t row
 
 void DataTypeDateTime64::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x;
+    DateTime64 x = 0;
     ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -100,7 +100,7 @@ void DataTypeDateTime64::serializeTextQuoted(const IColumn & column, size_t row_
 
 void DataTypeDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x;
+    DateTime64 x = 0;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
         ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
@@ -122,7 +122,7 @@ void DataTypeDateTime64::serializeTextJSON(const IColumn & column, size_t row_nu
 
 void DataTypeDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x;
+    DateTime64 x = 0;
     if (checkChar('"', istr))
     {
         ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
@@ -144,7 +144,7 @@ void DataTypeDateTime64::serializeTextCSV(const IColumn & column, size_t row_num
 
 void DataTypeDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x;
+    DateTime64 x = 0;
 
     if (istr.eof())
         throwReadAfterEOF();
@@ -172,7 +172,7 @@ void DataTypeDateTime64::serializeProtobuf(const IColumn & column, size_t row_nu
 void DataTypeDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     row_added = false;
-    DateTime64 t;
+    DateTime64 t = 0;
     if (!protobuf.readDateTime64(t, scale))
         return;
 
