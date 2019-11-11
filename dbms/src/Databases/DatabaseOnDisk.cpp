@@ -185,7 +185,7 @@ void DatabaseOnDisk::createTable(
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(table_name, table);
+        attachTable(table_name, table, getDataPath(query->as<ASTCreateQuery &>()));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -200,6 +200,8 @@ void DatabaseOnDisk::createTable(
 
 void DatabaseOnDisk::removeTable(const Context & /* context */, const String & table_name)
 {
+    String table_data = getDataPath(table_name);
+
     StoragePtr res = detachTable(table_name);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -219,7 +221,7 @@ void DatabaseOnDisk::removeTable(const Context & /* context */, const String & t
         {
             LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         }
-        attachTable(table_name, res);
+        attachTable(table_name, res, data_path);
         throw;
     }
 }
@@ -329,7 +331,7 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_na
         return static_cast<time_t>(0);
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const
+void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const IteratingFunction & iterating_function) const
 {
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
@@ -346,17 +348,19 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
-            const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
-            {
-                Poco::File(dir_it->path()).renameTo(object_name + ".sql");
-                LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously");
-            }
-            else
-            {
-                LOG_INFO(log, "Removing file " << dir_it->path());
-                Poco::File(dir_it->path()).remove();
-            }
+            //const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+
+            //FIXME
+            //if (Poco::File(context.getPath() + getDataPath(object_name)).exists())
+            //{
+            //    Poco::File(dir_it->path()).renameTo(object_name + ".sql");
+            //    LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously");
+            //}
+            //else
+            //{
+            //    LOG_INFO(log, "Removing file " << dir_it->path());
+            //    Poco::File(dir_it->path()).remove();
+            //}
             continue;
         }
 
@@ -426,6 +430,16 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     }
 
     return ast;
+}
+
+String DatabaseOnDisk::getDataPath(const String & table_name) const
+{
+    return data_path + escapeForFileName(table_name) + "/";
+}
+
+String DatabaseOnDisk::getDataPath(const ASTCreateQuery & query) const
+{
+    return getDataPath(query.table);
 }
 
 }

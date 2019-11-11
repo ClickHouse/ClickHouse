@@ -514,6 +514,7 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
 
 String Context::getPath() const
 {
+    //FIXME there is no <path> in clickhouse-local, so context->getPath() + relative_data_path may not work correctly (it may create StorageFile for example)
     auto lock = getLock();
     return shared->path;
 }

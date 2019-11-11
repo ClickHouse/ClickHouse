@@ -285,12 +285,12 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
-        std::string data_path = database->getDataPath();
+        std::string data_path = database->getDataPath(create);
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
         auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
-            data_path + escapeForFileName(table_name) + "/",
+            data_path,
             table_name,
             database_name,
             system_context,

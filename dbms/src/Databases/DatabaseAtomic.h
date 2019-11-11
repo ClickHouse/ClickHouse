@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class DatabaseAtomic : /* public DatabaseWithOwnTablesBase */ public DatabaseOrdinary
+class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
 
@@ -15,12 +15,23 @@ public:
 
     String getEngineName() const override { return "Atomic"; }
 
-    //void renameTable(const Context & context,
-    //                 const String & table_name,
-    //                 IDatabase & to_database,
-    //                 const String & to_table_name,
-    //                 TableStructureWriteLockHolder &) override;
+    void createTable(
+            const Context & context,
+            const String & table_name,
+            const StoragePtr & table,
+            const ASTPtr & query) override;
 
+    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path = {}) override;
+    StoragePtr detachTable(const String & name) override;
+
+    String getDataPath(const String & table_name) const override;
+    String getDataPath(const ASTCreateQuery & query) const override;
+
+    void drop(const Context & /*context*/) override;
+
+private:
+    //TODO store path in DatabaseWithOwnTables::tables
+    std::map<String, String> table_name_to_path;
 
 };
 
