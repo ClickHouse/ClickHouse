@@ -725,7 +725,7 @@ Result:
 
 ## filesystemAvailable {#filesystemavailable}
 
-Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for a `root` user.
+Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for a Linux `root` user.
 
 **Syntax**
 
@@ -757,7 +757,7 @@ Result:
 
 ## filesystemFree {#filesystemfree}
 
-Returns total amount of the free space on the filesystem where the files of the databases located. Consist of both space reserved for a `root` user and space that actual available for data.
+Returns total amount of the free space on the filesystem where the files of the databases located. Consist of both space reserved for a Linux `root` user and space that actual available for data.
 
 **Syntax**
 
