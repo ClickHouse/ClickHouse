@@ -574,7 +574,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         String result_column = ttl_ast->getColumnName();
         checkTTLExpression(expr, result_column);
 
-        return {expr, result_column};
+        return {expr, result_column, TTLDestinationType::DELETE, {}};
     };
 
     if (!new_column_ttls.empty())
@@ -629,8 +629,9 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
-                    TTLEntry entry{new_ttl_entry.expression, new_ttl_entry.result_column, ttl_element.destination_type, ttl_element.destination_name};
-                    move_ttl_entries_by_name.emplace(new_ttl_entry.result_column, entry);
+                    new_ttl_entry.destination_type = ttl_element.destination_type;
+                    new_ttl_entry.destination_name = ttl_element.destination_name;
+                    move_ttl_entries_by_name.emplace(new_ttl_entry.result_column, new_ttl_entry);
                 }
             }
         }
@@ -3096,11 +3097,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 namespace
 {
 
-inline DiskSpace::ReservationPtr throwNotEnoughSpace(UInt64 expected_size)
+inline DiskSpace::ReservationPtr returnReservationOrThrowError(UInt64 expected_size, DiskSpace::ReservationPtr reservation)
 {
+    if (reservation)
+        return reservation;
+
     throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space",
                     ErrorCodes::NOT_ENOUGH_SPACE);
-    return {};
 }
 
 }
@@ -3110,10 +3113,8 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) cons
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     auto reservation = storage_policy->reserve(expected_size);
-    if (reservation)
-        return reservation;
 
-    return throwNotEnoughSpace(expected_size);
+    return returnReservationOrThrowError(expected_size, std::move(reservation));
 }
 
 DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(UInt64 expected_size,
@@ -3127,10 +3128,8 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(U
         return reservation;
     
     reservation = storage_policy->reserve(expected_size);
-    if (reservation)
-        return reservation;
 
-    return throwNotEnoughSpace(expected_size);
+    return returnReservationOrThrowError(expected_size, std::move(reservation));
 }
 
 DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceOnMoveDestination(UInt64 expected_size,
@@ -3183,10 +3182,8 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpaceOnSpecificDisk(UInt64 expec
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     auto reservation = disk->reserve(expected_size);
-    if (reservation)
-        return reservation;
 
-    return throwNotEnoughSpace(expected_size);
+    return returnReservationOrThrowError(expected_size, std::move(reservation));
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
