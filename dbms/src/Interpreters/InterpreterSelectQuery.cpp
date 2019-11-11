@@ -419,6 +419,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header);
+
+    /// Remove limits for some tables in the `system` database.
+    if (storage && (storage->getDatabaseName() == "system"))
+    {
+        String table_name = storage->getTableName();
+        if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
+        {
+            options.ignore_quota = true;
+            options.ignore_limits = true;
+        }
+    }
 }
 
 
@@ -1783,7 +1794,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (!options.ignore_limits)
                     stream->setLimits(limits);
 
-                if (options.to_stage == QueryProcessingStage::Complete)
+                if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
                     stream->setQuota(quota);
             }
 
@@ -1793,7 +1804,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (!options.ignore_limits)
                     pipe.setLimits(limits);
 
-                if (options.to_stage == QueryProcessingStage::Complete)
+                if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
                     pipe.setQuota(quota);
             }
         }
