@@ -730,12 +730,12 @@ Returns amount of remaining space on the filesystem where the files of the datab
 **Syntax**
 
 ```sql
-filesystemAvailable();
+filesystemAvailable()
 ```
 
 **Returned value**
 
-- The amount of remaining space for writing data in bytes.
+- The amount of remaining space available for writing data in bytes..
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -744,14 +744,14 @@ Type: [UInt64](../../data_types/int_uint.md).
 Query:
 
 ```sql
-SELECT filesystemAvailable() AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
 
 Result:
 
 ```text
 ┌─Available space─┬─Type───┐
-│     34966368256 │ UInt64 │
+│ 30.75 GiB       │ UInt64 │
 └─────────────────┴────────┘
 ```
 
@@ -762,7 +762,7 @@ Returns total amount of the free space on the filesystem where the files of the 
 **Syntax**
 
 ```sql
-filesystemFree();
+filesystemFree()
 ```
 
 **Returned value**
@@ -776,25 +776,25 @@ Type: [UInt64](../../data_types/int_uint.md).
 Query:
 
 ```sql
-SELECT filesystemFree() AS "Free space", toTypeName(filesystemFree()) AS "Type";
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
 Result:
 
 ```text
-┌──Free space─┬─Type───┐
-│ 36732297216 │ UInt64 │
-└─────────────┴────────┘
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
 ```
 
 ## filesystemCapacity {#filesystemcapacity}
 
-Returns the capacity information of the filesystem in bytes. This information is evaluated using the configured by a path. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
+Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server_settings/settings.md#server_settings-path) to the data directory must be configured.
 
 **Syntax**
 
 ```sql
-filesystemcapacity();
+filesystemcapacity()
 ```
 
 **Returned value**
@@ -808,15 +808,15 @@ Type: [UInt64](../../data_types/int_uint.md).
 Query:
 
 ```sql
-SELECT filesystemCapacity() AS "Capacity", toTypeName(filesystemCapacity()) AS "Type";
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
 Result:
 
 ```text
-┌────Capacity─┬─Type───┐
-│ 42223218688 │ UInt64 │
-└─────────────┴────────┘
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
 ```
 
 ## finalizeAggregation {#function-finalizeaggregation}

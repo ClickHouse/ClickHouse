@@ -712,7 +712,7 @@ SELECT replicate(1, ['a', 'b', 'c']);
 **Синтаксис**
 
 ```sql
-filesystemAvailable();
+filesystemAvailable()
 ```
 
 **Возвращаемое значение**
@@ -726,14 +726,14 @@ filesystemAvailable();
 Запрос:
 
 ```sql
-SELECT filesystemAvailable() AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
+SELECT formatReadableSize(filesystemAvailable()) AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
 
 Ответ:
 
 ```text
 ┌─Available space─┬─Type───┐
-│     34966368256 │ UInt64 │
+│ 30.75 GiB       │ UInt64 │
 └─────────────────┴────────┘
 ```
 
@@ -744,7 +744,7 @@ SELECT filesystemAvailable() AS "Available space", toTypeName(filesystemAvailabl
 **Синтаксис**
 
 ```sql
-filesystemFree();
+filesystemFree()
 ```
 
 **Возвращаемое значение**
@@ -758,25 +758,25 @@ filesystemFree();
 Запрос:
 
 ```sql
-SELECT filesystemFree() AS "Free space", toTypeName(filesystemFree()) AS "Type";
+SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
 Ответ:
 
 ```text
-┌──Free space─┬─Type───┐
-│ 36732297216 │ UInt64 │
-└─────────────┴────────┘
+┌─Free space─┬─Type───┐
+│ 32.39 GiB  │ UInt64 │
+└────────────┴────────┘
 ```
 
 ## filesystemCapacity {#filesystemcapacity}
 
-Возвращает информацию о емкости файловой системы в байтах. Эта информация оценивается с использованием настроенного пути. См. описание конфигурационного параметра сервера [path](../../operations/server_settings/settings.md#server_settings-path).
+Возвращает информацию о емкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../operations/server_settings/settings.md#server_settings-path) к каталогу с данными.
 
 **Синтаксис**
 
 ```sql
-filesystemcapacity();
+filesystemcapacity()
 ```
 
 **Возвращаемое значение**
@@ -790,15 +790,15 @@ filesystemcapacity();
 Запрос:
 
 ```sql
-SELECT filesystemCapacity() AS "Capacity", toTypeName(filesystemCapacity()) AS "Type";
+SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
 Ответ:
 
 ```text
-┌────Capacity─┬─Type───┐
-│ 42223218688 │ UInt64 │
-└─────────────┴────────┘
+┌─Capacity──┬─Type───┐
+│ 39.32 GiB │ UInt64 │
+└───────────┴────────┘
 ```
 
 ## finalizeAggregation {#function-finalizeaggregation}
