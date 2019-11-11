@@ -552,13 +552,13 @@ void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, 
 
 bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    DateTime64::NativeType whole;
+    time_t whole;
     DateTime64::NativeType fractional;
-    const auto result = parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &fractional);
+    if (!parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &fractional))
+        return false;
 
     res = decimalFromComponents<DateTime64>(whole, fractional, scale);
-
-    return result;
+    return true;
 }
 
 }
