@@ -299,13 +299,23 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 res += *buf.position() - '0';
                 break;
             default:
-                throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
+                x = negative ? -res : res;
+                return ReturnType(true);
         }
         ++buf.position();
     }
 
     x = negative ? -res : res;
     return ReturnType(true);
+}
+
+template <typename T>
+void completeReadIntTextImpl(T & x, ReadBuffer & buf)
+{
+    std::cerr << "\n\nEnter in exactReadIntTextImpl function\n\n";
+    readIntTextImpl<T, void>(x, buf);
+    if (!buf.eof())
+        throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
 }
 
 template <typename T>
@@ -571,6 +581,9 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
+inline T exactParse(const char * data, size_t size);
+
+template <typename T>
 inline T parseFromString(const String & str)
 {
     return parse<T>(str.data(), str.size());
@@ -676,7 +689,7 @@ readText(T & x, ReadBuffer & buf) { readIntText(x, buf); std::cerr << "\n\nEnter
 
 template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); std::cerr << "\n\nEnter in readText for float\n\n";}
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf);}
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
@@ -877,6 +890,37 @@ inline T parse(const char * data, size_t size)
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     return res;
+}
+
+template <typename T>
+std::enable_if_t<is_integral_v<T>, T>
+inline completeParse(const char * data, size_t size)
+{
+    std::cerr << "\n\nenter in exact parse function\n\n";
+    T res;
+    ReadBufferFromMemory buf(data, size);
+    completeReadIntTextImpl<T>(res, buf);
+    return res;
+}
+
+template <typename T>
+std::enable_if_t<!is_integral_v<T>, T>
+inline completeParse(const char * data, size_t size)
+{
+    return parse<T>(data, size);
+}
+
+template <typename T>
+inline T completeParse(const String & s)
+{
+    std::cerr << "\n\nenter in exact parse function_for_string\n\n";
+    return completeParse<T>(s.data(), s.size());
+}
+
+template <typename T>
+inline T completeParse(const char * data)
+{
+    return completeParse<T>(data, strlen(data));
 }
 
 template <typename T>
