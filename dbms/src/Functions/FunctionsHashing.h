@@ -826,26 +826,26 @@ private:
     {
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeIntType<UInt8, first, ColumnVector>(icolumn, vec_to);
-        else if (which.isUInt16()) executeIntType<UInt16, first, ColumnVector>(icolumn, vec_to);
-        else if (which.isUInt32()) executeIntType<UInt32, first, ColumnVector>(icolumn, vec_to);
-        else if (which.isUInt64()) executeIntType<UInt64, first, ColumnVector>(icolumn, vec_to);
-        else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
-        else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
-        else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
-        else if (which.isFloat64()) executeIntType<Float64, first>(icolumn, vec_to);
+        if      (which.isUInt8()) executeIntType<UInt8, first, ColumnVector<UInt8>>(icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16, first, ColumnVector<UInt16>>(icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32, first, ColumnVector<UInt32>>(icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64, first, ColumnVector<UInt64>>(icolumn, vec_to);
+        else if (which.isInt8()) executeIntType<Int8, first, ColumnVector<Int8>>(icolumn, vec_to);
+        else if (which.isInt16()) executeIntType<Int16, first, ColumnVector<Int16>>(icolumn, vec_to);
+        else if (which.isInt32()) executeIntType<Int32, first, ColumnVector<Int32>>(icolumn, vec_to);
+        else if (which.isInt64()) executeIntType<Int64, first, ColumnVector<Int64>>(icolumn, vec_to);
+        else if (which.isEnum8()) executeIntType<Int8, first, ColumnVector<Int8>>(icolumn, vec_to);
+        else if (which.isEnum16()) executeIntType<Int16, first, ColumnVector<Int16>>(icolumn, vec_to);
+        else if (which.isDate()) executeIntType<UInt16, first, ColumnVector<UInt16>>(icolumn, vec_to);
+        else if (which.isDateTime()) executeIntType<UInt32, first, ColumnVector<UInt32>>(icolumn, vec_to);
+        else if (which.isFloat32()) executeIntType<Float32, first, ColumnVector<Float32>>(icolumn, vec_to);
+        else if (which.isFloat64()) executeIntType<Float64, first, ColumnVector<Float64>>(icolumn, vec_to);
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else if (which.isDecimal32()) executeIntType<Decimal32, first>(icolumn, vec_to);
-        else if (which.isDecimal64()) executeIntType<Decimal64, first>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeIntType<Decimal128, first>(icolumn, vec_to);
+        else if (which.isDecimal32()) executeIntType<Decimal32, first, ColumnDecimal<Decimal32>>(icolumn, vec_to);
+        else if (which.isDecimal64()) executeIntType<Decimal64, first, ColumnDecimal<Decimal64>>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeIntType<Decimal128, first, ColumnDecimal<Decimal128>>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
