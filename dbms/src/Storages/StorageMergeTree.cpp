@@ -690,7 +690,7 @@ bool StorageMergeTree::tryMutatePart()
             size_t current_ast_elements = 0;
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
             {
-                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context);
+                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context, false);
 
                 size_t commands_size = interpreter.evaluateCommandsSize();
                 if (current_ast_elements + commands_size >= max_ast_elements)

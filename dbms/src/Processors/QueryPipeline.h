@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Pipe.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -11,7 +12,7 @@ namespace DB
 
 class TableStructureReadLock;
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
-using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
+using TableStructureReadLocks = std::vector<TableStructureReadLockHolder>;
 
 class Context;
 
@@ -22,8 +23,9 @@ class QueryPipeline
 public:
     QueryPipeline() = default;
 
-    /// Each source must have single output port and no inputs. All outputs must have same header.
-    void init(Processors sources);
+    /// All pipes must have same header.
+    void init(Pipes pipes);
+    void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
     enum class StreamType
@@ -72,7 +74,7 @@ public:
 
     const Block & getHeader() const { return current_header; }
 
-    void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);

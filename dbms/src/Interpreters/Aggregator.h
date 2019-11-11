@@ -1005,9 +1005,13 @@ protected:
     struct AggregateFunctionInstruction
     {
         const IAggregateFunction * that;
-        IAggregateFunction::AddFunc func;
+        IAggregateFunction::AddFuncs funcs;
         size_t state_offset;
         const IColumn ** arguments;
+        const IAggregateFunction * batch_that;
+        IAggregateFunction::AddFuncs batch_funcs;
+        const IColumn ** batch_arguments;
+        const UInt64 * offsets = nullptr;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
