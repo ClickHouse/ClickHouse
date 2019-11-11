@@ -641,7 +641,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     {
-                        DateTime64 res;
+                        DateTime64 res = 0;
                         parseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
@@ -656,7 +656,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     {
-                        DateTime64 value;
+                        DateTime64 value = 0;
                         readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
@@ -677,7 +677,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     {
-                        DateTime64 res;
+                        DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
@@ -692,7 +692,7 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     {
-                        DateTime64 value;
+                        DateTime64 value = 0;
                         parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
@@ -1132,7 +1132,7 @@ public:
             res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else if constexpr (to_decimal)
         {
-            UInt64 scale = extractToDecimalScale(arguments[1]);
+            UInt64 scale [[maybe_unused]] = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
                 res = createDecimal<DataTypeDecimal>(9, scale);

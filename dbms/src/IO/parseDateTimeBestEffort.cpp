@@ -543,7 +543,7 @@ bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    DateTime64::NativeType whole;
+    time_t whole;
     DateTime64::NativeType fractional;
     parseDateTimeBestEffortImpl<void>(whole, in, local_time_zone, utc_time_zone, &fractional);
 
