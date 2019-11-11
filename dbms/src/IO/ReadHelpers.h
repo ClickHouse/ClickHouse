@@ -677,11 +677,11 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readIntText(x, buf); std::cerr << "\n\nEnter in readText for integral\n\n";}
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readFloatText(x, buf);}
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
