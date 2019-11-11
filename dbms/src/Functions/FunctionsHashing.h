@@ -653,12 +653,12 @@ public:
 private:
     using ToType = typename Impl::ReturnType;
 
-    template <typename FromType, bool first>
+    template <typename FromType, bool first, typename ColumnType>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
+        if (const ColumnType * col_from = checkAndGetColumn<ColumnType>(column))
         {
-            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            const typename ColumnType::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -682,7 +682,7 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColumnType>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
@@ -706,61 +706,6 @@ private:
             throw Exception("Illegal column " + column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
-    }
-
-    template <typename FromType, bool first>
-    void executeDecimalType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
-    {
-        if (const ColumnDecimal<FromType> * col_from = checkAndGetColumn<ColumnDecimal<FromType>>(column))
-        {
-            const typename ColumnDecimal<FromType>::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                ToType h;
-
-                if constexpr (Impl::use_int_hash_for_pods)
-                {
-                    if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
-                    else
-                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
-                }
-                else
-                {
-                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
-                }
-
-                if (first)
-                    vec_to[i] = h;
-                else
-                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
-            }
-        }
-        else if (auto col_from_const = checkAndGetColumnConst<ColumnDecimal<FromType>>(column))
-        {
-            auto value = col_from_const->template getValue<FromType>();
-            ToType hash;
-            if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
-            else
-                hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
-
-            size_t size = vec_to.size();
-            if (first)
-            {
-                vec_to.assign(size, hash);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    vec_to[i] = Impl::combineHashes(vec_to[i], hash);
-            }
-        }
-        else
-            throw Exception("Illegal column " + column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -881,10 +826,10 @@ private:
     {
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeIntType<UInt8, first>(icolumn, vec_to);
-        else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
+        if      (which.isUInt8()) executeIntType<UInt8, first, ColumnVector>(icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16, first, ColumnVector>(icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32, first, ColumnVector>(icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64, first, ColumnVector>(icolumn, vec_to);
         else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
@@ -898,9 +843,9 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else if (which.isDecimal32()) executeDecimalType<Decimal32, first>(icolumn, vec_to);
-        else if (which.isDecimal64()) executeDecimalType<Decimal64, first>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeDecimalType<Decimal128, first>(icolumn, vec_to);
+        else if (which.isDecimal32()) executeIntType<Decimal32, first>(icolumn, vec_to);
+        else if (which.isDecimal64()) executeIntType<Decimal64, first>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeIntType<Decimal128, first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
