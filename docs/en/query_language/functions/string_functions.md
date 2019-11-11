@@ -164,7 +164,7 @@ Alias: `CONCAT`.
 
 **Parameters**
 
-- `si` – can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
+- `si` – string or key. The key value can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
 
 **Returned values**
 
@@ -181,6 +181,7 @@ Input table:
 ```sql
 CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog
 INSERT INTO key_val VALUES ('Hello, ','World',1)('Hello, ','World',2)('Hello, ','World!',3)('Hello',', World!',2)
+SELECT * from key_val
 ```
 
 ```text
@@ -209,7 +210,7 @@ Result:
 
 ## concatAssumeInjective {#concatassumeinjective}
 
-Same as [concat](./string_functions.md#concat), the difference is that you need to ensure that concat(s1, s2, ...) -> s4 is injective, it will be used for optimization of GROUP BY.
+Same as [concat](#concat), the difference is that you need to ensure that concat(s1, s2, ...) → sn is injective, it will be used for optimization of GROUP BY.
 
 **Syntax** 
 
