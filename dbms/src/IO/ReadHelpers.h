@@ -253,14 +253,12 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
 template <typename T, typename ReturnType = void>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
-    std::cerr << "\n\nEnter in readIntTextImpl function\n\n";
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
     std::make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
-        std::cerr << "\n\nbuf.eof\n\n";
         if constexpr (throw_exception)
             throwReadAfterEOF();
         else
@@ -269,7 +267,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        std::cerr << "\n\nDo\n\n";
         switch (*buf.position())
         {
             case '+':
@@ -312,7 +309,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 template <typename T>
 void completeReadIntTextImpl(T & x, ReadBuffer & buf)
 {
-    std::cerr << "\n\nEnter in exactReadIntTextImpl function\n\n";
     readIntTextImpl<T, void>(x, buf);
     if (!buf.eof())
         throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
@@ -321,7 +317,6 @@ void completeReadIntTextImpl(T & x, ReadBuffer & buf)
 template <typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    std::cerr << "\n\nEnter in readIntText function\n\n";
     readIntTextImpl<T, void>(x, buf);
 }
 
