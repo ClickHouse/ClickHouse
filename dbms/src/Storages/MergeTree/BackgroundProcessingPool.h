@@ -14,6 +14,7 @@
 #include <Core/Types.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -47,6 +48,7 @@ public:
 
 
     BackgroundProcessingPool(int size_,
+        const Poco::Util::AbstractConfiguration & config,
         const char * log_name = "BackgroundProcessingPool",
         const char * thread_name_ = "BackgrProcPool");
 
@@ -84,6 +86,17 @@ protected:
     ThreadGroupStatusPtr thread_group;
 
     void threadFunction();
+
+private:
+    double thread_sleep_seconds;
+    double thread_sleep_seconds_random_part;
+    double thread_sleep_seconds_if_nothing_to_do;
+
+    /// For exponential backoff.
+    double task_sleep_seconds_when_no_work_min;
+    double task_sleep_seconds_when_no_work_max;
+    double task_sleep_seconds_when_no_work_multiplier;
+    double task_sleep_seconds_when_no_work_random_part;
 };
 
 

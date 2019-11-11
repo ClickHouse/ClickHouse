@@ -1500,7 +1500,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 {
     auto lock = getLock();
     if (!shared->background_pool)
-        shared->background_pool.emplace(settings.background_pool_size);
+        shared->background_pool.emplace(settings.background_pool_size, getConfigRef());
     return *shared->background_pool;
 }
 
