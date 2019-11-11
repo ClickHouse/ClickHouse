@@ -641,10 +641,6 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             }
         }
     }
-
-    // FIXME: In case of ALTER one need to clean up previous values to actually set expression but not merge them.
-    // TODO: Check if ALTER MODIFY replaces TTL
-    // TODO: Check if ALTER MODIFY COLUMN + TTL works well (changing of name works with ttl)
 }
 
 
