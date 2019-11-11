@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, const Context & context_)
@@ -60,6 +61,31 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
         table_name_to_path.erase(name);
     }
     return DatabaseWithDictionaries::detachTable(name);
+}
+
+void DatabaseAtomic::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
+                                 const String & to_table_name, TableStructureWriteLockHolder &)
+{
+    //FIXME
+    if (typeid(*this) != typeid(to_database))
+        throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+    StoragePtr table = tryGetTable(context, table_name);
+
+    if (!table)
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+
+    /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
+    table->renameInMemory(to_database.getDatabaseName(), to_table_name);
+
+    ASTPtr ast = getQueryFromMetadata(getObjectMetadataPath(table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
+    ast->as<ASTCreateQuery &>().table = to_table_name;
+
+    /// NOTE Non-atomic.
+    to_database.createTable(context, to_table_name, table, ast);
+    removeTable(context, table_name);
 }
 
 

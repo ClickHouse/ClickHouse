@@ -186,7 +186,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void IStorageURLBase::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
     table_name = new_table_name;
     database_name = new_database_name;
