@@ -49,7 +49,6 @@ struct ArraySumImpl
         using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
-        const typename ColVecType::Container & data = column->getData();
 
         if (!column)
         {
@@ -62,7 +61,10 @@ struct ArraySumImpl
 
             typename ColVecResult::MutablePtr res_column;
             if constexpr (IsDecimalNumber<Element>)
+            {
+                const typename ColVecType::Container & data = column->getData();
                 res_column = ColVecResult::create(offsets.size(), data.getScale());
+            }
             else
                 res_column = ColVecResult::create(offsets.size());
 
@@ -78,6 +80,8 @@ struct ArraySumImpl
             res_ptr = std::move(res_column);
             return true;
         }
+
+        const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_column;
         if constexpr (IsDecimalNumber<Element>)
