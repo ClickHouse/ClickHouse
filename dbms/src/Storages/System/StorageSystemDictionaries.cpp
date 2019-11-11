@@ -40,6 +40,8 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"loading_duration", std::make_shared<DataTypeFloat32>()},
         //{ "creation_time", std::make_shared<DataTypeDateTime>() },
         {"last_exception", std::make_shared<DataTypeString>()},
+        {"dictionary_lifetime_min", std::make_shared<DataTypeUInt64>()},
+        {"dictionary_lifetime_max", std::make_shared<DataTypeUInt64>()}
     };
 }
 
@@ -93,6 +95,10 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             res_columns[i++]->insert(getExceptionMessage(last_exception, false));
         else
             res_columns[i++]->insertDefault();
+
+        const auto & lifetime = dict_ptr->getLifetime();
+        res_columns[i++]->insert(lifetime.min_sec);
+        res_columns[i++]->insert(lifetime.max_sec);
     }
 }
 
