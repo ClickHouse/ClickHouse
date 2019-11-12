@@ -31,7 +31,7 @@ node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'
 
 
 @pytest.fixture(scope="module")
-def setup_cluster():
+def start_cluster():
     try:
         cluster.start()
         initialize_database([node1, node2], 1)
