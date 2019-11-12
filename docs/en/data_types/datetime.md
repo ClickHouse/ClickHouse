@@ -1,6 +1,6 @@
 # DateTime {#data_type-datetime}
 
-Data structure for storing a [Unix time](https://en.wikipedia.org/wiki/Unix_time). It can also store a time zone.
+Data structure for storing [Unix time](https://en.wikipedia.org/wiki/Unix_time). It can also store a time zone.
 
 Syntax:
 
