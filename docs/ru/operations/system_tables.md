@@ -410,8 +410,8 @@ ClickHouse создаёт таблицу только в том случае, к
     - `'QueryFinish' = 2` — успешное завершение выполнения запроса.
     - `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
     - `'ExceptionWhileProcessing' = 4` — исключение во время обработки запроса.
-- `event_date` (Date) — дата события.
-- `event_time` (DateTime) — время события.
+- `event_date` (Date) — дата начала запроса.
+- `event_time` (DateTime) — время начала запроса.
 - `query_start_time` (DateTime) — время начала обработки запроса.
 - `query_duration_ms` (UInt64) — длительность обработки запроса.
 - `read_rows` (UInt64) — количество прочитанных строк.
@@ -487,8 +487,8 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Столбцы:
 
-- `event_date` (Date) — дата события.
-- `event_time` (DateTime) — время события.
+- `event_date` (Date) — дата начала треда.
+- `event_time` (DateTime) — время начала треда.
 - `query_start_time` (DateTime) — время начала обработки запроса.
 - `query_duration_ms` (UInt64) — длительность обработки запроса.
 - `read_rows` (UInt64) — количество прочитанных строк.
@@ -496,7 +496,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `memory_usage` (Int64) — Потребление RAM всем запросом.
-- `peak_memory_usage` (Int64) — Максимальное потребление RAM потоком.
+- `peak_memory_usage` (Int64) — Максимальное потребление RAM запросом.
 - `thread_name` (String) — Имя функции потока.
 - `thread_number` (UInt32) — Внутренний ID потока.
 - `os_thread_id` (Int32) — Системный ID потока.

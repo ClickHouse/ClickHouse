@@ -418,8 +418,8 @@ Columns:
     - `'QueryFinish' = 2` — Successful end of query execution.
     - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
     - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
-- `event_date` (Date) — Event date.
-- `event_time` (DateTime) — Event time.
+- `event_date` (Date) — Query starting date.
+- `event_time` (DateTime) — Query starting time.
 - `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
@@ -495,8 +495,8 @@ To enable query logging, set the [log_query_threads](settings/settings.md#settin
 
 Columns:
 
-- `event_date` (Date) — Event date.
-- `event_time` (DateTime) — Event time.
+- `event_date` (Date) — Thread starting date.
+- `event_time` (DateTime) — Thread starting time.
 - `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
@@ -504,7 +504,7 @@ Columns:
 - `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 - `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 - `memory_usage` (Int64) — Memory consumption by the whole query.
-- `peak_memory_usage` (Int64) — Maximum memory consumption by the thread.
+- `peak_memory_usage` (Int64) — Maximum memory consumption by the query.
 - `thread_name` (String) — Name of the thread function.
 - `thread_number` (UInt32) — Internal thread ID.
 - `os_thread_id` (Int32) — OS thread ID.
