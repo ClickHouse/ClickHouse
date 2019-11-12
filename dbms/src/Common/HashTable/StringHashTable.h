@@ -229,21 +229,20 @@ struct StringHashTableLookupResult
     friend bool operator!=(const std::nullptr_t &, const StringHashTableLookupResult & b) { return b.mapped_ptr; }
 };
 
-template <typename SubMaps>
-class StringHashTable : private boost::noncopyable
+template <typename SubTable>
+class StringHashTable : private boost::noncopyable, protected SubTable::Ts::cell_type::State
 {
 protected:
-    static constexpr size_t NUM_MAPS = 5;
-    // Map for storing empty string
-    using T0 = typename SubMaps::T0;
+    // Table for storing empty string
+    using T0 = typename SubTable::T0;
 
     // Short strings are stored as numbers
-    using T1 = typename SubMaps::T1;
-    using T2 = typename SubMaps::T2;
-    using T3 = typename SubMaps::T3;
+    using T1 = typename SubTable::T1;
+    using T2 = typename SubTable::T2;
+    using T3 = typename SubTable::T3;
 
     // Long strings are stored as StringRef along with saved hash
-    using Ts = typename SubMaps::Ts;
+    using Ts = typename SubTable::Ts;
     using Self = StringHashTable;
 
     template <typename, typename, size_t>

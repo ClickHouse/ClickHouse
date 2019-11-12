@@ -6,8 +6,10 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
-#include <Common/HashTable/FixedClearableHashSet.h>
+#include <Common/HashTable/ClearableFixedHashSet.h>
+#include <Common/HashTable/ClearableStringHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/UInt128.h>
 
 
@@ -186,8 +188,8 @@ struct NonClearableSet
      * As in Aggregator, using consecutive keys cache doesn't improve performance
      * for FixedHashTables.
      */
-    std::unique_ptr<SetMethodOneNumber<UInt8, FixedHashSet<UInt8>, false /* use_cache */>>                                             key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashSet<UInt16>, false /* use_cache */>>                                           key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedHashSet<UInt8>, false /* use_cache */>>                      key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashSet<UInt16>, false /* use_cache */>>                    key16;
 
     /** Also for the experiment was tested the ability to use SmallSet,
       *  as long as the number of elements in the set is small (and, if necessary, converted to a full-fledged HashSet).
@@ -195,8 +197,8 @@ struct NonClearableSet
       */
     std::unique_ptr<SetMethodOneNumber<UInt32, HashSet<UInt32, HashCRC32<UInt32>>>>                             key32;
     std::unique_ptr<SetMethodOneNumber<UInt64, HashSet<UInt64, HashCRC32<UInt64>>>>                             key64;
-    std::unique_ptr<SetMethodString<HashSetWithSavedHash<StringRef>>>                                           key_string;
-    std::unique_ptr<SetMethodFixedString<HashSetWithSavedHash<StringRef>>>                                      key_fixed_string;
+    std::unique_ptr<SetMethodString<StringHashSet<>>>                                                           key_string;
+    std::unique_ptr<SetMethodFixedString<StringHashSet<>>>                                                      key_fixed_string;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>>>                                     keys128;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>>                                     keys256;
     std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>>                                      hashed;
@@ -212,13 +214,13 @@ struct NonClearableSet
 
 struct ClearableSet
 {
-    std::unique_ptr<SetMethodOneNumber<UInt8, FixedClearableHashSet<UInt8>, false /* use_cache */>>                                        key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, FixedClearableHashSet<UInt16>, false /*use_cache */>>                                      key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, ClearableFixedHashSet<UInt8>, false /* use_cache */>>                 key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, ClearableFixedHashSet<UInt16>, false /*use_cache */>>                key16;
 
     std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>                        key32;
     std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                        key64;
-    std::unique_ptr<SetMethodString<ClearableHashSetWithSavedHash<StringRef>>>                                      key_string;
-    std::unique_ptr<SetMethodFixedString<ClearableHashSetWithSavedHash<StringRef>>>                                 key_fixed_string;
+    std::unique_ptr<SetMethodString<ClearableStringHashSet<>>>                                                      key_string;
+    std::unique_ptr<SetMethodFixedString<ClearableStringHashSet<>>>                                                 key_fixed_string;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>>                                keys128;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>>                                keys256;
     std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                                 hashed;

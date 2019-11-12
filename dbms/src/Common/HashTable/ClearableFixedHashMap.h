@@ -5,7 +5,7 @@
 
 
 template <typename Key, typename TMapped>
-struct FixedClearableHashMapCell
+struct ClearableFixedHashMapCell
 {
     using Mapped = TMapped;
     using State = ClearableHashSetState;
@@ -16,9 +16,9 @@ struct FixedClearableHashMapCell
     UInt32 version;
     Mapped mapped;
 
-    FixedClearableHashMapCell() {}
-    FixedClearableHashMapCell(const Key &, const State & state) : version(state.version) {}
-    FixedClearableHashMapCell(const value_type & value_, const State & state) : version(state.version), mapped(value_.second) {}
+    ClearableFixedHashMapCell() {}
+    ClearableFixedHashMapCell(const Key &, const State & state) : version(state.version) {}
+    ClearableFixedHashMapCell(const value_type & value_, const State & state) : version(state.version), mapped(value_.second) {}
 
     const VoidKey getKey() const { return {}; }
     Mapped & getMapped() { return mapped; }
@@ -30,14 +30,14 @@ struct FixedClearableHashMapCell
     struct CellExt
     {
         CellExt() {}
-        CellExt(Key && key_, FixedClearableHashMapCell * ptr_) : key(key_), ptr(ptr_) {}
-        void update(Key && key_, FixedClearableHashMapCell * ptr_)
+        CellExt(Key && key_, ClearableFixedHashMapCell * ptr_) : key(key_), ptr(ptr_) {}
+        void update(Key && key_, ClearableFixedHashMapCell * ptr_)
         {
             key = key_;
             ptr = ptr_;
         }
         Key key;
-        FixedClearableHashMapCell * ptr;
+        ClearableFixedHashMapCell * ptr;
         const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
         const Mapped & getMapped() const { return *ptr->mapped; }
@@ -47,11 +47,11 @@ struct FixedClearableHashMapCell
 
 
 template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
-class FixedClearableHashMap : public FixedHashMap<Key, Mapped, FixedClearableHashMapCell<Key, Mapped>, Allocator>
+class ClearableFixedHashMap : public FixedHashMap<Key, Mapped, ClearableFixedHashMapCell<Key, Mapped>, Allocator>
 {
 public:
-    using Base = FixedHashMap<Key, Mapped, FixedClearableHashMapCell<Key, Mapped>, Allocator>;
-    using Self = FixedClearableHashMap;
+    using Base = FixedHashMap<Key, Mapped, ClearableFixedHashMapCell<Key, Mapped>, Allocator>;
+    using Self = ClearableFixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
     using Base::Base;

@@ -15,7 +15,7 @@ struct FixedHashTableCell
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; }
-    VoidMapped getMapped() const { return {}; }
+    VoidMapped & getMapped() const { return voidMapped; }
 
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
@@ -32,7 +32,7 @@ struct FixedHashTableCell
         Key key;
 
         const VoidKey getKey() const { return {}; }
-        VoidMapped getMapped() const { return {}; }
+        VoidMapped & getMapped() const { return voidMapped; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };

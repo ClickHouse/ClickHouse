@@ -136,7 +136,7 @@ void set(T & x) { x = 0; }
   *
   * The implementation side goes as follows:
   *
-  * for (1), LookupResult->getKey = const VoidKey, LookupResult->getMapped = VoidMapped;
+  * for (1), LookupResult->getKey = const VoidKey, LookupResult->getMapped = VoidMapped &;
   *
   * for (2), LookupResult->getKey = const VoidKey, LookupResult->getMapped = Mapped &;
   *
@@ -153,6 +153,10 @@ struct VoidMapped
         return *this;
     }
 };
+
+/// We use a global VoidMapped value so that &LookupResult->getMapped() always works and returns
+///  either a nullptr or a defined memory address.
+extern VoidMapped voidMapped;
 
 /** Compile-time interface for cell of the hash table.
   * Different cell types are used to implement different hash tables.
@@ -178,7 +182,7 @@ struct HashTableCell
 
     /// Get the key (externally).
     const Key & getKey() const { return key; }
-    VoidMapped getMapped() const { return {}; }
+    VoidMapped & getMapped() const { return voidMapped; }
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
@@ -229,7 +233,7 @@ struct HashTableCell
   * Overloaded on the mapped type, does nothing if it's VoidMapped.
   */
 template <typename ValueType>
-void insertSetMapped(VoidMapped /* dest */, const ValueType & /* src */) {}
+void insertSetMapped(VoidMapped & /* dest */, const ValueType & /* src */) {}
 
 template <typename MappedType, typename ValueType>
 void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.second; }
