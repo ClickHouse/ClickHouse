@@ -144,7 +144,7 @@ Types of intervals:
 - `YEAR`
 
 !!! warning "Warning"
-    Intervals of different types can't be combined. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in the units that smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. Also you can use consequtive operations like in the example below.
+    Intervals with different types can't be combined. You can't use expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in units that are smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. You can use consequtive operations like in the example below.
 
 Example:
 
@@ -164,19 +164,19 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 ## Logical Negation Operator
 
-`NOT a` The `not(a) function.`
+`NOT a` – The `not(a)` function.
 
 ## Logical AND Operator
 
-`a AND b` – The`and(a, b) function.`
+`a AND b` – The`and(a, b)` function.
 
 ## Logical OR Operator
 
-`a OR b` – The `or(a, b) function.`
+`a OR b` – The `or(a, b)` function.
 
 ## Conditional Operator
 
-`a ? b : c` – The `if(a, b, c) function.`
+`a ? b : c` – The `if(a, b, c)` function.
 
 Note:
 
