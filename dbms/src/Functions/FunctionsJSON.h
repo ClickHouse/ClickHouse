@@ -65,7 +65,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
+        if (context.getSettingsRef().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
         {
             Executor<SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
             return;
@@ -478,7 +478,7 @@ public:
             if (!accurate::convertNumeric(JSONParser::getDouble(it), value))
                 return false;
         }
-        else if (JSONParser::isBool(it) && std::is_integral_v<NumberType> && convert_bool_to_integer)
+        else if (JSONParser::isBool(it) && is_integral_v<NumberType> && convert_bool_to_integer)
             value = static_cast<NumberType>(JSONParser::getBool(it));
         else
             return false;

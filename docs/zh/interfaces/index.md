@@ -9,6 +9,7 @@ ClickHouse提供了两个网络接口（两者都可以选择包装在TLS中以�
 * [命令行客户端](cli.md)
 * [JDBC驱动程序](jdbc.md)
 * [ODBC驱动程序](odbc.md)
+* [C++客户端库](cpp.md)
 
 还有许多第三方库可供使用ClickHouse：
 * [客户端库](third-party/client_libraries.md)

@@ -611,7 +611,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("cache", create_layout);
+    factory.registerLayout("cache", create_layout, false);
 }
 
 

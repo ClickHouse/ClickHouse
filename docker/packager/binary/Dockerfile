@@ -71,14 +71,10 @@ RUN cd cctools-port/cctools && ./configure --prefix=/cctools --with-libtapi=/cct
 RUN rm -rf cctools-port
 
 # Download toolchain for Darwin
-RUN mkdir -p /build/cmake/toolchain/darwin-x86_64
 RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-RUN tar xJf MacOSX10.14.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
 # Download toolchain for ARM
-RUN mkdir -p /build/cmake/toolchain/linux-aarch64
 RUN wget "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
-RUN tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C /build/cmake/toolchain/linux-aarch64 --strip-components=1
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

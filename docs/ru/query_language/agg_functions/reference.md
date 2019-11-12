@@ -1087,38 +1087,39 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Построение модели
 
-    Пример запроса:
+**1.** Построение модели
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Пример запроса:
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
-    ```
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
+```
+
+Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
 Обратите внимание, что столбец с целевым значением (которое мы хотели бы научиться предсказывать) вставляется в качестве первого аргумента.
 
-2. Прогнозирование
+**2.** Прогнозирование
 
-    После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
+После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
 
-    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+`test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
 ### Примечания {#agg_functions-stochasticlinearregression-notes}
 

@@ -25,6 +25,7 @@
 #include <Poco/File.h>
 #include <optional>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -123,7 +124,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-BlockInputStreams StorageMergeTree::read(
+Pipes StorageMergeTree::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -132,6 +133,11 @@ BlockInputStreams StorageMergeTree::read(
     const unsigned num_streams)
 {
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
+}
+
+std::optional<UInt64> StorageMergeTree::totalRows() const
+{
+    return getTotalActiveSizeInRows();
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
@@ -683,7 +689,7 @@ bool StorageMergeTree::tryMutatePart()
             size_t current_ast_elements = 0;
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
             {
-                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context);
+                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context, false);
 
                 size_t commands_size = interpreter.evaluateCommandsSize();
                 if (current_ast_elements + commands_size >= max_ast_elements)
@@ -1118,7 +1124,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
-        dst_parts.emplace_back(cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info));
+        dst_parts.emplace_back(cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
     }
 
     /// ATTACH empty part set

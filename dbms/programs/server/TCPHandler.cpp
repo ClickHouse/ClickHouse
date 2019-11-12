@@ -523,6 +523,9 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
+                /// Wait till inner thread finish to avoid possible race with getTotals.
+                async_in.waitInnerThread();
+
                 sendTotals(state.io.in->getTotals());
                 sendExtremes(state.io.in->getExtremes());
                 sendProfileInfo(state.io.in->getProfileInfo());
@@ -530,7 +533,8 @@ void TCPHandler::processOrdinaryQuery()
                 sendLogs();
             }
 
-            sendData(block);
+            if (!block || !state.io.null_format)
+                sendData(block);
             if (!block)
                 break;
         }

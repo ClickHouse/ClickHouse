@@ -252,9 +252,9 @@ public:
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
+    bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
     bool hasDatabaseAccessRights(const String & database_name) const;
-    void assertTableExists(const String & database_name, const String & table_name) const;
 
     bool hasDictionaryAccessRights(const String & dictionary_name) const;
 
@@ -319,12 +319,12 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Update checking that each setting is updatable
-    void updateSettingsChanges(const SettingsChanges & changes);
-
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
     void checkSettingsConstraints(const SettingsChanges & changes);
+
+    /// Returns the current constraints (can return null).
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -363,6 +363,7 @@ public:
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
     ASTPtr getCreateDatabaseQuery(const String & database_name) const;
+    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -552,7 +553,7 @@ public:
 #endif
 
     /// Add started bridge command. It will be killed after context destruction
-    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
+    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
