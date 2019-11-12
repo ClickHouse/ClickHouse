@@ -446,7 +446,7 @@ Columns:
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — User's OS.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
@@ -525,7 +525,7 @@ Columns:
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — User's OS.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
