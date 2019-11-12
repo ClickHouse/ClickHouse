@@ -439,12 +439,12 @@ ClickHouse создаёт таблицу только в том случае, к
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — операционная система пользователя.
-- `client_hostname` (String) — имя сервера, к которому присоединился [clickhouse-client](../interfaces/cli.md).
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md).
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
 - `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
     - 0 — запрос запущен с интерфейса TCP.
     - 1 — `GET`.
@@ -518,12 +518,12 @@ ClickHouse создаёт таблицу только в том случае, к
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — операционная система пользователя.
-- `client_hostname` (String) — имя сервера, к которому присоединился [clickhouse-client](../interfaces/cli.md).
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md).
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
 - `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
     - 0 — запрос запущен с интерфейса TCP.
     - 1 — `GET`.
