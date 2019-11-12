@@ -450,7 +450,7 @@ ClickHouse создаёт таблицу только в том случае, к
     - 1 — `GET`.
     - 2 — `POST`.
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — идентификатор квоты из настроек [квот](quotas.md).
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
 - `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
 - `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
@@ -529,7 +529,7 @@ ClickHouse создаёт таблицу только в том случае, к
     - 1 — `GET`.
     - 2 — `POST`.
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — идентификатор квоты из настроек [квот](quotas.md).
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
 - `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
     - Время, потраченное на чтение и запись по сети.
