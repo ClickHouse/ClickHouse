@@ -452,7 +452,7 @@ void NO_INLINE Aggregator::executeImplCase(
 
         /// Add values to the aggregate functions.
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-            (*inst->funcs.add)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
+            (*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
     }
 }
 
@@ -495,8 +495,10 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// Add values to the aggregate functions.
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
-        (*inst->batch_funcs.add_batch)(
-            inst->batch_that, rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, places.data(), inst->state_offset, inst->batch_arguments, aggregates_pool);
     }
 }
 
@@ -511,10 +513,10 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            (*inst->batch_funcs.add_batch_single_place)(
-                inst->batch_that, inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+            inst->batch_that->addBatchSinglePlace(
+                inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
         else
-            (*inst->batch_funcs.add_batch_single_place)(inst->batch_that, rows, res + inst->state_offset, inst->batch_arguments, arena);
+            inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);
     }
 }
 
@@ -598,7 +600,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         while (auto func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
         aggregate_functions_instructions[i].that = that;
-        aggregate_functions_instructions[i].funcs = that->getAddressOfAddFunctions();
+        aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
 
         if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
         {
@@ -615,7 +617,6 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
 
         aggregate_functions_instructions[i].batch_that = that;
-        aggregate_functions_instructions[i].batch_funcs = that->getAddressOfAddFunctions();
     }
 
     if (isCancelled())

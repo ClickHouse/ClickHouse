@@ -1814,12 +1814,12 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
 
             /// Pin sources for merge tree tables.
-            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
-            if (pin_sources)
-            {
-                for (size_t i = 0; i < pipes.size(); ++i)
-                    pipes[i].pinSources(i);
-            }
+//            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+//            if (pin_sources)
+//            {
+//                for (size_t i = 0; i < pipes.size(); ++i)
+//                    pipes[i].pinSources(i);
+//            }
 
             pipeline.init(std::move(pipes));
         }

@@ -44,7 +44,7 @@ unsigned getNumberOfPhysicalCPUCores()
         cores = cpuinfo_get_cores_count();
 
     if (cores)
-            return cores;
+        return cores;
 #endif
 
     /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.
