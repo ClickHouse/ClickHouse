@@ -458,7 +458,7 @@ Columns:
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The quota key specified in the [quotas](quotas.md) setting.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
 - `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
@@ -537,7 +537,7 @@ Columns:
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The quota key specified in the [quotas](quotas.md) setting.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
     - Time spent on reading and writing over the network.
