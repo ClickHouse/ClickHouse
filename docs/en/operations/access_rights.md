@@ -104,10 +104,10 @@ The user can get a list of all databases and tables in them by using `SHOW` quer
 
 Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can't grant full access to one database and `readonly` access to another one.
 
-## ZooKeeper Authentificaton {#zookeeper-authentification}
+## ZooKeeper Authenticaton {#zookeeper-authentification}
 
-When you use [replication](table_engines/replication.md) on your ClickHouse cluster, don't forget to set up authentification for ZooKeeper server storing replicas information.
+When you use [replication](table_engines/replication.md) on your ClickHouse cluster, don't forget to set up authentification for the ZooKeeper server storing replicas information.
 
-ClickHouse supports the `digest` [ACL sheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of ZooKeeper security subsystem. The [zookeeper](server_settings/settings.md#server-settings_zookeeper) server configuration section allows to set up username and password required for authentificating on ZooKeeper server.
+ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem. The [zookeeper](server_settings/settings.md#server-settings_zookeeper) server configuration section allows setting up the username and password required for authenticating on the ZooKeeper server.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/access_rights/) <!--hide-->

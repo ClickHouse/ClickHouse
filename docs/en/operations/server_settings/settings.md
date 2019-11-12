@@ -768,7 +768,7 @@ This section contains the following parameters:
 **See Also**
 
 - [Replication](../../operations/table_engines/replication.md)
-- [Zookeeper Authentification](../../operations/access_rights.md#zookeeper-authentification)
+- [Zookeeper Authentication](../../operations/access_rights.md#zookeeper-authentification)
 - [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
