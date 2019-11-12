@@ -23,9 +23,10 @@ import time
 import uuid
 import xml.etree.ElementTree
 
+BASE_DIR = os.path.dirname(__file__)
 
 logging.getLogger().setLevel(logging.INFO)
-file_handler = logging.FileHandler(os.path.join(__file__, "test-server.log"), "a", encoding="utf-8")
+file_handler = logging.FileHandler(os.path.join(BASE_DIR, "test-server.log"), "a", encoding="utf-8")
 file_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logging.getLogger().addHandler(file_handler)
 logging.getLogger().addHandler(logging.StreamHandler())
