@@ -708,6 +708,29 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
+    template <typename ColumnType, bool first>
+    void executeTypesWith8Bytes(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if (const ColumnType * col_from = checkAndGetColumn<ColumnType>(column))
+        {
+            const typename ColumnType::Container & vec_from = col_from->getData();
+            size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(vec_from[i], 8));
+
+                if (first)
+                    vec_to[i] = h;
+                else
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+            }
+        }
+        else
+            throw Exception("Illegal column " + column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+
     template <bool first>
     void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
@@ -845,7 +868,8 @@ private:
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else if (which.isDecimal32()) executeIntType<Decimal32, first, ColumnDecimal<Decimal32>>(icolumn, vec_to);
         else if (which.isDecimal64()) executeIntType<Decimal64, first, ColumnDecimal<Decimal64>>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeIntType<Decimal128, first, ColumnDecimal<Decimal128>>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeTypesWith8Bytes<ColumnDecimal<Decimal128>, first>(icolumn, vec_to);
+        else if (which.isUUID()) executeTypesWith8Bytes<ColumnUInt128, first>(icolumn, vec_to));
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
