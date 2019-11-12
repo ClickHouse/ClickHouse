@@ -447,12 +447,12 @@ Columns:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — User's OS.
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) is connected to.
-- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) name.
-- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
+- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
@@ -526,12 +526,12 @@ Columns:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — User's OS.
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) is connected to.
-- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) name.
-- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
+- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
