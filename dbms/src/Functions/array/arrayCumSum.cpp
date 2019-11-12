@@ -65,7 +65,8 @@ struct ArrayCumSumImpl
             typename ColVecResult::MutablePtr res_nested;
             if constexpr (IsDecimalNumber<Element>)
             {
-                const typename ColVecType::Container & data = column->getData();
+                const typename ColVecType::Container & data =
+                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
                 res_nested = ColVecResult::create(0, data.getScale());
             }
             else
