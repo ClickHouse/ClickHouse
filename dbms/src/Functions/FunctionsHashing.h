@@ -886,8 +886,8 @@ private:
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else if (which.isDecimal32()) executeIntType<Decimal32, first, ColumnDecimal<Decimal32>>(icolumn, vec_to);
         else if (which.isDecimal64()) executeIntType<Decimal64, first, ColumnDecimal<Decimal64>>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeTypesWith8Bytes<ColumnDecimal<Decimal128>, first>(icolumn, vec_to);
-        else if (which.isUUID()) executeTypesWith8Bytes<ColumnUInt128, first>(icolumn, vec_to));
+        else if (which.isDecimal128()) executeDecimal128<first>(icolumn, vec_to);
+        else if (which.isUUID()) executeUInt128<first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
