@@ -505,7 +505,7 @@ Columns:
 - `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 - `memory_usage` (Int64) — Memory consumption by the whole query.
 - `peak_memory_usage` (Int64) — Maximum memory consumption by the query.
-- `thread_name` (String) — Name of the thread function.
+- `thread_name` (String) — Name of the thread.
 - `thread_number` (UInt32) — Internal thread ID.
 - `os_thread_id` (Int32) — OS thread ID.
 - `master_thread_number` (UInt32) — Internal ID of initial thread.

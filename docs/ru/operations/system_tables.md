@@ -497,7 +497,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `memory_usage` (Int64) — Потребление RAM всем запросом.
 - `peak_memory_usage` (Int64) — Максимальное потребление RAM запросом.
-- `thread_name` (String) — Имя функции потока.
+- `thread_name` (String) — Имя потока.
 - `thread_number` (UInt32) — Внутренний ID потока.
 - `os_thread_id` (Int32) — Системный ID потока.
 - `master_thread_number` (UInt32) — Внутренний ID главного потока.
