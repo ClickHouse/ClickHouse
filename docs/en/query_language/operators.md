@@ -1,69 +1,69 @@
 # Operators
 
-All operators are transformed to the corresponding functions at the query parsing stage, in accordance with their precedence and associativity.
+All operators are transformed to their corresponding functions at the query parsing stage in accordance with their precedence and associativity.
 Groups of operators are listed in order of priority (the higher it is in the list, the earlier the operator is connected to its arguments).
 
 ## Access Operators
 
-`a[N]` Access to an element of an array; ` arrayElement(a, N) function`.
+`a[N]` Access to an element of an array, the `arrayElement(a, N)` function.
 
-`a.N` – Access to a tuble element; `tupleElement(a, N)` function.
+`a.N` – Access to a tuble element, the `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator
 
-`-a`  – The `negate (a)` function.
+`-a` – The `negate (a)` function.
 
 ## Multiplication and Division Operators
 
-`a * b`  – The `multiply (a, b) function.`
+`a * b` – The `multiply (a, b)` function.
 
-`a / b`  – The ` divide(a, b) function.`
+`a / b` – The `divide(a, b)` function.
 
-`a % b` – The `modulo(a, b) function.`
+`a % b` – The `modulo(a, b)` function.
 
 ## Addition and Subtraction Operators
 
-`a + b` – The `plus(a, b) function.`
+`a + b` – The `plus(a, b)` function.
 
-`a - b`  – The `minus(a, b) function.`
+`a - b` – The `minus(a, b)` function.
 
 ## Comparison Operators
 
-`a = b` – The `equals(a, b) function.`
+`a = b` – The `equals(a, b)` function.
 
-`a == b` – The ` equals(a, b) function.`
+`a == b` – The `equals(a, b)` function.
 
-`a != b` – The `notEquals(a, b) function.`
+`a != b` – The `notEquals(a, b)` function.
 
-`a <> b` – The `notEquals(a, b) function.`
+`a <> b` – The `notEquals(a, b)` function.
 
-`a <= b` – The `lessOrEquals(a, b) function.`
+`a <= b` – The `lessOrEquals(a, b)` function.
 
-`a >= b` – The `greaterOrEquals(a, b) function.`
+`a >= b` – The `greaterOrEquals(a, b)` function.
 
-`a < b` – The `less(a, b) function.`
+`a < b` – The `less(a, b)` function.
 
-`a > b` – The `greater(a, b) function.`
+`a > b` – The `greater(a, b)` function.
 
-`a LIKE s` – The `like(a, b) function.`
+`a LIKE s` – The `like(a, b)` function.
 
-`a NOT LIKE s` – The `notLike(a, b) function.`
+`a NOT LIKE s` – The `notLike(a, b)` function.
 
-`a BETWEEN b AND c` – The same as `a >= b AND a <= c.`
+`a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
-`a NOT BETWEEN b AND c` – The same as `a < b OR a > c.`
+`a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
 ## Operators for Working With Data Sets
 
-*See the section [IN operators](select.md#select-in-operators).*
+*See [IN operators](select.md#select-in-operators).*
 
-`a IN ...` – The `in(a, b) function`
+`a IN ...` – The `in(a, b)` function.
 
-`a NOT IN ...` – The `notIn(a, b) function.`
+`a NOT IN ...` – The `notIn(a, b)` function.
 
-`a GLOBAL IN ...` – The `globalIn(a, b) function.`
+`a GLOBAL IN ...` – The `globalIn(a, b)` function.
 
-`a GLOBAL NOT IN ...` – The `globalNotIn(a, b) function.`
+`a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
 ## Operators for Working with Dates and Times {#operators-datetime}
 
