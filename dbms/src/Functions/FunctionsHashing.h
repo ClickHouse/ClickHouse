@@ -708,17 +708,17 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename ColumnType, bool first>
-    void executeTypesWith8Bytes(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    template <bool first>
+    void executeUInt128(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnType * col_from = checkAndGetColumn<ColumnType>(column))
+        if (const ColumnUInt128 * col_from = checkAndGetColumn<ColumnUInt128>(column))
         {
-            const typename ColumnType::Container & vec_from = col_from->getData();
+            const ColumnUInt128::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                const ToType h = Impl::apply(vec_from[i].toString(), 8);
-
+                String hex_string = vec_from[i].toHexString();
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), 8);
                 if (first)
                     vec_to[i] = h;
                 else
@@ -729,6 +729,24 @@ private:
             throw Exception("Illegal column " + column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    template <bool first>
+    void executeDecimal128(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if (const ColumnDecimal<Decimal128> * col_from = checkAndGetColumn<ColumnDecimal<Decimal128>>(column))
+        {
+            const ColumnDecimal<Decimal128>::Container & vec_from = col_from->getData();
+            size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), 8);
+                if (first)
+                    vec_to[i] = h;
+                else
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+            }
+        }
     }
 
     template <bool first>
