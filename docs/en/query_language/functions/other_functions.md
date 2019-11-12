@@ -386,7 +386,7 @@ The window function that provides access to a row at a specified offset which co
 **Syntax**
 
 ```sql
-neighbor(column, offset[, default_value]);
+neighbor(column, offset[, default_value])
 ```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
@@ -394,16 +394,16 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 **Parameters** 
 
-- `column` — A column name or scalar expression. Type of data blocks affected.
+- `column` — A column name or scalar expression.
 - `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
 - `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
 
-**Returned value**
+**Returned values**
 
 - Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds. 
 - Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
 
-Type : type of data blocks affected or default value type.
+Type: type of data blocks affected or default value type.
 
 **Example**
 
@@ -451,7 +451,6 @@ Result:
 │      8 │                      999 │
 │      9 │                      999 │
 └────────┴──────────────────────────┘
-
 ```
 
 This function can be used to compute year-over-year metric value:
@@ -490,7 +489,6 @@ Result:
 │ 2019-04-01 │    87 │        22 │           0.25 │
 └────────────┴───────┴───────────┴────────────────┘
 ```
-
 
 ## runningDifference(x) {#other_functions-runningdifference}
 
