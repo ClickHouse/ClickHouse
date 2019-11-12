@@ -36,8 +36,6 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
-    bool initialized = false;
-
     void removeFilterIfNeed(Chunk & chunk);
 };
 
