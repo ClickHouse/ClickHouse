@@ -26,7 +26,7 @@ function thread2()
 {
     while true;
     do
-        $CLICKHOUSE_CLIENT --query="INSERT INTO $CLICKHOUSE_DATABASE.src SELECT number % 2, toString(number) FROM system.numbers" --query_id=query2
+        $CLICKHOUSE_CLIENT --query="INSERT INTO $CLICKHOUSE_DATABASE.src SELECT number % 2, toString(number) FROM system.numbers LIMIT 100000" --query_id=query2
     done
 }
 
