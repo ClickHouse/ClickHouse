@@ -742,7 +742,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 const char * to = reinterpret_cast<const char *>(&vec_from[i]);
-                std::cerr << "\n\n" << to << "\n\n";
+                std::cerr << "\n\n" << std::string(to) << "\n\n";
                 const ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), 16);
                 if (first)
                     vec_to[i] = h;
