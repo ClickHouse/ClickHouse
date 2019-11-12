@@ -310,8 +310,7 @@ template <typename T>
 void completeReadIntTextImpl(T & x, ReadBuffer & buf)
 {
     readIntTextImpl<T, void>(x, buf);
-    if (!buf.eof())
-        throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
+    assertEOF(buf);
 }
 
 template <typename T>
