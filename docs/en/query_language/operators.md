@@ -144,7 +144,7 @@ Types of intervals:
 - `YEAR`
 
 !!! warning "Warning"
-    Intervals of different types can't be combined. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in the units that smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. Also you can use consequtive operations like in the example below.
+    Intervals of different types can't be combined. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in the units that smaller or equal to the smallest unit of the interval, for example `INTERVAL 25 HOUR`. Also you can use consequtive operations like in the example below.
 
 Example:
 
