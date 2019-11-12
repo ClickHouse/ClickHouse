@@ -438,11 +438,11 @@ Columns:
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (FixedString(16)) — IP address the query was initiated from.
-- `port` (UInt16) — The server port that was used to receive the query.
+- `port` (UInt16) — The client port that was used to make the query.
 - `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
 - `initial_query_id` (String) — ID of the parent query.
 - `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — The server port that was used to receive the parent query from the client.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
@@ -517,11 +517,11 @@ Columns:
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (FixedString(16)) — IP address the query was initiated from.
-- `port` (UInt16) — The server port that was used to receive the query.
+- `port` (UInt16) — The client port that was used to make the query.
 - `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
 - `initial_query_id` (String) — ID of the parent query.
 - `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — The server port that was used to receive the parent query from the client.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
