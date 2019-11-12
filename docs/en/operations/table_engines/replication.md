@@ -10,6 +10,11 @@ Replication is only supported for tables in the MergeTree family:
 - ReplicatedVersionedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
 
+ClickHouse uses [Apach ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information.
+
+!!! attention "Attention"
+    Don't forget to set up [authentification on Zookeeper](../access_rights.md#zookeeper-authentification).
+
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
 Replication does not depend on sharding. Each shard has its own independent replication.
