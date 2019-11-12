@@ -438,7 +438,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — операционная система пользователя.
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
@@ -517,7 +517,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — операционная система пользователя.
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
 - `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
