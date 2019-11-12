@@ -740,7 +740,7 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                const ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), 8);
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), 16);
                 if (first)
                     vec_to[i] = h;
                 else
