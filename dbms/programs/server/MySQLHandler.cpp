@@ -225,7 +225,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 
     try {
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
-        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().address());
+        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().peerAddress());
     }
     catch (const Exception & exc)
     {
