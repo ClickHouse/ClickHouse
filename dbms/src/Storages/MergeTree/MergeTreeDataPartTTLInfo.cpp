@@ -36,7 +36,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
     if (json.has("columns"))
     {
         const JSON & columns = json["columns"];
-        for (const auto & col : columns)
+        for (auto col : columns)
         {
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = col["min"].getUInt();
@@ -58,7 +58,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
     if (json.has("moves"))
     {
         const JSON & moves = json["moves"];
-        for (const auto & move : moves)
+        for (auto move : moves)
         {
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = move["min"].getUInt();
