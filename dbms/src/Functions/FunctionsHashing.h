@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -709,7 +710,7 @@ private:
     }
 
     template <bool first>
-    void executeUInt128(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeUUID(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
         if (const ColumnUInt128 * col_from = checkAndGetColumn<ColumnUInt128>(column))
         {
@@ -741,7 +742,9 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                String hash_string = toString<Decimal128>(vec_from[i]);
+                WriteBufferFromOwnString buf;
+                writeText(vec_from[i], vec_from.getScale(), buf);
+                std::string hash_string = buf.str();
                 std::cerr << "\n\n" << hash_string << "\n\n";
                 const ToType h = Impl::apply(reinterpret_cast<const char *>(&hash_string), hash_string.size());
                 if (first)
@@ -890,7 +893,7 @@ private:
         else if (which.isDecimal32()) executeIntType<Decimal32, first, ColumnDecimal<Decimal32>>(icolumn, vec_to);
         else if (which.isDecimal64()) executeIntType<Decimal64, first, ColumnDecimal<Decimal64>>(icolumn, vec_to);
         else if (which.isDecimal128()) executeDecimal128<first>(icolumn, vec_to);
-        else if (which.isUUID()) executeUInt128<first>(icolumn, vec_to);
+        else if (which.isUUID()) executeUUID<first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
