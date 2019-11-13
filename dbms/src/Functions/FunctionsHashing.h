@@ -890,7 +890,7 @@ private:
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else if (which.isDecimal32()) executeDecimal<Decimal32, first>(icolumn, vec_to);
         else if (which.isDecimal64()) executeDecimal<Decimal64, first>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeDecimal<first>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeDecimal<Decimal128, first>(icolumn, vec_to);
         else if (which.isUUID()) executeUUID<first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
