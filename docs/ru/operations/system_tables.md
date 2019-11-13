@@ -453,11 +453,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
 - `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
-    - Время, потраченное на чтение и запись по сети.
-    - Время, потраченное на чтение и запись на диск.
-    - Количество сетевых ошибок.
-    - Время, потраченное на ожидание, когда пропускная способность сети ограничена.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events
 - `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 - `Settings.Names` (Array(String)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 - `Settings.Values` (Array(String)) — Значения настроек, которые перечислены в столбце `Settings.Names`.
@@ -531,11 +527,7 @@ ClickHouse создаёт таблицу только в том случае, к
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
 - `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
-    - Время, потраченное на чтение и запись по сети.
-    - Время, потраченное на чтение и запись на диск.
-    - Количество сетевых ошибок.
-    - Время, потраченное на ожидание, когда пропускная способность сети ограничена.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events
 - `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 
 По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
