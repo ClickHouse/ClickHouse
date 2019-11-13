@@ -717,9 +717,12 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                String hex_string = toString(UUID(vec_from[i]));
-                std::cerr << "\n\n" << hex_string << "\n\n";
-                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), hex_string.size());
+                char hex_string[36];
+                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&vec_from[i]) + 16), reinterpret_cast<UInt8 *>(hex_string));
+                for (size_t j = 0; j < 36; ++j) {
+                    std::cerr << hex_string[j] << std::endl;
+                }
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), 16);
                 if (first)
                     vec_to[i] = h;
                 else
