@@ -32,7 +32,7 @@ The dictionary configuration file has the following format:
 
 You can [configure](external_dicts_dict.md) any number of dictionaries in the same file.
 
-Dictionaries [DDL queries](../create.md#create-dictionary-query) doesn't require any additional records in servers' xml-config. They allows to work with dictionaries as first-class entities, like tables or views.
+[DDL queries for dictionaries](../create.md#create-dictionary-query) doesn't require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
 !!! attention
     You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../functions/other_functions.md) function). This functionality is not related to external dictionaries.
