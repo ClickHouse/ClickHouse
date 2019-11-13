@@ -1,6 +1,6 @@
 # Configuring an External Dictionary {#dicts-external_dicts_dict}
 
-If dictionary configured using xml-file, than dictionary configuration has the following structure:
+If dictionary is configured using xml-file, than dictionary configuration has the following structure:
 
 ```xml
 <dictionary>
