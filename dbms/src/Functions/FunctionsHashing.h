@@ -727,9 +727,11 @@ private:
             }
         }
         else
+        {
             throw Exception("Illegal column " + column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+        }
     }
 
     template <typename T, bool first>
@@ -750,6 +752,12 @@ private:
                 else
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
+        }
+        else
+        {
+            throw Exception("Illegal column " + column->getName()
+                  + " of first argument of function " + getName(),
+                  ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
