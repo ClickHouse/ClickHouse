@@ -47,7 +47,7 @@ In DDL-query attributes are described the body of `CREATE` query:
 
 ClickHouse supports the following types of keys:
 
-- Numeric key. UInt64. Defined in the tag `<id>` or `PRIMARY KEY` keyword.
+- Numeric key. UInt64. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
 - Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
 
 A xml-structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
