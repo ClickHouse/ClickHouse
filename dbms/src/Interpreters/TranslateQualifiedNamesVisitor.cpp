@@ -66,6 +66,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
         bool allow_ambiguous = data.join_using_columns.count(short_name);
         if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
         {
+            if (data.unknownColumn(table_pos, short_name))
+            {
+                String table_name = data.tables[table_pos].first.getQualifiedNamePrefix(false);
+                throw Exception("There's no column '" + identifier.name + "' in table '" + table_name + "'",
+                                ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
+
             IdentifierSemantic::setMembership(identifier, table_pos);
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.
