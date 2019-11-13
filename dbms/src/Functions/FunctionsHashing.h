@@ -718,9 +718,9 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                String hash_string = toString<UUID>(UUID(vec_from[i]));
+                String hash_string = toString(UUID(vec_from[i]));
                 std::cerr << hash_string << std::endl;
-                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hash_string), 16);
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hash_string), hash_string.size());
                 if (first)
                     vec_to[i] = h;
                 else
