@@ -259,7 +259,8 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(shared_from_this(), context, max_block_size, file_path);
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path);
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
