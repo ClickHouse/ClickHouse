@@ -159,7 +159,9 @@ void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num,
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeDateTime(assert_cast<time_t>(assert_cast<const ColumnType &>(column).getData()[row_num])));
+
+    // On some platforms `time_t` is `long` but not `unsigned int` (UInt32 that we store in column), hence static_cast.
+    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<time_t>(assert_cast<const ColumnType &>(column).getData()[row_num])));
 }
 
 void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
