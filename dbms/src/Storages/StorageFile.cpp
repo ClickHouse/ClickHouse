@@ -182,41 +182,41 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
-        : storage(storage_)
+    StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_, const Context & context, UInt64 max_block_size, std::string file_path)
+        : storage(std::move(storage_))
     {
-        if (storage.use_table_fd)
+        if (storage->use_table_fd)
         {
-            unique_lock = std::unique_lock(storage.rwlock);
+            unique_lock = std::unique_lock(storage->rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
 
-            if (storage.table_fd_was_used) /// We need seek to initial position
+            if (storage->table_fd_was_used) /// We need seek to initial position
             {
-                if (storage.table_fd_init_offset < 0)
-                    throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                if (storage->table_fd_init_offset < 0)
+                    throw Exception("File descriptor isn't seekable, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
                 /// ReadBuffer's seek() doesn't make sense, since cache is empty
-                if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
-                    throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                if (lseek(storage->table_fd, storage->table_fd_init_offset, SEEK_SET) < 0)
+                    throwFromErrno("Cannot seek file descriptor, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
 
-            storage.table_fd_was_used = true;
-            read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
+            storage->table_fd_was_used = true;
+            read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd);
         }
         else
         {
-            shared_lock = std::shared_lock(storage.rwlock);
+            shared_lock = std::shared_lock(storage->rwlock);
             read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
     {
-        return storage.getName();
+        return storage->getName();
     }
 
     Block readImpl() override
@@ -237,7 +237,7 @@ public:
     }
 
 private:
-    StorageFile & storage;
+    std::shared_ptr<StorageFile> storage;
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
@@ -261,7 +261,8 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path);
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
