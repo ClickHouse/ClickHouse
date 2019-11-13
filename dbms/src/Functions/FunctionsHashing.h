@@ -654,12 +654,12 @@ public:
 private:
     using ToType = typename Impl::ReturnType;
 
-    template <typename FromType, bool first, typename ColumnType>
+    template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnType * col_from = checkAndGetColumn<ColumnType>(column))
+        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
-            const typename ColumnType::Container & vec_from = col_from->getData();
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -683,7 +683,7 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from_const = checkAndGetColumnConst<ColumnType>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
@@ -719,8 +719,6 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 std::string hash_string = toString(UUID(vec_from[i]));
-                std::cerr << hash_string << std::endl;
-
                 const ToType h = Impl::apply(hash_string.c_str(), hash_string.size());
                 if (first)
                     vec_to[i] = h;
@@ -734,19 +732,18 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <bool first>
-    void executeDecimal128(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    template <typename T, bool first>
+    void executeDecimal(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnDecimal<Decimal128> * col_from = checkAndGetColumn<ColumnDecimal<Decimal128>>(column))
+        if (const ColumnDecimal<T> * col_from = checkAndGetColumn<ColumnDecimal<T>>(column))
         {
-            const ColumnDecimal<Decimal128>::Container & vec_from = col_from->getData();
+            const typename ColumnDecimal<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
                 WriteBufferFromOwnString buf;
                 writeText(vec_from[i], vec_from.getScale(), buf);
                 std::string hash_string = buf.str();
-                std::cerr << "\n\n" << hash_string << "\n\n";
                 const ToType h = Impl::apply(hash_string.c_str(), hash_string.size());
                 if (first)
                     vec_to[i] = h;
@@ -874,26 +871,26 @@ private:
     {
         WhichDataType which(from_type);
 
-        if      (which.isUInt8()) executeIntType<UInt8, first, ColumnVector<UInt8>>(icolumn, vec_to);
-        else if (which.isUInt16()) executeIntType<UInt16, first, ColumnVector<UInt16>>(icolumn, vec_to);
-        else if (which.isUInt32()) executeIntType<UInt32, first, ColumnVector<UInt32>>(icolumn, vec_to);
-        else if (which.isUInt64()) executeIntType<UInt64, first, ColumnVector<UInt64>>(icolumn, vec_to);
-        else if (which.isInt8()) executeIntType<Int8, first, ColumnVector<Int8>>(icolumn, vec_to);
-        else if (which.isInt16()) executeIntType<Int16, first, ColumnVector<Int16>>(icolumn, vec_to);
-        else if (which.isInt32()) executeIntType<Int32, first, ColumnVector<Int32>>(icolumn, vec_to);
-        else if (which.isInt64()) executeIntType<Int64, first, ColumnVector<Int64>>(icolumn, vec_to);
-        else if (which.isEnum8()) executeIntType<Int8, first, ColumnVector<Int8>>(icolumn, vec_to);
-        else if (which.isEnum16()) executeIntType<Int16, first, ColumnVector<Int16>>(icolumn, vec_to);
-        else if (which.isDate()) executeIntType<UInt16, first, ColumnVector<UInt16>>(icolumn, vec_to);
-        else if (which.isDateTime()) executeIntType<UInt32, first, ColumnVector<UInt32>>(icolumn, vec_to);
-        else if (which.isFloat32()) executeIntType<Float32, first, ColumnVector<Float32>>(icolumn, vec_to);
-        else if (which.isFloat64()) executeIntType<Float64, first, ColumnVector<Float64>>(icolumn, vec_to);
+        if      (which.isUInt8()) executeIntType<UInt8, first>(icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
+        else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
+        else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
+        else if (which.isFloat64()) executeIntType<Float64, first>(icolumn, vec_to);
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else if (which.isDecimal32()) executeIntType<Decimal32, first, ColumnDecimal<Decimal32>>(icolumn, vec_to);
-        else if (which.isDecimal64()) executeIntType<Decimal64, first, ColumnDecimal<Decimal64>>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeDecimal128<first>(icolumn, vec_to);
+        else if (which.isDecimal32()) executeDecimal<Decimal32, first>(icolumn, vec_to);
+        else if (which.isDecimal64()) executeDecimal<Decimal64, first>(icolumn, vec_to);
+        else if (which.isDecimal128()) executeDecimal<first>(icolumn, vec_to);
         else if (which.isUUID()) executeUUID<first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
