@@ -461,12 +461,8 @@ Columns:
 - `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
-    - Time spent on reading and writing over the network.
-    - Time spent on reading and writing to a disk.
-    - Number of network errors.
-    - Time spent on waiting when the network bandwidth is limited.
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
 - `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 - `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
@@ -539,12 +535,8 @@ Columns:
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
 - `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
-    - Time spent on reading and writing over the network.
-    - Time spent on reading and writing to a disk.
-    - Number of network errors.
-    - Time spent on waiting when the network bandwidth is limited.
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
 
 By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
