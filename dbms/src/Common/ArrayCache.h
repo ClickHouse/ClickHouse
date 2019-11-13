@@ -22,16 +22,11 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-
-namespace DB
+namespace DB::ErrorCodes
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_ALLOCATE_MEMORY;
-        extern const int CANNOT_MUNMAP;
-    }
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
 }
-
 
 /** Cache for variable length memory regions (contiguous arrays of bytes).
   * Example: cache for data read from disk, cache for decompressed data, etc.
@@ -40,7 +35,7 @@ namespace DB
   * Motivation:
   * - cache has specified memory usage limit and we want this limit to include allocator fragmentation overhead;
   * - the cache overcomes memory fragmentation by cache eviction;
-  * - there is no sense for reclaimed memory regions to be cached internally by usual allocator (malloc/new);
+  * - there is no sense for reclaimed memory regions to be cached internally by the usual allocator (malloc/new);
   * - by allocating memory directly with mmap, we could place it in virtual address space far
   *   from other (malloc'd) memory - this helps debugging memory stomping bugs
   *   (your program will likely hit unmapped memory and get segfault rather than silent cache corruption)
@@ -99,17 +94,16 @@ private:
             void * ptr;
             char * char_ptr;
         };
+
         size_t size;
-        size_t refcount = 0;
+        size_t refcount;
         void * chunk;
 
-        bool operator< (const RegionMetadata & other) const { return size < other.size; }
-
-        bool isFree() const { return SizeMultimapHook::is_linked(); }
+        [[nodiscard]] bool isFree() const { return SizeMultimapHook::is_linked(); }
 
         static RegionMetadata * create()
         {
-            return new RegionMetadata;
+            return new RegionMetadata();
         }
 
         void destroy()
@@ -118,7 +112,7 @@ private:
         }
 
     private:
-         RegionMetadata() = default;
+         RegionMetadata(): refcount(0) {};
          ~RegionMetadata() = default;
     };
 
@@ -137,26 +131,34 @@ private:
     };
 
     using LRUList = boost::intrusive::list<RegionMetadata,
-        boost::intrusive::base_hook<LRUListHook>, boost::intrusive::constant_time_size<true>>;
+        boost::intrusive::base_hook<LRUListHook>,
+        boost::intrusive::constant_time_size<true>>;
     using AdjacencyList = boost::intrusive::list<RegionMetadata,
-        boost::intrusive::base_hook<AdjacencyListHook>, boost::intrusive::constant_time_size<true>>;
+        boost::intrusive::base_hook<AdjacencyListHook>,
+        boost::intrusive::constant_time_size<true>>;
     using SizeMultimap = boost::intrusive::multiset<RegionMetadata,
-        boost::intrusive::compare<RegionCompareBySize>, boost::intrusive::base_hook<SizeMultimapHook>, boost::intrusive::constant_time_size<true>>;
+        boost::intrusive::compare<RegionCompareBySize>,
+        boost::intrusive::base_hook<SizeMultimapHook>,
+        boost::intrusive::constant_time_size<true>>;
     using KeyMap = boost::intrusive::set<RegionMetadata,
-        boost::intrusive::compare<RegionCompareByKey>, boost::intrusive::base_hook<KeyMapHook>, boost::intrusive::constant_time_size<true>>;
+        boost::intrusive::compare<RegionCompareByKey>,
+        boost::intrusive::base_hook<KeyMapHook>,
+        boost::intrusive::constant_time_size<true>>;
 
-    /** Each region could be:
-      * - free: not holding any data;
-      * - allocated: having data, addressed by key;
-      * -- allocated, in use: holded externally, could not be evicted;
-      * -- allocated, not in use: not holded, could be evicted.
-      */
+    /**
+     * Each region can be:
+     * - free: not holding any data;
+     * - allocated: having data, addressed by key;
+     * -- allocated, in use: held externally, could not be evicted;
+     * -- allocated, not in use: not held, could be evicted.
+     */
 
-    /** Invariants:
-      * adjacency_list contains all regions
-      * size_multimap contains free regions
-      * key_map contains allocated regions
-      * lru_list contains allocated regions, that are not in use
+    /**
+     * Invariants:
+     *  - adjacency_list contains all regions
+     *  - size_multimap contains free regions
+     *  - key_map contains allocated regions
+     *  - lru_list contains allocated regions, that are not in use
       */
 
     LRUList lru_list;
@@ -173,20 +175,30 @@ private:
         void * ptr;
         size_t size;
 
-        Chunk(size_t size_, void * address_hint) : size(size_)
+        explicit Chunk(size_t size_) : size(size_)
         {
-            ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            /// NOTE We do not have the MAP_FIXED flag in mmap call, so we can use all available address space
+            /// (kernel will do the dirty job of choosing the real address for us, no need to specify the address
+            /// bounds).
+
+            /// NOTE We probably could use MMAP_64 or MAP_HUGETLB as size is determined only in getOrSet method
+
+            ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
-                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno(
+                        "Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".",
+                        DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
 
         ~Chunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno(
+                        "Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".",
+                        DB::ErrorCodes::CANNOT_MUNMAP);
         }
 
-        Chunk(Chunk && other) : ptr(other.ptr), size(other.size)
+        Chunk(Chunk && other) noexcept : ptr(other.ptr), size(other.size)
         {
             other.ptr = nullptr;
         }
@@ -209,7 +221,8 @@ private:
 
     /// Cache stats.
     std::atomic<size_t> hits {0};            /// Value was in cache.
-    std::atomic<size_t> concurrent_hits {0}; /// Value was calculated by another thread and we was waiting for it. Also summed in hits.
+    std::atomic<size_t> concurrent_hits {0}; /// Value was calculated by another thread and we was waiting for it.
+                                               /// Also summed in hits.
     std::atomic<size_t> misses {0};
 
     /// For whole lifetime.
@@ -222,8 +235,8 @@ private:
 
 public:
     /// Holds region as in use. Regions in use could not be evicted from cache.
-    /// In constructor, increases refcount and if it becomes non-zero, remove region from lru_list.
-    /// In destructor, decreases refcount and if it becomes zero, insert region to lru_list.
+    /// In constructor, increases refcount and, if it becomes non-zero, removes region from lru_list.
+    /// In destructor, decreases refcount and, if it becomes zero, inserts region into lru_list.
     struct Holder : private boost::noncopyable
     {
         Holder(ArrayCache & cache_, RegionMetadata & region_) : cache(cache_), region(region_)
@@ -242,8 +255,8 @@ public:
         }
 
         void * ptr() { return region.ptr; }
-        const void * ptr() const { return region.ptr; }
-        size_t size() const { return region.size; }
+        [[nodiscard]] const void * ptr() const { return region.ptr; }
+        [[nodiscard]] size_t size() const { return region.size; }
         Key key() const { return region.key; }
         Payload & payload() { return region.payload; }
         const Payload & payload() const { return region.payload; }
@@ -259,14 +272,14 @@ private:
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        InsertToken(ArrayCache & cache_) : cache(cache_) {}
+        explicit InsertToken(ArrayCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
         bool cleaned_up = false; /// Protected by the token mutex
-        HolderPtr value; /// Protected by the token mutex
+        HolderPtr value;         /// Protected by the token mutex
 
         ArrayCache & cache;
-        size_t refcount = 0; /// Protected by the cache mutex
+        size_t refcount = 0;     /// Protected by the cache mutex
     };
 
     using InsertTokens = std::unordered_map<Key, std::shared_ptr<InsertToken>>;
@@ -283,14 +296,19 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void acquire(
+                const Key * key_,
+                const std::shared_ptr<InsertToken> & token_,
+                [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void cleanup(
+                [[maybe_unused]] std::lock_guard<std::mutex> & token_lock,
+                [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -313,13 +331,12 @@ private:
             std::lock_guard cache_lock(token->cache.mutex);
 
             --token->refcount;
+
             if (token->refcount == 0)
                 cleanup(token_lock, cache_lock);
         }
     };
-
-    friend struct InsertTokenHolder;
-
+    //friend struct InsertTokenHolder;
 
     static size_t roundUp(size_t x, size_t rounding)
     {
@@ -328,9 +345,8 @@ private:
 
     static constexpr size_t page_size = 4096;
 
-    /// Sizes and addresses of allocated memory will be aligned to specified boundary.
+    /// Sizes and addresses of allocated memory will be aligned to a specified boundary.
     static constexpr size_t alignment = 16;
-
 
     /// Precondition: region is not in lru_list, not in key_map, not in size_multimap.
     /// Postcondition: region is not in lru_list, not in key_map,
@@ -344,6 +360,8 @@ private:
 
         //size_t was_size = region.size;
 
+        auto region_data_disposer = [](RegionMetadata * elem) { elem->destroy(); };
+
         if (left_it != adjacency_list.begin())
         {
             --left_it;
@@ -355,11 +373,12 @@ private:
                 region.size += left_it->size;
                 region.char_ptr-= left_it->size;
                 size_multimap.erase(size_multimap.iterator_to(*left_it));
-                adjacency_list.erase_and_dispose(left_it, [](RegionMetadata * elem) { elem->destroy(); });
+                adjacency_list.erase_and_dispose(left_it, region_data_disposer);
             }
         }
 
         ++right_it;
+
         if (right_it != adjacency_list.end())
         {
             //std::cerr << "right_it->isFree(): " << right_it->isFree() << "\n";
@@ -368,7 +387,7 @@ private:
             {
                 region.size += right_it->size;
                 size_multimap.erase(size_multimap.iterator_to(*right_it));
-                adjacency_list.erase_and_dispose(right_it, [](RegionMetadata * elem) { elem->destroy(); });
+                adjacency_list.erase_and_dispose(right_it, region_data_disposer);
             }
         }
 
@@ -393,7 +412,6 @@ private:
         freeRegion(evicted_region);
     }
 
-
     /// Evict region from cache and return it, coalesced with nearby free regions.
     /// While size is not enough, evict adjacent regions at right, if any.
     /// If nothing to evict, returns nullptr.
@@ -404,7 +422,8 @@ private:
             return nullptr;
 
         /*for (const auto & elem : adjacency_list)
-            std::cerr << (!elem.SizeMultimapHook::is_linked() ? "\033[1m" : "") << elem.size << (!elem.SizeMultimapHook::is_linked() ? "\033[0m " : " ");
+            std::cerr << (!elem.SizeMultimapHook::is_linked() ? "\033[1m" : "") << elem.size <<
+            (!elem.SizeMultimapHook::is_linked() ? "\033[0m " : " ");
         std::cerr << '\n';*/
 
         auto it = adjacency_list.iterator_to(lru_list.front());
@@ -425,30 +444,19 @@ private:
         }
     }
 
-
     /// Allocates a chunk of specified size. Creates free region, spanning through whole chunk and returns it.
     RegionMetadata * addNewChunk(size_t size)
     {
-        /// ASLR by hand.
-        void * address_hint = reinterpret_cast<void *>(std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
+        /// Create free region spanning through chunk.
+        /// NOTE The only reason this function may fail is (obvious) dynamic memory allocation failure.
+        /// So we either throw it and unwind the stack (as implemented before) or use new(std::nothrow) and
+        /// ignore such errors (couldn't judge which solution was better).
+        RegionMetadata * free_region = RegionMetadata::create();
 
-        chunks.emplace_back(size, address_hint);
+        chunks.emplace_back(size);
         Chunk & chunk = chunks.back();
 
         total_chunks_size += size;
-
-        /// Create free region spanning through chunk.
-        RegionMetadata * free_region;
-        try
-        {
-            free_region = RegionMetadata::create();
-        }
-        catch (...)
-        {
-            total_chunks_size -= size;
-            chunks.pop_back();
-            throw;
-        }
 
         free_region->ptr = chunk.ptr;
         free_region->chunk = chunk.ptr;
@@ -504,8 +512,9 @@ private:
         }
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
-        ///  allocate a new chunk.
+        /// allocate a new chunk.
         size_t required_chunk_size = std::max(min_chunk_size, roundUp(size, page_size));
+
         if (total_chunks_size + required_chunk_size <= max_total_size)
         {
             /// Create free region spanning through chunk.
@@ -534,7 +543,7 @@ private:
 
 
 public:
-    ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
+    explicit ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
     {
     }
 
@@ -552,7 +561,7 @@ public:
     /// If the value for the key is in the cache, returns it.
     ///
     /// If it is not, calls 'get_size' to obtain required size of storage for key,
-    ///  then allocates storage and call 'initialize' for necessary initialization before data from cache could be used.
+    /// then allocates storage and calls 'initialize' for necessary initialization before data from cache could be used.
     ///
     /// Only one of several concurrent threads calling this method will call get_size or initialize,
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
@@ -566,6 +575,7 @@ public:
     HolderPtr getOrSet(const Key & key, GetSizeFunc && get_size, InitializeFunc && initialize, bool * was_calculated)
     {
         InsertTokenHolder token_holder;
+
         {
             std::lock_guard cache_lock(mutex);
 
@@ -723,5 +733,3 @@ public:
         return res;
     }
 };
-
-template <typename Key, typename Payload> constexpr size_t ArrayCache<Key, Payload>::min_chunk_size;
