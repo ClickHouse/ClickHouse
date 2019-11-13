@@ -4,10 +4,11 @@ You can add your own dictionaries from various data sources. The data source for
 
 ClickHouse:
 
-> - Fully or partially stores dictionaries in RAM.
+- Fully or partially stores dictionaries in RAM.
 - Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
+- Allows to create external dictionaries with xml-files or [DDL queries](../create.md#create-dictionary-query).
 
-The configuration of external dictionaries is located in one or more files. The path to the configuration is specified in the [dictionaries_config](../../operations/server_settings/settings.md#server_settings-dictionaries_config) parameter.
+The configuration of external dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../operations/server_settings/settings.md#server_settings-dictionaries_config) parameter.
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load) setting.
 
@@ -30,6 +31,8 @@ The dictionary configuration file has the following format:
 ```
 
 You can [configure](external_dicts_dict.md) any number of dictionaries in the same file.
+
+[DDL queries for dictionaries](../create.md#create-dictionary-query) doesn't require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
 !!! attention
     You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../functions/other_functions.md) function). This functionality is not related to external dictionaries.
