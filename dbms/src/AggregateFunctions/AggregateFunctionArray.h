@@ -129,6 +129,8 @@ public:
         return nested_func->allocatesMemoryInArena();
     }
 
+    AggregateFunctionPtr getNestedFunction() const { return nested_func; }
+
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
 

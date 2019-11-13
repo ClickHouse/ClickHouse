@@ -785,7 +785,7 @@ Columns:
 - `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
 - `disks` ([Array(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
 - `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
-- `move_factor` ([Float64](..data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+- `move_factor` ([Float64](../data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
 If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
