@@ -232,6 +232,8 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
+    if (!checkIfPossibleToMakeSetForIndexFromSubquery(subquery_or_table_name))
+        return;
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
     if (prepared_sets.count(set_key))
         return; /// Already prepared.
@@ -252,6 +254,16 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
+}
+
+bool SelectQueryExpressionAnalyzer::checkIfPossibleToMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
+{
+    const auto * table = subquery_or_table_name->as<ASTIdentifier>();
+    if (!table)
+        return true;
+    const DatabaseAndTableWithAlias database_table(*table);
+    const auto & storage = context.getTable(database_table.database, database_table.table);
+    return storage->getName() != "Set";
 }
 
 

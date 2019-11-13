@@ -219,6 +219,11 @@ private:
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
+    /**
+    * Checks if subquery is not a plain StorageSet.
+    */
+    bool checkIfPossibleToMakeSetForIndexFromSubquery(const ASTPtr & subquery_of_table_name);
+
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
                              SubqueryForSet & subquery_for_set) const;
