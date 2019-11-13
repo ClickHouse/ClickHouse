@@ -294,4 +294,4 @@ External dictionary structure consists of attributes. Dictionary attributes are 
 
 Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
 
-For more information, see https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts/.
+For more information, see [External Dictionaries](dicts/external_dicts.md) section.
