@@ -717,9 +717,9 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                String hex_string = vec_from[i].toHexString();
+                String hex_string = toString(vec_from[i]);
                 std::cerr << "\n\n" << hex_string << "\n\n";
-                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), 16);
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), hex_string.size());
                 if (first)
                     vec_to[i] = h;
                 else
@@ -741,9 +741,9 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                const char * to = reinterpret_cast<const char *>(&vec_from[i]);
-                std::cerr << "\n\n" << std::string(to) << "\n\n";
-                const ToType h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), 16);
+                String hex_string = toString(vec_from[i]);
+                std::cerr << "\n\n" << hex_string << "\n\n";
+                const ToType h = Impl::apply(reinterpret_cast<const char *>(&hex_string), hex_string.size());
                 if (first)
                     vec_to[i] = h;
                 else
