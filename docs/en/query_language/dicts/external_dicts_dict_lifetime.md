@@ -22,7 +22,7 @@ LIFETIME(300)
 ...
 ```
 
-Setting `<lifetime>0</lifetime>` (`LIFETIME(0)`) prevents updating dictionaries.
+Setting `<lifetime>0</lifetime>` (`LIFETIME(0)`) prevents dictionaries from updating.
 
 You can set a time interval for upgrades, and ClickHouse will choose a uniformly random time within this range. This is necessary in order to distribute the load on the dictionary source when upgrading on a large number of servers.
 
