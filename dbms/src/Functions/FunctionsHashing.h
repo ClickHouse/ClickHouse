@@ -896,6 +896,7 @@ private:
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
+
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
     {
         /// Flattening of tuples.
