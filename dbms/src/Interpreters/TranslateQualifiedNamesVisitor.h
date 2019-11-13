@@ -39,6 +39,15 @@ public:
         bool hasTable() const { return !tables.empty(); }
         bool processAsterisks() const { return hasTable() && has_columns; }
 
+        bool unknownColumn(size_t table_pos, const String & name) const
+        {
+            const Names & names = tables[table_pos].second;
+            for (auto & known_name : names)
+                if (name == known_name)
+                    return false;
+            return !names.empty();
+        }
+
         static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)
         {
             std::vector<TableWithColumnNames> tables_with_columns;
