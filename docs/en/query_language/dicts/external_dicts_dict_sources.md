@@ -2,7 +2,7 @@
 
 An external dictionary can be connected from many different sources.
 
-If dictionary configured using xml-file, the configuration looks like this:
+If dictionary is configured using xml-file, the configuration looks like this:
 
 ```xml
 <yandex>
