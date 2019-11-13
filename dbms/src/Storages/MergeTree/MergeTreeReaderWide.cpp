@@ -50,6 +50,10 @@ MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data
 
 size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
 {
+    std::cerr << "(MergeTreeReaderWide::readRows) columns: " << columns.toString() << "\n";
+    std::cerr << "(MergeTreeReaderWide::readRows) from_rows: " << from_mark << "\n";
+    std::cerr << "(MergeTreeReaderWide::readRows) block: " << res.dumpStructure() << "\n";
+
     size_t read_rows = 0;
     try
     {
@@ -178,7 +182,8 @@ void MergeTreeReaderWide::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
-    // std::cerr << "(MergeTreeReaderWide::readData) max_rows_to_read: " << max_rows_to_read << "\n";
+    std::cerr << "(MergeTreeReaderWide::readData) name: " << name << "\n";
+    std::cerr << "(MergeTreeReaderWide::readData) max_rows_to_read: " << max_rows_to_read << "\n";
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
         return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *

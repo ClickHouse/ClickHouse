@@ -51,6 +51,10 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         columns_for_reader = data_part->columns.addTypes(columns_to_read);
     }
 
+    std::cerr << "(MergeTreeSequentialBlockInputStream) table: " << storage.getTableName() << "\n";
+    std::cerr << "(MergeTreeSequentialBlockInputStream) part: " << data_part_->getFullPath() << "\n";
+    std::cerr << "(MergeTreeSequentialBlockInputStream) columns_for_reader: " << columns_for_reader.toString() << "\n";
+
     ReaderSettings reader_settings =
     {
         /// This is hack
@@ -118,6 +122,8 @@ try
     {
         finish();
     }
+
+    std::cerr << "(MergeTreeSequentialBlockInputStream::readImpl) block: " << res.dumpStructure() << "\n";
 
     return res;
 }
