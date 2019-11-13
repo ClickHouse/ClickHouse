@@ -290,7 +290,7 @@ LIFETIME([MIN val1] MAX val2)
 
 Creates [external dictionary](dicts/external_dicts.md) with given [structure](dicts/external_dicts_dict_structure.md), [source](dicts/external_dicts_dict_sources.md), [layout](dicts/external_dicts_dict_layout.md) and [lifetime](dicts/external_dicts_dict_lifetime.md). 
 
-External dictionary structure consists of attributes. Attribute properties are specified similarly to table columns. The only required property is attribute type, all other properties may have default values.
+External dictionary structure consists of attributes. Dictionary attributes are specified similarly to table columns. The only required attribute property is its type, all other properties may have default values.
 
 Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
 
