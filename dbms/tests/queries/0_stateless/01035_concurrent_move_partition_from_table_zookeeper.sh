@@ -34,7 +34,7 @@ function thread3()
 {
     while true;
     do
-        $CLICKHOUSE_CLIENT --query="SELECT * FROM $CLICKHOUSE_DATABASE.src" --query_id=query3
+        $CLICKHOUSE_CLIENT --query="SELECT * FROM $CLICKHOUSE_DATABASE.src" --query_id=query3 1> /dev/null
     done
 }
 
@@ -42,7 +42,7 @@ function thread4()
 {
     while true;
     do
-        $CLICKHOUSE_CLIENT --query="SELECT * FROM $CLICKHOUSE_DATABASE.dst" --query_id=query4
+        $CLICKHOUSE_CLIENT --query="SELECT * FROM $CLICKHOUSE_DATABASE.dst" --query_id=query4 1> /dev/null
     done
 }
 
