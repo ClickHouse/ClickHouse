@@ -979,6 +979,41 @@ Error count of each replica is capped at this value, preventing a single replica
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
 - [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
+
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+
+Sleep time for DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine. In case of any errors grows exponentially.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 100 milliseconds.
+
+
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+
+Maximum sleep time for DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of sleep time set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 30000 milliseconds.
+
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+
+Enables/disables algorithm of batching `INSERT` queries.
+
+When batching is enabled, DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine try to combine `INSERT` queries from multiple sources into bigger ones. Combining of queries improves performance of asynchronouse data inserting.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Defaule value: 0.
+
 ## os_thread_priority {#setting-os_thread_priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
