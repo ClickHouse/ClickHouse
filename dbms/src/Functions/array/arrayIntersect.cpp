@@ -436,7 +436,17 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
-                        value = &map[columns[arg]->getElement(i)];
+                    {
+                        auto element = columns[arg]->getElement(i);
+
+                        /// Do nothing in case of integer overflow. It happen if narrower type is used for the result.
+                        /// E.g. arrayIntersect([-100], [156]) is (Array(Int8), Array(UInt8)) -> Array(UInt8)
+                        /// and static_cast<UInt8>(-100) is 156 which is != -100. Without this check the result is [156].
+                        if (element != static_cast<typename ColumnType::value_type>(element))
+                            continue;
+
+                        value = &map[element];
+                    }
                     else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                         value = &map[columns[arg]->getDataAt(i)];
                     else
@@ -445,6 +455,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                         value = &map[columns[arg]->serializeValueIntoArena(i, arena, data)];
                     }
 
+                    /// Here we count the number of element appearances, but no more than once per array.
                     if (*value == arg)
                         ++(*value);
                 }
