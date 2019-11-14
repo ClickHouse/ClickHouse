@@ -313,7 +313,7 @@ SELECT
 
 ## dateDiff {#datediff}
 
-Returns the difference between two time values.
+Returns the difference between two Date or DateTime values.
 
 **Syntax**
 
