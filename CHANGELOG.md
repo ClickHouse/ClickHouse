@@ -1,4 +1,4 @@
-## ClickHouse release v19.16.2.2, 30-10-2019
+## ClickHouse release v19.16.2.2, 2019-10-30
 
 ### Backward Incompatible Change
 * Add missing arity validation for count/counIf.
@@ -247,6 +247,47 @@ Chebotarev](https://github.com/excitoon))
 fix comments to make obvious that it may throw.
 [#7350](https://github.com/ClickHouse/ClickHouse/pull/7350)
 ([tavplubix](https://github.com/tavplubix))
+
+## ClickHouse release 19.15.4.10, 2019-10-31
+
+### Bug Fix
+* Added handling of SQL_TINYINT and SQL_BIGINT, and fix handling of SQL_FLOAT data source types in ODBC Bridge.
+[#7491](https://github.com/ClickHouse/ClickHouse/pull/7491) ([Denis Glazachev](https://github.com/traceon))
+* Allowed to have some parts on destination disk or volume in MOVE PARTITION.
+[#7434](https://github.com/ClickHouse/ClickHouse/pull/7434) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Fixed NULL-values in nullable columns through ODBC-bridge.
+[#7402](https://github.com/ClickHouse/ClickHouse/pull/7402) ([Vasily Nemkov](https://github.com/Enmk))
+* Fixed INSERT into Distributed non local node with MATERIALIZED columns.
+[#7377](https://github.com/ClickHouse/ClickHouse/pull/7377) ([Azat Khuzhin](https://github.com/azat))
+* Fixed function getMultipleValuesFromConfig.
+[#7374](https://github.com/ClickHouse/ClickHouse/pull/7374) ([Mikhail Korotov](https://github.com/millb))
+* Fixed issue of using HTTP keep alive timeout instead of TCP keep alive timeout.
+[#7351](https://github.com/ClickHouse/ClickHouse/pull/7351) ([Vasily Nemkov](https://github.com/Enmk))
+* Wait for all jobs to finish on exception (fixes rare segfaults).
+[#7350](https://github.com/ClickHouse/ClickHouse/pull/7350) ([tavplubix](https://github.com/tavplubix))
+* Don't push to MVs when inserting into Kafka table.
+[#7265](https://github.com/ClickHouse/ClickHouse/pull/7265) ([Ivan](https://github.com/abyss7))
+* Disable memory tracker for exception stack.
+[#7264](https://github.com/ClickHouse/ClickHouse/pull/7264) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fixed bad code in transforming query for external database.
+[#7252](https://github.com/ClickHouse/ClickHouse/pull/7252) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Avoid use of uninitialized values in MetricsTransmitter.
+[#7158](https://github.com/ClickHouse/ClickHouse/pull/7158) ([Azat Khuzhin](https://github.com/azat))
+* Added example config with macros for tests ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+## ClickHouse release 19.15.3.6, 2019-10-09
+
+### Bug Fix
+* Fixed bad_variant in hashed dictionary.
+([alesapin](https://github.com/alesapin))
+* Fixed up bug with segmentation fault in ATTACH PART query.
+([alesapin](https://github.com/alesapin))
+* Fixed time calculation in `MergeTreeData`.
+([Vladimir Chebotarev](https://github.com/excitoon))
+* Commit to Kafka explicitly after the writing is finalized.
+[#7175](https://github.com/ClickHouse/ClickHouse/pull/7175) ([Ivan](https://github.com/abyss7))
+* Serialize NULL values correctly in min/max indexes of MergeTree parts.
+[#7234](https://github.com/ClickHouse/ClickHouse/pull/7234) ([Alexander Kuzmenkov](https://github.com/akuzm))
 
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
