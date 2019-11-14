@@ -18,8 +18,8 @@
     <create_query>CREATE TABLE hits_10m_words (word String, UserID UInt64) ENGINE Memory</create_query>
     <create_query>CREATE TABLE strings (short String, long String) ENGINE Memory</create_query>
 
-    <fill_query> INSERT INTO hits_10m_words SELECT DISTINCT arrayJoin(splitByString(' ', SearchPhrase)) AS word, UserID FROM hits_10m_single WHERE length(word) > 0</fill_query>
-    <fill_query> INSERT INTO strings SELECT toString(rand()) a, a || a || a || a || a || a || a || a || a || a || a || a FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO hits_10m_words SELECT DISTINCT arrayJoin(splitByString(' ', SearchPhrase)) AS word, UserID FROM hits_10m_single WHERE length(word) > 0</fill_query>
+    <fill_query>INSERT INTO strings SELECT toString(rand()) a, a || a || a || a || a || a || a || a || a || a || a || a FROM numbers(1000000)</fill_query>
 
     <settings>
         <max_threads>1</max_threads>
