@@ -59,10 +59,12 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+                      << " " << (settings.hilite ? hilite_none : "");
+
+        formatTableAndDatabase(settings, state, frame);
     }
 };
 

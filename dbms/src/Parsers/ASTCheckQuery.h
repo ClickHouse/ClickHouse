@@ -14,7 +14,7 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
     ASTPtr partition;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "CheckQuery" + (delim + database) + delim + table; }
+    String getID(char delim) const override { return "CheckQuery" + (delim+ getTableAndDatabaseID(delim)); }
 
     ASTPtr clone() const override
     {
@@ -34,15 +34,7 @@ protected:
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
-        if (!table.empty())
-        {
-            if (!database.empty())
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(database) << (settings.hilite ? hilite_none : "");
-                settings.ostr << ".";
-            }
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(table) << (settings.hilite ? hilite_none : "");
-        }
+        formatTableAndDatabase(settings, state, frame);
 
         if (partition)
         {

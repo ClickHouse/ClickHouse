@@ -123,9 +123,8 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
-
+    query->table = table;
+    query->database = database;
     query->cluster = cluster_str;
 
     return true;

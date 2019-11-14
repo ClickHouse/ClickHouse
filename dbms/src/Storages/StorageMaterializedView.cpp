@@ -146,8 +146,8 @@ StorageMaterializedView::StorageMaterializedView(
     {
         /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->database = target_database_name;
-        manual_create_query->table = target_table_name;
+        manual_create_query->database = std::make_shared<ASTIdentifier>(target_database_name);
+        manual_create_query->table = std::make_shared<ASTIdentifier>(target_table_name);
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
@@ -222,8 +222,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = target_database_name;
-        drop_query->table = target_table_name;
+        drop_query->database = std::make_shared<ASTIdentifier>(target_database_name);
+        drop_query->table = std::make_shared<ASTIdentifier>(target_table_name);
         drop_query->kind = kind;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);

@@ -415,7 +415,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.database + "." + query.table));
+    AutoPtr<Text> name(xml_document->createTextNode(query.databaseName() + "." + query.tableName()));
     name_element->appendChild(name);
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));

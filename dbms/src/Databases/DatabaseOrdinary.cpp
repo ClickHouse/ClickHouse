@@ -66,8 +66,7 @@ try
 {
     if (query.is_dictionary)
     {
-        String dictionary_name = query.table;
-        database.attachDictionary(dictionary_name, context, false);
+        database.attachDictionary(query.tableName(), context, false);
     }
     else
     {
@@ -81,7 +80,7 @@ try
 catch (const Exception & e)
 {
     throw Exception(
-        "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ", error: " + e.displayText() + ", stack trace:\n"
+        "Cannot create object '" + query.tableName() + "' from query " + serializeAST(query) + ", error: " + e.displayText() + ", stack trace:\n"
             + e.getStackTrace().toString(),
         ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 }

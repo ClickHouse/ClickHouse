@@ -82,9 +82,9 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+        return executeDDLQueryOnCluster(query_ptr, context, {create.databaseName()});
 
-    String database_name = create.database;
+    String database_name = create.databaseName();
 
     auto guard = context.getDDLGuard(database_name, "");
 
@@ -525,7 +525,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
     {
-        NameSet databases{create.database};
+        NameSet databases{create.databaseName()};
         if (!create.to_table.empty())
             databases.emplace(create.to_database);
 
@@ -533,15 +533,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty() && !create.is_live_view)
+    if (create.temporary && create.database && !create.is_live_view)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
 
-    String database_name = create.database.empty() ? current_database : create.database;
-    String table_name = create.table;
+    String database_name = create.databaseName(current_database);
+    String table_name = create.tableName();
     String table_name_escaped = escapeForFileName(table_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
@@ -586,7 +586,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
+        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.tableName());
     }
     else
     {
@@ -638,8 +638,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 {
                     /// when executing CREATE OR REPLACE VIEW, drop current existing view
                     auto drop_ast = std::make_shared<ASTDropQuery>();
-                    drop_ast->database = database_name;
-                    drop_ast->table = table_name;
+                    drop_ast->database = std::make_shared<ASTIdentifier>(database_name);
+                    drop_ast->table = std::make_shared<ASTIdentifier>(table_name);
                     drop_ast->no_ddl_lock = true;
 
                     InterpreterDropQuery interpreter(drop_ast, context);
@@ -708,9 +708,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
-    String dictionary_name = create.table;
+    String dictionary_name = create.tableName();
 
-    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
+    String database_name = create.databaseName(context.getCurrentDatabase());
 
     auto guard = context.getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = context.getDatabase(database_name);
@@ -747,7 +747,7 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (create.onlyDatabase())
         return createDatabase(create);
     else if (!create.is_dictionary)
         return createTable(create);
@@ -770,7 +770,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         return;
 
     /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (create.onlyDatabase())
     {
         if (readonly)
             throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);

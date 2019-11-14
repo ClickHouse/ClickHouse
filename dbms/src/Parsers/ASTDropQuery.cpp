@@ -14,11 +14,11 @@ namespace ErrorCodes
 String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
-        return "DropQuery" + (delim + database) + delim + table;
+        return "DropQuery" + (delim + getTableAndDatabaseID(delim));
     else if (kind == ASTDropQuery::Kind::Detach)
-        return "DetachQuery" + (delim + database) + delim + table;
+        return "DetachQuery" + (delim + getTableAndDatabaseID(delim));
     else if (kind == ASTDropQuery::Kind::Truncate)
-        return "TruncateQuery" + (delim + database) + delim + table;
+        return "TruncateQuery" + (delim + getTableAndDatabaseID(delim));
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
 }
@@ -30,7 +30,7 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
@@ -45,7 +45,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-    if (table.empty() && !database.empty())
+    if (onlyDatabase())
         settings.ostr << "DATABASE ";
     else if (!is_dictionary)
         settings.ostr << "TABLE ";
@@ -57,11 +57,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (table.empty() && !database.empty())
-        settings.ostr << backQuoteIfNeed(database);
-    else
-        settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-
+    formatTableAndDatabase(settings, state, frame);
     formatOnCluster(settings);
 }
 

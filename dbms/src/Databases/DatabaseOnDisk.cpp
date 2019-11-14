@@ -90,7 +90,7 @@ namespace detail
         {
             auto & ast_create_query = ast->as<ASTCreateQuery &>();
             ast_create_query.attach = false;
-            ast_create_query.database = database;
+            ast_create_query.database = std::make_shared<ASTIdentifier>(database);
         }
 
         return ast;
@@ -132,14 +132,14 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool has_force_restore_data_flag)
 {
     ast_create_query.attach = true;
-    ast_create_query.database = database_name;
+    ast_create_query.database = std::make_shared<ASTIdentifier>(database_name);
 
     if (ast_create_query.as_table_function)
     {
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
-        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
-        return {ast_create_query.table, storage};
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.tableName());
+        return {ast_create_query.tableName(), storage};
     }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
@@ -152,10 +152,10 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     return
     {
-        ast_create_query.table,
+        ast_create_query.tableName(),
         StorageFactory::instance().get(
             ast_create_query,
-            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
+            database_data_path, ast_create_query.tableName(), database_name, context, context.getGlobalContext(),
             columns, constraints,
             true, has_force_restore_data_flag)
     };
@@ -178,7 +178,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    create->database.clear();
+    create->database.reset();
     create->as_database.clear();
     create->as_table.clear();
     create->if_not_exists = false;

@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -39,8 +40,8 @@ protected:
         T & query = static_cast<T &>(*query_ptr);
 
         query.cluster.clear();
-        if (query.database.empty())
-            query.database = new_database;
+        if (!query.database)
+            query.database = std::make_shared<ASTIdentifier>(new_database);
 
         return query_ptr;
     }

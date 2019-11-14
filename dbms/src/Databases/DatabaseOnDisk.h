@@ -173,7 +173,7 @@ void DatabaseOnDisk::renameTable(
     ASTPtr ast = detail::getQueryFromMetadata(detail::getObjectMetadataPath(database.getMetadataPath(), table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
-    ast->as<ASTCreateQuery &>().table = to_table_name;
+    ast->as<ASTCreateQuery &>().table = std::make_shared<ASTIdentifier>(to_table_name);
 
     /// NOTE Non-atomic.
     to_database_concrete->createTable(context, to_table_name, table, ast);

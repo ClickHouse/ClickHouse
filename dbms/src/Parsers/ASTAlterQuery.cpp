@@ -286,7 +286,7 @@ void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatStat
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery" + (delim + database) + delim + table;
+    return "AlterQuery" + getTableAndDatabaseID(delim);
 }
 
 ASTPtr ASTAlterQuery::clone() const
@@ -311,15 +311,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     else
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
-    if (!table.empty())
-    {
-        if (!database.empty())
-        {
-            settings.ostr << indent_str << backQuoteIfNeed(database);
-            settings.ostr << ".";
-        }
-        settings.ostr << indent_str << backQuoteIfNeed(table);
-    }
+    formatTableAndDatabase(settings, state, frame);
     formatOnCluster(settings);
     settings.ostr << settings.nl_or_ws;
 

@@ -14,6 +14,7 @@ class ASTUseQuery : public IAST
 {
 public:
     String database;
+//    ASTPtr database;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "UseQuery" + (delim + database); }

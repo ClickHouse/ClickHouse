@@ -28,16 +28,16 @@ private:
     ASTPtr query_ptr;
     Context & context;
 
-    BlockIO executeToDatabase(String & database_name, ASTDropQuery::Kind kind, bool if_exists);
+    BlockIO executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists);
 
-    BlockIO executeToTable(String & database_name, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
+    BlockIO executeToTable(const String & database_name, const String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
 
-    BlockIO executeToDictionary(String & database_name, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
+    BlockIO executeToDictionary(const String & database_name, const String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
 
-    DatabasePtr tryGetDatabase(String & database_name, bool exists);
+    DatabasePtr tryGetDatabase(const String & database_name, bool exists);
 
-    DatabaseAndTable tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists);
+    DatabaseAndTable tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists);
 
-    BlockIO executeToTemporaryTable(String & table_name, ASTDropQuery::Kind kind);
+    BlockIO executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind);
 };
 }

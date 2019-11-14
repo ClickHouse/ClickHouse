@@ -63,10 +63,10 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     if (database)
-        query->database = getIdentifierName(database);
+        query->database = database;
 
     if (table)
-        query->table = getIdentifierName(table);
+        query->table = table;
 
     node = query;
 

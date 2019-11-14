@@ -4059,18 +4059,18 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     auto new_query = query->clone();
     if (auto * alter = new_query->as<ASTAlterQuery>())
     {
-        alter->database = leader_address.database;
-        alter->table = leader_address.table;
+        alter->database = std::make_shared<ASTIdentifier>(leader_address.database);
+        alter->table = std::make_shared<ASTIdentifier>(leader_address.table);
     }
     else if (auto * optimize = new_query->as<ASTOptimizeQuery>())
     {
-        optimize->database = leader_address.database;
-        optimize->table = leader_address.table;
+        optimize->database = std::make_shared<ASTIdentifier>(leader_address.database);
+        optimize->table = std::make_shared<ASTIdentifier>(leader_address.table);
     }
     else if (auto * drop = new_query->as<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
     {
-        drop->database = leader_address.database;
-        drop->table    = leader_address.table;
+        drop->database = std::make_shared<ASTIdentifier>(leader_address.database);
+        drop->table    = std::make_shared<ASTIdentifier>(leader_address.table);
     }
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);

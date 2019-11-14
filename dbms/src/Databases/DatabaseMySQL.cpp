@@ -122,7 +122,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const Context &, const S
 ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context &) const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = database_name;
+    create_query->database = std::make_shared<ASTIdentifier>(database_name);
 
     const auto & storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, makeASTFunction("MySQL",
@@ -235,8 +235,8 @@ DatabaseMySQL::MySQLStorageInfo DatabaseMySQL::createStorageInfo(
 
     const auto & create_table_query = std::make_shared<ASTCreateQuery>();
 
-    create_table_query->table = table_name;
-    create_table_query->database = database_name;
+    create_table_query->table = std::make_shared<ASTIdentifier>(table_name);
+    create_table_query->database = std::make_shared<ASTIdentifier>(database_name);
     create_table_query->set(create_table_query->columns_list, getTableColumnsCreateQuery(columns_name_and_type));
     create_table_query->set(create_table_query->storage, getTableStorageCreateQuery(
         mysql_host_name, mysql_port, mysql_database_name, table_name, mysql_user_name, mysql_user_password));

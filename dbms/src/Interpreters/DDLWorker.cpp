@@ -622,14 +622,14 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 
             if (auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
             {
-                String database = query_with_table->database.empty() ? context.getCurrentDatabase() : query_with_table->database;
-                StoragePtr storage = context.tryGetTable(database, query_with_table->table);
+                String database = query_with_table->databaseName(context.getCurrentDatabase());
+                StoragePtr storage = context.tryGetTable(database, query_with_table->tableName());
 
                 /// For some reason we check consistency of cluster definition only
                 /// in case of ALTER query, but not in case of CREATE/DROP etc.
                 /// It's strange, but this behaviour exits for a long and we cannot change it.
                 if (storage && query_with_table->as<ASTAlterQuery>())
-                    checkShardConfig(query_with_table->table, task, storage);
+                    checkShardConfig(query_with_table->tableName(), task, storage);
 
                 if (storage && taskShouldBeExecutedOnLeader(rewritten_ast, storage))
                     tryExecuteQueryOnLeaderReplica(task, storage, rewritten_query, task.entry_path, zookeeper);

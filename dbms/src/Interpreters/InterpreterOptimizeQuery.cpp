@@ -20,9 +20,9 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {ast.database});
+        return executeDDLQueryOnCluster(query_ptr, context, {ast.databaseName()});
 
-    StoragePtr table = context.getTable(ast.database, ast.table);
+    StoragePtr table = context.getTable(ast.databaseName(), ast.tableName());
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
 }

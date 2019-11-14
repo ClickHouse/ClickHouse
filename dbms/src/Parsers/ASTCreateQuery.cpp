@@ -200,13 +200,14 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (!database.empty() && table.empty())
+    if (onlyDatabase())
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
-            << (settings.hilite ? hilite_none : "")
-            << backQuoteIfNeed(database);
+            << (settings.hilite ? hilite_none : "");
+
+        formatTableAndDatabase(settings, state, frame);
         formatOnCluster(settings);
 
         if (storage)
@@ -232,16 +233,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (replace_view ? "OR REPLACE " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
-            << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            << (settings.hilite ? hilite_none : "");
+
+            formatTableAndDatabase(settings, state, frame);
             formatOnCluster(settings);
     }
     else
     {
         /// Always DICTIONARY
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
-                      << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                      << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+
+        formatTableAndDatabase(settings, state, frame);
     }
 
     if (as_table_function)

@@ -36,10 +36,10 @@ BlockIO InterpreterAlterQuery::execute()
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
     if (!alter.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {alter.database});
+        return executeDDLQueryOnCluster(query_ptr, context, {alter.databaseName()});
 
-    const String & table_name = alter.table;
-    String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+    const String & table_name = alter.tableName();
+    String database_name = alter.databaseName(context.getCurrentDatabase());
     StoragePtr table = context.getTable(database_name, table_name);
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,

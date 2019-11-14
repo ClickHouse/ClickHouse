@@ -39,25 +39,23 @@ BlockIO InterpreterDropQuery::execute()
     checkAccess(drop);
 
     if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
+        return executeDDLQueryOnCluster(query_ptr, context, {drop.databaseName()});
 
-    if (!drop.table.empty())
+    if (drop.onlyDatabase())
+        return executeToDatabase(drop.databaseName(), drop.kind, drop.if_exists);
+    else
     {
         if (!drop.is_dictionary)
-            return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+            return executeToTable(drop.databaseName(), drop.tableName(), drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
         else
-            return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+            return executeToDictionary(drop.databaseName(), drop.tableName(), drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     }
-    else if (!drop.database.empty())
-        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
-    else
-        throw Exception("Nothing to drop, both names are empty.", ErrorCodes::LOGICAL_ERROR);
 }
 
 
 BlockIO InterpreterDropQuery::executeToTable(
-    String & database_name_,
-    String & table_name,
+    const String & database_name_,
+    const String & table_name,
     ASTDropQuery::Kind kind,
     bool if_exists,
     bool if_temporary,
@@ -150,8 +148,8 @@ BlockIO InterpreterDropQuery::executeToTable(
 
 
 BlockIO InterpreterDropQuery::executeToDictionary(
-    String & database_name_,
-    String & dictionary_name,
+    const String & database_name_,
+    const String & dictionary_name,
     ASTDropQuery::Kind kind,
     bool if_exists,
     bool is_temporary,
@@ -192,7 +190,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDropQuery::Kind kind)
+BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     if (kind == ASTDropQuery::Kind::Detach)
         throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
@@ -225,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQuery::Kind kind, bool if_exists)
+BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
     auto ddl_guard = context.getDDLGuard(database_name, "");
 
@@ -281,12 +279,12 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
     return {};
 }
 
-DatabasePtr InterpreterDropQuery::tryGetDatabase(String & database_name, bool if_exists)
+DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
 {
     return if_exists ? context.tryGetDatabase(database_name) : context.getDatabase(database_name);
 }
 
-DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists)
+DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)
 {
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
@@ -309,7 +307,7 @@ void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
     bool allow_ddl = settings.allow_ddl;
 
     /// It's allowed to drop temporary tables.
-    if ((!readonly && allow_ddl) || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
+    if ((!readonly && allow_ddl) || (!drop.database && context.tryGetExternalTable(drop.tableName()) && readonly >= 2))
         return;
 
     if (readonly)

@@ -418,8 +418,8 @@ void SystemLog<LogElement>::prepareTable()
 
         auto create = std::make_shared<ASTCreateQuery>();
 
-        create->database = database_name;
-        create->table = table_name;
+        create->database = std::make_shared<ASTIdentifier>(database_name);
+        create->table = std::make_shared<ASTIdentifier>(table_name);
 
         Block sample = LogElement::createBlock();
 

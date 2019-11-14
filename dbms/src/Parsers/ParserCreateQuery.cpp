@@ -411,8 +411,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        tryGetIdentifierNameInto(database, query->database);
-        tryGetIdentifierNameInto(table, query->table);
+        query->table = table;
+        query->database = database;
 
         return true;
     }
@@ -469,8 +469,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    query->table = table;
+    query->database = database;
     query->cluster = cluster_str;
 
     tryGetIdentifierNameInto(to_database, query->to_database);
@@ -596,8 +596,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->is_live_view = true;
     query->temporary = is_temporary;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    query->table = table;
+    query->database = database;
     query->cluster = cluster_str;
 
     tryGetIdentifierNameInto(to_database, query->to_database);
@@ -660,7 +660,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->attach = attach;
     query->if_not_exists = if_not_exists;
 
-    tryGetIdentifierNameInto(database, query->database);
+    query->database = database;
     query->cluster = cluster_str;
 
     query->set(query->storage, storage);
@@ -801,8 +801,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    query->table = table;
+    query->database = database;
     query->cluster = cluster_str;
 
     tryGetIdentifierNameInto(to_database, query->to_database);
@@ -886,9 +886,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->attach = attach;
 
     if (database)
-        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
+        query->database = database;
 
-    query->table = typeid_cast<const ASTIdentifier &>(*name).name;
+    query->table = name;
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

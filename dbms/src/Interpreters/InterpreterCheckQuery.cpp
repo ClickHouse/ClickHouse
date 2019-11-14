@@ -37,8 +37,8 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterCheckQuery::execute()
 {
     const auto & check = query_ptr->as<ASTCheckQuery &>();
-    const String & table_name = check.table;
-    String database_name = check.database.empty() ? context.getCurrentDatabase() : check.database;
+    const String & table_name = check.tableName();
+    String database_name = check.databaseName(context.getCurrentDatabase());
 
     StoragePtr table = context.getTable(database_name, table_name);
     auto check_results = table->checkData(query_ptr, context);

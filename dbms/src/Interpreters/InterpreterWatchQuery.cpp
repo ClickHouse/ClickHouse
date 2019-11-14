@@ -43,13 +43,10 @@ BlockIO InterpreterWatchQuery::execute()
     String database;
     String table;
     /// Get database
-    if (!query.database.empty())
-        database = query.database;
-    else
-        database = context.getCurrentDatabase();
+    database = query.databaseName(context.getCurrentDatabase());
 
     /// Get table
-    table = query.table;
+    table = query.tableName();
 
     /// Get storage
     storage = context.tryGetTable(database, table);
