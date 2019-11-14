@@ -525,30 +525,30 @@
     </query_masking_rules>
     -->
 
-    <!-- Test HTTP request
-         execute the query if the test passes
-         and match the next CustomExecutor if the test does not pass
-         until the match is successful or no matching CustomExecutor exists
-         throw exception(404) when there is no match to any CustomExecutor
-    -->
-    <custom_http>
-        <default>   <!-- CustomExecutor name for show in log -->
-            <always_matched/>   <!-- CustomExecutor matcher to test HTTP requests. -->
-            <!--
-                Currently supported CustomExecutor Matcher(you can specify multiple).
-                <method>GET</method>
-                <URL>/to_test_url</URL>
-             -->
-            <dynamic_query>     <!-- CustomExecutor query executor to specify the query to execute. -->
-                <param_name>query</param_name>
-            </dynamic_query>
-            <!--
-                Currently supported CustomExecutor query executor(you can specify multiple)
-                <query>SELECT 'The query you want to execute can include query parameters, for example: SELECT {int:UInt32}'</query>
-                <dynamic_query><param_name>query<param_name></dynamic_query>
-            -->
-        </default>
-    </custom_http>
+    <http_handlers>
+        <root_handler/>
+        <ping_handler>/ping</ping_handler>
+        <replicas_status_handler>/replicas_status</replicas_status_handler>
+        <dynamic_query_handler><query_param_name>query</query_param_name></dynamic_query_handler>
+
+        <no_handler_description>Use / or /ping for health checks.&#10;Or /replicas_status for more sophisticated health checks.&#10;Send queries from your program with POST method or GET /?query=...&#10;&#10;Use clickhouse-client:&#10;&#10;For interactive data analysis:&#10;clickhouse-client&#10;&#10;For batch query processing:&#10;clickhouse-client --query='SELECT 1' &gt; result&#10;clickhouse-client &lt; query &gt; result&#10;</no_handler_description>
+
+        <!-- Uncomment to use predefined queries.
+            url - RE2 compatible regular expression (optional)
+            method - HTTP method(optional)
+            headers - HTTP Header(optional)
+            queries - predefine queries (mandatory)
+        <predefine_query_handler>
+            <url>/test_simple_predefine</url>
+            <method>GET</method>
+            <headers> <X-ClickHouse-User>default</X-ClickHouse-User></headers>
+            <queries>
+                <query>SELECT 1, {query_prepared_param_1:String}</query>
+                <query>SELECT 1, {query_prepared_param_2:String}</query>
+            </queries>
+        </predefine_query_handler>
+        -->
+    </http_handlers>
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <http_handlers>
+        <predefine_query_handler>
+            <method>PUT</method>
+            <url>/create_test_table</url>
+            <queries>
+                <query>CREATE DATABASE test</query>
+                <query>CREATE TABLE test.test (id UInt8) Engine = Memory</query>
+            </queries>
+        </predefine_query_handler>
+
+        <predefine_query_handler>
+            <method>POST</method>
+            <url>/insert_data_to_test</url>
+            <queries><query>INSERT INTO test.test VALUES</query></queries>
+        </predefine_query_handler>
+
+        <predefine_query_handler>
+            <method>GET</method>
+            <url>/query_data_from_test</url>
+            <queries><query>SELECT * FROM test.test ORDER BY id</query></queries>
+        </predefine_query_handler>
+    </http_handlers>
+</yandex>

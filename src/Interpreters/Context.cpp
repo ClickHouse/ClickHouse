@@ -7,7 +7,6 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
 #include <Common/Macros.h>
-#include <Common/HTMLForm.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -45,7 +44,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/CustomHTTP/CustomExecutor.h>
 #include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
@@ -350,9 +348,6 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
-    std::unique_ptr<CustomExecutors> custom_executors;
-    ConfigurationPtr custom_executors_config;
-    mutable std::mutex custom_executors_mutex;                /// Guards custom executors and their config
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -1548,6 +1543,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
     shared->clusters->setCluster(cluster_name, cluster);
 }
 
+
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
@@ -2045,31 +2041,6 @@ void Context::resetInputCallbacks()
 
     if (input_blocks_reader)
         input_blocks_reader = {};
-}
-
-void Context::setCustomExecutorConfig(const ConfigurationPtr & config, const String & config_prefix)
-{
-    std::lock_guard lock(shared->custom_executors_mutex);
-
-    shared->custom_executors_config = config;
-
-    if (!shared->custom_executors)
-        shared->custom_executors = std::make_unique<CustomExecutors>(*shared->custom_executors_config, settings, config_prefix);
-    else
-        shared->custom_executors->updateCustomExecutors(*shared->custom_executors_config, settings, config_prefix);
-}
-
-std::pair<String, CustomExecutorPtr> Context::getCustomExecutor(Poco::Net::HTTPServerRequest & request, HTMLForm & params)
-{
-    std::lock_guard lock(shared->custom_executors_mutex);
-
-    if (!shared->custom_executors)
-    {
-        auto & config = shared->custom_executors_config ? *shared->custom_executors_config : getConfigRef();
-        shared->custom_executors = std::make_unique<CustomExecutors>(config, settings);
-    }
-
-    return shared->custom_executors->getCustomExecutor(*this, request, params);
 }
 
 

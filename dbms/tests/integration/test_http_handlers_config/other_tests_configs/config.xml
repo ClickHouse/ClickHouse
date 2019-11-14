@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <http_handlers>
+        <root_handler/>
+        <ping_handler>/ping_test</ping_handler>
+        <predefine_query_handler>
+            <method>POST</method>
+            <url>/test_one_handler_with_insert_and_select</url>
+            <queries>
+                <query>INSERT INTO test.test VALUES(1)</query>
+                <query>SELECT COUNT() FROM test.test WHERE id = {id:UInt8}</query>
+            </queries>
+        </predefine_query_handler>
+
+        <no_handler_description>test not found</no_handler_description>
+    </http_handlers>
+</yandex>

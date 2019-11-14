@@ -10,9 +10,12 @@ namespace DB
 class NotFoundHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    void handleRequest(
-        Poco::Net::HTTPServerRequest & request,
-        Poco::Net::HTTPServerResponse & response) override;
+    NotFoundHandler(const std::string & no_handler_description_) : no_handler_description(no_handler_description_) {}
+
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+
+private:
+    const std::string no_handler_description;
 };
 
 }

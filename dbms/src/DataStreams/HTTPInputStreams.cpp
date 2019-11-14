@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#include <Interpreters/CustomHTTP/HTTPInputStreams.h>
+#include <DataStreams/HTTPInputStreams.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 
@@ -31,12 +31,12 @@ HTTPInputStreams::HTTPInputStreams(Context & context, HTTPServerRequest & reques
     }
 }
 
-ReadBufferPtr HTTPInputStreams::createRawInBuffer(HTTPServerRequest & request) const
+std::unique_ptr<ReadBuffer> HTTPInputStreams::createRawInBuffer(HTTPServerRequest & request) const
 {
     return std::make_unique<ReadBufferFromIStream>(request.stream());
 }
 
-ReadBufferPtr HTTPInputStreams::createCompressedBuffer(HTTPServerRequest & request, ReadBufferPtr & raw_buffer) const
+std::unique_ptr<ReadBuffer> HTTPInputStreams::createCompressedBuffer(HTTPServerRequest & request, std::unique_ptr<ReadBuffer> & raw_buffer) const
 {
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_compressed_method = request.get("Content-Encoding", "");
@@ -44,21 +44,22 @@ ReadBufferPtr HTTPInputStreams::createCompressedBuffer(HTTPServerRequest & reque
     if (!http_compressed_method.empty())
     {
         if (http_compressed_method == "gzip")
-            return std::make_shared<ZlibInflatingReadBuffer>(*raw_buffer, CompressionMethod::Gzip);
+            return std::make_unique<ZlibInflatingReadBuffer>(std::move(raw_buffer), CompressionMethod::Gzip);
         else if (http_compressed_method == "deflate")
-            return std::make_shared<ZlibInflatingReadBuffer>(*raw_buffer, CompressionMethod::Zlib);
+            return std::make_unique<ZlibInflatingReadBuffer>(std::move(raw_buffer), CompressionMethod::Zlib);
 #if USE_BROTLI
         else if (http_compressed_method == "br")
-            return std::make_shared<BrotliReadBuffer>(*raw_buffer);
+            return std::make_unique<BrotliReadBuffer>(std::move(raw_buffer));
 #endif
         else
             throw Exception("Unknown Content-Encoding of HTTP request: " + http_compressed_method, ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
     }
 
-    return raw_buffer;
+    return std::move(raw_buffer);
 }
 
-ReadBufferPtr HTTPInputStreams::createInternalCompressedBuffer(HTMLForm & params, ReadBufferPtr & http_maybe_encoding_buffer) const
+std::unique_ptr<ReadBuffer> HTTPInputStreams::createInternalCompressedBuffer(
+    HTMLForm & params, std::unique_ptr<ReadBuffer> & http_maybe_encoding_buffer) const
 {
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -66,7 +67,7 @@ ReadBufferPtr HTTPInputStreams::createInternalCompressedBuffer(HTMLForm & params
     if (params.getParsed<bool>("decompress", false))
         return std::make_unique<CompressedReadBuffer>(*http_maybe_encoding_buffer);
 
-    return http_maybe_encoding_buffer;
+    return std::move(http_maybe_encoding_buffer);
 }
 
 }

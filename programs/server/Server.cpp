@@ -466,7 +466,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             //setTextLog(global_context->getTextLog());
             //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
-            global_context->setCustomExecutorConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)

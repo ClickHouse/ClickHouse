@@ -42,7 +42,6 @@ namespace zkutil
     class ZooKeeper;
 }
 
-struct HTMLForm;
 
 namespace DB
 {
@@ -106,7 +105,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 struct NamedSession;
-
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -490,9 +488,6 @@ public:
     void reloadClusterConfig();
 
     Compiler & getCompiler();
-
-    void setCustomExecutorConfig(const ConfigurationPtr & config, const String & config_prefix = "custom_http");
-    std::pair<String, CustomExecutorPtr> getCustomExecutor(Poco::Net::HTTPServerRequest &request, HTMLForm & params);
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();

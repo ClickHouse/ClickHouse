@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Poco/Net/HTTPServerRequest.h>
 #include <Core/ExternalTable.h>
+#include <Common/HTMLForm.h>
 #include <Common/SettingsChanges.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/CustomHTTP/CustomExecutor.h>
+#include <Poco/Net/HTTPServerRequest.h>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ namespace ErrorCodes
 class ExtractorContextChange
 {
 public:
-    ExtractorContextChange(Context & context_, const CustomExecutorPtr & executor_) : context(context_), executor(executor_) {}
+    ExtractorContextChange(Context & context_, bool settings_may_in_post_) : context(context_), settings_may_in_post(settings_may_in_post_) {}
 
     static const NameSet & getReservedParamNames()
     {
@@ -59,20 +59,20 @@ public:
         becomeReadonlyIfNeed(request);
         changeSettingsFromParams(params, reservedParamSuffixesFilter(is_multipart_data));
 
-        if (is_multipart_data || executor->canBeParseRequestBody())
+        if (is_multipart_data || settings_may_in_post)
         {
             ExternalTablesHandler handler(context, params);
             params.load(request, request.stream(), handler);
 
             /// We use the `Post Request Body Settings` to override the `Qeruy String Param settings`
-            if (executor->canBeParseRequestBody())
+            if (settings_may_in_post)
                 changeSettingsFromParams(params, reservedParamSuffixesFilter(is_multipart_data));
         }
     }
 
 private:
     Context & context;
-    const CustomExecutorPtr & executor;
+    bool settings_may_in_post;
 
     /// 'readonly' setting values mean:
     /// readonly = 0 - any query is allowed, client can change any setting.
@@ -82,7 +82,7 @@ private:
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
     /// Only readonly queries are allowed for HTTP GET requests.
-    void becomeReadonlyIfNeed(HTTPRequest & request)
+    void becomeReadonlyIfNeed(Poco::Net::HTTPServerRequest & request)
     {
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
         {
@@ -109,8 +109,6 @@ private:
             {
                 if (Settings::findIndex(name) != Settings::npos)
                     settings_changes.push_back({name, value});
-                else if (!executor->isQueryParam(name))
-                    throw Exception("Unknown HTTP param name: '" + name + "'", ErrorCodes::UNKNOWN_HTTP_PARAM);
             }
         }
 

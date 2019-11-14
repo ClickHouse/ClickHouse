@@ -1,4 +1,4 @@
-#include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
+#include <DataStreams/HTTPOutputStreams.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/CascadeWriteBuffer.h>

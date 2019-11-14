@@ -354,6 +354,15 @@
         </default>
     </graphite_rollup_example>
 
+    <http_handlers>
+        <root_handler/>
+        <ping_handler>/ping</ping_handler>
+        <replicas_status_handler>/replicas_status</replicas_status_handler>
+        <dynamic_query_handler><query_param_name>query</query_param_name></dynamic_query_handler>
+
+        <no_handler_description>Use / or /ping for health checks.&#10;Or /replicas_status for more sophisticated health checks.&#10;Send queries from your program with POST method or GET /?query=...&#10;&#10;Use clickhouse-client:&#10;&#10;For interactive data analysis:&#10;clickhouse-client&#10;&#10;For batch query processing:&#10;clickhouse-client --query='SELECT 1' &gt; result&#10;clickhouse-client &lt; query &gt; result&#10;</no_handler_description>
+    </http_handlers>
+
     <!-- Directory in <clickhouse-path> containing schema files for various input formats.
          The directory will be created if it doesn't exist.
       -->
