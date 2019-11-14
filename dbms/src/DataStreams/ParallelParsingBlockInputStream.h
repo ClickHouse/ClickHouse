@@ -73,27 +73,23 @@ public:
 
     ~ParallelParsingBlockInputStream() override
     {
-        executed = true;
-        waitForAllThreads();
+        finishAndWait();
     }
 
     void cancel(bool kill) override
     {
-        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Try to cancel.");
+        /**
+          * Can be called multiple times, from different threads. Saturate the
+          * the kill flag with OR.
+          */
         if (kill)
             is_killed = true;
-        bool old_val = false;
-        if (!is_cancelled.compare_exchange_strong(old_val, true))
-            return;
-
-        executed = true;
+        is_cancelled = true;
 
         for (auto& unit: processing_units)
-            if (!unit.parser->isCancelled())
-                unit.parser->cancel(kill);
+            unit.parser->cancel(kill);
 
-        waitForAllThreads();
-        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Cancelled succsessfully.");
+        finishAndWait();
     }
 
     Block getHeader() const override
@@ -121,7 +117,11 @@ private:
     const size_t min_chunk_size;
 
     std::atomic<bool> is_exception_occured{false};
-    std::atomic<bool> executed{false};
+    /*
+     * This is declared as atomic to avoid UB, because parser threads access it
+     * without synchronization.
+     */
+    std::atomic<bool> finished{false};
 
     BlockMissingValues last_block_missing_values;
 
@@ -193,8 +193,10 @@ private:
         pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
     }
 
-    void waitForAllThreads()
+    void finishAndWait()
     {
+        finished.store(true, std::memory_order_release);
+
         {
             std::unique_lock lock(mutex);
             segmentator_condvar.notify_all();

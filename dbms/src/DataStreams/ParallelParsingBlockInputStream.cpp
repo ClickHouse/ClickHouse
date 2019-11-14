@@ -9,7 +9,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
     setThreadName("Segmentator");
     try
     {
-        while (!is_cancelled && !is_exception_occured && !executed)
+        while (!is_cancelled && !is_exception_occured && !finished)
         {
             ++segmentator_ticket_number;
             const auto current_unit_number = segmentator_ticket_number % max_threads_to_use;
@@ -17,7 +17,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
 
             {
                 std::unique_lock lock(mutex);
-                segmentator_condvar.wait(lock, [&]{ return unit.status == READY_TO_INSERT || is_exception_occured || executed; });
+                segmentator_condvar.wait(lock, [&]{ return unit.status == READY_TO_INSERT || is_exception_occured || finished; });
             }
 
             if (is_exception_occured)
@@ -117,19 +117,18 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
 Block ParallelParsingBlockInputStream::readImpl()
 {
     Block res;
-    if (isCancelledOrThrowIfKilled() || executed)
+    if (isCancelledOrThrowIfKilled() || finished)
         return res;
 
     std::unique_lock lock(mutex);
     const auto current_unit_number = reader_ticket_number % max_threads_to_use;
     auto & unit = processing_units[current_unit_number];
 
-    reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || is_exception_occured || executed; });
+    reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || is_exception_occured || finished; });
 
     /// Check for an exception and rethrow it
     if (is_exception_occured)
     {
-        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readImpl()"), "Exception occured. Will cancel the query.");
         lock.unlock();
         cancel(false);
         rethrowFirstException(exceptions);
@@ -143,7 +142,7 @@ Block ParallelParsingBlockInputStream::readImpl()
         if (unit.is_last)
         {
             //In case that all data was read we don't need to cancel.
-            executed= true;
+            finished = true;
             return res;
         }
 
