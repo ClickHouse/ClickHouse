@@ -18,6 +18,35 @@ namespace DB
  * It splits original data into chunks. Then each chunk is parsed by different thread.
  * The number of chunks equals to max_threads_for_parallel_parsing setting.
  * The size of chunk is equal to min_chunk_size_for_parallel_parsing setting.
+ *
+ * This stream has three kinds of threads: one segmentator, multiple parsers
+ * (max_threads_for_parallel_parsing) and one reader thread -- that is, the one
+ * from which readImpl() is called.
+ * They operate one after another on parts of data called "processing units".
+ * One unit consists of buffer with raw data from file, filled by segmentator
+ * thread. This raw data is then parsed by a parser thread to form a number of
+ * Blocks. These Blocks are returned to the parent stream from readImpl().
+ * After being read out, a processing unit is reused, to save on allocating
+ * memory for the raw buffer. The processing units are organized into a circular
+ * array to facilitate reuse and to apply backpressure on the segmentator thread
+ * -- after it runs out of processing units, it has to wait for the reader to
+ * read out the previous blocks.
+ * The outline of what the threads do is as follows:
+ * segmentator thread:
+ *  1) wait for the next processing unit to become empty
+ *  2) fill it with a part of input file
+ *  3) start a parser thread
+ *  4) repeat until eof
+ * parser thread:
+ *  1) parse the given raw buffer without any synchronization
+ *  2) signal that the given unit is ready to read
+ *  3) finish
+ * readImpl():
+ *  1) wait for the next processing unit to become ready to read
+ *  2) take the blocks from the processing unit to return them to the caller
+ *  3) signal that the processing unit is empty
+ *  4) repeat until it encounters unit that is marked as "past_the_end"
+ * All threads must also check for cancel/eof/exception flags.
  */
 class ParallelParsingBlockInputStream : public IBlockInputStream
 {
@@ -61,9 +90,9 @@ public:
               pool(builder.max_threads_to_use),
               file_segmentation_engine(builder.file_segmentation_engine)
     {
-        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream()"), "Constructor");
-        exceptions.resize(max_threads_to_use);
-        for (size_t i = 0; i < max_threads_to_use; ++i)
+        // Allocate more units than threads to decrease segmentator
+        // waiting on reader on wraparound. The number is random.
+        for (size_t i = 0; i < builder.max_threads_to_use + 4; ++i)
             processing_units.emplace_back(builder);
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
@@ -116,7 +145,6 @@ private:
     const std::atomic<size_t> max_threads_to_use;
     const size_t min_chunk_size;
 
-    std::atomic<bool> is_exception_occured{false};
     /*
      * This is declared as atomic to avoid UB, because parser threads access it
      * without synchronization.
@@ -129,9 +157,9 @@ private:
     ReadBuffer & original_buffer;
 
     //Non-atomic because it is used in one thread.
-    size_t reader_ticket_number{1};
-    size_t internal_block_iter{0};
+    std::optional<size_t> next_block_in_current_unit;
     size_t segmentator_ticket_number{0};
+    size_t reader_ticket_number{0};
 
     std::mutex mutex;
     std::condition_variable reader_condvar;
@@ -169,11 +197,12 @@ private:
         explicit ProcessingUnit(const Builder & builder) : status(ProcessingUnitStatus::READY_TO_INSERT)
         {
             readbuffer = std::make_unique<ReadBuffer>(segment.memory.data(), segment.used_size, 0);
-            parser = std::make_unique<InputStreamFromInputFormat>(builder.input_processor_creator(*readbuffer,
-                                                                                                  builder.input_creator_params.sample,
-                                                                                                  builder.input_creator_params.context,
-                                                                                                  builder.input_creator_params.row_input_format_params,
-                                                                                                  builder.input_creator_params.settings));
+            parser = std::make_unique<InputStreamFromInputFormat>(
+                builder.input_processor_creator(*readbuffer,
+                    builder.input_creator_params.sample,
+                    builder.input_creator_params.context,
+                    builder.input_creator_params.row_input_format_params,
+                    builder.input_creator_params.settings));
         }
 
         BlockExt block_ext;
@@ -181,12 +210,15 @@ private:
         MemoryExt segment;
         std::unique_ptr<InputStreamFromInputFormat> parser;
         std::atomic<ProcessingUnitStatus> status;
-        char is_last{false};
+        bool is_past_the_end{false};
     };
 
-    /// We use separate exceptions because there is convenient rethrowFirstException function.
-    Exceptions exceptions;
+    std::exception_ptr background_exception = nullptr;
+
+    // We use deque instead of vector, because it does not require a move
+    // constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
+
 
     void scheduleParserThreadForUnitWithNumber(size_t unit_number)
     {
@@ -195,7 +227,7 @@ private:
 
     void finishAndWait()
     {
-        finished.store(true, std::memory_order_release);
+        finished = true;
 
         {
             std::unique_lock lock(mutex);
@@ -218,6 +250,12 @@ private:
 
     void segmentatorThreadFunction();
     void parserThreadFunction(size_t bucket_num);
+
+    // Save/log a background exception, set termination flag, wake up all
+    // threads. This function is used by segmentator and parsed threads.
+    // readImpl() is called from the main thread, so the exception handling
+    // is different.
+    void onBackgroundException();
 };
 
 };
