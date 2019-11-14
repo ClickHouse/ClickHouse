@@ -6,7 +6,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,7 +55,6 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())

@@ -698,10 +698,10 @@ class ClickHouseInstance:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
             return open_result.read()
 
-            # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_request(self, url, method='GET', params=None, data=None):
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_request(self, url, method='GET', params=None, data=None, headers=None):
         url = "http://" + self.ip_address + ":8123/"+url
-        return requests.request(method=method, url=url, params=params, data=data).content
+        return requests.request(method=method, url=url, params=params, data=data, headers=headers).content
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):

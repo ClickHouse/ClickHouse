@@ -1,64 +1,51 @@
 #pragma once
 
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 #include "IServer.h"
-#include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
-#include "NotFoundHandler.h"
-#include "PingRequestHandler.h"
-#include "ReplicasStatusHandler.h"
-#include "RootRequestHandler.h"
 
 
 namespace DB
 {
 
-template <typename HandlerType>
-class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+class InterserverIOHTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
+public:
+    InterserverIOHTTPHandlerFactory(IServer & server_, const std::string & name_);
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
+
+private:
+    IServer & server;
+    Logger * log;
+    std::string name;
+};
+
+using HTTPHandlerCreator = std::function<Poco::Net::HTTPRequestHandler * ()>;
+using HTTPHandlerMatcher = std::function<bool(const Poco::Net::HTTPServerRequest &)>;
+using HTTPHandlerMatcherAndCreator = std::pair<HTTPHandlerMatcher, HTTPHandlerCreator>;
+using HTTPHandlersMatcherAndCreator = std::vector<HTTPHandlerMatcherAndCreator>;
+
+class HTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    HTTPHandlerFactory(IServer & server_, const std::string & name_);
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
+
+    void updateHTTPHandlersCreator(Poco::Util::AbstractConfiguration & configuration, const String & key = "http_handlers");
+
 private:
     IServer & server;
     Logger * log;
     std::string name;
 
-public:
-    HTTPRequestHandlerFactory(IServer & server_, const std::string & name_) : server(server_), log(&Logger::get(name_)), name(name_)
-    {
-    }
-
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
-    {
-        LOG_TRACE(log, "HTTP Request for " << name << ". "
-            << "Method: "
-            << request.getMethod()
-            << ", Address: "
-            << request.clientAddress().toString()
-            << ", User-Agent: "
-            << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-            << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-            << ", Content Type: " << request.getContentType()
-            << ", Transfer Encoding: " << request.getTransferEncoding());
-
-        const auto & uri = request.getURI();
-
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
-        {
-            if (uri == "/")
-                return new RootRequestHandler(server);
-            if (uri == "/ping")
-                return new PingRequestHandler(server);
-            else if (startsWith(uri, "/replicas_status"))
-                return new ReplicasStatusHandler(server.context());
-        }
-
-        return new HandlerType(server);
-    }
+    String no_handler_description;
+    HTTPHandlersMatcherAndCreator handlers_creator;
 };
-
-using HTTPHandlerFactory = HTTPRequestHandlerFactory<HTTPHandler>;
-using InterserverIOHTTPHandlerFactory = HTTPRequestHandlerFactory<InterserverIOHTTPHandler>;
 
 }

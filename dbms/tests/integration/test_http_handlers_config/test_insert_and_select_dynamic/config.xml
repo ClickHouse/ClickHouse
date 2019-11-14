@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <http_handlers>
+        <dynamic_query_handler>
+            <method>PUT</method>
+            <url>/create_test_table</url>
+            <query_param_name>test_create_query_param</query_param_name>
+        </dynamic_query_handler>
+
+        <dynamic_query_handler>
+            <method>POST</method>
+            <url>/insert_data_to_test</url>
+            <query_param_name>test_insert_query_param</query_param_name>
+        </dynamic_query_handler>
+
+        <dynamic_query_handler>
+            <method>GET</method>
+            <url>/query_data_from_test</url>
+            <query_param_name>test_select_query_param</query_param_name>
+        </dynamic_query_handler>
+    </http_handlers>
+</yandex>

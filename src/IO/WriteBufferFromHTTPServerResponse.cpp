@@ -124,7 +124,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: deflate\r\n";
 #else
-                    response.set("Content-Encoding", "gzip");
+                    response.set("Content-Encoding", "deflate");
                     response_body_ostr = &(response.send());
 #endif
                     out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
@@ -135,18 +135,15 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                 else if (compression_method == CompressionMethod::Brotli)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: deflate\r\n";
+                    *response_header_ostr << "Content-Encoding: br\r\n";
 #else
                 response.set("Content-Encoding", content_encoding_name);
 #endif
 
-                /// Newline autosent by response.send()
-                /// This may result in an extra empty line in the response body
-                response_body_ostr = &(response.send());
-#endif
-
-                out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-                out = &*out_raw;
+                else
+                    throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
+                                    ErrorCodes::LOGICAL_ERROR);
+                /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
             }
             else
             {
@@ -154,7 +151,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                 response_body_ostr = &(response.send());
 #endif
 
-                out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
+                out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
                 out = &*out_raw;
             }
         }
