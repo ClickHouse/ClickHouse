@@ -1,4 +1,4 @@
-Ж# Interval {#data-type-interval}
+# Interval {#data-type-interval}
 
 Семейство типов данных представляющих интервалы дат и времени. Оператор [INTERVAL](../../query_language/operators.md#operator-interval) возвращает значения этих типов.
 
