@@ -180,8 +180,6 @@ struct AggregationMethodOneNumber
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
 
     Data data;
 
@@ -356,8 +354,6 @@ struct AggregationMethodKeysFixed
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
@@ -1012,6 +1008,9 @@ protected:
         IAggregateFunction::AddFunc func;
         size_t state_offset;
         const IColumn ** arguments;
+        const IAggregateFunction * batch_that;
+        const IColumn ** batch_arguments;
+        const UInt64 * offsets = nullptr;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
