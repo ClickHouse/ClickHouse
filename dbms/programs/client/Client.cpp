@@ -694,6 +694,9 @@ private:
 
     bool process(const String & text)
     {
+        if (exit_strings.end() != exit_strings.find(trim(text, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
+            return false;
+
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
@@ -788,9 +791,6 @@ private:
 
     bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
     {
-        if (exit_strings.end() != exit_strings.find(trim(line, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
-            return false;
-
         resetOutput();
         got_exception = false;
 
