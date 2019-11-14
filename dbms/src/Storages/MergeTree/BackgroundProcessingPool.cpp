@@ -61,9 +61,12 @@ void BackgroundProcessingPoolTaskInfo::wake()
 }
 
 
-BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
+BackgroundProcessingPool::BackgroundProcessingPool(int size_, const char * thread_name_)
+    : size(size_)
+    , thread_name(thread_name_)
 {
-    LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
+    logger = &Logger::get(String("BackgroundProcessingPool[") + thread_name + "]");
+    LOG_INFO(logger, "Create BackgroundProcessingPool with " << size << " threads");
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -122,7 +125,7 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 
 void BackgroundProcessingPool::threadFunction()
 {
-    setThreadName("BackgrProcPool");
+    setThreadName(thread_name);
 
     {
         std::lock_guard lock(tasks_mutex);

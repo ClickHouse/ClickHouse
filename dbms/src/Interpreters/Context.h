@@ -450,7 +450,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
-    BackgroundProcessingPool & getMovePool();
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
