@@ -497,15 +497,21 @@ private:
                 throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
 
 #if RL_VERSION_MAJOR >= 7
-            /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
-            ///  that the program can differentiate pasted text from typed-in text. This helps
-            ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
-            ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
-            ///  more details.
-            rl_variable_bind("enable-bracketed-paste", "on");
+            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+            ///  disabled, so that we are able to paste and execute multiline queries in a whole
+            ///  instead of erroring out, while be less intrusive.
+            if (config().has("multiquery") && !config().has("multiline"))
+            {
+                /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
+                ///  that the program can differentiate pasted text from typed-in text. This helps
+                ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
+                ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
+                ///  more details.
+                rl_variable_bind("enable-bracketed-paste", "on");
 
-            /// Use our bracketed paste handler to get better user experience. See comments above.
-            rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+                /// Use our bracketed paste handler to get better user experience. See comments above.
+                rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+            }
 #endif
 
             auto clear_prompt_or_exit = [](int)
