@@ -84,7 +84,6 @@ public:
               row_input_format_params(builder.input_creator_params.row_input_format_params),
               format_settings(builder.input_creator_params.settings),
               input_processor_creator(builder.input_processor_creator),
-              max_threads_to_use(builder.max_threads_to_use),
               min_chunk_size(builder.min_chunk_size),
               original_buffer(builder.read_buffer),
               pool(builder.max_threads_to_use),
@@ -142,7 +141,6 @@ private:
     const FormatSettings format_settings;
     const InputProcessorCreator input_processor_creator;
 
-    const std::atomic<size_t> max_threads_to_use;
     const size_t min_chunk_size;
 
     /*
