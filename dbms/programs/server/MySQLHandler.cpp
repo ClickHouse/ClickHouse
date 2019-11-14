@@ -232,9 +232,10 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     if (user->password_double_sha1_hex.empty())
         auth_plugin = std::make_unique<Authentication::Sha256Password>(public_key, private_key, log);
 
-    try {
+    try
+    {
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
-        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().address());
+        auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().peerAddress());
     }
     catch (const Exception & exc)
     {
