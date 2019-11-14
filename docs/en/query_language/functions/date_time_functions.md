@@ -74,7 +74,7 @@ toUnixTimestamp(datetime[, timezone])
 
 **Parameters**
 
-- `datetime` — Date with time. [DateTime](../../data_types/datetime.md#data_type-datetime).
+- `datetime` — Date with time. [String](../../data_types/string.md).
 - `timezone` — Optional time zone argument. [String](../../data_types/string.md).
 
 **Returned value**

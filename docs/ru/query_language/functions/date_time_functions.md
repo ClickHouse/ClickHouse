@@ -55,7 +55,7 @@ toUnixTimestamp(datetime[, timezone])
 
 **Параметры**
 
-- `datetime` — Дата с временем. [DateTime](../../data_types/datetime.md#data_type-datetime).
+- `datetime` — Дата с временем. [String](../../data_types/string.md).
 - `timezone` — Опциональный параметр. Часовой пояс. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
