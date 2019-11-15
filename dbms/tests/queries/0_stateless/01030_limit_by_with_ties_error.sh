@@ -12,4 +12,3 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM VALUES('Phrase String, Payload String'
 $CLICKHOUSE_CLIENT --query="SELECT * FROM VALUES('Phrase String, Payload String', ('hello', 'x'), ('world', 'x'), ('hello', 'z'), ('upyachka', 'a'), ('test', 'b'), ('foo', 'c'), ('bar', 'd')) ORDER BY Payload LIMIT 1 BY Phrase LIMIT 5 WITH TIES"
 
 $CLICKHOUSE_CLIENT --query="SELECT TOP 5 WITH TIES * FROM VALUES('Phrase String, Payload String', ('hello', 'x'), ('world', 'x'), ('hello', 'z'), ('upyachka', 'a'), ('test', 'b'), ('foo', 'c'), ('bar', 'd')) ORDER BY Payload LIMIT 1 BY Phrase"
-
