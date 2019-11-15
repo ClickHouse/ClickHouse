@@ -2657,7 +2657,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
         executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
     }
     else
-        executeUnion(pipeline, {});
+        executeUnion(pipeline, {}, false);
 
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
