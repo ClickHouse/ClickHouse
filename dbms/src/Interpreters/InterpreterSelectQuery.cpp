@@ -925,14 +925,14 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
+static InputSortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
     const Context & context, const SyntaxAnalyzerResultPtr & global_syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
 
     auto order_descr = getSortDescription(query, context);
-    SortDescription prefix_order_descr;
+    SortDescription order_key_prefix_descr;
     int read_direction = order_descr.at(0).direction;
 
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
@@ -947,7 +947,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
         if (order_descr[i].column_name == sorting_key_columns[i] && current_direction == read_direction)
-            prefix_order_descr.push_back(order_descr[i]);
+            order_key_prefix_descr.push_back(order_descr[i]);
         else
         {
             auto ast = query.orderBy()->children[i]->children.at(0);
@@ -995,14 +995,14 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
             if (i == 0)
                 read_direction = current_direction;
 
-            prefix_order_descr.push_back(order_descr[i]);
+            order_key_prefix_descr.push_back(order_descr[i]);
         }
     }
 
-    if (prefix_order_descr.empty())
+    if (order_key_prefix_descr.empty())
         return {};
 
-    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), read_direction);
+    return std::make_shared<InputSortingInfo>(std::move(order_key_prefix_descr), read_direction);
 }
 
 
@@ -1026,11 +1026,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     const Settings & settings = context.getSettingsRef();
     auto & expressions = analysis_result;
 
-    SortingInfoPtr sorting_info;
+    InputSortingInfoPtr input_sorting_info;
     if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
     {
         if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
+            input_sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
     if (options.only_analyze)
@@ -1090,7 +1090,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, pipeline, input_sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
     }
@@ -1216,7 +1216,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -1289,7 +1289,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline, query_info.sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1349,7 +1349,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 template <typename TPipeline>
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        const InputSortingInfoPtr & input_sorting_info, const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     constexpr bool pipeline_with_processors = std::is_same<TPipeline, QueryPipeline>::value;
 
@@ -1666,7 +1666,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
-        query_info.sorting_info = sorting_info;
+        query_info.input_sorting_info = input_sorting_info;
 
         BlockInputStreams streams;
         Pipes pipes;
@@ -2248,14 +2248,14 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
     });
 }
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     const Settings & settings = context.getSettingsRef();
     UInt64 limit = getLimitForSorting(query, context);
 
-    if (sorting_info)
+    if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
          * We have several threads, each of them reads batch of parts in direct
@@ -2264,28 +2264,28 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
          * At this stage we merge per-thread streams into one.
          */
 
-        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
 
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        executeMergeSorted(pipeline, sorting_info->prefix_order_descr, limit_for_merging);
+        executeMergeSorted(pipeline, input_sorting_info->order_key_prefix_descr, limit_for_merging);
 
         if (need_finish_sorting)
         {
             pipeline.transform([&](auto & stream)
             {
-                stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+                stream = std::make_shared<PartialSortingBlockInputStream>(stream, output_order_descr, limit);
             });
 
             pipeline.firstStream() = std::make_shared<FinishSortingBlockInputStream>(
-                pipeline.firstStream(), sorting_info->prefix_order_descr,
-                order_descr, settings.max_block_size, limit);
+                pipeline.firstStream(), input_sorting_info->order_key_prefix_descr,
+                output_order_descr, settings.max_block_size, limit);
         }
     }
     else
     {
         pipeline.transform([&](auto & stream)
         {
-            auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+            auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, output_order_descr, limit);
 
             /// Limits on sorting
             IBlockInputStream::LocalLimits limits;
@@ -2301,16 +2301,16 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
 
         /// Merge the sorted blocks.
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-            pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+            pipeline.firstStream(), output_order_descr, settings.max_block_size, limit,
             settings.max_bytes_before_remerge_sort,
             settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
@@ -2320,7 +2320,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 //    limits.mode = IBlockInputStream::LIMITS_TOTAL;
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
-    if (sorting_info)
+    if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
          * We have several threads, each of them reads batch of parts in direct
@@ -2329,7 +2329,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
          * At this stage we merge per-thread streams into one.
          */
 
-        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
 
         if (pipeline.getNumStreams() > 1)
         {
@@ -2337,7 +2337,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
-                sorting_info->prefix_order_descr,
+                input_sorting_info->order_key_prefix_descr,
                 settings.max_block_size, limit_for_merging);
 
             pipeline.addPipe({ std::move(transform) });
@@ -2348,14 +2348,14 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
             {
                 bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-                return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
             });
 
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
-                    header, sorting_info->prefix_order_descr,
-                    order_descr, settings.max_block_size, limit);
+                    header, input_sorting_info->order_key_prefix_descr,
+                    output_order_descr, settings.max_block_size, limit);
             });
         }
 
@@ -2365,7 +2365,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-        return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
     });
 
     /// If there are several streams, we merge them into one
@@ -2378,7 +2378,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             return nullptr;
 
         return std::make_shared<MergeSortingTransform>(
-                header, order_descr, settings.max_block_size, limit,
+                header, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
@@ -2803,11 +2803,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
-    if (query_info.sorting_info)
+    if (query_info.input_sorting_info)
     {
         if (pipeline.stream_with_non_joined_data)
             throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
     }
     else
         executeUnion(pipeline, {});
@@ -2818,11 +2818,11 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    if (query_info.sorting_info)
+    if (query_info.input_sorting_info)
     {
         if (pipeline.hasDelayedStream())
             throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
     }
 
     const Settings & settings = context.getSettingsRef();
