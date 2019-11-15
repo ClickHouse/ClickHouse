@@ -384,36 +384,76 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_size)
+bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_bytes)
 {
-    if (in.eof())
-        return false;
-
-    char * begin_pos = in.position();
-    bool need_more_data = true;
-    memory.resize(min_chunk_size);
-    while (!eofWithSavingBufferState(in, memory, used_size, begin_pos) && need_more_data)
+    for (;;)
     {
-        in.position() = find_first_symbols<'\\', '\r', '\n'>(in.position(), in.buffer().end());
-        if (in.position() == in.buffer().end())
+        if (in.eof())
         {
-            continue;
+            used_size = memory.size(); // remove me
+            return false;
         }
 
-        if (*in.position() == '\\')
+        const auto old_total_bytes = memory.size();
+
+        // Calculate the minimal amount of bytes we must read for this chunk.
+        // The chunk size may be already bigger than the required minimum, if
+        // we have a giant row and still haven't read up to the separator.
+        const auto min_bytes_needed = (min_chunk_bytes >= old_total_bytes)
+            ? min_chunk_bytes - old_total_bytes : 0;
+
+        // The start position might be over the in.buffer().end(), it's OK --
+        // find_first_symbols will process this correctly and return
+        // in.buffer().end().
+        //char * next_separator = in.position() + min_bytes_needed;
+        bool found_separator = false;
+        char * chunk_end = in.position() + min_bytes_needed;
+        // Loop to skip the escaped line separators.
+        for (;;)
         {
-            ++in.position();
-            if (!eofWithSavingBufferState(in, memory, used_size, begin_pos, true))
-                ++in.position();
-        } else if (*in.position() == '\n' || *in.position() == '\r')
-        {
-            if (used_size + static_cast<size_t>(in.position() - begin_pos) >= min_chunk_size)
-                need_more_data = false;
-            ++in.position();
+            const auto next_separator = find_first_symbols<'\r', '\n'>(chunk_end,
+                in.buffer().end());
+            assert(next_separator <= in.buffer().end());
+
+            if (next_separator == in.buffer().end())
+            {
+                // Got to end of buffer, return it.
+                chunk_end = in.buffer().end();
+                break;
+            }
+
+            chunk_end = next_separator + 1;
+
+            // We found a line separator character, check whether it is escaped by
+            // checking if there is a '\' to the left. The previous character may
+            // have been read on the previous loop, in this case we read it from
+            // 'memory' buffer.
+            if ((next_separator > in.position() && *(next_separator - 1) != '\\')
+                || (next_separator == in.position() && memory[memory.size() - 1] != '\\'))
+            {
+                found_separator = true;
+                break;
+            }
+            // This is an escaped separator, loop further.
         }
+
+        const auto bytes_read_now = chunk_end - in.position();
+        const auto new_total_bytes = old_total_bytes + bytes_read_now;
+        memory.resize(new_total_bytes);
+        memcpy(memory.data() + old_total_bytes, in.position(), bytes_read_now);
+
+        in.position() = chunk_end;
+
+        if (found_separator && new_total_bytes >= min_chunk_bytes)
+        {
+            // Found the separator and the chunk big enough so that we can
+            // return it.
+            used_size = memory.size(); //FIXME
+            return true;
+        }
+        // Didn't find the separator, or the chunk is not big enough. Read more
+        // from the file.
     }
-    eofWithSavingBufferState(in, memory, used_size, begin_pos, true);
-    return true;
 }
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)

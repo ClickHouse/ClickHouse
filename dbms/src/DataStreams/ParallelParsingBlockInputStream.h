@@ -208,7 +208,7 @@ private:
         MemoryExt segment;
         std::unique_ptr<InputStreamFromInputFormat> parser;
         std::atomic<ProcessingUnitStatus> status;
-        bool is_past_the_end{false};
+        bool is_last{false};
     };
 
     std::exception_ptr background_exception = nullptr;
