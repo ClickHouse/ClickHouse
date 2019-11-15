@@ -19,14 +19,14 @@ TEST(Common, PODArray_Insert)
 
     std::string insert_with_resize;
     insert_with_resize.reserve(chars.capacity() * 2);
-    char curChar = 'a';
+    char cur_char = 'a';
     while (insert_with_resize.size() < insert_with_resize.capacity())
     {
-        insert_with_resize += curChar;
-        if (curChar == 'z')
-            curChar = 'a';
+        insert_with_resize += cur_char;
+        if (cur_char == 'z')
+            cur_char = 'a';
         else
-            ++curChar;
+            ++cur_char;
     }
     str.insert(str.begin(), insert_with_resize.begin(), insert_with_resize.end());
     chars.insert(chars.begin(), insert_with_resize.begin(), insert_with_resize.end());
