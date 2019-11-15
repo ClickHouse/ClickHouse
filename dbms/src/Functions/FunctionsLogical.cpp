@@ -63,7 +63,7 @@ MutableColumnPtr convertFromTernaryData(const UInt8Container & ternary_data, con
 }
 
 template <typename T>
-bool tryConvertColumnToUInt8(const IColumn * column, UInt8Container & res)
+bool tryConvertColumnToBoolean(const IColumn * column, UInt8Container & res)
 {
     const auto col = checkAndGetColumn<ColumnVector<T>>(column);
     if (!col)
@@ -76,17 +76,18 @@ bool tryConvertColumnToUInt8(const IColumn * column, UInt8Container & res)
     return true;
 }
 
-void convertColumnToUInt8(const IColumn * column, UInt8Container & res)
+void convertColumnToBoolean(const IColumn * column, UInt8Container & res)
 {
-    if (!tryConvertColumnToUInt8<Int8>(column, res) &&
-        !tryConvertColumnToUInt8<Int16>(column, res) &&
-        !tryConvertColumnToUInt8<Int32>(column, res) &&
-        !tryConvertColumnToUInt8<Int64>(column, res) &&
-        !tryConvertColumnToUInt8<UInt16>(column, res) &&
-        !tryConvertColumnToUInt8<UInt32>(column, res) &&
-        !tryConvertColumnToUInt8<UInt64>(column, res) &&
-        !tryConvertColumnToUInt8<Float32>(column, res) &&
-        !tryConvertColumnToUInt8<Float64>(column, res))
+    if (!tryConvertColumnToBoolean<UInt8>(column, res) &&
+        !tryConvertColumnToBoolean<Int8>(column, res) &&
+        !tryConvertColumnToBoolean<Int16>(column, res) &&
+        !tryConvertColumnToBoolean<Int32>(column, res) &&
+        !tryConvertColumnToBoolean<Int64>(column, res) &&
+        !tryConvertColumnToBoolean<UInt16>(column, res) &&
+        !tryConvertColumnToBoolean<UInt32>(column, res) &&
+        !tryConvertColumnToBoolean<UInt64>(column, res) &&
+        !tryConvertColumnToBoolean<Float32>(column, res) &&
+        !tryConvertColumnToBoolean<Float64>(column, res))
         throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -451,19 +452,14 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
         return;
     }
 
-    /// Convert all columns to UInt8
+    /// Convert all columns to UInt8 with boolean values
     Columns converted_columns;
     for (const IColumn * column : arguments)
     {
-        if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
-            uint8_args.push_back(uint8_column);
-        else
-        {
-            auto converted_column = ColumnUInt8::create(input_rows_count);
-            convertColumnToUInt8(column, converted_column->getData());
-            uint8_args.push_back(converted_column.get());
-            converted_columns.emplace_back(std::move(converted_column));
-        }
+        auto converted_column = ColumnUInt8::create(input_rows_count);
+        convertColumnToBoolean(column, converted_column->getData());
+        uint8_args.push_back(converted_column.get());
+        converted_columns.emplace_back(std::move(converted_column));
     }
 
     OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res);
