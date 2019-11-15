@@ -115,6 +115,10 @@ def test_table_function(started_cluster):
     assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '0'
     node1.query("INSERT INTO {} (id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000)".format('TABLE FUNCTION ' + table_function))
     assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '10000'
+    assert node1.query("SELECT sum(c) FROM ("
+                       "SELECT count() as c FROM {} WHERE id % 3 == 0"
+            " UNION ALL SELECT count() as c FROM {} WHERE id % 3 == 1"
+            " UNION ALL SELECT count() as c FROM {} WHERE id % 3 == 2)".format(table_function, table_function, table_function)).rstrip() == '10000'
     assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '30000'
     mysql_connection.close()
 
