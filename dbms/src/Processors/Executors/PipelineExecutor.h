@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ThreadsQueue.h>
+#include <Processors/ResizeProcessor.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
@@ -96,12 +97,16 @@ private:
 
         std::unique_ptr<ExecutionState> execution_state;
 
+        bool is_resize_processor = false;
+
         Node(IProcessor * processor_, UInt64 processor_id)
             : processor(processor_), status(ExecStatus::New), need_to_be_prepared(false)
         {
             execution_state = std::make_unique<ExecutionState>();
             execution_state->processor = processor;
             execution_state->processors_id = processor_id;
+
+            is_resize_processor = typeid_cast<const ResizeProcessor *>(processor) != nullptr;
         }
 
         Node(Node && other) noexcept

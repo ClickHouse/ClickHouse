@@ -30,7 +30,7 @@ public:
 
     String getName() const override { return "Resize"; }
 
-    Status prepare() override;
+    Status prepare() final;
 
 private:
     InputPorts::iterator current_input;

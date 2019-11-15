@@ -254,7 +254,12 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
         /// Prepare can be called more times than needed, but it's ok.
         node.need_to_be_prepared = false;
 
-        auto status = node.processor->prepare();
+        IProcessor::Status status;
+
+        if (node.is_resize_processor)
+            status = static_cast<ResizeProcessor *>(node.processor)->prepare();
+        else
+            status = node.processor->prepare();
 
         /// node.execution_state->preparation_time_ns += watch.elapsed();
         node.last_processor_status = status;
