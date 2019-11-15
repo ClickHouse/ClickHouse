@@ -10,16 +10,15 @@ namespace DB
 
 class FunctionRandomASKII : public IFunction
 {
-    const String db_name;
 
 public:
     static constexpr auto name = "randomASKII";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionRandomASKII>(context.getRandomASKII());
+        return std::make_shared<FunctionRandomASKII>();
     }
 
-    explicit FunctionRandomASKII(const String & db_name_) : db_name{db_name_}
+    explicit FunctionRandomASKII()
     {
     }
 
@@ -41,7 +40,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, db_name);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, "randomASKII");
     }
 };
 
