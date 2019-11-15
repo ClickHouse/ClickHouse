@@ -1,12 +1,23 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Core/Field.h>
 
+#include <random>
+#include <iostream>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 class FunctionRandomASKII : public IFunction
 {
@@ -22,10 +33,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return std::make_shared<DataTypeString>()
+        return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -61,18 +74,36 @@ private:
 
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
+
+	    char charachter;
+	    size_t ch_num = 0;
+
             for (size_t i = 0; i < size; ++i)
             {
-                // formatReadableSizeWithBinarySuffix(static_cast<double>(vec_from[i]), buf_to);
-                // writeChar(0, buf_to);
-                // offsets_to[i] = buf_to.count();
 
+		std::default_random_engine generator(i);
+		std::uniform_int_distribution<int> distribution(32, 127);
+
+		while( ch_num < static_cast<size_t>(vec_from[i])){
+		    charachter = distribution(generator);
+		    std::cout<<"==================="<<charachter<<std::endl;
+		    writeChar(charachter, buf_to);
+		    ch_num++;
+		}
+
+
+//		for (size_t ch_num = 32; ch_num < 45 ; ++ch_num)
+//		{
+//		    writeChar(ch_num, buf_to);
+//		}
+                writeChar(0, buf_to);
+                offsets_to[i] = buf_to.count();
             }
 
             buf_to.finish();
-//            block.getByPosition(result).column = std::move(col_to);
-           
-            block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, "randomASKII");
+            block.getByPosition(result).column = std::move(col_to);
+
+//            block.getByPosition(result).column = DataTypeString().createColumnConst(col_from->size(), "randomASKII");
             return true;
         }
 
