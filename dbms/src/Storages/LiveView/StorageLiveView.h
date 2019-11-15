@@ -148,6 +148,8 @@ private:
     String database_name;
     ASTPtr inner_query;
     Context & global_context;
+    std::unique_ptr<Context> live_view_context;
+
     bool is_temporary = false;
     /// Mutex to protect access to sample block
     mutable std::mutex sample_block_lock;

@@ -201,6 +201,9 @@ StorageLiveView::StorageLiveView(
     : table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
+    live_view_context = std::make_unique<Context>(global_context);
+    live_view_context->makeQueryContext();
+
     setColumns(columns_);
 
     if (!query.select)
@@ -258,7 +261,7 @@ Block StorageLiveView::getHeader() const
     if (!sample_block)
     {
         auto storage = global_context.getTable(select_database_name, select_table_name);
-        sample_block = InterpreterSelectQuery(inner_query, global_context, storage,
+        sample_block = InterpreterSelectQuery(inner_query, *live_view_context, storage,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         sample_block.insert({DataTypeUInt64().createColumnConst(
             sample_block.rows(), 0)->convertToFullColumnIfConst(),
@@ -283,7 +286,7 @@ bool StorageLiveView::getNewBlocks()
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
-    InterpreterSelectQuery interpreter(inner_query->clone(), global_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
+    InterpreterSelectQuery interpreter(inner_query->clone(), *live_view_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
     auto mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
 
     while (Block block = mergeable_stream->read())
@@ -293,7 +296,7 @@ bool StorageLiveView::getNewBlocks()
     mergeable_blocks->push_back(new_mergeable_blocks);
     BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(new_mergeable_blocks), mergeable_stream->getHeader());
     auto proxy_storage = ProxyStorage::createProxyStorage(global_context.getTable(select_database_name, select_table_name), {from}, QueryProcessingStage::WithMergeableState);
-    InterpreterSelectQuery select(inner_query->clone(), global_context, proxy_storage, SelectQueryOptions(QueryProcessingStage::Complete));
+    InterpreterSelectQuery select(inner_query->clone(), *live_view_context, proxy_storage, SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     /// Squashing is needed here because the view query can generate a lot of blocks
