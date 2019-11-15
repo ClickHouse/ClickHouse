@@ -2238,7 +2238,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline, pipeline.firstStream()->getHeader());
+        unifyStreams(pipeline, pipeline.firstStream()->getHeader(), false);
         executeMergeSorted(pipeline, order_descr, limit);
     }
 }
@@ -2654,7 +2654,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
         executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
     }
     else
-        executeUnion(pipeline, {});
+        executeUnion(pipeline, {}, false);
 
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
