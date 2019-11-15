@@ -29,26 +29,10 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
 
             // Segmentating the original input.
             unit.segment.used_size = 0;
+            unit.segment.memory.resize(0);
 
             const bool have_more_data = file_segmentation_engine(original_buffer,
                 unit.segment.memory, unit.segment.used_size, min_chunk_size);
-
-            if (!have_more_data)
-            {
-                /**
-                  * On EOF, the buffer must be empty. We don't have to start
-                  * the parser since we have no data, and can wake up the reader
-                  * directly.
-                  */
-                assert(unit.segment.used_size == 0);
-                unit.is_past_the_end = true;
-                unit.status = READY_TO_READ;
-
-                std::unique_lock lock(mutex);
-                reader_condvar.notify_all();
-
-                break;
-            }
 
             // Creating buffer from the segment of data.
             auto new_buffer = BufferBase::Buffer(unit.segment.memory.data(),
@@ -61,9 +45,19 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
                     input_processor_creator(*unit.readbuffer, header, context, row_input_format_params, format_settings)
             );
 
+            if (!have_more_data)
+            {
+                unit.is_last = true;
+            }
+
             unit.status = READY_TO_PARSE;
             scheduleParserThreadForUnitWithNumber(current_unit_number);
             ++segmentator_ticket_number;
+
+            if (!have_more_data)
+            {
+                break;
+            }
         }
     }
     catch (...)
@@ -142,8 +136,8 @@ Block ParallelParsingBlockInputStream::readImpl()
 
     if (!next_block_in_current_unit.has_value())
     {
-        // We have read out all the Blocks from the current Processing Unit,
-        // time to move to the next one. Wait for it to become ready.
+        // We have read out all the Blocks from the previous Processing Unit,
+        // wait for the current one to become ready.
         std::unique_lock lock(mutex);
         reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || finished; });
 
@@ -163,34 +157,41 @@ Block ParallelParsingBlockInputStream::readImpl()
         }
 
         assert(unit.status == READY_TO_READ);
-
-        if (unit.is_past_the_end)
-        {
-            // No more data.
-            return Block{};
-        }
         next_block_in_current_unit = 0;
     }
 
-    assert(next_block_in_current_unit);
-    assert(!unit.is_past_the_end);
+    if (unit.block_ext.block.size() == 0)
+    {
+        assert(unit.is_last);
+        finished = true;
+        return Block{};
+    }
+
+    assert(next_block_in_current_unit.value() < unit.block_ext.block.size());
 
     Block res = std::move(unit.block_ext.block.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit.block_ext.block_missing_values[*next_block_in_current_unit]);
 
-    ++*next_block_in_current_unit;
+    next_block_in_current_unit.value() += 1;
 
-    if (*next_block_in_current_unit == unit.block_ext.block.size())
+    if (next_block_in_current_unit.value() == unit.block_ext.block.size())
     {
-        /**
-          * Finished reading this Processing Unit, pass it back to the segmentator.
-          */
+        // Finished reading this Processing Unit, move to the next one.
         next_block_in_current_unit.reset();
         ++reader_ticket_number;
 
-        std::unique_lock lock(mutex);
-        unit.status = READY_TO_INSERT;
-        segmentator_condvar.notify_all();
+        if (unit.is_last)
+        {
+            // It it was the last unit, we're finished.
+            finished = true;
+        }
+        else
+        {
+            // Pass the unit back to the segmentator.
+            std::unique_lock lock(mutex);
+            unit.status = READY_TO_INSERT;
+            segmentator_condvar.notify_all();
+        }
     }
 
     return res;
