@@ -66,6 +66,8 @@ private:
             const NullMap * overflow_mask = nullptr;
             const ColumnArray::ColumnOffsets::Container * offsets = nullptr;
             const IColumn * nested_column = nullptr;
+
+            Columns column_holders;
         };
 
         std::vector<UnpackedArray> args;
@@ -265,6 +267,23 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     return {.initial = initial_columns, .casted = columns};
 }
 
+static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, const Context & context)
+{
+    ColumnsWithTypeAndName args;
+    args.reserve(2);
+    args.emplace_back(std::move(first));
+    args.emplace_back(std::move(second));
+
+    auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
+
+    Block block = args;
+    block.insert({nullptr, eq_func->getReturnType(), ""});
+
+    eq_func->execute(block, {0, 1}, 2, args.front().column->size());
+
+    return block.getByPosition(2).column;
+}
+
 FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
     const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
 {
@@ -305,6 +324,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 initial_column = &typeid_cast<const ColumnNullable *>(initial_column)->getNestedColumn();
             }
 
+            /// In case column was casted need to create overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
                 auto & nested_init_type = typeid_cast<const DataTypeArray *>(removeNullable(initial_columns[i].type).get())->getNestedType();
@@ -312,19 +332,14 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
 
                 if (isInteger(nested_init_type) || isDateOrDateTime(nested_init_type))
                 {
-                    ColumnsWithTypeAndName args = {{arg.nested_column->getPtr(), nested_init_type, ""},
-                                                   {initial_column->getPtr(), nested_cast_type, ""}};
-                    auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
+                    /// Compare original and casted columns. It seem to be the easiest way.
+                    auto overflow_mask = callFunctionNotEquals(
+                            {arg.nested_column->getPtr(), nested_init_type, ""},
+                            {initial_column->getPtr(), nested_cast_type, ""},
+                            context);
 
-                    Block block = args;
-                    block.insert({nullptr, eq_func->getReturnType(), ""});
-
-                    eq_func->execute(block, {0, 1}, 2, initial_column->size());
-
-                    /// Save result of equals.
-                    initial_columns[i].column = block.getByPosition(2).column;
-
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 *>(initial_columns[i].column.get())->getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 *>(overflow_mask.get())->getData();
+                    arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
         }
@@ -412,7 +427,7 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {
-            column = static_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
+            column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
             result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column)), return_type);
         }
     }
@@ -440,7 +455,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
     std::vector<const ColumnType *> columns;
     columns.reserve(args);
-    for (auto arg : arrays.args)
+    for (auto & arg : arrays.args)
     {
         if constexpr (std::is_same<ColumnType, IColumn>::value)
             columns.push_back(arg.nested_column);
