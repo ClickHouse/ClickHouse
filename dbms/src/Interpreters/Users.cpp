@@ -75,6 +75,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_sub_elem = config_elem + ".allow_databases";
     if (config.has(config_sub_elem))
     {
+        has_allowed_databases = true;
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_sub_elem, config_keys);
 
@@ -90,6 +91,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_dictionary_sub_elem = config_elem + ".allow_dictionaries";
     if (config.has(config_dictionary_sub_elem))
     {
+        has_allowed_dictionaries = true;
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_dictionary_sub_elem, config_keys);
 

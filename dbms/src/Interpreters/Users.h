@@ -32,6 +32,10 @@ struct User
     String profile;
     String quota;
 
+    //if true then allowed_X was defined in user
+    bool has_allowed_databases = false;
+    bool has_allowed_dictionaries = false;
+
     AllowedClientHosts allowed_client_hosts;
 
     /// List of allowed databases.
