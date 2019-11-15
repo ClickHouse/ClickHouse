@@ -314,7 +314,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 {
                     ColumnsWithTypeAndName args = {{arg.nested_column->getPtr(), nested_init_type, ""},
                                                    {initial_column->getPtr(), nested_cast_type, ""}};
-                    auto eq_func = FunctionFactory::instance().get("equals", context)->build(args);
+                    auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
 
                     Block block = args;
                     block.insert({nullptr, eq_func->getReturnType(), ""});
@@ -487,7 +487,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             {
                 if (arg.null_map && (*arg.null_map)[i])
                     current_has_nullable = true;
-                else if (!arg.overflow_mask || (*arg.overflow_mask)[i])
+                else if (!arg.overflow_mask || (*arg.overflow_mask)[i] == 0)
                 {
                     typename Map::mapped_type * value = nullptr;
 
