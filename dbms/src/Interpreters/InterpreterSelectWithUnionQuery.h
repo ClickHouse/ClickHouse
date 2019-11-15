@@ -29,7 +29,7 @@ public:
     BlockIO execute() override;
 
     /// Execute the query without union of streams.
-    BlockInputStreams executeWithMultipleStreams();
+    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
 
     QueryPipeline executeWithProcessors() override;
     bool canExecuteWithProcessors() const override { return true; }
@@ -47,7 +47,7 @@ public:
 private:
     const SelectQueryOptions options;
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
 
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
