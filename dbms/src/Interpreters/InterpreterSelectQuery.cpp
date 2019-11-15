@@ -2262,6 +2262,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
          *  or reverse order of sorting key using one input stream per part
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
+         * If the input is sorted by some prefix of the sorting key required for output,
+         * we have to finish sorting after the merge.
          */
 
         bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
