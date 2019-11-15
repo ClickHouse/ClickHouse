@@ -486,6 +486,10 @@ void QueryPipeline::unitePipelines(
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
         streams.insert(streams.end(), pipeline.streams.begin(), pipeline.streams.end());
+
+        interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
+        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
+        /// Do we need also copy table_locks?
     }
 
     if (!extremes.empty())

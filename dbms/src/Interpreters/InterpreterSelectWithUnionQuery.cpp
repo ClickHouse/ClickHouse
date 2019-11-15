@@ -165,13 +165,13 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
 }
 
 
-BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
+BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams(QueryPipeline & parent_pipeline)
 {
     BlockInputStreams nested_streams;
 
     for (auto & interpreter : nested_interpreters)
     {
-        BlockInputStreams streams = interpreter->executeWithMultipleStreams();
+        BlockInputStreams streams = interpreter->executeWithMultipleStreams(parent_pipeline);
         nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
     }
 
@@ -188,7 +188,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     const Settings & settings = context.getSettingsRef();
 
-    BlockInputStreams nested_streams = executeWithMultipleStreams();
+    BlockIO res;
+    BlockInputStreams nested_streams = executeWithMultipleStreams(res.pipeline);
     BlockInputStreamPtr result_stream;
 
     if (nested_streams.empty())
@@ -206,7 +207,6 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
         nested_streams.clear();
     }
 
-    BlockIO res;
     res.in = result_stream;
     return res;
 }

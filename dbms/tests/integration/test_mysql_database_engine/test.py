@@ -112,10 +112,10 @@ def test_table_function(started_cluster):
     mysql_connection = get_mysql_conn()
     create_normal_mysql_table(mysql_connection, 'table_function')
     table_function = get_mysql_table_function_expr('table_function')
+    assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '0'
     node1.query("INSERT INTO {} (id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000)".format('TABLE FUNCTION ' + table_function))
-    node1.query("SELECT * FROM {}".format(table_function))      # should fail with asan
     assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '10000'
-    assert node1.query("SELECT sum(`float`) FROM {}".format(table_function)).rstrip() == '30000'
+    assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '30000'
     mysql_connection.close()
 
 
