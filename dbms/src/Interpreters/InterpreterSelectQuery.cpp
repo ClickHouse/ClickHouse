@@ -2241,7 +2241,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline, pipeline.firstStream()->getHeader());
+        unifyStreams(pipeline, pipeline.firstStream()->getHeader(), false);
         executeMergeSorted(pipeline, order_descr, limit);
     }
 }
