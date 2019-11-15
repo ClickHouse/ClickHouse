@@ -67,10 +67,10 @@ private:
             const ColumnArray::ColumnOffsets::Container * offsets = nullptr;
             const IColumn * nested_column = nullptr;
 
-            Columns column_holders;
         };
 
         std::vector<UnpackedArray> args;
+        Columns column_holders;
 
         UnpackedArrays() = default;
     };
