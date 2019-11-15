@@ -578,6 +578,22 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
+## trace_log {#server_settings-trace-log}
+
+
+
+Stores stack traces collected by query profilers. See `query_profiler_real_time_period_ns` and `query_profiler_cpu_time_period_ns` settings.
+
+
+```
+<trace_log>
+    <database>system</database>
+    <table>trace_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</trace_log>
+```
+
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
