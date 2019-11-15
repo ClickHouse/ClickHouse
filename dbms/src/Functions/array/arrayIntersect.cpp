@@ -310,7 +310,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 auto & nested_init_type = typeid_cast<const DataTypeArray *>(removeNullable(initial_columns[i].type).get())->getNestedType();
                 auto & nested_cast_type = typeid_cast<const DataTypeArray *>(removeNullable(columns[i].type).get())->getNestedType();
 
-                if (isNativeNumber(nested_init_type) || isDateOrDateTime(nested_init_type))
+                if (isInteger(nested_init_type) || isDateOrDateTime(nested_init_type))
                 {
                     ColumnsWithTypeAndName args = {{arg.nested_column->getPtr(), nested_init_type, ""},
                                                    {initial_column->getPtr(), nested_cast_type, ""}};
