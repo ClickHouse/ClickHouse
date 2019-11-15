@@ -164,7 +164,8 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
 
         /// Column name could be cropped to a short form in TranslateQualifiedNamesVisitor.
         /// In this case it saves membership in IdentifierSemantic.
-        size_t membership = IdentifierSemantic::getMembership(*identifier);
+        auto opt = IdentifierSemantic::getMembership(*identifier);
+        size_t membership = opt ? (*opt + 1) : 0;
 
         if (!membership)
         {

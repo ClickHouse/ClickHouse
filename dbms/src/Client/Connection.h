@@ -133,7 +133,9 @@ public:
 
     void sendCancel();
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
-    void sendData(const Block & block, const String & name = "");
+    void sendData(const Block & block, const String & name = "", bool scalar = false);
+    /// Send all scalars.
+    void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
 
