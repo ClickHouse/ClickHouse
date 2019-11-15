@@ -29,8 +29,6 @@ namespace ErrorCodes
 }
 
 
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
     : name(name_)
@@ -43,11 +41,11 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 }
 
 
-void DatabaseLazy::loadTables(
+void DatabaseLazy::loadStoredObjects(
     Context & /* context */,
     bool /* has_force_restore_data_flag */)
 {
-    DatabaseOnDisk::iterateTableFiles(*this, log, [this](const String & file_name)
+    DatabaseOnDisk::iterateMetadataFiles(*this, log, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
         attachTable(table_name, nullptr);
@@ -70,7 +68,16 @@ void DatabaseLazy::createTable(
     std::lock_guard lock(tables_mutex);
     auto it = tables_cache.find(table_name);
     if (it != tables_cache.end())
-        it->second.metadata_modification_time = DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name);
+        it->second.metadata_modification_time = DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
+}
+
+
+void DatabaseLazy::createDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/,
+    const ASTPtr & /*query*/)
+{
+    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 
@@ -80,6 +87,51 @@ void DatabaseLazy::removeTable(
 {
     SCOPE_EXIT({ clearExpiredTables(); });
     DatabaseOnDisk::removeTable(*this, context, table_name, log);
+}
+
+void DatabaseLazy::removeDictionary(
+    const Context & /*context*/,
+    const String & /*table_name*/)
+{
+    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+ASTPtr DatabaseLazy::getCreateDictionaryQuery(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+ASTPtr DatabaseLazy::tryGetCreateDictionaryQuery(const Context & /*context*/, const String & /*table_name*/) const
+{
+    return nullptr;
+}
+
+bool DatabaseLazy::isDictionaryExist(const Context & /*context*/, const String & /*table_name*/) const
+{
+    return false;
+}
+
+
+DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
+    const Context & /*context*/,
+    const FilterByNameFunction & /*filter_by_dictionary_name*/)
+{
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
+}
+
+void DatabaseLazy::attachDictionary(
+    const String & /*dictionary_name*/,
+    const Context & /*context*/,
+    bool /*load*/)
+{
+    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
+{
+    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 void DatabaseLazy::renameTable(
@@ -94,7 +146,7 @@ void DatabaseLazy::renameTable(
 }
 
 
-time_t DatabaseLazy::getTableMetadataModificationTime(
+time_t DatabaseLazy::getObjectMetadataModificationTime(
     const Context & /* context */,
     const String & table_name)
 {
@@ -172,7 +224,7 @@ StoragePtr DatabaseLazy::tryGetTable(
     return loadTable(context, table_name);
 }
 
-DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(tables_mutex);
     Strings filtered_tables;
@@ -198,7 +250,7 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
 
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
-                              std::forward_as_tuple(table, current_time, DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name)));
+                              std::forward_as_tuple(table, current_time, DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name)));
     if (!inserted)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
@@ -267,9 +319,9 @@ String DatabaseLazy::getDatabaseName() const
     return name;
 }
 
-String DatabaseLazy::getTableMetadataPath(const String & table_name) const
+String DatabaseLazy::getObjectMetadataPath(const String & table_name) const
 {
-    return DatabaseOnDisk::getTableMetadataPath(*this, table_name);
+    return DatabaseOnDisk::getObjectMetadataPath(*this, table_name);
 }
 
 StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table_name) const
@@ -280,31 +332,18 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 
     const String table_metadata_path = getMetadataPath() + "/" + escapeForFileName(table_name) + ".sql";
 
-    String s;
-    {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-        readStringUntilEOF(s, in);
-    }
-
-    /** Empty files with metadata are generated after a rough restart of the server.
-      * Remove these files to slightly reduce the work of the admins on startup.
-      */
-    if (s.empty())
-    {
-        LOG_ERROR(log, "LoadTable: File " << table_metadata_path << " is empty. Removing.");
-        Poco::File(table_metadata_path).remove();
-        return nullptr;
-    }
-
     try
     {
         String table_name_;
         StoragePtr table;
         Context context_copy(context); /// some tables can change context, but not LogTables
-        std::tie(table_name_, table) = createTableFromDefinition(
-            s, name, getDataPath(), context_copy, false, "in file " + table_metadata_path);
-        if (!endsWith(table->getName(), "Log"))
+
+        auto ast = parseCreateQueryFromMetadataFile(table_metadata_path, log);
+        if (ast)
+            std::tie(table_name_, table) = createTableFromAST(
+                ast->as<const ASTCreateQuery &>(), name, getDataPath(), context_copy, false);
+
+        if (!ast || !endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         {
             std::lock_guard lock(tables_mutex);

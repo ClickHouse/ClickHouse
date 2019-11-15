@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Storages/MergeTree/RPNBuilder.h>
