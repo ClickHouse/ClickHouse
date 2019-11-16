@@ -982,7 +982,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Sleep time for DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine. In case of any errors grows exponentially.
+Interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. In case of any errors grows exponentially.
 
 Possible values:
 
@@ -993,7 +993,7 @@ Default value: 100 milliseconds.
 
 ## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum sleep time for DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of sleep time set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
 Possible values:
 
@@ -1003,9 +1003,9 @@ Default value: 30000 milliseconds.
 
 ## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
-Enables/disables algorithm of batching `INSERT` queries.
+Enables/disables batch sending of inserted data.
 
-When batching is enabled, DirectoryMonitors in the [Distributed](../table_engines/distributed.md) table engine try to combine `INSERT` queries from multiple sources into bigger ones. Combining of queries improves performance of asynchronouse data inserting.
+When batch sending is enabled, the [Distributed](../table_engines/distributed.md) engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sendind improves cluster performance by the better local server and network resources utilization.
 
 Possible values:
 
