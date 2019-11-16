@@ -16,6 +16,8 @@ namespace details
     {
         static void serializeName(const StringRef & name, WriteBuffer & buf);
         static String deserializeName(ReadBuffer & buf);
+        static void skipValue(ReadBuffer & buf);
+        static void warningNameNotFound(const StringRef & name);
         [[noreturn]] static void throwNameNotFound(const StringRef & name);
     };
 }
@@ -240,7 +242,7 @@ void SettingsCollection<Derived>::copyChangesTo(Derived & dest) const
 
 
 template <class Derived>
-void SettingsCollection<Derived>::serialize(WriteBuffer & buf) const
+void SettingsCollection<Derived>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
 {
     const auto & the_members = members();
     for (size_t i = 0; i != the_members.size(); ++i)
@@ -249,7 +251,7 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf) const
         if (member.is_changed(castToDerived()))
         {
             details::SettingsCollectionUtils::serializeName(member.name, buf);
-            member.serialize(castToDerived(), buf);
+            member.serialize(castToDerived(), buf, format);
         }
     }
     details::SettingsCollectionUtils::serializeName(StringRef{} /* empty string is a marker of the end of settings */, buf);
@@ -257,7 +259,7 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf) const
 
 
 template <class Derived>
-void SettingsCollection<Derived>::deserialize(ReadBuffer & buf)
+void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
 {
     const auto & the_members = members();
     while (true)
@@ -267,7 +269,14 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf)
             break;
         auto * member = the_members.find(name);
         if (member)
-            member->deserialize(castToDerived(), buf);
+        {
+            member->deserialize(castToDerived(), buf, format);
+        }
+        else if (format >= SettingsBinaryFormat::STRINGS)
+        {
+            details::SettingsCollectionUtils::warningNameNotFound(name);
+            details::SettingsCollectionUtils::skipValue(buf);
+        }
         else
             details::SettingsCollectionUtils::throwNameNotFound(name);
     }
@@ -297,8 +306,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf)
     static Field NAME##_getField(const Derived & collection) { return collection.NAME.toField(); } \
     static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
-    static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
-    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
+    static void NAME##_serialize(const Derived & collection, WriteBuffer & buf, SettingsBinaryFormat format) { collection.NAME.serialize(buf, format); } \
+    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf, SettingsBinaryFormat format) { collection.NAME.deserialize(buf, format); } \
     static String NAME##_valueToString(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
     static Field NAME##_valueToCorrespondingType(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 

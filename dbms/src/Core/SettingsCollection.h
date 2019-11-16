@@ -16,6 +16,8 @@ struct SettingChange;
 using SettingsChanges = std::vector<SettingChange>;
 class ReadBuffer;
 class WriteBuffer;
+enum class SettingsBinaryFormat;
+
 
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
@@ -50,10 +52,10 @@ struct SettingNumber
     void set(const String & x);
 
     /// Serialize to binary stream suitable for transfer over network.
-    void serialize(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
 
     /// Read from binary stream.
-    void deserialize(ReadBuffer & buf);
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 using SettingUInt64 = SettingNumber<UInt64>;
@@ -84,8 +86,8 @@ struct SettingMaxThreads
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
     UInt64 getAutoValue() const;
@@ -117,8 +119,8 @@ struct SettingTimespan
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     static constexpr UInt64 microseconds_per_io_unit = (io_unit == SettingTimespanIO::MILLISECOND) ? 1000 : 1000000;
 };
@@ -143,8 +145,8 @@ struct SettingString
     void set(const String & x);
     void set(const Field & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -166,8 +168,8 @@ public:
     void set(const String & x);
     void set(const Field & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -190,8 +192,8 @@ struct SettingEnum
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -268,6 +270,14 @@ enum class LogsLevel
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
 
+enum class SettingsBinaryFormat
+{
+    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
+    STRINGS, /// All settings are serialized as strings.
+    DEFAULT = STRINGS,
+};
+
+
 /** Template class to define collections of settings.
   * Example of usage:
   *
@@ -299,8 +309,8 @@ private:
         using GetFieldFunction = Field (*)(const Derived &);
         using SetStringFunction = void (*)(Derived &, const String &);
         using SetFieldFunction = void (*)(Derived &, const Field &);
-        using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf);
-        using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
+        using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf, SettingsBinaryFormat);
+        using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf, SettingsBinaryFormat);
         using ValueToStringFunction = String (*)(const Field &);
         using ValueToCorrespondingTypeFunction = Field (*)(const Field &);
 
@@ -491,10 +501,10 @@ public:
     /// Writes the settings to buffer (e.g. to be sent to remote server).
     /// Only changed settings are written. They are written as list of contiguous name-value pairs,
     /// finished with empty name.
-    void serialize(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format = SettingsBinaryFormat::DEFAULT) const;
 
     /// Reads the settings from buffer.
-    void deserialize(ReadBuffer & buf);
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format = SettingsBinaryFormat::DEFAULT);
 };
 
 
