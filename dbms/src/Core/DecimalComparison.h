@@ -88,9 +88,9 @@ public:
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
+            shift.a = B::getScaleMultiplier(scale_b - scale_a);
         if (scale_a > scale_b)
-            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
+            shift.b = A::getScaleMultiplier(scale_a - scale_b);
 
         return applyWithScale(a, b, shift);
     }

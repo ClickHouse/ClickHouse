@@ -130,7 +130,7 @@ public:
 
     UInt32 getPrecision() const { return precision; }
     UInt32 getScale() const { return scale; }
-    T getScaleMultiplier() const { return getScaleMultiplier(scale); }
+    T getScaleMultiplier() const { return T::getScaleMultiplier(scale); }
 
     T wholePart(T x) const
     {
@@ -148,7 +148,7 @@ public:
         return x % getScaleMultiplier();
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
+    T maxWholeValue() const { return T::getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
     bool canStoreWhole(T x) const
     {
@@ -165,7 +165,7 @@ public:
         if (getScale() < x.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         UInt32 scale_delta = getScale() - x.getScale(); /// scale_delta >= 0
-        return getScaleMultiplier(scale_delta);
+        return T::getScaleMultiplier(scale_delta);
     }
 
     template <typename U>
@@ -181,7 +181,6 @@ public:
     void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, precision, scale, csv); }
     static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv = false);
     static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
-    static T getScaleMultiplier(UInt32 scale);
 
 private:
     const UInt32 precision;
@@ -264,12 +263,12 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     MaxNativeType converted_value;
     if (scale_to > scale_from)
     {
-        converted_value = DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_to - scale_from);
+        converted_value = MaxFieldType::getScaleMultiplier(scale_to - scale_from);
         if (common::mulOverflow(static_cast<MaxNativeType>(value), converted_value, converted_value))
             throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
-        converted_value = value / DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_from - scale_to);
+        converted_value = value / MaxFieldType::getScaleMultiplier(scale_from - scale_to);
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
@@ -289,7 +288,7 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     using ToFieldType = typename ToDataType::FieldType;
 
     if constexpr (std::is_floating_point_v<ToFieldType>)
-        return static_cast<ToFieldType>(value) / FromDataType::getScaleMultiplier(scale);
+        return static_cast<ToFieldType>(value) / FromFieldType::getScaleMultiplier(scale);
     else
     {
         FromFieldType converted_value = convertDecimals<FromDataType, FromDataType>(value, scale, 0);
@@ -320,14 +319,15 @@ inline std::enable_if_t<IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDa
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
-    using ToNativeType = typename ToDataType::FieldType::NativeType;
+    using ToFieldType = typename ToDataType::FieldType;
+    using ToNativeType = typename ToFieldType::NativeType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
         if (!std::isfinite(value))
             throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = value * ToDataType::getScaleMultiplier(scale);
+        auto out = value * ToFieldType::getScaleMultiplier(scale);
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
