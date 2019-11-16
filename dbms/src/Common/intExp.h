@@ -3,11 +3,18 @@
 #include <cstdint>
 #include <limits>
 
-#include <Core/Defines.h>
+
+// Also defined in Core/Defines.h
+#if !defined(NO_SANITIZE_UNDEFINED)
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+#else
+    #define NO_SANITIZE_UNDEFINED
+#endif
+#endif
 
 
 /// On overlow, the function returns unspecified value.
-
 inline NO_SANITIZE_UNDEFINED uint64_t intExp2(int x)
 {
     return 1ULL << x;
