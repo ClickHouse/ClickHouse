@@ -75,21 +75,21 @@ private:
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
 
-	    char charachter;
-	    size_t ch_num = 0;
+            char charachter;
+            size_t ch_num = 0;
 
-            for (size_t i = 0; i < size; ++i)
-            {
+                for (size_t i = 0; i < size; ++i)
+                {
 
-		std::default_random_engine generator(i);
-		std::uniform_int_distribution<int> distribution(32, 127);
+            std::default_random_engine generator(i);
+            std::uniform_int_distribution<int> distribution(32, 127);
 
-		while( ch_num < static_cast<size_t>(vec_from[i])){
-		    charachter = distribution(generator);
-		    std::cout<<"==================="<<charachter<<std::endl;
-		    writeChar(charachter, buf_to);
-		    ch_num++;
-		}
+            while( ch_num < static_cast<size_t>(vec_from[i])){
+                charachter = distribution(generator);
+                std::cout<<"==================="<<charachter<<std::endl;
+                writeChar(charachter, buf_to);
+                ch_num++;
+            }
 
 
 //		for (size_t ch_num = 32; ch_num < 45 ; ++ch_num)
