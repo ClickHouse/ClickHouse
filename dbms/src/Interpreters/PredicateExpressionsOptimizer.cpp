@@ -141,7 +141,7 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     if (!subquery
         || (!settings.enable_optimize_predicate_expression_to_final_subquery && subquery->final())
         || subquery->limitBy() || subquery->limitLength()
-        || subquery->with())
+        || subquery->with() || subquery->withFill())
         return false;
     else
     {
