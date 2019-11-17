@@ -35,11 +35,11 @@ namespace
             const Block & sample_block,
             const Context & context,
             UInt64 max_block_size,
-            const ConnectionTimeouts & timeouts)
+            const ConnectionTimeouts & timeouts,
+            const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadBufferFromS3>(uri, timeouts);
-
+            auto read_buf = getBuffer<ReadBufferFromS3>(compression_method, uri, timeouts);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -70,7 +70,6 @@ namespace
 
     private:
         String name;
-        std::unique_ptr<ReadBufferFromS3> read_buf;
         BlockInputStreamPtr reader;
     };
 
@@ -127,7 +126,8 @@ StorageS3::StorageS3(
     UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_)
+    Context & context_,
+    const String & compression_method_ = "")
     : IStorage(columns_)
     , uri(uri_)
     , context_global(context_)
@@ -135,6 +135,7 @@ StorageS3::StorageS3(
     , database_name(database_name_)
     , table_name(table_name_)
     , min_upload_part_size(min_upload_part_size_)
+    , compression_method(compression_method_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -156,7 +157,8 @@ BlockInputStreams StorageS3::read(
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context));
+        ConnectionTimeouts::getHTTPTimeouts(context),
+        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
 
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
@@ -182,9 +184,9 @@ void registerStorageS3(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2)
+        if (engine_args.size() != 2 && engine_args.size() != 3)
             throw Exception(
-                "Storage S3 requires exactly 2 arguments: url and name of used format.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage S3 requires 2 or 3 arguments: url, name of used format and compression_method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
@@ -196,6 +198,13 @@ void registerStorageS3(StorageFactory & factory)
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
+
+        String compression_method;
+        if (engine_args.size() == 3) 
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        } else compression_method = "auto";
 
         return StorageS3::create(uri, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });

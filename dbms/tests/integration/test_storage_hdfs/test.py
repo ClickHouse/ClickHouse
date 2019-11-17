@@ -143,3 +143,31 @@ def test_read_write_gzip_table(started_cluster):
     assert hdfs_api.read_gzip_data("/simple_table_function.gz") == data
 
     assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64')") == data
+
+def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64', 'gzip')") == data
+
+def test_read_write_table_with_parameter_none(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'none')") == data
+
+def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'auto')") == data
+

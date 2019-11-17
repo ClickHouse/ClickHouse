@@ -127,9 +127,10 @@ StorageFile::StorageFile(
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_)
+        Context & context_,
+        const String & compression_method_ = "")
     :
-    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
+    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_), compression_method(compression_method_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -178,7 +179,11 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
+    StorageFileBlockInputStream(StorageFile & storage_, 
+        const Context & context, 
+        UInt64 max_block_size, 
+        std::string file_path,
+        const CompressionMethod compression_method)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -199,12 +204,14 @@ public:
             }
 
             storage.table_fd_was_used = true;
-            read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
+            read_buf = getBuffer<ReadBufferFromFileDescriptor>(compression_method, storage.table_fd);
+            //read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-            read_buf = std::make_unique<ReadBufferFromFile>(file_path);
+            read_buf = getBuffer<ReadBufferFromFile>(compression_method, file_path);
+            //read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
@@ -235,7 +242,7 @@ public:
 private:
     StorageFile & storage;
     Block sample_block;
-    std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
 
     std::shared_lock<std::shared_mutex> shared_lock;
@@ -259,7 +266,13 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
+            *this, 
+            context, 
+            max_block_size, 
+            file_path, 
+            IStorage::chooseCompressionMethod(file_path, compression_method));
+
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
@@ -360,9 +373,9 @@ void registerStorageFile(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+        if (!(engine_args.size() >= 1 && engine_args.size() <= 3))
             throw Exception(
-                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
@@ -370,6 +383,7 @@ void registerStorageFile(StorageFactory & factory)
 
         int source_fd = -1;
         String source_path;
+        String compression_method;
         if (engine_args.size() >= 2)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
@@ -396,13 +410,19 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::String)
                     source_path = literal->value.get<String>();
             }
+            if (engine_args.size() == 3) 
+            {
+                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+                compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            } else compression_method = "auto";
         }
 
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
             args.database_name, args.table_name, format_name, args.columns, args.constraints,
-            args.context);
+            args.context,
+            compression_method);
     });
 }
 
