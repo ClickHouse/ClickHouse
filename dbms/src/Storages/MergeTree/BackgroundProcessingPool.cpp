@@ -61,12 +61,12 @@ void BackgroundProcessingPoolTaskInfo::wake()
 }
 
 
-BackgroundProcessingPool::BackgroundProcessingPool(int size_, const char * thread_name_)
+BackgroundProcessingPool::BackgroundProcessingPool(int size_, const char * log_name, const char * thread_name_)
     : size(size_)
     , thread_name(thread_name_)
 {
-    logger = &Logger::get(String("BackgroundProcessingPool[") + thread_name + "]");
-    LOG_INFO(logger, "Create BackgroundProcessingPool with " << size << " threads");
+    logger = &Logger::get(log_name);
+    LOG_INFO(logger, "Create " << log_name << " with " << size << " threads");
 
     threads.resize(size);
     for (auto & thread : threads)

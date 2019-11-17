@@ -46,7 +46,9 @@ public:
     using TaskHandle = std::shared_ptr<TaskInfo>;
 
 
-    BackgroundProcessingPool(int size_, const char * thread_name_);
+    BackgroundProcessingPool(int size_,
+        const char * log_name = "BackgroundProcessingPool",
+        const char * thread_name_ = "BackgrProcPool");
 
     size_t getNumberOfThreads() const
     {
