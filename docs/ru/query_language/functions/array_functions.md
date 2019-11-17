@@ -658,15 +658,35 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 Особенная функция. Смотрите раздел ["Функция arrayJoin"](array_join.md#functions_arrayjoin).
 
-## arrayDifference(arr) {#array_functions-arraydifference}
+## arrayDifference {#arraydifference}
 
-Принимает массив, возвращает массив разностей между соседними элементами. Первым элементом будет 0, вторым разность между вторым и первым элементами исходного массива, и т.д. Тип элементов результирующего массива определяется правилами выведения типов при вычитании (напр. UInt8 - UInt8 = Int16). Поддерживаются UInt*/Int*/Float* типы (тип Decimal не поддерживается).
+Вычисляет разность между соседними элементами массива. Возвращает массив, где первым элементом будет 0, вторым – разность `a[1] - a[0]` и т. д. Тип элементов результирующего массива определяется правилами приведения типов при вычитании (напр. `UInt8` - `UInt8` = `Int16`). Тип `Decimal` не поддерживается.
 
-Пример:
+**Синтаксис** 
+
+```sql
+arrayDifference(array)
+```
+
+**Параметры** 
+
+- `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/). 
+
+**Возвращаемое значение**
+
+Возвращает массив разностей между соседними элементами.
+
+Тип: [UInt*](https://clickhouse.yandex/docs/ru/data_types/int_uint/#uint-ranges), [Int*](https://clickhouse.yandex/docs/ru/data_types/int_uint/#int-ranges), [Float*](https://clickhouse.yandex/docs/ru/data_types/float/).
+
+**Пример**
+
+Запрос:
 
 ```sql
 SELECT arrayDifference([1, 2, 3, 4])
 ```
+
+Ответ:
 
 ```text
 ┌─arrayDifference([1, 2, 3, 4])─┐
@@ -674,11 +694,15 @@ SELECT arrayDifference([1, 2, 3, 4])
 └───────────────────────────────┘
 ```
 
-Пример переполнения из-за результирующего типа Int64:
+Пример переполнения из-за результирующего типа `Int64`:
+
+Запрос:
 
 ```sql
 SELECT arrayDifference([0, 10000000000000000000])
 ```
+
+Ответ:
 
 ```text
 ┌─arrayDifference([0, 10000000000000000000])─┐
@@ -686,19 +710,55 @@ SELECT arrayDifference([0, 10000000000000000000])
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct(arr) {#array_functions-arraydistinct}
+## arrayDistinct {#arraydistinct}
 
-Принимает массив, возвращает массив, содержащий уникальные элементы. 
+Принимает массив, возвращает массив, содержащий уникальные элементы.
+ 
+**Синтаксис** 
 
-Пример:
+```sql
+arrayDistinct(array)
+```
+
+**Параметры**
+
+- `array` – [Массив](https://clickhouse.yandex/docs/ru/data_types/array/). 
+
+**Возвращаемое значение**
+
+Возвращает массив, содержащий только уникальные элементы исходного массива. Тип возвращаемых элементов зависит от самого большого значения в массиве.
+
+Тип: [UInt*](https://clickhouse.yandex/docs/ru/data_types/int_uint/#uint-ranges), [Int*](https://clickhouse.yandex/docs/ru/data_types/int_uint/#int-ranges), [Float*](https://clickhouse.yandex/docs/ru/data_types/float/).
+
+**Пример**
+
+Запрос:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
 
+Ответ:
+
 ```text
 ┌─arrayDistinct([1, 2, 2, 3, 1])─┐
 │ [1,2,3]                        │
+└────────────────────────────────┘
+```
+
+Пример округления из-за результирующего типа Float64:
+
+Запрос:
+
+```sql
+SELECT arrayDistinct([1, 2, 2, 100000000000000000005566765768890])
+```
+
+Ответ:
+
+```text
+┌─arrayDistinct([1, 2, 2, 1e32])─┐
+│ [1,2,1e32]                     │
 └────────────────────────────────┘
 ```
 
