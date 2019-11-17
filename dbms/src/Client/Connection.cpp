@@ -612,7 +612,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Connection::Packet Connection::receivePacket()
+Packet Connection::receivePacket()
 {
     try
     {
