@@ -65,9 +65,12 @@ struct ModuloByConstantImpl
         /// strict aliasing optimization for char like arrays
         auto * __restrict src = a.data();
         auto * __restrict dst = c.data();
+        
         if (b & (b - 1))
+        {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+        }
         else
         {
             // gcc libdivide doesn't work well for pow2 division
