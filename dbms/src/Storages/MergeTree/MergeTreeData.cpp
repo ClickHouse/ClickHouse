@@ -760,6 +760,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it.name(), "tmp"))
                 continue;
 
+            if (Poco::Path(it.path(), "delete-on-destroy.txt").isFile())
+            {
+                it->remove(true);
+                continue;
+            }
+
             part_names_with_disks.emplace_back(it.name(), disk_ptr);
         }
     }
@@ -2528,6 +2534,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
+
+            try
+            {
+                Poco::File(original_active_part->getFullPath() + "/delete-on-destroy.txt").createFile();
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Exception has occurred while creating DeleteOnDestroy marker: '"
+                    << original_active_part->getFullPath() + "/delete-on-destroy.txt'.");
+            }
             return;
         }
     }
