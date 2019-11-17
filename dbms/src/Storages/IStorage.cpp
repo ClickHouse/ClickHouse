@@ -448,7 +448,7 @@ BlockInputStreams IStorage::read(
 
 DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method) 
 {
-    if (compression_method == "auto") 
+    if (compression_method == "auto" || compression_method == "") 
     {
         if (endsWith(uri, ".gz")) 
             return DB::CompressionMethod::Gzip;

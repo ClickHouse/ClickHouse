@@ -81,10 +81,11 @@ namespace
             UInt64 min_upload_part_size,
             const Block & sample_block_,
             const Context & context,
-            const ConnectionTimeouts & timeouts)
+            const ConnectionTimeouts & timeouts,
+            const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = std::make_unique<WriteBufferFromS3>(uri, min_upload_part_size, timeouts);
+            write_buf = getBuffer<WriteBufferFromS3>(compression_method, uri, min_upload_part_size, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -112,7 +113,7 @@ namespace
 
     private:
         Block sample_block;
-        std::unique_ptr<WriteBufferFromS3> write_buf;
+        std::unique_ptr<WriteBuffer> write_buf;
         BlockOutputStreamPtr writer;
     };
 }
@@ -175,7 +176,9 @@ void StorageS3::rename(const String & /*new_path_to_db*/, const String & new_dat
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        uri, format_name, min_upload_part_size, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
+        uri, format_name, min_upload_part_size, getSampleBlock(), context_global, 
+        ConnectionTimeouts::getHTTPTimeouts(context_global),
+        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageS3(StorageFactory & factory)

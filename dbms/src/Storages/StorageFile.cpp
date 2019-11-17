@@ -205,13 +205,11 @@ public:
 
             storage.table_fd_was_used = true;
             read_buf = getBuffer<ReadBufferFromFileDescriptor>(compression_method, storage.table_fd);
-            //read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
             read_buf = getBuffer<ReadBufferFromFile>(compression_method, file_path);
-            //read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
@@ -282,7 +280,8 @@ BlockInputStreams StorageFile::read(
 class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageFileBlockOutputStream(StorageFile & storage_)
+    explicit StorageFileBlockOutputStream(StorageFile & storage_, 
+        const CompressionMethod compression_method)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
@@ -292,13 +291,13 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
+            write_buf = getBuffer<WriteBufferFromFileDescriptor>(compression_method, storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = getBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
@@ -329,7 +328,7 @@ public:
 private:
     StorageFile & storage;
     std::unique_lock<std::shared_mutex> lock;
-    std::unique_ptr<WriteBufferFromFileDescriptor> write_buf;
+    std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
 };
 
@@ -337,7 +336,8 @@ BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
     const Context & /*context*/)
 {
-    return std::make_shared<StorageFileBlockOutputStream>(*this);
+    return std::make_shared<StorageFileBlockOutputStream>(*this, 
+        IStorage::chooseCompressionMethod(paths[0], compression_method));
 }
 
 Strings StorageFile::getDataPaths() const

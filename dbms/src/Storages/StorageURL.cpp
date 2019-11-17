@@ -97,10 +97,11 @@ namespace
             const String & format,
             const Block & sample_block_,
             const Context & context,
-            const ConnectionTimeouts & timeouts)
+            const ConnectionTimeouts & timeouts,
+            const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            write_buf = getBuffer<WriteBufferFromHTTP>(compression_method, uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -128,7 +129,7 @@ namespace
 
     private:
         Block sample_block;
-        std::unique_ptr<WriteBufferFromHTTP> write_buf;
+        std::unique_ptr<WriteBuffer> write_buf;
         BlockOutputStreamPtr writer;
     };
 }
@@ -181,7 +182,6 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         ConnectionTimeouts::getHTTPTimeouts(context),
         IStorage::chooseCompressionMethod(request_uri.toString(), compression_method));
 
-
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
         return {block_input};
@@ -197,7 +197,9 @@ void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & n
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
+        uri, format_name, getSampleBlock(), context_global, 
+        ConnectionTimeouts::getHTTPTimeouts(context_global),
+        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageURL(StorageFactory & factory)

@@ -90,6 +90,9 @@ public:
         ++pos;
     }
 
+    void virtual sync() {}
+    void virtual finalize() {}
+
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.

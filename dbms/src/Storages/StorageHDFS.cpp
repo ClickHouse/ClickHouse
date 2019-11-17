@@ -102,10 +102,11 @@ public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
         const Block & sample_block_,
-        const Context & context)
+        const Context & context,
+        const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = std::make_unique<WriteBufferFromHDFS>(uri);
+        write_buf = getBuffer<WriteBufferFromHDFS>(compression_method, uri);    
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
@@ -133,7 +134,7 @@ public:
 
 private:
     Block sample_block;
-    std::unique_ptr<WriteBufferFromHDFS> write_buf;
+    std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
 };
 
@@ -220,7 +221,11 @@ void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_d
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
-    return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
+    return std::make_shared<HDFSBlockOutputStream>(uri, 
+        format_name, 
+        getSampleBlock(), 
+        context, 
+        IStorage::chooseCompressionMethod(uri, compression_method));
 }
 
 void registerStorageHDFS(StorageFactory & factory)
