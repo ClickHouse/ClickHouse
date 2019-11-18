@@ -554,10 +554,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
-    /// FIXME
-    // for (const MergeTreeData::DataPartPtr & part : parts)
-    //     part->accumulateColumnSizes(merged_column_to_size);
-
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
@@ -607,6 +603,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     String rows_sources_file_path;
     std::unique_ptr<WriteBuffer> rows_sources_uncompressed_write_buf;
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
+    std::optional<ColumnSizeEstimator> column_sizes;
 
     if (merge_alg == MergeAlgorithm::Vertical)
     {
@@ -614,6 +611,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         rows_sources_file_path = new_part_tmp_path + "rows_sources";
         rows_sources_uncompressed_write_buf = std::make_unique<WriteBufferFromFile>(rows_sources_file_path);
         rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
+
+        for (const MergeTreeData::DataPartPtr & part : parts)
+            part->accumulateColumnSizes(merged_column_to_size);
+        
+        column_sizes = ColumnSizeEstimator(merged_column_to_size, merging_column_names, gathering_column_names);
     }
     else
     {
@@ -622,8 +624,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         gathering_columns.clear();
         gathering_column_names.clear();
     }
-
-    ColumnSizeEstimator column_sizes(merged_column_to_size, merging_column_names, gathering_column_names);
 
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
@@ -651,7 +651,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     MergeStageProgress horizontal_stage_progress(
-        merge_alg == MergeAlgorithm::Horizontal ? 1.0 : column_sizes.keyColumnsWeight());
+        column_sizes ? 1.0 : column_sizes->keyColumnsWeight());
 
     for (const auto & part : parts)
     {
@@ -787,7 +787,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         size_t sum_input_rows_exact = merge_entry->rows_read;
         merge_entry->columns_written = merging_column_names.size();
-        merge_entry->progress.store(column_sizes.keyColumnsWeight(), std::memory_order_relaxed);
+        merge_entry->progress.store(column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
         BlockInputStreams column_part_streams(parts.size());
 
@@ -816,7 +816,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             Names column_names{column_name};
             Float64 progress_before = merge_entry->progress.load(std::memory_order_relaxed);
 
-            MergeStageProgress column_progress(progress_before, column_sizes.columnWeight(column_name));
+            MergeStageProgress column_progress(progress_before, column_sizes->columnWeight(column_name));
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeSequentialBlockInputStream>(
@@ -869,7 +869,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             merge_entry->columns_written += 1;
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
-            merge_entry->progress.store(progress_before + column_sizes.columnWeight(column_name), std::memory_order_relaxed);
+            merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
         }
 
         Poco::File(rows_sources_file_path).remove();

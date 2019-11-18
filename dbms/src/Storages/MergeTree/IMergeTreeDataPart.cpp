@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
     extern const int CANNOT_UNLINK;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -373,7 +374,7 @@ String IMergeTreeDataPart::getFullPath() const
     return storage.getFullPathOnDisk(disk) + relative_path + "/";
 }
 
-void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool /* check_consistency */)
+void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     assertOnDisk();
 
@@ -390,9 +391,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
 
-    /// FIXME
-    // if (check_consistency)
-        // checkConsistency(require_columns_checksums);
+    if (check_consistency)
+        checkConsistency(require_columns_checksums);
 }
 
 void IMergeTreeDataPart::loadIndexGranularity()
@@ -756,6 +756,15 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
+void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & /* column_to_size */) const
+{
+    throw Exception("Method 'accumulateColumnSizes' is not supported for data part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
+{
+    throw Exception("Method 'checkConsistency' is not supported for data part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMENTED);
+}
 
 String IMergeTreeDataPart::typeToString(Type type)
 {

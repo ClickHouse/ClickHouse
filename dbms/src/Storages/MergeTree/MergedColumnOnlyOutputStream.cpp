@@ -76,8 +76,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    bool write_final_mark = true; /// FIXME
-    writer->finishDataSerialization(checksums, write_final_mark, sync);
+    writer->finishDataSerialization(checksums, sync);
 
     return checksums;
 }

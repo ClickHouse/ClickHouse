@@ -194,22 +194,6 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();    
 }
 
-// void MergeTreeDataPartCompact::accumulateColumnSizes(ColumnToSize & column_to_size) const
-// {
-//     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
-
-//     for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
-//     {
-//         IDataType::SubstreamPath path;
-//         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-//         {
-//             Poco::File bin_file(getFullPath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin");
-//             if (bin_file.exists())
-//                 column_to_size[name_type.name] += bin_file.getSize();
-//         }, path);
-//     }
-// }
-
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
 {
     String path = getFullPath();

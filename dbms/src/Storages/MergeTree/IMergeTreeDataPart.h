@@ -98,10 +98,7 @@ public:
 
     using ColumnToSize = std::map<std::string, UInt64>;
 
-    // void accumulateColumnSizes(ColumnToSize & column_to_size) const
-    // {
-    //     throw Exception("Method 'accumulateColumnSizes' is not supported for data part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMETED);
-    // }
+    virtual void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
     enum class Type
     {
@@ -148,7 +145,7 @@ public:
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     // Block sample_block;
-    size_t getColumnPosition(const String & name) const;
+    size_t getColumnPosition(const String & column_name) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -331,6 +328,7 @@ public:
 
 protected:
     void removeIfNeeded();
+    virtual void checkConsistency(bool require_part_metadata) const;
 
 private:
     Block sample_block;
@@ -357,8 +355,6 @@ private:
     void loadPartitionAndMinMaxIndex();
 
     String getRelativePathForDetachedPart(const String & prefix) const;
-
-    void checkConsistency(bool require_part_metadata);
 
     virtual ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const = 0;
 };

@@ -73,6 +73,8 @@ public:
 
     virtual Type getType() const override { return Type::COMPACT; }
 
+    void checkConsistency(bool /* require_part_metadata */) const override {}
+
     ~MergeTreeDataPartCompact() override;
 
 private:
