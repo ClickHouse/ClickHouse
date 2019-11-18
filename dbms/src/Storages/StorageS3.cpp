@@ -39,7 +39,7 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            auto read_buf = getBuffer<ReadBufferFromS3>(compression_method, uri, timeouts);
+            read_buf = getBuffer<ReadBufferFromS3>(compression_method, uri, timeouts);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -70,6 +70,7 @@ namespace
 
     private:
         String name;
+        std::unique_ptr<ReadBuffer> read_buf;
         BlockInputStreamPtr reader;
     };
 
