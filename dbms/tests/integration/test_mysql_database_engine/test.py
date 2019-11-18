@@ -128,8 +128,7 @@ def get_mysql_conn():
     return conn
 
 def get_mysql_table_function_expr(table_name):
-    # FIXME We need extra round brackets after "mysql" to distinguish table function with list of columns from an aggregate function with list of parameters (see ParserInsertQuery and ParserFunction)
-    return "mysql()('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format(table_name)
+    return "mysql('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format(table_name)
 
 def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
