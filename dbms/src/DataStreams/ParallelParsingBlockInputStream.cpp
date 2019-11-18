@@ -28,15 +28,14 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             assert(unit.status == READY_TO_INSERT);
 
             // Segmentating the original input.
-            unit.segment.used_size = 0;
-            unit.segment.memory.resize(0);
+            unit.segment.resize(0);
 
             const bool have_more_data = file_segmentation_engine(original_buffer,
-                unit.segment.memory, unit.segment.used_size, min_chunk_size);
+                unit.segment, min_chunk_size);
 
             // Creating buffer from the segment of data.
-            auto new_buffer = BufferBase::Buffer(unit.segment.memory.data(),
-                                                 unit.segment.memory.data() + unit.segment.used_size);
+            auto new_buffer = BufferBase::Buffer(unit.segment.data(),
+                                                 unit.segment.data() + unit.segment.size());
 
             unit.readbuffer->buffer().swap(new_buffer);
             unit.readbuffer->position() = unit.readbuffer->buffer().begin();
