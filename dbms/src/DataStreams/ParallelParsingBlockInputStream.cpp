@@ -33,22 +33,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             const bool have_more_data = file_segmentation_engine(original_buffer,
                 unit.segment, min_chunk_size);
 
-            // Creating buffer from the segment of data.
-            auto new_buffer = BufferBase::Buffer(unit.segment.data(),
-                                                 unit.segment.data() + unit.segment.size());
-
-            unit.readbuffer->buffer().swap(new_buffer);
-            unit.readbuffer->position() = unit.readbuffer->buffer().begin();
-
-            unit.parser = std::make_unique<InputStreamFromInputFormat>(
-                    input_processor_creator(*unit.readbuffer, header, context, row_input_format_params, format_settings)
-            );
-
-            if (!have_more_data)
-            {
-                unit.is_last = true;
-            }
-
+            unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;
             scheduleParserThreadForUnitWithNumber(current_unit_number);
             ++segmentator_ticket_number;
@@ -73,16 +58,27 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
 
         auto & unit = processing_units[current_unit_number];
 
+        /*
+         * This is kind of suspicious -- the input_process_creator contract with
+         * respect to multithreaded use is not clear, but we hope that it is
+         * just a 'normal' factory class that doesn't have any state, and so we
+         * can use it from multiple threads simultaneously.
+         */
+        ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
+        auto parser = std::make_unique<InputStreamFromInputFormat>(
+            input_processor_creator(read_buffer, header, context,
+                row_input_format_params, format_settings));
+
         unit.block_ext.block.clear();
         unit.block_ext.block_missing_values.clear();
 
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occured.
         Block block;
-        while (!finished && (block = unit.parser->read()) != Block())
+        while (!finished && (block = parser->read()) != Block())
         {
             unit.block_ext.block.emplace_back(block);
-            unit.block_ext.block_missing_values.emplace_back(unit.parser->getMissingValues());
+            unit.block_ext.block_missing_values.emplace_back(parser->getMissingValues());
         }
 
         if (!finished)
