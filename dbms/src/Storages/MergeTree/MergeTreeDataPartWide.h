@@ -75,6 +75,8 @@ public:
 
     Type getType() const override { return Type::WIDE; }
 
+    ~MergeTreeDataPartWide() override;
+
 private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;

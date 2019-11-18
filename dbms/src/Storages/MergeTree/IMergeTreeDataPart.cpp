@@ -203,15 +203,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
 
 size_t IMergeTreeDataPart::getColumnPosition(const String & column_name) const
 {
-    /// FIXME
-    size_t i = 0;
-    for (const auto & it : columns)
-    {
-        if (it.name == column_name)
-            return i;
-        ++i;
-    }
-    return -1;    
+   return sample_block.getPositionByName(column_name);  
 }   
 
 DayNum IMergeTreeDataPart::getMinDate() const
@@ -248,7 +240,16 @@ time_t IMergeTreeDataPart::getMaxTime() const
         return 0;
 }
 
-IMergeTreeDataPart::~IMergeTreeDataPart()
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & columns_)
+{
+    columns = columns_;
+    for (const auto & column : columns)
+        sample_block.insert({column.type, column.name});
+}
+
+IMergeTreeDataPart::~IMergeTreeDataPart() = default;
+
+void IMergeTreeDataPart::removeIfNeeded()
 {
     if (state == State::DeleteOnDestroy || is_temp)
     {
@@ -364,8 +365,7 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 
 String IMergeTreeDataPart::getFullPath() const
 {
-    /// FIXME
-    // assertOnDisk();
+    assertOnDisk();
 
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);

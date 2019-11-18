@@ -147,7 +147,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->columns = *total_column_list;
+    new_part->setColumns(*total_column_list);
     /// FIXME
     auto index_columns = writer->getIndexColumns();
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));

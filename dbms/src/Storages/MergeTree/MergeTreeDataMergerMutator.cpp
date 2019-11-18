@@ -1131,16 +1131,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         /// Write the columns list of the resulting part in the same order as all_columns.
-        new_data_part->columns = all_columns;
         Names source_column_names = source_part->columns.getNames();
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-        for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
+        for (auto it = all_columns.begin(); it != all_columns.end();)
         {
             if (source_columns_name_set.count(it->name) || updated_header.has(it->name))
                 ++it;
             else
                 it = new_data_part->columns.erase(it);
         }
+        new_data_part->setColumns(all_columns);
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);

@@ -313,6 +313,11 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
     }
 }
 
+MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
+{
+    removeIfNeeded();
+}
+
 // bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType & type) const
 // {
 //     bool res = true;
