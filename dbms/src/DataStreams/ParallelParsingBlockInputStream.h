@@ -16,12 +16,11 @@ namespace DB
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.
- * The number of chunks equals to max_threads_for_parallel_parsing setting.
+ * The number of chunks equals to the number or parser threads.
  * The size of chunk is equal to min_chunk_bytes_for_parallel_parsing setting.
  *
- * This stream has three kinds of threads: one segmentator, multiple parsers
- * (max_threads_for_parallel_parsing) and one reader thread -- that is, the one
- * from which readImpl() is called.
+ * This stream has three kinds of threads: one segmentator, multiple parsers,
+ * and one reader thread -- that is, the one from which readImpl() is called.
  * They operate one after another on parts of data called "processing units".
  * One unit consists of buffer with raw data from file, filled by segmentator
  * thread. This raw data is then parsed by a parser thread to form a number of
