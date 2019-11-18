@@ -556,13 +556,13 @@ The path to the directory containing data.
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
 - `database` – Name of the database.
 - `table` – Name of the system table the queries will be logged in.
-- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a table.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -578,14 +578,20 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
-## trace_log {#server_settings-trace-log}
+## trace_log {#server_settings-trace_log}
 
+Settings for the [trace_log](../system_tables.md#system_tables-trace_log) table operation.
 
+Parameters:
 
-Stores stack traces collected by query profilers. See `query_profiler_real_time_period_ns` and `query_profiler_cpu_time_period_ns` settings.
+- `database` — Database for storing a table.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
+The default server configuration file `config.xml` contains the following settings section:
 
-```
+```xml
 <trace_log>
     <database>system</database>
     <table>trace_log</table>
