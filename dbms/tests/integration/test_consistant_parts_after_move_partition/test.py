@@ -45,7 +45,7 @@ def start_cluster():
 def test_consistent_part_after_move_partition(start_cluster):
     # insert into all replicas
     for i in range(100):
-        node1.query('INSERT INTO `{database}`.src VALUE ({value} % 2, {value})'.format(database=CLICKHOUSE_DATABASE,
+        node1.query('INSERT INTO `{database}`.src VALUES ({value} % 2, {value})'.format(database=CLICKHOUSE_DATABASE,
                                                                                        value=i))
     query_source = 'SELECT COUNT(*) FROM `{database}`.src'.format(database=CLICKHOUSE_DATABASE)
     query_dest = 'SELECT COUNT(*) FROM `{database}`.dest'.format(database=CLICKHOUSE_DATABASE)
