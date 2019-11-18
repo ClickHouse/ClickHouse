@@ -291,11 +291,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 
 /// File Segmentation Engines for parallel reading
 
-void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
-//void registerFileSegmentationEngineValues(FormatFactory & factory);
-void registerFileSegmentationEngineCSV(FormatFactory & factory);
-void registerFileSegmentationEngineTSKV(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -347,10 +343,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
 
-    registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineTabSeparated(*this);
-    registerFileSegmentationEngineCSV(*this);
-    registerFileSegmentationEngineTSKV(*this);
 
     registerOutputFormatNull(*this);
 
