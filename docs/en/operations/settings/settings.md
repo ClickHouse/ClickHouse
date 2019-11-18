@@ -1004,15 +1004,15 @@ Enable order-preserving parallel parsing of data formats such as JSONEachRow, TS
 ## max_threads_for_parallel_parsing
 
 - Type: unsigned int
-- Default value: 10
+- Default value: 0
 
-The maximum number of threads for order-preserving parallel parsing of data formats.
+The maximum number of threads for order-preserving parallel parsing of data formats. 0 means use global maximum.
 
-## min_chunk_size_for_parallel_parsing
+## min_chunk_bytes_for_parallel_parsing
 
 - Type: unsigned int
-- Default value: 1024 * 1024
+- Default value: 1 MiB
 
-The minimum chunk size in bytes, which each thread will parse in parallel. By default it equals to one megabyte.
+The minimum chunk size in bytes, which each thread will parse in parallel.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

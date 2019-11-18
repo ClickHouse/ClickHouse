@@ -31,7 +31,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             unit.segment.resize(0);
 
             const bool have_more_data = file_segmentation_engine(original_buffer,
-                unit.segment, min_chunk_size);
+                unit.segment, min_chunk_bytes);
 
             unit.is_last = !have_more_data;
             unit.status = READY_TO_PARSE;

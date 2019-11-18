@@ -17,7 +17,7 @@ namespace DB
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.
  * The number of chunks equals to max_threads_for_parallel_parsing setting.
- * The size of chunk is equal to min_chunk_size_for_parallel_parsing setting.
+ * The size of chunk is equal to min_chunk_bytes_for_parallel_parsing setting.
  *
  * This stream has three kinds of threads: one segmentator, multiple parsers
  * (max_threads_for_parallel_parsing) and one reader thread -- that is, the one
@@ -75,7 +75,7 @@ public:
         const InputCreatorParams &input_creator_params;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
         size_t max_threads_to_use;
-        size_t min_chunk_size;
+        size_t min_chunk_bytes;
     };
 
     explicit ParallelParsingBlockInputStream(const Builder & builder)
@@ -84,7 +84,7 @@ public:
               row_input_format_params(builder.input_creator_params.row_input_format_params),
               format_settings(builder.input_creator_params.settings),
               input_processor_creator(builder.input_processor_creator),
-              min_chunk_size(builder.min_chunk_size),
+              min_chunk_bytes(builder.min_chunk_bytes),
               original_buffer(builder.read_buffer),
               pool(builder.max_threads_to_use),
               file_segmentation_engine(builder.file_segmentation_engine)
@@ -148,7 +148,7 @@ private:
     const FormatSettings format_settings;
     const InputProcessorCreator input_processor_creator;
 
-    const size_t min_chunk_size;
+    const size_t min_chunk_bytes;
 
     /*
      * This is declared as atomic to avoid UB, because parser threads access it
