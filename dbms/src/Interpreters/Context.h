@@ -117,6 +117,27 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+#ifndef NDEBUG
+/// Unfortunately, AddressSanitizer cannot find all usages of dangling references to Context
+class __ContextDebug
+{
+    static std::unordered_map<const void *, StackTrace> __contexts;
+    static std::list<std::tuple<const void *, StackTrace, StackTrace>> __destroyed_contexts;
+    static const size_t __max_traces = 4096;
+    static std::mutex __contexts_lock;
+protected:
+    __ContextDebug();
+    __ContextDebug(const __ContextDebug &);
+    __ContextDebug & operator=(const __ContextDebug &);
+    __ContextDebug(__ContextDebug &&) = delete;
+    __ContextDebug & operator=(__ContextDebug &&) = delete;
+    ~__ContextDebug();
+
+public:
+    void assert_context_exists() const;
+};
+#endif
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -124,8 +145,14 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
   * Everything is encapsulated for all sorts of checks and locks.
   */
 class Context
+#ifndef NDEBUG
+        : public __ContextDebug
+#endif
 {
 private:
+#ifdef NDEBUG
+    void assert_context_exists() const {};
+#endif
     using Shared = std::shared_ptr<ContextShared>;
     Shared shared;
 
@@ -235,8 +262,8 @@ public:
     InputBlocksReader getInputBlocksReaderCallback() const;
     void resetInputCallbacks();
 
-    ClientInfo & getClientInfo() { return client_info; }
-    const ClientInfo & getClientInfo() const { return client_info; }
+    ClientInfo & getClientInfo() { assert_context_exists(); return client_info; }
+    const ClientInfo & getClientInfo() const { assert_context_exists(); return client_info; }
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
@@ -301,8 +328,8 @@ public:
 
     void killCurrentQuery();
 
-    void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
-    const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
+    void setInsertionTable(std::pair<String, String> && db_and_table) { assert_context_exists(); insertion_table = db_and_table; }
+    const std::pair<String, String> & getInsertionTable() const { assert_context_exists(); return insertion_table; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
@@ -324,7 +351,7 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes);
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { assert_context_exists(); return settings_constraints; }
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -384,25 +411,25 @@ public:
 
     const Context & getQueryContext() const;
     Context & getQueryContext();
-    bool hasQueryContext() const { return query_context != nullptr; }
+    bool hasQueryContext() const { assert_context_exists(); return query_context != nullptr; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
-    bool hasSessionContext() const { return session_context != nullptr; }
+    bool hasSessionContext() const { assert_context_exists(); return session_context != nullptr; }
 
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
-    bool hasGlobalContext() const { return global_context != nullptr; }
+    bool hasGlobalContext() const { assert_context_exists(); return global_context != nullptr; }
 
-    void setQueryContext(Context & context_) { query_context = &context_; }
-    void setSessionContext(Context & context_) { session_context = &context_; }
+    void setQueryContext(Context & context_) { assert_context_exists(); query_context = &context_; }
+    void setSessionContext(Context & context_) { assert_context_exists(); session_context = &context_; }
 
-    void makeQueryContext() { query_context = this; }
-    void makeSessionContext() { session_context = this; }
-    void makeGlobalContext() { global_context = this; }
+    void makeQueryContext() { assert_context_exists(); query_context = this; }
+    void makeSessionContext() { assert_context_exists(); session_context = this; }
+    void makeGlobalContext() { assert_context_exists(); global_context = this; }
 
-    const Settings & getSettingsRef() const { return settings; }
-    Settings & getSettingsRef() { return settings; }
+    const Settings & getSettingsRef() const { assert_context_exists(); return settings; }
+    Settings & getSettingsRef() { assert_context_exists(); return settings; }
 
 
     void setProgressCallback(ProgressCallback callback);
@@ -544,7 +571,7 @@ public:
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
-    void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
+    void setQueryParameters(const NameToNameMap & parameters) { assert_context_exists(); query_parameters = parameters; }
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
