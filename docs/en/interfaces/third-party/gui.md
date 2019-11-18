@@ -87,6 +87,18 @@ Features:
 
 ## Commercial
 
+### Holistics Software
+
+[Holistics](https://www.holistics.io/) was listed by Gartner's Frontrunners in 2019 as one of the top 2 highest ranked business intelligence tools globally for usability. Holistics is a full-stack data platform and business intelligence tool for setting up your analytics processes, built on SQL. 
+
+Features:
+
+- Automated email, Slack and Google Sheet schedules of reports.
+- Powerful SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
+- Embedded analytics of reports and dashboards via iframe.
+- Data preparation and ETL capabilities.
+- SQL data modeling support for relational mapping of data.
+
 ### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded into other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
