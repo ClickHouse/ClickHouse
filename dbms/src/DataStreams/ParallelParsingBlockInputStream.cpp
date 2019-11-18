@@ -81,12 +81,13 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
             unit.block_ext.block_missing_values.emplace_back(parser->getMissingValues());
         }
 
-        if (!finished)
-        {
-            std::unique_lock lock(mutex);
-            unit.status = READY_TO_READ;
-            reader_condvar.notify_all();
-        }
+        // We suppose we will get at least some blocks for a non-empty buffer,
+        // except at the end of file. Also see a matching assert in readImpl().
+        assert(unit.is_last || unit.block_ext.block.size() > 0);
+
+        std::unique_lock lock(mutex);
+        unit.status = READY_TO_READ;
+        reader_condvar.notify_all();
     }
     catch (...)
     {
@@ -157,6 +158,12 @@ Block ParallelParsingBlockInputStream::readImpl()
 
     if (unit.block_ext.block.size() == 0)
     {
+        /*
+         * Can we get zero blocks for an entire segment, when the format parser
+         * skips it entire content and does not create any blocks? Probably not,
+         * but if we ever do, we should add a loop around the above if, to skip
+         * these. Also see a matching assert in the parser thread.
+         */
         assert(unit.is_last);
         finished = true;
         return Block{};
@@ -169,7 +176,7 @@ Block ParallelParsingBlockInputStream::readImpl()
 
     next_block_in_current_unit.value() += 1;
 
-    if (next_block_in_current_unit.value() == unit.block_ext.block.size())
+    if (*next_block_in_current_unit == unit.block_ext.block.size())
     {
         // Finished reading this Processing Unit, move to the next one.
         next_block_in_current_unit.reset();
