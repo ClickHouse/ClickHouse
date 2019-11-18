@@ -31,10 +31,15 @@ git clone https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
 ./configure --prefix=${CCTOOLS} --with-libtapi=${CCTOOLS} --target=x86_64-apple-darwin
 make install
+```
 
-cd ${CCTOOLS}
+Also we need to download MacOS X SDK inside our working tree
+
+```bash
+cd ClickHouse
+cd cmake/toolchain/darwin-x86_64
 wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-tar xJf MacOSX10.14.sdk.tar.xz
+tar --strip-components=1 xJf MacOSX10.14.sdk.tar.xz
 ```
 
 # Build ClickHouse
@@ -42,11 +47,10 @@ tar xJf MacOSX10.14.sdk.tar.xz
 ```bash
 cd ClickHouse
 mkdir build-osx
-CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_SYSTEM_NAME=Darwin \
+CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake \
     -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar \
     -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib \
-    -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld \
-    -DSDK_PATH=${CCTOOLS}/MacOSX10.14.sdk
+    -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld
 ninja -C build-osx
 ```
 
