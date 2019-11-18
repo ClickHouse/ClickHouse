@@ -124,15 +124,8 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        //The number of threads for parallel parsing must be less or equal settings.max_threads.
-        const size_t global_max_threads = settings.max_threads;
-        const size_t max_threads_for_parallel_parsing = settings.max_threads_for_parallel_parsing;
-        const size_t max_threads_to_use = max_threads_for_parallel_parsing == 0 ? global_max_threads : std::min(max_threads_for_parallel_parsing, global_max_threads);
-
-        //LOG_TRACE(&Poco::Logger::get("FormatFactory::getInput()"), "Will use " << max_threads_to_use << " threads for parallel parsing.");
-
         auto params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
-        ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, max_threads_to_use, settings.min_chunk_bytes_for_parallel_parsing};
+        ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputStream>(builder);
     }
 

@@ -1001,11 +1001,6 @@ Default value: 0.
 
 Enable order-preserving parallel parsing of data formats such as JSONEachRow, TSV, TKSV and CSV. Reading will be single threaded and parsing will be multithreaded.
 
-## max_threads_for_parallel_parsing
-
-- Type: unsigned int
-- Default value: 0
-
 The maximum number of threads for order-preserving parallel parsing of data formats. 0 means use global maximum.
 
 ## min_chunk_bytes_for_parallel_parsing
