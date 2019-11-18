@@ -91,8 +91,7 @@ public:
     {
         // Allocate more units than threads to decrease segmentator
         // waiting on reader on wraparound. The number is random.
-        for (size_t i = 0; i < builder.max_threads_to_use + 4; ++i)
-            processing_units.emplace_back(builder);
+        processing_units.resize(builder.max_threads_to_use + 4);
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
     }
@@ -114,8 +113,16 @@ public:
             is_killed = true;
         is_cancelled = true;
 
-        for (auto& unit: processing_units)
-            unit.parser->cancel(kill);
+        /*
+         * The format parsers themselves are not being cancelled here, so we'll
+         * have to wait until they process the current block. Given that the
+         * chunk size is on the order of megabytes, this should't be too long.
+         * We can't call IInputFormat->cancel here, because the parser object is
+         * local to the parser thread, and we don't want to introduce any
+         * synchronization between parser threads and the other threads to get
+         * better performance. An ideal solution would be to add a callback to
+         * IInputFormat that checks whether it was cancelled.
+         */
 
         finishAndWait();
     }
@@ -186,21 +193,13 @@ private:
 
     struct ProcessingUnit
     {
-        explicit ProcessingUnit(const Builder & builder) : status(ProcessingUnitStatus::READY_TO_INSERT)
+        explicit ProcessingUnit()
+            : status(ProcessingUnitStatus::READY_TO_INSERT)
         {
-            readbuffer = std::make_unique<ReadBuffer>(segment.data(), segment.size(), 0);
-            parser = std::make_unique<InputStreamFromInputFormat>(
-                builder.input_processor_creator(*readbuffer,
-                    builder.input_creator_params.sample,
-                    builder.input_creator_params.context,
-                    builder.input_creator_params.row_input_format_params,
-                    builder.input_creator_params.settings));
         }
 
         BlockExt block_ext;
-        std::unique_ptr<ReadBuffer> readbuffer;
         Memory<> segment;
-        std::unique_ptr<InputStreamFromInputFormat> parser;
         std::atomic<ProcessingUnitStatus> status;
         bool is_last{false};
     };
