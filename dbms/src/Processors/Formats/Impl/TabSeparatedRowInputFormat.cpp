@@ -384,13 +384,12 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_bytes)
+bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_bytes)
 {
     for (;;)
     {
         if (in.eof())
         {
-            used_size = memory.size(); // remove me
             return false;
         }
 
@@ -448,7 +447,6 @@ bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memo
         {
             // Found the separator and the chunk big enough so that we can
             // return it.
-            used_size = memory.size(); //FIXME
             return true;
         }
         // Didn't find the separator, or the chunk is not big enough. Read more

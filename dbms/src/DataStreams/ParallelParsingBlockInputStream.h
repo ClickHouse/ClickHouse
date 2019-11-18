@@ -178,12 +178,6 @@ private:
         READY_TO_READ
     };
 
-    struct MemoryExt
-    {
-        Memory<> memory;
-        size_t used_size{0};
-    };
-
     struct BlockExt
     {
         std::vector<Block> block;
@@ -194,7 +188,7 @@ private:
     {
         explicit ProcessingUnit(const Builder & builder) : status(ProcessingUnitStatus::READY_TO_INSERT)
         {
-            readbuffer = std::make_unique<ReadBuffer>(segment.memory.data(), segment.used_size, 0);
+            readbuffer = std::make_unique<ReadBuffer>(segment.data(), segment.size(), 0);
             parser = std::make_unique<InputStreamFromInputFormat>(
                 builder.input_processor_creator(*readbuffer,
                     builder.input_creator_params.sample,
@@ -205,7 +199,7 @@ private:
 
         BlockExt block_ext;
         std::unique_ptr<ReadBuffer> readbuffer;
-        MemoryExt segment;
+        Memory<> segment;
         std::unique_ptr<InputStreamFromInputFormat> parser;
         std::atomic<ProcessingUnitStatus> status;
         bool is_last{false};

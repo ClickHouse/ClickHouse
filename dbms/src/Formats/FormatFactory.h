@@ -49,7 +49,6 @@ public:
     using FileSegmentationEngine = std::function<bool(
         ReadBuffer & buf,
         DB::Memory<> & memory,
-        size_t & used_size,
         size_t min_chunk_size)>;
 
     /// This callback allows to perform some additional actions after writing a single row.
