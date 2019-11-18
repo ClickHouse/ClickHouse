@@ -32,19 +32,15 @@ struct User
     String profile;
     String quota;
 
-    //if true then allowed_X was defined in user
-    bool has_allowed_databases = false;
-    bool has_allowed_dictionaries = false;
-
     AllowedClientHosts allowed_client_hosts;
 
     /// List of allowed databases.
     using DatabaseSet = std::unordered_set<std::string>;
-    DatabaseSet databases;
+    std::optional<DatabaseSet> databases;
 
     /// List of allowed dictionaries.
     using DictionarySet = std::unordered_set<std::string>;
-    DictionarySet dictionaries;
+    std::optional<DictionarySet> dictionaries;
 
     /// Table properties.
     using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
