@@ -73,6 +73,8 @@ public:
 
     virtual Type getType() const override { return Type::COMPACT; }
 
+    ~MergeTreeDataPartCompact() override;
+
 private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;

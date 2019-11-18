@@ -1822,7 +1822,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
         auto & mutable_part = const_cast<DataPart &>(*data_part);
         mutable_part.checksums = new_checksums;
-        mutable_part.columns = new_columns;
+        mutable_part.setColumns(new_columns);
 
         /// 3) Delete the old files.
         for (const auto & from_to : rename_map)

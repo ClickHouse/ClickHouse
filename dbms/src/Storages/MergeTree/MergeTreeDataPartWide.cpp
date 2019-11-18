@@ -198,6 +198,11 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
+MergeTreeDataPartWide::~MergeTreeDataPartWide()
+{
+    removeIfNeeded();
+}
+
 // void MergeTreeDataPartWide::accumulateColumnSizes(ColumnToSize & column_to_size) const
 // {
 //     std::shared_lock<std::shared_mutex> part_lock(columns_lock);

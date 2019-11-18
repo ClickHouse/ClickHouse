@@ -160,6 +160,8 @@ public:
     time_t getMinTime() const;
     time_t getMaxTime() const;
 
+    void setColumns(const NamesAndTypesList & columns_);
+
     bool isEmpty() const { return rows_count == 0; }
 
     const MergeTreeData & storage;
@@ -327,7 +329,12 @@ public:
 
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
+protected:
+    void removeIfNeeded();
+
 private:
+    Block sample_block;
+
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
