@@ -69,6 +69,8 @@ public:
 
     bool supportsVerticalMerge() const override { return true; }
 
+    void accumulateColumnSizes(ColumnToSize & column_to_size) const override;
+
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
@@ -77,13 +79,15 @@ public:
 
     ~MergeTreeDataPartWide() override;
 
+protected:
+    void checkConsistency(bool require_part_metadata) const override;
+
 private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
     ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const override;
 
-    void checkConsistency(bool require_part_metadata);
 };
 
 // using MergeTreeDataPartState =IMergeTreeDataPart::State;

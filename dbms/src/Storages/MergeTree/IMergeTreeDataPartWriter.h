@@ -73,7 +73,7 @@ public:
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
 
     virtual ~IMergeTreeDataPartWriter();
 
@@ -82,17 +82,16 @@ public:
 
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
-    /// FIXME
-    MutableColumns && getIndexColumns()
+    Columns releaseIndexColumns()
     {
-        return std::move(index_columns);
+        return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     }
 
     void initSkipIndices();
     void initPrimaryIndex();
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool write_final_mark);
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void next();
 

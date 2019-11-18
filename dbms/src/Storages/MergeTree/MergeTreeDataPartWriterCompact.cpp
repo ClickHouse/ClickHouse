@@ -144,10 +144,8 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     return from_row + number_of_rows;
 }
 
-void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    UNUSED(write_final_mark);
-
     if (with_final_mark && data_written)
     {
         writeIntBinary(0ULL, stream->marks);

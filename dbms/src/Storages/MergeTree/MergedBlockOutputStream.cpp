@@ -98,9 +98,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    bool write_final_mark = true; /// FIXME
-    writer->finishDataSerialization(checksums, write_final_mark);
-    writer->finishPrimaryIndexSerialization(checksums, write_final_mark);
+    writer->finishDataSerialization(checksums);
+    writer->finishPrimaryIndexSerialization(checksums);
     writer->finishSkipIndicesSerialization(checksums);
 
     if (!total_column_list)
@@ -148,9 +147,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->setColumns(*total_column_list);
-    /// FIXME
-    auto index_columns = writer->getIndexColumns();
-    new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
+    new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
     new_part->index_granularity = writer->getIndexGranularity();

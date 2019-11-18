@@ -297,13 +297,15 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
     const auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
     WrittenOffsetColumns offset_columns;
+
+    bool write_final_mark = (with_final_mark && data_written);
 
     {
         auto it = columns_list.begin();
@@ -321,10 +323,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
             }
         }
     }
-
-    /// FIXME ??
-    if (compute_granularity && write_final_mark && data_written)
-        index_granularity.appendMark(0);
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {

@@ -124,7 +124,7 @@ void fillIndexGranularityImpl(
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
 
-    /// FIXME
+    /// FIXME: split/join last mark for compact parts
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.appendMark(index_granularity_for_block);
 }
@@ -288,12 +288,12 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
     skip_index_data_mark = skip_index_current_data_mark;
 }
 
-void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool write_final_mark)
+void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
 {
     std::cerr << "finishPrimaryIndexSerialization called...\n";
     if (index_stream)
     {
-        if (write_final_mark)
+        if (with_final_mark && data_written)
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
@@ -301,11 +301,14 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::Da
                 index_types[j]->serializeBinary(last_index_row[j], *index_stream);
             }
 
+            if (compute_granularity)
+                index_granularity.appendMark(0);
+
             last_index_row.clear();
         }
 
+
         std::cerr << "(finishPrimaryIndexSerialization) marks_count: " << index_granularity.getMarksCount() << "\n"; 
-        std::cerr << "(finishPrimaryIndexSerialization) write_final_mark: " << write_final_mark << "\n";
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
