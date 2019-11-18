@@ -96,6 +96,12 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
+}
+
+
 MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
@@ -760,7 +766,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it.name(), "tmp"))
                 continue;
 
-            if (Poco::Path(it.path(), "delete-on-destroy.txt").isFile())
+            if (Poco::Path(it.path(), DELETE_ON_DESTROY_MARKER_PATH).isFile())
             {
                 it->remove(true);
                 continue;
@@ -2535,14 +2541,15 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
 
+            Poco::Path marker_path(Poco::Path(original_active_part->getFullPath()), DELETE_ON_DESTROY_MARKER_PATH);
             try
             {
-                Poco::File(original_active_part->getFullPath() + "/delete-on-destroy.txt").createFile();
+                Poco::File(marker_path).createFile();
             }
             catch (...)
             {
                 LOG_WARNING(log, "Exception has occurred while creating DeleteOnDestroy marker: '"
-                    << original_active_part->getFullPath() + "/delete-on-destroy.txt'.");
+                    << marker_path.toString() + "'.");
             }
             return;
         }
