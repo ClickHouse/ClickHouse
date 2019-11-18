@@ -47,7 +47,7 @@ public:
 private:
     const SelectQueryOptions options;
     ASTPtr query_ptr;
-    const Context & context;
+    std::shared_ptr<Context> context;
 
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
