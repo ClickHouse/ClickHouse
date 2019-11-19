@@ -11,6 +11,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -66,7 +67,7 @@ SelectStreamFactory::SelectStreamFactory(
 namespace
 {
 
-BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
+BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
 
@@ -83,7 +84,7 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & 
      */
     /// return std::make_shared<MaterializingBlockInputStream>(stream);
 
-    return stream;
+    return std::make_shared<ConvertingBlockInputStream>(context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
 }
 
 static String formattedAST(const ASTPtr & ast)
@@ -109,7 +110,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        res.emplace_back(createLocalStream(modified_query_ast, context, processed_stage));
+        res.emplace_back(createLocalStream(modified_query_ast, header, context, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
@@ -249,7 +250,7 @@ void SelectStreamFactory::createForShard(
             }
 
             if (try_results.empty() || local_delay < max_remote_delay)
-                return createLocalStream(modified_query_ast, context, stage);
+                return createLocalStream(modified_query_ast, header, context, stage);
             else
             {
                 std::vector<IConnectionPool::Entry> connections;
