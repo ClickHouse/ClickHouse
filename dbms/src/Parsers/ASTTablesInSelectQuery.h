@@ -166,5 +166,4 @@ struct ASTTablesInSelectQuery : public IAST
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-
 }
