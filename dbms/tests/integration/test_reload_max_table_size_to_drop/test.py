@@ -16,7 +16,7 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.xml')
 def start_cluster():
     try:
         cluster.start()
-        node.query("CREATE TABLE test(date Date, id UInt32) ENGINE = MergeTree(date, id, 8192)")
+        node.query("CREATE TABLE test(date Date, id UInt32) ENGINE = MergeTree() PARTITION BY date ORDER BY id")
         yield cluster
     finally:
         cluster.shutdown()
