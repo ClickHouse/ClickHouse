@@ -222,7 +222,7 @@ Block RemoteBlockInputStream::readImpl()
         if (isCancelledOrThrowIfKilled())
             return Block();
 
-        Connection::Packet packet = multiplexed_connections->receivePacket();
+        Packet packet = multiplexed_connections->receivePacket();
 
         switch (packet.type)
         {
@@ -301,7 +301,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     tryCancel("Cancelling query because enough data has been read");
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    Connection::Packet packet = multiplexed_connections->drain();
+    Packet packet = multiplexed_connections->drain();
     switch (packet.type)
     {
         case Protocol::Server::EndOfStream:
