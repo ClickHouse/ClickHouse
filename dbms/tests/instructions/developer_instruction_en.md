@@ -216,7 +216,7 @@ KDevelop and QTCreator are another great alternatives of an IDE for developing C
 
 As simple code editors you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
 
-Just in case it is worth mentioning that CLion creates by itself its own `build` path, it also selects by itself the type of build `debug` as default, for configuration it uses a version of CMake that is built into CLion and not the one installed by you, and finally CLion will use make to run build tasks instead of ninja. This is a normal behaviour, just keep that in mind to avoid confusion.
+Just in case, it is worth mentioning that CLion creates by itself its own `build` path, it also selects by itself `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally CLion will use `make` to run build tasks instead of `ninja`. This is a normal behaviour, just keep that in mind to avoid confusion.
 
 
 # Writing Code
