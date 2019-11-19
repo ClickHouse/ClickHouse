@@ -296,8 +296,100 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 对表的读操作是自动并行的。
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
-### Configuration {#table_engine-mergetree-multiple-volumes_configure}
+## 列和表的TTL {#table_engine-mergetree-ttl}
+
+TTL可以设置值的生命周期，它既可以为整张表设置，也可以为每个列字段单独设置。如果`TTL`同时作用于表和字段，ClickHouse会使用先到期的那个。
+
+被设置TTL的表，必须拥有[Date](../../data_types/date.md) 或 [DateTime](../../data_types/datetime.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
+
+```sql
+TTL time_column
+TTL time_column + interval
+```
+
+要定义`interval`, 需要使用 [time interval](../../query_language/operators.md#operators-datetime) 操作符。
+
+```sql
+TTL date_time + INTERVAL 1 MONTH
+TTL date_time + INTERVAL 15 HOUR
+```
+
+**列字段 TTL**
+
+当列字段中的值过期时, ClickHouse会将它们替换成数据类型的默认值。如果分区内，某一列的所有值均已过期，则ClickHouse会从文件系统中删除这个分区目录下的列文件。
+
+`TTL`子句不能被用于主键字段。
+
+示例说明:
+
+创建一张包含 `TTL` 的表
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+```
+
+为表中已存在的列字段添加 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 DAY;
+```
+
+修改列字段的 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 MONTH;
+```
+
+**表 TTL**
+
+当表内的数据过期时, ClickHouse会删除所有对应的行。
+
+举例说明:
+
+创建一张包含 `TTL` 的表
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH;
+```
+
+修改表的 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+**删除数据**
+
+当ClickHouse合并数据分区时, 会删除TTL过期的数据。
+
+当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 你可以设置 [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout)。如果该值被设置的太低, 它将导致执行许多的计划外合并，这可能会消耗大量资源。
+
+如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
+
+
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 [来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
