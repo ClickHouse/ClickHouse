@@ -63,6 +63,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
 
 特征：
+
  - 自动完成。
  - 查询和数据输出的语法高亮显示。
  - 寻呼机支持数据输出。
