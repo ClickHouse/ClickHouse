@@ -76,6 +76,7 @@ Features:
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command line client for ClickHouse, written in Python 3.
 
 Features:
+
 - Autocompletion.
 - Syntax highlighting for the queries and data output.
 - Pager support for the data output.
