@@ -346,7 +346,8 @@ void StorageFile::rename(
 
 void registerStorageFile(StorageFactory & factory)
 {
-    factory.registerStorage("File", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("File", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() >= 1 && engine_args.size() <= 3))

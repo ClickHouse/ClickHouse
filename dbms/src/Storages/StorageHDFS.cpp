@@ -211,7 +211,8 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context 
 
 void registerStorageHDFS(StorageFactory & factory)
 {
-    factory.registerStorage("HDFS", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("HDFS", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2 && engine_args.size() != 3)

@@ -167,7 +167,8 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & 
 
 void registerStorageS3(StorageFactory & factory)
 {
-    factory.registerStorage("S3", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2 && engine_args.size() != 3)

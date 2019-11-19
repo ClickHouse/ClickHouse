@@ -376,7 +376,8 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
 {
-    return [&](IAST & ast) {
+    return [&](IAST & ast)
+    {
         if (!new_changes.empty())
         {
             auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
