@@ -9,7 +9,7 @@ If you use Windows, you need to create a virtual machine with Ubuntu. To start w
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-Probably, you already have one. If you don't, please register at https://github.com. In case you do not have ssh keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same ssh keys that you use with any other ssh servers - probably you already have those.
+You probably already have one, but if you don't, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
 Create a fork of ClickHouse repository. To do that please click on the "fork" button in the upper right corner at https://github.com/ClickHouse/ClickHouse.  It will fork your own copy of ClickHouse/ClickHouse to your account.
 
@@ -27,20 +27,20 @@ A brief manual on using Git can be found here: https://services.github.com/on-de
 For a detailed manual on Git see: https://git-scm.com/book/ru/v2.
 
 
-# Cloning a repository on your development machine
+# Cloning a repository to your development machine
 
-Next you need to download the source files onto your working machine. This is called "to clone a repository" because it creates a local copy of the repository on your working machine.
+Next, you need to download the source files onto your working machine. This is called "to clone a repository" because it creates a local copy of the repository on your working machine.
 
 In the command line terminal run:
 ```
 git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
 cd ClickHouse
 ```
-Note: please, substitute *your_github_username* with what is appropriate
+Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
 
-It is important that the path to the working directory contain no whitespaces as it may lead to problems with running the build system.
+It is important that the path to the working directory contains no whitespaces as it may lead to problems with running the build system.
 
 Please note that ClickHouse repository uses `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` flag as in the example above. If the repository has been cloned without submodules, to download them you need to run the following:
 ```
@@ -57,13 +57,13 @@ fatal: Could not read from remote repository.
 Please make sure you have the correct access rights
 and the repository exists.
 ```
-It generally means that the ssh keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For ssh keys to be accepted you need to upload them in the settings section of GitHub UI.
+It generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in the settings section of GitHub UI.
 
 You can also clone the repository via https protocol:
 ```
 git clone https://github.com/ClickHouse/ClickHouse.git
 ```
-This however will not let you send your changes to the server. You can still use it temporarily and add the ssh keys later replacing the remote address of the repository with `git remote` command.
+This however will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
 You can also add original ClickHouse repo's address to your local repository to pull updates from there:
 ```
