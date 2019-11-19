@@ -23,6 +23,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionIntHash64>();
     factory.registerFunction<FunctionURLHash>();
     factory.registerFunction<FunctionJavaHash>();
+    factory.registerFunction<FunctionJavaHashUTF16LE>();
     factory.registerFunction<FunctionHiveHash>();
     factory.registerFunction<FunctionMurmurHash2_32>();
     factory.registerFunction<FunctionMurmurHash2_64>();
