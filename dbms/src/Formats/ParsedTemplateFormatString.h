@@ -51,6 +51,9 @@ struct ParsedTemplateFormatString
 
     static ParsedTemplateFormatString setupCustomSeparatedResultsetFormat(const Context & context);
     static ParsedTemplateFormatString setupCustomSeparatedRowFormat(const Context & context, const Block & sample);
+
+//    static ParsedTemplateFormatString setupJSONCompactEachRowResultsetFormat(const Context & context);
+//    static ParsedTemplateFormatString setupJSONCompactEachRowFormat(const Context & context);
 };
 
 }

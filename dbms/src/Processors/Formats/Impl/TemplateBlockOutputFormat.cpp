@@ -271,6 +271,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
             FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
+        std::cerr << "\n\n\nENTER IN CUSTOM SEPARATED REGISTER\n\n\n";
         ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(context);
         ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(context, sample);
         FormatSettings format_settings = settings;
@@ -278,5 +279,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
 
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, format_settings, resultset_format, row_format);
     });
+
+    //factory.registerOutputFormatProcessor("JSONCompactEachRow", []());
 }
 }
