@@ -39,9 +39,8 @@ class Context;
   */
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
-friend class BufferBlockInputStream;
-friend class BufferBlockOutputStream;
+    friend class BufferBlockInputStream;
+    friend class BufferBlockOutputStream;
 
 public:
     /// Thresholds.

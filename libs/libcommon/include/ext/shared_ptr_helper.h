@@ -11,12 +11,19 @@ namespace ext
   *  and you will have static 'create' method in your class.
   */
 template <typename T>
-struct shared_ptr_helper
+class shared_ptr_helper
 {
-    template <typename... TArgs>
-    static std::shared_ptr<T> create(TArgs &&... args)
+    struct CreateHelper : public T
     {
-        return std::shared_ptr<T>(new T(std::forward<TArgs>(args)...));
+        template <typename ... Args>
+        CreateHelper(Args && ... args) : T(std::forward<Args>(args) ...) {}
+    };
+
+public:
+    template <typename ... Args>
+    static std::shared_ptr<T> create(Args && ... args)
+    {
+        return std::make_shared<CreateHelper>(std::forward<Args>(args) ...);
     }
 };
 

@@ -21,7 +21,6 @@ class ExternalDictionaries;
 
 class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageDictionary>;
 public:
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }

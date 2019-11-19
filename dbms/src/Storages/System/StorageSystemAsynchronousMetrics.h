@@ -15,7 +15,6 @@ class Context;
 class StorageSystemAsynchronousMetrics : public ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>,
     public IStorageSystemOneBlock<StorageSystemAsynchronousMetrics>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>;
 public:
     std::string getName() const override { return "SystemAsynchronousMetrics"; }
 

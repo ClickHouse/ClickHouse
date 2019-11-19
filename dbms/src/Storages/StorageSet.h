@@ -63,8 +63,6 @@ private:
   */
 class StorageSet : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-friend struct ext::shared_ptr_helper<StorageSet>;
-
 public:
     String getName() const override { return "Set"; }
 

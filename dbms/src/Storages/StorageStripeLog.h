@@ -21,9 +21,8 @@ namespace DB
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-friend class StripeLogBlockInputStream;
-friend class StripeLogBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageStripeLog>;
+    friend class StripeLogBlockInputStream;
+    friend class StripeLogBlockOutputStream;
 
 public:
     std::string getName() const override { return "StripeLog"; }

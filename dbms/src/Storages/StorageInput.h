@@ -10,7 +10,6 @@ namespace DB
 
 class StorageInput : public ext::shared_ptr_helper<StorageInput>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageInput>;
 public:
     String getName() const override { return "Input"; }
     String getTableName() const override { return table_name; }

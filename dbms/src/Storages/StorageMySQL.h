@@ -18,7 +18,6 @@ namespace DB
   */
 class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
         const std::string & database_name_,

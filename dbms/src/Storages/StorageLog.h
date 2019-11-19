@@ -19,9 +19,8 @@ namespace DB
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
-friend class LogBlockInputStream;
-friend class LogBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageLog>;
+    friend class LogBlockInputStream;
+    friend class LogBlockOutputStream;
 
 public:
     std::string getName() const override { return "Log"; }

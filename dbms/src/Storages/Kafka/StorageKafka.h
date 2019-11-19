@@ -25,7 +25,6 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }

@@ -20,9 +20,8 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class TinyLogBlockInputStream;
-friend class TinyLogBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageTinyLog>;
+    friend class TinyLogBlockInputStream;
+    friend class TinyLogBlockOutputStream;
 
 public:
     std::string getName() const override { return "TinyLog"; }

@@ -33,10 +33,9 @@ using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageLiveView>;
-friend class LiveViewBlockInputStream;
-friend class LiveViewEventsBlockInputStream;
-friend class LiveViewBlockOutputStream;
+    friend class LiveViewBlockInputStream;
+    friend class LiveViewEventsBlockInputStream;
+    friend class LiveViewBlockOutputStream;
 
 public:
     ~StorageLiveView() override;
@@ -141,6 +140,15 @@ public:
         const Block & block,
         const Context & context);
 
+protected:
+    StorageLiveView(
+        const String & table_name_,
+        const String & database_name_,
+        Context & local_context,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns
+    );
+
 private:
     String select_database_name;
     String select_table_name;
@@ -175,14 +183,6 @@ private:
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> start_no_users_thread_called = false;
     UInt64 temporary_live_view_timeout;
-
-    StorageLiveView(
-        const String & table_name_,
-        const String & database_name_,
-        Context & local_context,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns
-    );
 };
 
 }

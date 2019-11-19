@@ -13,7 +13,6 @@ class Context;
   */
 class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorageSystemOneBlock<StorageSystemEvents>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemEvents>;
 public:
     std::string getName() const override { return "SystemEvents"; }
 

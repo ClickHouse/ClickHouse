@@ -19,9 +19,8 @@ namespace DB
   */
 class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemoryBlockInputStream;
-friend class MemoryBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageMemory>;
+    friend class MemoryBlockInputStream;
+    friend class MemoryBlockOutputStream;
 
 public:
     String getName() const override { return "Memory"; }

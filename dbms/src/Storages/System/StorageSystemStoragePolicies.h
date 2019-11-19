@@ -16,7 +16,6 @@ class Context;
 */
 class StorageSystemStoragePolicies : public ext::shared_ptr_helper<StorageSystemStoragePolicies>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemStoragePolicies>;
 public:
     std::string getName() const override { return "SystemStoragePolicies"; }
     std::string getTableName() const override { return name; }
