@@ -416,7 +416,7 @@ void HTTPHandler::processQuery(
 #if USE_BROTLI
         else if (http_request_compression_method_str == "br")
         {
-            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+            in_post = std::make_unique<BrotliReadBuffer>(std::move(in_post_raw));
         }
 #endif
         else
