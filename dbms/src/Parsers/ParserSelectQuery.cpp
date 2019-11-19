@@ -239,13 +239,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (top_length)
-        {
-            if (limit_length)
-                throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
-            limit_length = top_length;
-        }
+        if (top_length && limit_length)
+            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
     }
+
+    /// Because TOP n in totally equals LIMIT n
+    if (top_length)
+        limit_length = top_length;
 
     /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
     if (s_limit.ignore(pos, expected))
