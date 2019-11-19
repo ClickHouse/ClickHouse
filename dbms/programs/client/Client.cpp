@@ -1113,10 +1113,13 @@ private:
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Exception)
             {
-                async_block_input->cancel(false);
+                /*
+                 * We're exiting with error, so it makes sense to kill the
+                 * input stream without waiting for it to complete.
+                 */
+                async_block_input->cancel(true);
                 return;
             }
-
 
             connection->sendData(block);
             processed_rows += block.rows();
