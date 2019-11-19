@@ -390,7 +390,6 @@ ALTER TABLE example_table
 如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
 
 
-
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 [来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
