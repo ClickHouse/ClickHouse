@@ -669,6 +669,10 @@ public:
 
     Strings getDataPaths() const override;
 
+    using PathWithDisk = std::pair<String, DiskSpace::DiskPtr>;
+    using PathsWithDisks = std::vector<PathWithDisk>;
+    PathsWithDisks getDataPathsWithDisks() const;
+
     /// Reserves space at least 1MB
     DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
 
