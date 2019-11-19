@@ -41,7 +41,7 @@ def test_reload_max_table_size_to_drop(start_cluster):
     config.writelines(config_lines)
     config.close()
 
-    time.sleep(5)  # wait for config reload
+    node.query("SYSTEM RELOAD CONFIG")
 
     drop = node.get_query_request("DROP TABLE test")
     out, err = drop.get_answer_and_error()
