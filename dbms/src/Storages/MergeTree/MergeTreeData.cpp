@@ -2933,7 +2933,7 @@ MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
-    for (const String & path : getDataPaths())
+    for (const auto & [path, disk] : getDataPathsWithDisks())
     {
         for (Poco::DirectoryIterator it(path + "detached");
             it != Poco::DirectoryIterator(); ++it)
@@ -2944,6 +2944,7 @@ MergeTreeData::getDetachedParts() const
             auto & part = res.back();
 
             DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            part.disk = disk->getName();
         }
     }
     return res;
@@ -3324,6 +3325,15 @@ Strings MergeTreeData::getDataPaths() const
     auto disks = storage_policy->getDisks();
     for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
+    return res;
+}
+
+MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
+{
+    PathsWithDisks res;
+    auto disks = storage_policy->getDisks();
+    for (const auto & disk : disks)
+        res.emplace_back(getFullPathOnDisk(disk), disk);
     return res;
 }
 
