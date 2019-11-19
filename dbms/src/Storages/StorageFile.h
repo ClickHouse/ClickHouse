@@ -60,7 +60,8 @@ protected:
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_);
+        Context & context_,
+        const String & compression_method_);
 
 private:
     std::string table_name;
@@ -69,6 +70,7 @@ private:
     Context & context_global;
 
     int table_fd = -1;
+    String compression_method;
 
     std::vector<std::string> paths;
 

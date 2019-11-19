@@ -60,7 +60,7 @@ private:
     std::ostream * response_header_ostr = nullptr;
 #endif
 
-    std::optional<WriteBufferFromOStream> out_raw;
+    std::unique_ptr<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 #if USE_BROTLI
     std::optional<BrotliWriteBuffer> brotli_buf;
