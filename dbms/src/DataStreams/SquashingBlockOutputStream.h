@@ -31,7 +31,7 @@ private:
     SquashingTransform transform;
     bool all_written = false;
 
-    void finalize();
+    void finalize() override;
 
     bool disable_flush = false;
 };
