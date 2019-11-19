@@ -347,10 +347,10 @@ MergeTreeDataPart::~MergeTreeDataPart()
 
             dir.remove(true);
 
-            if (state == State::DeleteOnDestroy) 
+            if (state == State::DeleteOnDestroy)
             {
-                LOG_TRACE(storage.log, "Removed part from old location " << path );
-            }            
+                LOG_TRACE(storage.log, "Removed part from old location " << path);
+            }
         }
         catch (...)
         {
