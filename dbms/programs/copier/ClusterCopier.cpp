@@ -456,7 +456,8 @@ String ShardPartition::getCommonPartitionIsDirtyPath() const
     return getPartitionPath() + "/is_dirty";
 }
 
-String ShardPartition::getCommonPartitionIsCleanedPath() const {
+String ShardPartition::getCommonPartitionIsCleanedPath() const
+{
     return getCommonPartitionIsDirtyPath() + "/cleaned";
 }
 
@@ -1280,22 +1281,25 @@ protected:
         return res;
     }
 
-    class LogicalClock {
+    class LogicalClock
+    {
     public:
         std::optional<UInt64> zxid;
 
         LogicalClock() = default;
 
-        LogicalClock(UInt64 zxid)
-            : zxid(zxid)
+        LogicalClock(UInt64 _zxid)
+            : zxid(_zxid)
         {}
 
-        bool hasHappened() const {
+        bool hasHappened() const
+        {
             return bool(zxid);
         }
 
         // happens-before relation with a reasonable time bound
-        bool happensBefore(const struct LogicalClock & other) const {
+        bool happensBefore(const LogicalClock & other) const
+        {
             const UInt64 HALF = 1ull << 63;
             return
                 !zxid ||
@@ -1303,17 +1307,20 @@ protected:
                 (other.zxid && *zxid >= *other.zxid && *zxid - *other.zxid > HALF);
         }
 
-        bool operator<=(const struct LogicalClock & other) const {
+        bool operator<=(const LogicalClock & other) const
+        {
             return happensBefore(other);
         }
 
         // strict equality check
-        bool operator==(const struct LogicalClock & other) const {
+        bool operator==(const LogicalClock & other) const
+        {
             return zxid == other.zxid;
         }
     };
 
-    class CleanStateClock {
+    class CleanStateClock
+    {
     public:
         LogicalClock discovery_zxid;
         std::optional<UInt32> discovery_version;
@@ -1323,7 +1330,8 @@ protected:
 
         std::shared_ptr<std::atomic_bool> stale;
 
-        bool is_clean() const {
+        bool is_clean() const
+        {
             return
                 !is_stale()
                 && (
@@ -1331,7 +1339,8 @@ protected:
                     || (clean_state_zxid.hasHappened() && discovery_zxid <= clean_state_zxid));
         }
 
-        bool is_stale() const {
+        bool is_stale() const
+        {
             return stale->load();
         }
 
@@ -1344,7 +1353,8 @@ protected:
             Coordination::Stat stat;
             String _some_data;
             auto watch_callback =
-                [stale = stale] (const Coordination::WatchResponse & rsp) {
+                [stale = stale] (const Coordination::WatchResponse & rsp)
+                {
                     auto logger = &Poco::Logger::get("ClusterCopier");
                     if (rsp.error == Coordination::ZOK)
                     {
@@ -1360,17 +1370,20 @@ protected:
                         }
                     }
                 };
-            if (zookeeper->tryGetWatch(discovery_path, _some_data, &stat, watch_callback)) {
+            if (zookeeper->tryGetWatch(discovery_path, _some_data, &stat, watch_callback))
+            {
                 discovery_zxid = LogicalClock(stat.mzxid);
                 discovery_version = stat.version;
             }
-            if (zookeeper->tryGetWatch(clean_state_path, _some_data, &stat, watch_callback)) {
+            if (zookeeper->tryGetWatch(clean_state_path, _some_data, &stat, watch_callback))
+            {
                 clean_state_zxid = LogicalClock(stat.mzxid);
                 clean_state_version = stat.version;
             }
         }
 
-        bool operator==(const struct CleanStateClock & other) const {
+        bool operator==(const CleanStateClock & other) const
+        {
             return !is_stale()
                 && !other.is_stale()
                 && discovery_zxid == other.discovery_zxid
@@ -1379,7 +1392,8 @@ protected:
                 && clean_state_version == other.clean_state_version;
         }
 
-        bool operator!=(const struct CleanStateClock & other) const {
+        bool operator!=(const CleanStateClock & other) const
+        {
             return !(*this == other);
         }
     };
@@ -1967,9 +1981,8 @@ protected:
                         if (status.error != Coordination::ZNONODE)
                         {
                             LogicalClock dirt_discovery_epoch (status.stat.mzxid);
-                            if (dirt_discovery_epoch == clean_state_clock.discovery_zxid) {
+                            if (dirt_discovery_epoch == clean_state_clock.discovery_zxid)
                                 return false;
-                            }
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
                         }
                     }
