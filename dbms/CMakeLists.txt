@@ -376,7 +376,7 @@ if (USE_POCO_MONGODB)
     dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
-if(USE_POCO_REDIS)
+if (USE_POCO_REDIS)
     dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
 endif()
 
