@@ -511,7 +511,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT * FROM system.trace_log LIMIT 1
+SELECT * FROM system.trace_log LIMIT 1 \G
 ```
 
 ```text
