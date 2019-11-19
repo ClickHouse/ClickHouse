@@ -131,7 +131,7 @@ void FilterTransform::transform(Chunk & chunk)
     size_t first_non_constant_column = num_columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!isColumnConst(*columns[i]))
+        if (i != filter_column_position && !isColumnConst(*columns[i]))
         {
             first_non_constant_column = i;
             break;

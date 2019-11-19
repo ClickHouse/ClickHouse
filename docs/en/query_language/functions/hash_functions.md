@@ -205,6 +205,17 @@ Result:
 └───────────────────────────┘
 ```
 
+## javaHashUTF16LE
+
+The same as [JavaHash](#hash_functions-javahash), but for UTF-16LE code points. Works under the assumption that the string contains a set of bytes representing a UTF-16LE encoded text. If this assumption is not met, it returns some result (It only throws an exception in partial cases).
+
+
+**Example**
+
+```sql
+SELECT javaHashUTF16LE(convertCharset('Hello, world!', 'utf-8', 'utf-16le'))
+```
+
 ## hiveHash {#hash_functions-hivehash}
 
 Calculates `HiveHash` from a string.

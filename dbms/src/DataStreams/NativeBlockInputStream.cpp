@@ -188,7 +188,7 @@ Block NativeBlockInputStream::readImpl()
         for (auto & col : header)
         {
             if (res.has(col.name))
-                tmp_res.insert(std::move(res.getByName(col.name)));
+                tmp_res.insert(res.getByName(col.name));
             else
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
         }
