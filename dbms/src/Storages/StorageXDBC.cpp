@@ -105,7 +105,7 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
-        factory.registerStorage(name, [&name](const StorageFactory::Arguments & args)
+        factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
 

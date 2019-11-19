@@ -625,7 +625,7 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 
 - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 The server's time zone.
 

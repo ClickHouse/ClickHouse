@@ -546,7 +546,15 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (data.hasPrimaryKey())
             ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->getMarksCount()}};
+        {
+            size_t total_marks_count = part->getMarksCount();
+            if (total_marks_count)
+            {
+                if (part->index_granularity.hasFinalMark())
+                    --total_marks_count;
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+            }
+        }
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
@@ -596,9 +604,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings);
     }
-    else if (settings.optimize_read_in_order && query_info.sorting_info)
+    else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
-        size_t prefix_size = query_info.sorting_info->prefix_order_descr.size();
+        size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -845,7 +853,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const Settings & settings) const
 {
     size_t sum_marks = 0;
-    SortingInfoPtr sorting_info = query_info.sorting_info;
+    const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
     const auto data_settings = data.getSettings();
@@ -996,9 +1004,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 parts.emplace_back(part);
             }
 
-            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, sorting_info->direction);
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_sorting_info->direction);
 
-            if (sorting_info->direction == 1)
+            if (input_sorting_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
@@ -1021,9 +1029,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < query_info.sorting_info->prefix_order_descr.size(); ++j)
+            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
                 sort_description.emplace_back(data.sorting_key_columns[j],
-                    sorting_info->direction, 1);
+                    input_sorting_info->direction, 1);
 
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
