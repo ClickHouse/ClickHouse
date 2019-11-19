@@ -216,14 +216,14 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 
 void MySQLHandler::authenticate(const String & user_name, const String & auth_plugin_name, const String & initial_auth_response)
 {
-    // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-    auto user = connection_context.getUser(user_name);
-    if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
-    {
-        authPluginSSL();
-    }
-
     try {
+        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
+        auto user = connection_context.getUser(user_name);
+        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
+        {
+            authPluginSSL();
+        }
+
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
         auth_plugin->authenticate(user_name, auth_response, connection_context, packet_sender, secure_connection, socket().address());
     }
@@ -293,12 +293,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
 void MySQLHandler::authPluginSSL()
 {
-    throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception("ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
 void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos, [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::HandshakeResponse & packet)
 {
-    throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception("Client requested SSL, while it is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
 #if USE_SSL && USE_POCO_NETSSL
