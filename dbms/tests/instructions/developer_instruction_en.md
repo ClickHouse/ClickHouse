@@ -2,16 +2,16 @@ Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 # If you use Windows
 
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command line terminal in Ubuntu, please locate a program containing the word "terminal" in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
+If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command line terminal in Ubuntu, please locate a program containing the word "terminal" in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
 
 # Creating a repository on GitHub
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-Probably, you already have one. If you don't, please register at https://github.com In case you do not have ssh keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same ssh keys that you use with any other ssh servers - probably you already have those.
+Probably, you already have one. If you don't, please register at https://github.com. In case you do not have ssh keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same ssh keys that you use with any other ssh servers - probably you already have those.
 
-Create a fork of ClickHouse repository. To do that please click on the "fork" button in the upper right corner at https://github.com/ClickHouse/ClickHouse  It will fork your own copy of ClickHouse/ClickHouse to your account.
+Create a fork of ClickHouse repository. To do that please click on the "fork" button in the upper right corner at https://github.com/ClickHouse/ClickHouse.  It will fork your own copy of ClickHouse/ClickHouse to your account.
 
 Development process consists of first committing the intended changes into your fork of ClickHouse and then creating a "pull request" for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
 
@@ -23,13 +23,13 @@ sudo apt update
 sudo apt install git
 ```
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf
-For a detailed manual on Git see: https://git-scm.com/book/ru/v2
+A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+For a detailed manual on Git see: https://git-scm.com/book/ru/v2.
 
 
 # Cloning a repository on your development machine
 
-Next you need to download the source files onto your working machine. This is called "to clone a repository" because it creates a local copy of the repository on your working machine. //TODO:?? (You are going to work with this local copy.)
+Next you need to download the source files onto your working machine. This is called "to clone a repository" because it creates a local copy of the repository on your working machine.
 
 In the command line terminal run:
 ```
@@ -91,10 +91,10 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
 brew install cmake ninja
 ```
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
 
-#Optional External Libraries
+# Optional External Libraries
 
 ClickHouse uses several external libraries for building. Most of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
@@ -115,7 +115,7 @@ Official Yandex builds currently use GCC because it generates machine code of sl
 
 To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 7, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-7
+Check the version of gcc: `gcc --version`. If it is below 7, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-7.
 
 To install GCC on Mac OS X run: `brew install gcc`.
 
@@ -232,7 +232,7 @@ List of tasks: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instr
 
 # Test Data
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. Especially for you we have prepared a set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of development tasks.
+Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of development tasks.
 
 ```
 sudo apt install wget xz-utils
@@ -263,6 +263,6 @@ A pull request can be created even if the work is not completed yet. In this cas
 
 Testing will commence as soon as Yandex employees label your PR with a tag "can be tested". The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within a half an hour. And the main set of tests will report itself within an hour.
 
-The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the "Details" link next to "ClickHouse build check" entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse, which you can deploy even on your production servers (if you have no fear).
+The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the "Details" link next to "ClickHouse build check" entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-Most probably some of the builds will fail at first times. This is due to the fact that we check build both with gcc as well as with clang, enabling almost all of existing warnings (always with the `-Werror` flag) for clang. On that same page you can find all of the build logs - you do not have to build ClickHouse in all possible ways.
+Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
