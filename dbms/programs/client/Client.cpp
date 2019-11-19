@@ -1230,7 +1230,7 @@ private:
     /// Returns true if one should continue receiving packets.
     bool receiveAndProcessPacket()
     {
-        Connection::Packet packet = connection->receivePacket();
+        Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
@@ -1278,7 +1278,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
@@ -1312,7 +1312,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
