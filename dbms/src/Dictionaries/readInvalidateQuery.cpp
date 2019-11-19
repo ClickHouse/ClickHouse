@@ -1,6 +1,7 @@
 #include "readInvalidateQuery.h"
 #include <DataStreams/IBlockInputStream.h>
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
