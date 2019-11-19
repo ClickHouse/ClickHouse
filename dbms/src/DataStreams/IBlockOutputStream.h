@@ -71,7 +71,7 @@ public:
         if (method == DB::CompressionMethod::Gzip)
         {
             auto write_buf = std::make_unique<TWriteBuffer>(args...);
-            return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, (int) 1 /* compression level */);
+            return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
         }
         return std::make_unique<TWriteBuffer>(args...);
     }
