@@ -577,6 +577,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     {
         /// Add columns needed to calculate the sorting expression and the sign.
         std::vector<String> add_columns = data.sorting_key_expr->getRequiredColumns();
+        std::cout << "std::vector<String> add_columns" << std::endl;
+        for (auto column: add_columns)
+            std::cout << column << std::endl;
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -1112,12 +1115,21 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         BlockInputStreams streams;
         streams.reserve(num_streams);
 
-        for (size_t i = 0; i < num_streams; ++i)
+        for (size_t i = 0; i < num_streams; ++i) {
+            std::cout << "labmda for loop № " << i << std::endl;
+            std::cout << pipes[i].getHeader().dumpStructure() << std::endl;
             streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipes[i])));
+        }
+
 
         pipes.clear();
         return streams;
     };
+
+    auto anime = streams_to_merge().at(0)->getHeader();
+    std::cout << anime.dumpNames() << std::endl;
+    std::cout << anime.dumpStructure() << std::endl;
+    std::cout << anime.columns() << std::endl;
 
     BlockInputStreamPtr merged;
     switch (data.merging_params.mode)
@@ -1137,7 +1149,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         case MergeTreeData::MergingParams::Summing:
             merged = std::make_shared<SummingSortedBlockInputStream>(streams_to_merge(),
-                    sort_description, data.merging_params.columns_to_sum, max_block_size);
+                                                                     sort_description, data.merging_params.columns_to_sum, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
