@@ -1066,9 +1066,10 @@ struct AdderNonJoined<ASTTableJoin::Strictness::Asof, Mapped>
 class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
-    NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, UInt64 max_block_size_)
+    NonJoinedBlockInputStream(const Join & parent_, const Block & result_sample_block_, UInt64 max_block_size_)
         : parent(parent_)
         , max_block_size(max_block_size_)
+        , result_sample_block(materializeBlock(result_sample_block_))
     {
         bool remap_keys = parent.table_join->hasUsing();
         std::unordered_map<size_t, size_t> left_to_right_key_remap;
@@ -1078,16 +1079,18 @@ public:
             const String & left_key_name = parent.table_join->keyNamesLeft()[i];
             const String & right_key_name = parent.table_join->keyNamesRight()[i];
 
-            size_t left_key_pos = left_sample_block.getPositionByName(left_key_name);
+            size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
             size_t right_key_pos = parent.saved_block_sample.getPositionByName(right_key_name);
 
             if (remap_keys && !parent.required_right_keys.has(right_key_name))
                 left_to_right_key_remap[left_key_pos] = right_key_pos;
         }
 
-        makeResultSampleBlock(left_sample_block);
+        /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys
+        size_t left_columns_count = result_sample_block.columns() -
+            parent.sample_block_with_columns_to_add.columns() - parent.required_right_keys.columns();
 
-        for (size_t left_pos = 0; left_pos < left_sample_block.columns(); ++left_pos)
+        for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
         {
             /// We need right 'x' for 'RIGHT JOIN ... USING(x)'.
             if (left_to_right_key_remap.count(left_pos))
@@ -1108,7 +1111,7 @@ public:
             size_t result_position = result_sample_block.getPositionByName(name);
 
             /// Don't remap left keys twice. We need only qualified right keys here
-            if (result_position < left_sample_block.columns())
+            if (result_position < left_columns_count)
                 continue;
 
             setRightIndex(right_pos, result_position);
@@ -1140,7 +1143,7 @@ private:
     UInt64 max_block_size;
 
     Block result_sample_block;
-    /// Indices of columns in result_sample_block that come from the left-side table: left_pos == result_pos
+    /// Indices of columns in result_sample_block that should be generated
     std::vector<size_t> column_indices_left;
     /// Indices of columns that come from the right-side table: right_pos -> result_pos
     std::unordered_map<size_t, size_t> column_indices_right;
@@ -1151,27 +1154,6 @@ private:
 
     std::any position;
     std::optional<Join::BlockNullmapList::const_iterator> nulls_position;
-
-
-    /// "left" columns, "right" not key columns, some "right keys"
-    void makeResultSampleBlock(const Block & left_sample_block)
-    {
-        result_sample_block = materializeBlock(left_sample_block);
-        if (parent.nullable_left_side)
-            JoinCommon::convertColumnsToNullable(result_sample_block);
-
-        for (const ColumnWithTypeAndName & column : parent.sample_block_with_columns_to_add)
-        {
-            bool is_nullable = parent.nullable_right_side || column.column->isNullable();
-            result_sample_block.insert(correctNullability({column.column, column.type, column.name}, is_nullable));
-        }
-
-        for (const ColumnWithTypeAndName & right_key : parent.required_right_keys)
-        {
-            bool is_nullable = parent.nullable_right_side || right_key.column->isNullable();
-            result_sample_block.insert(correctNullability({right_key.column, right_key.type, right_key.name}, is_nullable));
-        }
-    }
 
     void setRightIndex(size_t right_pos, size_t result_position)
     {
@@ -1286,7 +1268,7 @@ private:
 
         for (; it != end; ++it)
         {
-            const Mapped & mapped = it->getSecond();
+            const Mapped & mapped = it->getMapped();
             if (mapped.getUsed())
                 continue;
 
@@ -1328,10 +1310,10 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (isRightOrFull(table_join->kind()))
-        return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
+        return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
 }
 

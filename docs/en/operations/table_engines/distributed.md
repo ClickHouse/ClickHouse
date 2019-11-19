@@ -121,5 +121,16 @@ If the server ceased to exist or had a rough restart (for example, after a devic
 
 When the max_parallel_replicas option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../settings/settings.md#settings-max_parallel_replicas).
 
+## Virtual Columns
+
+- `_shard_num` — Contains the `shard_num` (from `system.clusters`). Type: [UInt32](../../data_types/int_uint.md).
+
+!!! note "Note"
+    Since [`remote`](../../query_language/table_functions/remote.md)/`cluster` table functions internally create temporary instance of the same Distributed engine, `_shard_num` is available there too.
+
+**See Also**
+
+- [Virtual columns](index.md#table_engines-virtual_columns)
+
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->

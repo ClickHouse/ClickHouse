@@ -15,6 +15,7 @@
 #include <DataStreams/DistinctBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -26,7 +27,6 @@
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -92,6 +92,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -285,8 +286,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (is_table_func)
         {
-            /// Read from table function.
-            storage = context.getQueryContext().executeTableFunction(table_expression);
+            /// Read from table function. propagate all settings from initSettings(),
+            /// alternative is to call on current `context`, but that can potentially pollute it.
+            storage = getSubqueryContext(context).executeTableFunction(table_expression);
         }
         else
         {
@@ -923,14 +925,14 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
+static InputSortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
     const Context & context, const SyntaxAnalyzerResultPtr & global_syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
 
     auto order_descr = getSortDescription(query, context);
-    SortDescription prefix_order_descr;
+    SortDescription order_key_prefix_descr;
     int read_direction = order_descr.at(0).direction;
 
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
@@ -945,7 +947,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
         if (order_descr[i].column_name == sorting_key_columns[i] && current_direction == read_direction)
-            prefix_order_descr.push_back(order_descr[i]);
+            order_key_prefix_descr.push_back(order_descr[i]);
         else
         {
             auto ast = query.orderBy()->children[i]->children.at(0);
@@ -993,14 +995,14 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
             if (i == 0)
                 read_direction = current_direction;
 
-            prefix_order_descr.push_back(order_descr[i]);
+            order_key_prefix_descr.push_back(order_descr[i]);
         }
     }
 
-    if (prefix_order_descr.empty())
+    if (order_key_prefix_descr.empty())
         return {};
 
-    return std::make_shared<SortingInfo>(std::move(prefix_order_descr), read_direction);
+    return std::make_shared<InputSortingInfo>(std::move(order_key_prefix_descr), read_direction);
 }
 
 
@@ -1024,17 +1026,17 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     const Settings & settings = context.getSettingsRef();
     auto & expressions = analysis_result;
 
-    SortingInfoPtr sorting_info;
+    InputSortingInfoPtr input_sorting_info;
     if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
     {
         if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
+            input_sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
     if (options.only_analyze)
     {
         if constexpr (pipeline_with_processors)
-            pipeline.init({std::make_shared<NullSource>(source_header)});
+            pipeline.init(Pipe(std::make_shared<NullSource>(source_header)));
         else
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
 
@@ -1075,7 +1077,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (prepared_input)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(prepared_input)});
+                pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(prepared_input)));
             else
                 pipeline.streams.push_back(prepared_input);
         }
@@ -1088,7 +1090,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
+        executeFetchColumns(from_stage, pipeline, input_sorting_info, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
     }
@@ -1179,7 +1181,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                 if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
+                    Block join_result_sample = ExpressionBlockInputStream(
+                        std::make_shared<OneBlockInputStream>(header_before_join), expressions.before_join).getHeader();
+
+                    if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {
@@ -1211,7 +1216,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -1284,7 +1289,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline, query_info.sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1344,7 +1349,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 template <typename TPipeline>
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        const InputSortingInfoPtr & input_sorting_info, const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     constexpr bool pipeline_with_processors = std::is_same<TPipeline, QueryPipeline>::value;
 
@@ -1398,7 +1403,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(istream)});
+                pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(istream)));
             else
                 pipeline.streams.emplace_back(istream);
             from_stage = QueryProcessingStage::WithMergeableState;
@@ -1661,11 +1666,21 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
-        query_info.sorting_info = sorting_info;
+        query_info.input_sorting_info = input_sorting_info;
 
-        auto streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        BlockInputStreams streams;
+        Pipes pipes;
 
-        if (streams.empty())
+        /// Will work with pipes directly if storage support processors.
+        /// Code is temporarily copy-pasted while moving to new pipeline.
+        bool use_pipes = pipeline_with_processors && storage->supportProcessorsPipeline();
+
+        if (use_pipes)
+            pipes = storage->readWithProcessors(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+        else
+            streams = storage->read(required_columns, query_info, context, processing_stage, max_block_size, max_streams);
+
+        if (streams.empty() && !use_pipes)
         {
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
@@ -1688,8 +1703,35 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
         }
 
+        /// Copy-paste from prev if.
+        if (pipes.empty() && use_pipes)
+        {
+            Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
+
+            if (query_info.prewhere_info)
+            {
+                pipe.addSimpleTransform(std::make_shared<FilterTransform>(
+                        pipe.getHeader(),
+                        prewhere_info->prewhere_actions,
+                        prewhere_info->prewhere_column_name,
+                        prewhere_info->remove_prewhere_column));
+
+                if (query_info.prewhere_info->remove_columns_actions)
+                    pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
+            }
+
+            pipes.emplace_back(std::move(pipe));
+        }
+
         for (auto & stream : streams)
             stream->addTableLock(table_lock);
+
+        if constexpr (pipeline_with_processors)
+        {
+            /// Table lock is stored inside pipeline here.
+            if (use_pipes)
+                pipeline.addTableLock(table_lock);
+        }
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         {
@@ -1725,11 +1767,21 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (options.to_stage == QueryProcessingStage::Complete)
                     stream->setQuota(quota);
             }
+
+            /// Copy-paste
+            for (auto & pipe : pipes)
+            {
+                if (!options.ignore_limits)
+                    pipe.setLimits(limits);
+
+                if (options.to_stage == QueryProcessingStage::Complete)
+                    pipe.setQuota(quota);
+            }
         }
 
         if constexpr (pipeline_with_processors)
         {
-            if (streams.size() == 1)
+            if (streams.size() == 1 || pipes.size() == 1)
                 pipeline.setMaxThreads(streams.size());
 
             /// Unify streams. They must have same headers.
@@ -1741,21 +1793,14 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (first_header.columns() > 1 && first_header.has("_dummy"))
                     first_header.erase("_dummy");
 
-                for (size_t i = 0; i < streams.size(); ++i)
+                for (auto & stream : streams)
                 {
-                    auto & stream = streams[i];
                     auto header = stream->getHeader();
                     auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
                     if (!blocksHaveEqualStructure(first_header, header))
                         stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
                 }
             }
-
-            Processors sources;
-            sources.reserve(streams.size());
-
-            /// Pin sources for merge tree tables.
-            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
 
             for (auto & stream : streams)
             {
@@ -1765,13 +1810,18 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();
 
-                if (pin_sources)
-                    source->setStream(sources.size());
-
-                sources.emplace_back(std::move(source));
+                pipes.emplace_back(std::move(source));
             }
 
-            pipeline.init(std::move(sources));
+            /// Pin sources for merge tree tables.
+//            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+//            if (pin_sources)
+//            {
+//                for (size_t i = 0; i < pipes.size(); ++i)
+//                    pipes[i].pinSources(i);
+//            }
+
+            pipeline.init(std::move(pipes));
         }
         else
             pipeline.streams = std::move(streams);
@@ -2198,46 +2248,46 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
     });
 }
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     const Settings & settings = context.getSettingsRef();
     UInt64 limit = getLimitForSorting(query, context);
 
-    if (sorting_info)
+    if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
          * We have several threads, each of them reads batch of parts in direct
          *  or reverse order of sorting key using one input stream per part
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
+         * If the input is sorted by some prefix of the sorting key required for output,
+         * we have to finish sorting after the merge.
          */
 
-        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
+
+        UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+        executeMergeSorted(pipeline, input_sorting_info->order_key_prefix_descr, limit_for_merging);
+
         if (need_finish_sorting)
         {
             pipeline.transform([&](auto & stream)
             {
-                stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+                stream = std::make_shared<PartialSortingBlockInputStream>(stream, output_order_descr, limit);
             });
-        }
 
-        UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        executeMergeSorted(pipeline, sorting_info->prefix_order_descr, limit_for_merging);
-
-        if (need_finish_sorting)
-        {
             pipeline.firstStream() = std::make_shared<FinishSortingBlockInputStream>(
-                pipeline.firstStream(), sorting_info->prefix_order_descr,
-                order_descr, settings.max_block_size, limit);
+                pipeline.firstStream(), input_sorting_info->order_key_prefix_descr,
+                output_order_descr, settings.max_block_size, limit);
         }
     }
     else
     {
         pipeline.transform([&](auto & stream)
         {
-            auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+            auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, output_order_descr, limit);
 
             /// Limits on sorting
             IBlockInputStream::LocalLimits limits;
@@ -2253,16 +2303,16 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
 
         /// Merge the sorted blocks.
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-            pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+            pipeline.firstStream(), output_order_descr, settings.max_block_size, limit,
             settings.max_bytes_before_remerge_sort,
             settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query, context);
+    SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
@@ -2272,7 +2322,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 //    limits.mode = IBlockInputStream::LIMITS_TOTAL;
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
-    if (sorting_info)
+    if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
          * We have several threads, each of them reads batch of parts in direct
@@ -2281,16 +2331,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
          * At this stage we merge per-thread streams into one.
          */
 
-        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
-
-        if (need_finish_sorting)
-        {
-            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
-            {
-                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-                return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
-            });
-        }
+        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
 
         if (pipeline.getNumStreams() > 1)
         {
@@ -2298,7 +2339,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
-                sorting_info->prefix_order_descr,
+                input_sorting_info->order_key_prefix_descr,
                 settings.max_block_size, limit_for_merging);
 
             pipeline.addPipe({ std::move(transform) });
@@ -2306,11 +2347,17 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 
         if (need_finish_sorting)
         {
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            {
+                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
+                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+            });
+
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
-                    header, sorting_info->prefix_order_descr,
-                    order_descr, settings.max_block_size, limit);
+                    header, input_sorting_info->order_key_prefix_descr,
+                    output_order_descr, settings.max_block_size, limit);
             });
         }
 
@@ -2320,7 +2367,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-        return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
     });
 
     /// If there are several streams, we merge them into one
@@ -2333,7 +2380,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
             return nullptr;
 
         return std::make_shared<MergeSortingTransform>(
-                header, order_descr, settings.max_block_size, limit,
+                header, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
@@ -2758,11 +2805,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
-    if (query_info.sorting_info)
+    if (query_info.input_sorting_info)
     {
         if (pipeline.stream_with_non_joined_data)
             throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
     }
     else
         executeUnion(pipeline, {});
@@ -2773,11 +2820,11 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    if (query_info.sorting_info)
+    if (query_info.input_sorting_info)
     {
         if (pipeline.hasDelayedStream())
             throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
     }
 
     const Settings & settings = context.getSettingsRef();

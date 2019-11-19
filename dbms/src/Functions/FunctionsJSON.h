@@ -65,7 +65,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
+        if (context.getSettingsRef().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
         {
             Executor<SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
             return;
