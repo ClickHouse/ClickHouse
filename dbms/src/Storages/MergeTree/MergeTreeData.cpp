@@ -766,8 +766,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it.name(), "tmp"))
                 continue;
 
-            if (Poco::Path(it.path(), DELETE_ON_DESTROY_MARKER_PATH).isFile())
-            {
+            if (Poco::Path(Poco::Path(it.path()), DELETE_ON_DESTROY_MARKER_PATH).isFile())
                 it->remove(true);
                 continue;
             }
