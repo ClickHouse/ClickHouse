@@ -10,9 +10,9 @@
 
 #include <Formats/FormatFactory.h>
 
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
 
@@ -29,7 +29,8 @@ namespace
     class StorageS3BlockInputStream : public IBlockInputStream
     {
     public:
-        StorageS3BlockInputStream(const Poco::URI & uri,
+        StorageS3BlockInputStream(
+            const Poco::URI & uri,
             const String & format,
             const String & name_,
             const Block & sample_block,
@@ -43,30 +44,15 @@ namespace
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
-        String getName() const override
-        {
-            return name;
-        }
+        String getName() const override { return name; }
 
-        Block readImpl() override
-        {
-            return reader->read();
-        }
+        Block readImpl() override { return reader->read(); }
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+        Block getHeader() const override { return reader->getHeader(); }
 
-        void readPrefixImpl() override
-        {
-            reader->readPrefix();
-        }
+        void readPrefixImpl() override { reader->readPrefix(); }
 
-        void readSuffixImpl() override
-        {
-            reader->readSuffix();
-        }
+        void readSuffixImpl() override { reader->readSuffix(); }
 
     private:
         String name;
@@ -77,7 +63,8 @@ namespace
     class StorageS3BlockOutputStream : public IBlockOutputStream
     {
     public:
-        StorageS3BlockOutputStream(const Poco::URI & uri,
+        StorageS3BlockOutputStream(
+            const Poco::URI & uri,
             const String & format,
             UInt64 min_upload_part_size,
             const Block & sample_block_,
@@ -90,20 +77,11 @@ namespace
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
-        Block getHeader() const override
-        {
-            return sample_block;
-        }
+        Block getHeader() const override { return sample_block; }
 
-        void write(const Block & block) override
-        {
-            writer->write(block);
-        }
+        void write(const Block & block) override { writer->write(block); }
 
-        void writePrefix() override
-        {
-            writer->writePrefix();
-        }
+        void writePrefix() override { writer->writePrefix(); }
 
         void writeSuffix() override
         {
@@ -168,7 +146,8 @@ BlockInputStreams StorageS3::read(
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void StorageS3::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageS3::rename(
+    const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     table_name = new_table_name;
     database_name = new_database_name;
@@ -177,20 +156,24 @@ void StorageS3::rename(const String & /*new_path_to_db*/, const String & new_dat
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        uri, format_name, min_upload_part_size, getSampleBlock(), context_global, 
+        uri,
+        format_name,
+        min_upload_part_size,
+        getSampleBlock(),
+        context_global,
         ConnectionTimeouts::getHTTPTimeouts(context_global),
         IStorage::chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageS3(StorageFactory & factory)
 {
-    factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
-    {
+    factory.registerStorage("S3", [](const StorageFactory::Arguments & args) {
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2 && engine_args.size() != 3)
             throw Exception(
-                "Storage S3 requires 2 or 3 arguments: url, name of used format and compression_method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage S3 requires 2 or 3 arguments: url, name of used format and compression_method.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
@@ -204,13 +187,16 @@ void registerStorageS3(StorageFactory & factory)
         UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
 
         String compression_method;
-        if (engine_args.size() == 3) 
+        if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        } else compression_method = "auto";
+        }
+        else
+            compression_method = "auto";
 
-        return StorageS3::create(uri, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(
+            uri, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 }

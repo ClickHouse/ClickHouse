@@ -2,9 +2,9 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Storages/TableStructureLockHolder.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
+#include <Storages/TableStructureLockHolder.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -15,7 +15,6 @@
 
 namespace DB
 {
-
 struct Progress;
 
 /** Interface of stream for writing data (into table, filesystem, network, terminal, etc.)
@@ -66,11 +65,12 @@ public:
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
 
     template <class TWriteBuffer, class... Types>
-    std::unique_ptr<WriteBuffer> getBuffer(const DB::CompressionMethod method, Types... args) 
+    std::unique_ptr<WriteBuffer> getBuffer(const DB::CompressionMethod method, Types... args)
     {
-        if (method == DB::CompressionMethod::Gzip) {
+        if (method == DB::CompressionMethod::Gzip)
+        {
             auto write_buf = std::make_unique<TWriteBuffer>(args...);
-            return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, (int) 1 /* compression level */);
+            return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, (int)1 /* compression level */);
         }
         return std::make_unique<TWriteBuffer>(args...);
     }

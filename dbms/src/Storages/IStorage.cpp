@@ -1,8 +1,8 @@
 #include <Storages/IStorage.h>
 
-#include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/AlterCommands.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 
@@ -14,7 +14,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
@@ -176,7 +175,8 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getTableName()
+                    + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))
@@ -376,8 +376,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
 {
-    return [&] (IAST & ast)
-    {
+    return [&](IAST & ast) {
         if (!new_changes.empty())
         {
             auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
@@ -386,7 +385,7 @@ IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new
             {
                 checkSettingCanBeChanged(change.name);
 
-                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
+                auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
                 if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
                     it->value = change.value;
                 else
@@ -397,10 +396,7 @@ IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new
 }
 
 
-void IStorage::alter(
-    const AlterCommands & params,
-    const Context & context,
-    TableStructureWriteLockHolder & table_lock_holder)
+void IStorage::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     if (params.isMutable())
         throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -413,7 +409,8 @@ void IStorage::alter(
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+        context.getDatabase(database_name)
+            ->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
     }
     else
     {
@@ -446,20 +443,20 @@ BlockInputStreams IStorage::read(
     return res;
 }
 
-DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method) 
+DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
 {
-    if (compression_method == "auto" || compression_method == "") 
+    if (compression_method == "auto" || compression_method == "")
     {
-        if (endsWith(uri, ".gz")) 
+        if (endsWith(uri, ".gz"))
             return DB::CompressionMethod::Gzip;
-        else 
+        else
             return DB::CompressionMethod::None;
     }
-    else if (compression_method == "gzip") 
+    else if (compression_method == "gzip")
         return DB::CompressionMethod::Gzip;
-    else if (compression_method == "none") 
+    else if (compression_method == "none")
         return DB::CompressionMethod::None;
-    else 
+    else
         throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 

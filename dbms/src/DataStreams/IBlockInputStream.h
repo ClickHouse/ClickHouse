@@ -3,9 +3,9 @@
 #include <Core/Block.h>
 #include <Core/SettingsCommon.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/ExecutionSpeedLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Progress.h>
 #include <IO/ZlibInflatingReadBuffer.h>
@@ -18,7 +18,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int OUTPUT_IS_NOT_SORTED;
@@ -210,31 +209,23 @@ public:
     };
 
     /** Set limitations that checked on each block. */
-    virtual void setLimits(const LocalLimits & limits_)
-    {
-        limits = limits_;
-    }
+    virtual void setLimits(const LocalLimits & limits_) { limits = limits_; }
 
-    const LocalLimits & getLimits() const
-    {
-        return limits;
-    }
+    const LocalLimits & getLimits() const { return limits; }
 
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    virtual void setQuota(QuotaForIntervals & quota_)
-    {
-        quota = &quota_;
-    }
+    virtual void setQuota(QuotaForIntervals & quota_) { quota = &quota_; }
 
     /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
 
     template <class TReadBuffer, class... Types>
-    std::unique_ptr<ReadBuffer> getBuffer(const DB::CompressionMethod method, Types... args) 
+    std::unique_ptr<ReadBuffer> getBuffer(const DB::CompressionMethod method, Types... args)
     {
-        if (method == DB::CompressionMethod::Gzip) {
+        if (method == DB::CompressionMethod::Gzip)
+        {
             auto read_buf = std::make_unique<TReadBuffer>(args...);
             return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
         }
@@ -286,7 +277,7 @@ private:
 
     LocalLimits limits;
 
-    QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
+    QuotaForIntervals * quota = nullptr; /// If nullptr - the quota is not used.
     double prev_elapsed = 0;
 
     /// The approximate total number of rows to read. For progress bar.
