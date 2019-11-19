@@ -223,6 +223,7 @@ nav:
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
+  - 'Подробный roadmap 2020': 'extended_roadmap.md'
 
 - 'F.A.Q.':
   - 'Общие вопросы': 'faq/general.md'
