@@ -422,5 +422,4 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     }
 }
 
-
 }
