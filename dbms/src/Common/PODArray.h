@@ -377,12 +377,6 @@ public:
         if (unlikely(this->c_end == this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        if (this->c_end == nullptr)
-            std::cout << "this->c_end == nullptr" << std::endl;
-
-        if (this->c_end_of_storage == nullptr)
-            std::cout << "this->c_end_of_storage == nullptr" << std::endl;
-
         new (t_end()) T(std::forward<U>(x));
         this->c_end += this->byte_size(1);
     }

@@ -50,6 +50,8 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 {
     std::cout << "Constructor SummingSortedBlockInputStream()" << std::endl;
     std::cout << "num_columns  " << num_columns << std::endl;
+    std::cout << "inputs size " << inputs_.size() << std::endl;
+    std::cout << StackTrace().toString() << std::endl;
     current_row.resize(num_columns);
 
     /// name of nested structure -> the column numbers that refer to it.
@@ -65,6 +67,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         std::cout << "Constructor for loop" << std::endl;
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
         std::cout << "column name  " << column.name << std::endl;
+        std::cout << header.dumpNames() << std::endl;
 
         /// Discover nested Maps and find columns for summation
         if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -206,8 +209,13 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 
 void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns)
 {
+    std::cout << "SummingSortedBlockInputStream::insertCurrentRowIfNeeded" << std::endl;
+    if (columns_to_aggregate.empty())
+        current_row_is_zero = false;
+
     for (auto & desc : columns_to_aggregate)
     {
+        std::cout << "MergedColumnName   " << desc.merged_column->getName() << std::endl;
         // Do not insert if the aggregation state hasn't been created
         if (desc.created)
         {
@@ -250,6 +258,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
     /// (at this moment we need rollback only cols from columns_to_aggregate)
     if (current_row_is_zero)
     {
+        std::cout << "current_row_is_zero" << std::endl;
         for (auto & desc : columns_to_aggregate)
             desc.merged_column->popBack(1);
 
@@ -261,6 +270,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
 
     /// Update per-block and per-group flags
     ++merged_rows;
+    std::cout << "insertCurrentRowIfNeeded merged_rows  " << merged_rows << std::endl;
 }
 
 
@@ -306,8 +316,11 @@ Block SummingSortedBlockInputStream::readImpl()
 
     }
 
+    std::cout << "queue_without_collation.size()  " << queue_without_collation.size() << std::endl;
     merge(merged_columns, queue_without_collation);
     Block res = header.cloneWithColumns(std::move(merged_columns));
+
+    std::cout << "result rows count " << res.rows() << std::endl;
 
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
@@ -335,19 +348,30 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
+        std::cout << "while loop" << std::endl;
+
         SortCursor current = queue.top();
 
         setPrimaryKeyRef(next_key, current);
+
+        if (next_key.empty())
+            std::cout << "next_key empty()" << std::endl;
 
         bool key_differs;
 
         if (current_key.empty())    /// The first key encountered.
         {
+            std::cout << "current_key is empty" << std::endl;
             key_differs = true;
             current_row_is_zero = true;
         }
         else
+        {
             key_differs = next_key != current_key;
+            /// If current_key is not empty - thats why current_row is not zero.
+            current_row_is_zero = false;
+        }
+
 
         if (key_differs)
         {
@@ -378,6 +402,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                 /// We have only columns_to_aggregate. The status of current row will be determined
                 /// in 'insertCurrentRowIfNeeded' method on the values of aggregate functions.
                 current_row_is_zero = true;
+                std::cout << "maps_to_sum.empty() true" << std::endl;
             }
             else
             {
@@ -415,6 +440,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
     /// If it is zero, and without it the output stream will be empty, we will write it anyway.
     insertCurrentRowIfNeeded(merged_columns);
     finished = true;
+    std::cout << "merged rows " << merged_rows << std::endl;
 }
 
 
