@@ -12,7 +12,7 @@ Changelog category (leave one):
 - Non-significant (changelog entry is not needed)
 
 
-Changelog entry (up to few sentences, not needed for non-significant PRs):
+Changelog entry (up to few sentences, required except for Non-significant/Documentation categories):
 
 ...
 
