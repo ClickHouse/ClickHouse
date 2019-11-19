@@ -108,7 +108,11 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Settings & settings = context.getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
 
-    if (settings.input_format_parallel_parsing && file_segmentation_engine)
+    // Doesn't make sense to use parallel parsing with less than four threads
+    // (segmentator + two parsers + reader).
+    if (settings.input_format_parallel_parsing
+        && file_segmentation_engine
+        && settings.max_threads >= 4)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
         if (!input_getter)
@@ -124,9 +128,12 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        auto params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
-        ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
-        return std::make_shared<ParallelParsingBlockInputStream>(builder);
+        auto input_creator_params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
+        ParallelParsingBlockInputStream::Params params{buf, input_getter,
+            input_creator_params, file_segmentation_engine,
+            static_cast<int>(settings.max_threads),
+            settings.min_chunk_bytes_for_parallel_parsing};
+        return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));

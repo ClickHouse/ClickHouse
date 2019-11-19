@@ -67,30 +67,37 @@ public:
         const FormatSettings &settings;
     };
 
-    struct Builder
+    struct Params
     {
         ReadBuffer & read_buffer;
         const InputProcessorCreator &input_processor_creator;
         const InputCreatorParams &input_creator_params;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
-        size_t max_threads_to_use;
+        int max_threads;
         size_t min_chunk_bytes;
     };
 
-    explicit ParallelParsingBlockInputStream(const Builder & builder)
-            : header(builder.input_creator_params.sample),
-              context(builder.input_creator_params.context),
-              row_input_format_params(builder.input_creator_params.row_input_format_params),
-              format_settings(builder.input_creator_params.settings),
-              input_processor_creator(builder.input_processor_creator),
-              min_chunk_bytes(builder.min_chunk_bytes),
-              original_buffer(builder.read_buffer),
-              pool(builder.max_threads_to_use),
-              file_segmentation_engine(builder.file_segmentation_engine)
+    explicit ParallelParsingBlockInputStream(const Params & params)
+            : header(params.input_creator_params.sample),
+              context(params.input_creator_params.context),
+              row_input_format_params(params.input_creator_params.row_input_format_params),
+              format_settings(params.input_creator_params.settings),
+              input_processor_creator(params.input_processor_creator),
+              min_chunk_bytes(params.min_chunk_bytes),
+              original_buffer(params.read_buffer),
+              // Subtract one thread that we use for segmentation and one for
+              // reading. After that, must have at least two threads left for
+              // parsing. See the assertion below.
+              pool(std::max(2, params.max_threads - 2)),
+              file_segmentation_engine(params.file_segmentation_engine)
     {
-        // Allocate more units than threads to decrease segmentator
-        // waiting on reader on wraparound. The number is random.
-        processing_units.resize(builder.max_threads_to_use + 4);
+        // See comment above.
+        assert(params.max_threads >= 4);
+
+        // One unit for each thread, including segmentator and reader, plus a
+        // couple more units so that the segmentation thread doesn't spuriously
+        // bump into reader thread on wraparound.
+        processing_units.resize(params.max_threads + 2);
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
     }
