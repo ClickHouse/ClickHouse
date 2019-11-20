@@ -574,7 +574,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         String result_column = ttl_ast->getColumnName();
         checkTTLExpression(expr, result_column);
 
-        return {expr, result_column, TTLDestinationType::DELETE, {}};
+        return {expr, result_column, PartDestinationType::DELETE, {}};
     };
 
     if (!new_column_ttls.empty())
@@ -608,7 +608,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
             ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
-            if (ttl_element.destination_type == TTLDestinationType::DELETE)
+            if (ttl_element.destination_type == PartDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
@@ -3142,7 +3142,7 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceOnMoveDestination(UInt64
     if (ttl_entry != nullptr)
     {
         DiskSpace::ReservationPtr reservation;
-        if (ttl_entry->destination_type == TTLDestinationType::VOLUME)
+        if (ttl_entry->destination_type == PartDestinationType::VOLUME)
         {
             auto volume_ptr = storage_policy->getVolumeByName(ttl_entry->destination_name);
             if (volume_ptr)
@@ -3156,7 +3156,7 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceOnMoveDestination(UInt64
                         << log_name << "' but volume was not found");
             }
         }
-        else if (ttl_entry->destination_type == TTLDestinationType::DISK)
+        else if (ttl_entry->destination_type == PartDestinationType::DISK)
         {
             auto disk_ptr = storage_policy->getDiskByName(ttl_entry->destination_name);
             if (disk_ptr)
