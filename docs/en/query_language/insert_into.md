@@ -61,10 +61,10 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 ### Performance Considerations
 
-`INSERT` sorts the input data by primary key and splits them into partitions by month. If you insert data for mixed months, it can significantly reduce the performance of the `INSERT` query. To avoid this:
+`INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
 - Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by month before uploading it to ClickHouse.
+- Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 
