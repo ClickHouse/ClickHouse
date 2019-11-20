@@ -81,11 +81,6 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
     return data_type.getScale();
 }
 
-///
-template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal32>> = true;
-template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal64>> = true;
-template <> inline constexpr bool IsDataTypeDecimal<DataTypeDecimal<Decimal128>> = true;
-
 template <typename FromDataType, typename ToDataType>
 inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
 convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)

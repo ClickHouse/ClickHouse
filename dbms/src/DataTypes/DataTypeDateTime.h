@@ -73,7 +73,5 @@ public:
     bool equals(const IDataType & rhs) const override;
 };
 
-template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
-
 }
 
