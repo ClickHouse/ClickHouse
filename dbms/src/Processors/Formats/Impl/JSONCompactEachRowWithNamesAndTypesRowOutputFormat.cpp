@@ -23,7 +23,9 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
     writeChar('[', out);
     for (size_t i = 0; i < fields.size(); ++i)
     {
+        writeChar('\"', out);
         writeString(fields[i].name, out);
+        writeChar('\"', out);
         if (i != fields.size() - 1)
             writeCString(", ", out);
     }
@@ -34,7 +36,7 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
         if (i != fields.size() - 1)
             writeCString(", ", out);
     }
-    writeCString("]\n", out);
+    writeCString("]\n\n", out);
 }
 
 

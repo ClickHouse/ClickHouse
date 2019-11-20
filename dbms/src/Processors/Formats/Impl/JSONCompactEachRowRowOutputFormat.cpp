@@ -20,7 +20,7 @@ void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const
 
 void JSONCompactEachRowRowOutputFormat::writeFieldDelimiter()
 {
-    writeChar(',', out);
+    writeCString(", ", out);
 }
 
 
