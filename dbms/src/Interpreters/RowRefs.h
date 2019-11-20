@@ -219,7 +219,10 @@ public:
         Entry<Int32>::LookupPtr,
         Entry<Int64>::LookupPtr,
         Entry<Float32>::LookupPtr,
-        Entry<Float64>::LookupPtr>;
+        Entry<Float64>::LookupPtr,
+        Entry<Decimal32>::LookupPtr,
+        Entry<Decimal64>::LookupPtr,
+        Entry<Decimal128>::LookupPtr>;
 
     enum class Type
     {
@@ -229,6 +232,9 @@ public:
         keyi64,
         keyf32,
         keyf64,
+        keyDecimal32,
+        keyDecimal64,
+        keyDecimal128,
     };
 
     AsofRowRefs() {}
