@@ -7,7 +7,7 @@ The cross-build for AARCH64 is based on the Build instructions, follow them firs
 # Install Clang-8
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
-For example the commands for Bionic are like:
+For example, in Ubuntu Bionic you can use the following commands:
 
 ```bash
 sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
