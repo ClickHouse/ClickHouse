@@ -945,6 +945,17 @@ public:
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
+    LookupResult ALWAYS_INLINE findNonZero(const Key & x, size_t hash_value)
+    {
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
+    }
+
+    ConstLookupResult ALWAYS_INLINE findNonZero(const Key & x, size_t hash_value) const
+    {
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->findNonZero(x, hash_value);
+    }
+
     bool ALWAYS_INLINE has(const Key & x) const
     {
         if (Cell::isZero(x, *this))

@@ -32,20 +32,20 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 struct StringHashTableHash
 {
 #if defined(__SSE4_2__)
-    size_t ALWAYS_INLINE operator()(StringKey8 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey8 & key) const
     {
         size_t res = -1ULL;
         res = _mm_crc32_u64(res, key);
         return res;
     }
-    size_t ALWAYS_INLINE operator()(StringKey16 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey16 & key) const
     {
         size_t res = -1ULL;
         res = _mm_crc32_u64(res, key.low);
         res = _mm_crc32_u64(res, key.high);
         return res;
     }
-    size_t ALWAYS_INLINE operator()(StringKey24 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey24 & key) const
     {
         size_t res = -1ULL;
         res = _mm_crc32_u64(res, key.a);
@@ -53,24 +53,47 @@ struct StringHashTableHash
         res = _mm_crc32_u64(res, key.c);
         return res;
     }
+    /// Reduced version of StringRef hash
+    size_t ALWAYS_INLINE operator()(const StringRef & key) const
+    {
+        return operator()(key.data, key.size);
+    }
+
+    size_t ALWAYS_INLINE operator()(const char * pos, size_t size) const
+    {
+        const char * end = pos + size;
+        size_t res = -1ULL;
+        do
+        {
+            UInt64 word = unalignedLoad<UInt64>(pos);
+            res = _mm_crc32_u64(res, word);
+            pos += 8;
+        } while (pos + 8 < end);
+        UInt64 word = unalignedLoad<UInt64>(end - 8);
+        return _mm_crc32_u64(res, word);
+    }
 #else
-    size_t ALWAYS_INLINE operator()(StringKey8 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey8 & key) const
     {
         return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 8);
     }
-    size_t ALWAYS_INLINE operator()(StringKey16 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey16 & key) const
     {
         return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 16);
     }
-    size_t ALWAYS_INLINE operator()(StringKey24 key) const
+    size_t ALWAYS_INLINE operator()(const StringKey24 & key) const
     {
         return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 24);
     }
-#endif
-    size_t ALWAYS_INLINE operator()(StringRef key) const
+    size_t ALWAYS_INLINE operator()(const StringRef & key) const
     {
-        return StringRefHash()(key);
+        return CityHash_v1_0_2::CityHash64(key.data, key.size);
     }
+    size_t ALWAYS_INLINE operator()(const char * pos, size_t size) const
+    {
+        return CityHash_v1_0_2::CityHash64(pos, size);
+    }
+#endif
 };
 
 template <typename Cell>
@@ -110,7 +133,7 @@ public:
     using ConstLookupResult = const Cell *;
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder &&, LookupResult & it, bool & inserted, size_t = 0)
+    void ALWAYS_INLINE emplaceNonZero(KeyHolder &&, LookupResult & it, bool & inserted, size_t = 0)
     {
         if (!hasZero())
         {
@@ -123,13 +146,13 @@ public:
     }
 
     template <typename Key>
-    LookupResult ALWAYS_INLINE find(const Key &, size_t = 0)
+    LookupResult ALWAYS_INLINE findNonZero(const Key &, size_t = 0)
     {
         return hasZero() ? zeroValue() : nullptr;
     }
 
     template <typename Key>
-    ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
+    ConstLookupResult ALWAYS_INLINE findNonZero(const Key &, size_t = 0) const
     {
         return hasZero() ? zeroValue() : nullptr;
     }
@@ -230,7 +253,7 @@ struct StringHashTableLookupResult
 };
 
 template <typename SubTable>
-class StringHashTable : private boost::noncopyable, protected SubTable::Ts::cell_type::State
+class StringHashTable : private boost::noncopyable, protected SubTable::Ts::cell_type::State, public StringHashTableHash
 {
 protected:
     // Table for storing empty string
@@ -286,67 +309,63 @@ public:
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
-        const StringRef & x = keyHolderGetKey(key_holder);
-        const size_t sz = x.size;
-        if (sz == 0)
+        size_t len = keyHolderGetKey(key_holder).size;
+        if (likely(len == 0))
         {
             keyHolderDiscardKey(key_holder);
             return func(self.m0, VoidKey{}, 0);
         }
 
-        const char * p = x.data;
-        // pending bits that needs to be shifted out
-        const char s = (-sz & 7) * 8;
-        union
+        const char * data = keyHolderGetKey(key_holder).data;
+        if (likely(len > 24))
         {
+            return func(self.ms, std::forward<KeyHolder>(key_holder), self(data, len));
+        }
+
+        union {
             StringKey8 k8;
             StringKey16 k16;
             StringKey24 k24;
-            UInt64 n[3];
         };
-        StringHashTableHash hash;
-        switch ((sz - 1) >> 3)
+        // pending bits that needs to be shifted out
+        const char s = (-len & 7) * 8;
+
+        switch ((len - 1) >> 3)
         {
             case 0: // 1..8 bytes
             {
                 // first half page
-                if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
+                if ((reinterpret_cast<uintptr_t>(data) & 2048) == 0)
                 {
-                    memcpy(&n[0], p, 8);
-                    n[0] &= -1ul >> s;
+                    memcpy(&k8, data, 8);
+                    k8 &= -1ul >> s;
                 }
                 else
                 {
-                    const char * lp = x.data + x.size - 8;
-                    memcpy(&n[0], lp, 8);
-                    n[0] >>= s;
+                    memcpy(&k8, data + len - 8, 8);
+                    k8 >>= s;
                 }
                 keyHolderDiscardKey(key_holder);
-                return func(self.m1, k8, hash(k8));
+                return func(self.m1, k8, self(k8));
             }
             case 1: // 9..16 bytes
             {
-                memcpy(&n[0], p, 8);
-                const char * lp = x.data + x.size - 8;
-                memcpy(&n[1], lp, 8);
-                n[1] >>= s;
+                memcpy(&k16.low, data, 8);
+                memcpy(&k16.high, data + len - 8, 8);
+                k16.high >>= s;
                 keyHolderDiscardKey(key_holder);
-                return func(self.m2, k16, hash(k16));
+                return func(self.m2, k16, self(k16));
             }
             case 2: // 17..24 bytes
             {
-                memcpy(&n[0], p, 16);
-                const char * lp = x.data + x.size - 8;
-                memcpy(&n[2], lp, 8);
-                n[2] >>= s;
+                memcpy(&k24, data, 16);
+                memcpy(&k24.c, data + len - 8, 8);
+                k24.c >>= s;
                 keyHolderDiscardKey(key_holder);
-                return func(self.m3, k24, hash(k24));
-            }
-            default: // >= 25 bytes
-            {
-                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+                return func(self.m3, k24, self(k24));
             }
         }
+        __builtin_unreachable();
     }
 
     struct EmplaceCallable
@@ -361,7 +380,7 @@ public:
         void ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
         {
             typename Map::LookupResult result;
-            map.emplace(key_holder, result, inserted, hash);
+            map.emplaceNonZero(key_holder, result, inserted, hash);
             mapped = &result->getMapped();
         }
     };
@@ -380,7 +399,7 @@ public:
         template <typename Submap, typename SubmapKey>
         auto ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            auto it = map.find(key, hash);
+            auto it = map.findNonZero(key, hash);
             return it ? &it->getMapped() : nullptr;
         }
     };
