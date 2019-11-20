@@ -689,11 +689,11 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     if (unlikely(!datetime))
     {
         static const char s[] =
-            {
-                '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-                between_date_time_delimiter,
-                '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
-            };
+        {
+            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+            between_date_time_delimiter,
+            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
+        };
         buf.write(s, sizeof(s));
         return;
     }
@@ -701,7 +701,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     const auto & values = date_lut.getValues(datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-                      date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+            date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
@@ -713,14 +713,14 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     if (unlikely(!datetime64))
     {
         static const char s[] =
-            {
-                '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-                between_date_time_delimiter,
-                '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
-                fractional_time_delimiter,
-                // Exactly MaxScale zeroes
-                '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
-            };
+        {
+            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+            between_date_time_delimiter,
+            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
+            fractional_time_delimiter,
+            // Exactly MaxScale zeroes
+            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
+        };
         buf.write(s, sizeof(s) - (MaxScale - scale));
         return;
     }
@@ -728,7 +728,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-                      date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
+            date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
     if (scale > 0)
     {
