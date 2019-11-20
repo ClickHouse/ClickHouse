@@ -1014,6 +1014,9 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds.
 
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1033,6 +1036,10 @@ Possible values:
 Type: [UInt64](../../data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds.
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
