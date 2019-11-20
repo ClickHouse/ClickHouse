@@ -31,9 +31,6 @@ public:
     ReadBuffer * data_buffer;
 
 private:
-    /// NOTE: lazily loads marks from the marks cache.
-    const MarkInCompressedFile & getMark(size_t index);
-
     void initMarksLoader();
 
     std::string path_prefix;
@@ -43,7 +40,6 @@ private:
 
     MarkCache * mark_cache;
     bool save_marks_in_cache;
-    MarkCache::MappedPtr marks;
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 
