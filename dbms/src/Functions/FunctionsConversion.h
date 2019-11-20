@@ -524,6 +524,8 @@ struct ConvertThroughParsing
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
+    static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+
     using ToFieldType = typename ToDataType::FieldType;
 
     static bool isAllRead(ReadBuffer & in)
@@ -553,7 +555,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
         {
             const auto result_type = removeNullable(block.getByPosition(result).type);
             // Time zone is already figured out during result type resultion, no need to do it here.
@@ -585,10 +587,10 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (IsDataTypeDecimal<ToDataType> || std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (IsDataTypeDecimal<ToDataType>)
         {
             UInt32 scale = additions;
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (to_datetime64)
             {
                 ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
             }
@@ -639,7 +641,7 @@ struct ConvertThroughParsing
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
@@ -654,7 +656,7 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
                         readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
@@ -675,7 +677,7 @@ struct ConvertThroughParsing
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
@@ -690,7 +692,7 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
                         parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
@@ -881,6 +883,8 @@ public:
     static constexpr bool to_decimal =
         std::is_same_v<Name, NameToDecimal32> || std::is_same_v<Name, NameToDecimal64> || std::is_same_v<Name, NameToDecimal128>;
 
+    static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
 
     String getName() const override
@@ -897,7 +901,7 @@ public:
         FunctionArgumentTypeValidators mandatory_args = {{[](const auto &) {return true;}, "ANY TYPE"}};
         FunctionArgumentTypeValidators optional_args;
 
-        if constexpr (to_decimal || std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (to_decimal || to_datetime64)
         {
             mandatory_args.push_back(FunctionArgumentTypeValidator{&isNativeInteger, "Integer"}); // scale
         }
@@ -934,7 +938,7 @@ public:
             UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
 
             // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (to_datetime64)
             {
                 timezone_arg_position += 1;
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
@@ -942,7 +946,7 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            else if constexpr (to_datetime64)
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else
                 return std::make_shared<ToDataType>();
