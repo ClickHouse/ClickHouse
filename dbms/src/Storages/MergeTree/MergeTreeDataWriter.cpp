@@ -75,8 +75,10 @@ void buildScatterSelector(
 }
 
 /// Computes ttls and updates ttl infos
-template <typename TTLEntry>
-void updateTTL(const TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, DB::MergeTreeDataPartTTLInfo & ttl_info, Block & block)
+void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
+    MergeTreeDataPart::TTLInfos & ttl_infos,
+    DB::MergeTreeDataPartTTLInfo & ttl_info,
+    Block & block)
 {
     if (!block.has(ttl_entry.result_column))
         ttl_entry.expression->execute(block);
