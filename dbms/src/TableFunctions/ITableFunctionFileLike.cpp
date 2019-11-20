@@ -33,7 +33,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 3 && args.size() != 4)
-        throw Exception("Table function '" + getName() + "' requires 3 or 4 arguments: filename, format, structure and compression method (default none).",
+        throw Exception("Table function '" + getName() + "' requires 3 or 4 arguments: filename, format, structure and compression method (default auto).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < args.size(); ++i)
