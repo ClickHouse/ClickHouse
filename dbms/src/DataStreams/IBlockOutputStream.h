@@ -3,8 +3,6 @@
 #include <Core/Block.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Storages/TableStructureLockHolder.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -64,17 +62,6 @@ public:
     /** Don't let to alter table while instance of stream is alive.
       */
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
-
-    template <class TWriteBuffer, class... Types>
-    std::unique_ptr<WriteBuffer> getBuffer(const DB::CompressionMethod method, Types... args)
-    {
-        if (method == DB::CompressionMethod::Gzip)
-        {
-            auto write_buf = std::make_unique<TWriteBuffer>(args...);
-            return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
-        }
-        return std::make_unique<TWriteBuffer>(args...);
-    }
 
     virtual void finalize() {}
 

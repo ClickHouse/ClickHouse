@@ -7,8 +7,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromHDFS.h>
 #include <IO/WriteBufferFromHDFS.h>
+#include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -61,7 +63,7 @@ public:
         UInt64 max_block_size,
         const CompressionMethod compression_method)
     {
-        auto read_buf = getBuffer<ReadBufferFromHDFS>(compression_method, uri);
+        auto read_buf = getReadBuffer<ReadBufferFromHDFS>(compression_method, uri);
 
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
@@ -106,7 +108,7 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = getBuffer<WriteBufferFromHDFS>(compression_method, uri);
+        write_buf = getWriteBuffer<WriteBufferFromHDFS>(compression_method, uri);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
