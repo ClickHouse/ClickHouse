@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/TTLDestinationType.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -729,7 +729,7 @@ public:
         String result_column;
 
         /// Name and type of a destination are only valid in table-level context.
-        TTLDestinationType destination_type;
+        PartDestinationType destination_type;
         String destination_name;
     };
 
