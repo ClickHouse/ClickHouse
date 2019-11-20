@@ -77,7 +77,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — TTL合并频率的最小间隔时间。默认值: 86400 (1 天)。
     - `write_final_mark` — 启用或禁用在数据片段尾部写入最终索引标记。默认值: 1（不建议更改）。
-
+    - `storage_policy` — 存储策略。 参见 [使用多个区块装置进行数据存储](#table_engine-mergetree-multiple-volumes).
 
 **示例配置**
 
@@ -121,7 +121,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 对于主要的配置方法，这里 `MergeTree` 引擎跟前面的例子一样，可以以同样的方式配置。
 </details>
 
-## 数据存储
+## 数据存储 {#mergetree-data-storage}
 
 表由按主键排序的数据 *片段* 组成。
 
@@ -395,5 +395,9 @@ ALTER TABLE example_table
 
 如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
 
+
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 [来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
