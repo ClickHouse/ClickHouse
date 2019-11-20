@@ -216,7 +216,8 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 
 void MySQLHandler::authenticate(const String & user_name, const String & auth_plugin_name, const String & initial_auth_response)
 {
-    try {
+    try
+    {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
         auto user = connection_context.getUser(user_name);
         if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
