@@ -63,8 +63,6 @@ public:
       */
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
 
-    virtual void finalize() {}
-
 private:
     std::vector<TableStructureReadLockHolder> table_locks;
 };
