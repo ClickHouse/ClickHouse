@@ -505,7 +505,7 @@ Columns:
     - `CPU` represents CPU time.
 
 - `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
-- `query_id`([String](../data_types/string.md)) — Query identifier. Information about a query you can get from the [query_log](#system_tables-query_log) table.
+- `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 - `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling.
 
 **Example**
