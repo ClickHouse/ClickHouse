@@ -129,7 +129,7 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    TTLDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 

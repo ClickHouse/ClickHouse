@@ -176,10 +176,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case TTLDestinationType::DISK:
+            case PartDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case TTLDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
             default:
