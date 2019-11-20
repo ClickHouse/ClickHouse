@@ -53,14 +53,9 @@ public:
         return all_mark_ranges.back().begin;
     }
 
-    using MarksPtr = MarkCache::MappedPtr;
-
     MergeTreeData::DataPartPtr data_part;
 
 protected:
-
-    using LoadFunc = std::function<MarksPtr()>;
-    MarksPtr loadMarks(const String & mrk_path, const LoadFunc & load_func);
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;

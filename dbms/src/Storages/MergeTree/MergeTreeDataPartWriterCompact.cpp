@@ -154,8 +154,6 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
         }
-        if (compute_granularity)
-            index_granularity.appendMark(0);
     }
 
     stream->finalize();

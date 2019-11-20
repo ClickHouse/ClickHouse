@@ -32,6 +32,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 
     /// Care should be taken to not load marks when the part is empty (marks_count == 0).
 
+    initMarksLoader();
+
     for (const auto & mark_range : all_mark_ranges)
     {
         size_t left_mark = mark_range.begin;
@@ -41,10 +43,10 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
         /// If the end of range is inside the block, we will need to read it too.
-        if (right_mark < marks_count && getMark(right_mark).offset_in_decompressed_block > 0)
+        if (right_mark < marks_count && marks_loader.getMark(right_mark).offset_in_decompressed_block > 0)
         {
             while (right_mark < marks_count
-                && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file)
+                && marks_loader.getMark(right_mark).offset_in_compressed_file == marks_loader.getMark(mark_range.end).offset_in_compressed_file)
             {
                 ++right_mark;
             }
@@ -55,13 +57,13 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         /// If there are no marks after the end of range, just use file size
         if (right_mark >= marks_count
             || (right_mark + 1 == marks_count
-                && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file))
+                && marks_loader.getMark(right_mark).offset_in_compressed_file == marks_loader.getMark(mark_range.end).offset_in_compressed_file))
         {
-            mark_range_bytes = file_size - (left_mark < marks_count ? getMark(left_mark).offset_in_compressed_file : 0);
+            mark_range_bytes = file_size - (left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0);
         }
         else
         {
-            mark_range_bytes = getMark(right_mark).offset_in_compressed_file - getMark(left_mark).offset_in_compressed_file;
+            mark_range_bytes = marks_loader.getMark(right_mark).offset_in_compressed_file - marks_loader.getMark(left_mark).offset_in_compressed_file;
         }
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
@@ -101,16 +103,11 @@ MergeTreeReaderStream::MergeTreeReaderStream(
 }
 
 
-const MarkInCompressedFile & MergeTreeReaderStream::getMark(size_t index)
+void MergeTreeReaderStream::initMarksLoader()
 {
-    if (!marks)
-        loadMarks();
-    return (*marks)[index];
-}
+    if (marks_loader.initialized())
+        return;
 
-
-void MergeTreeReaderStream::loadMarks()
-{
     std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
 
     auto load = [&]() -> MarkCache::MappedPtr
@@ -153,31 +150,13 @@ void MergeTreeReaderStream::loadMarks()
         return res;
     };
 
-    if (mark_cache)
-    {
-        auto key = mark_cache->hash(mrk_path);
-        if (save_marks_in_cache)
-        {
-            marks = mark_cache->getOrSet(key, load);
-        }
-        else
-        {
-            marks = mark_cache->get(key);
-            if (!marks)
-                marks = load();
-        }
-    }
-    else
-        marks = load();
-
-    if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+    marks_loader = MergeTreeMarksLoader{mark_cache, mrk_path, load, save_marks_in_cache};
 }
 
 
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
-    MarkInCompressedFile mark = getMark(index);
+    MarkInCompressedFile mark = marks_loader.getMark(index);
 
     try
     {

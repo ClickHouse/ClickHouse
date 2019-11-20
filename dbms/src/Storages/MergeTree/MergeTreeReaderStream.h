@@ -6,6 +6,7 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeReaderSettings.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ private:
     /// NOTE: lazily loads marks from the marks cache.
     const MarkInCompressedFile & getMark(size_t index);
 
-    void loadMarks();
+    void initMarksLoader();
 
     std::string path_prefix;
     std::string data_file_extension;
@@ -48,5 +49,7 @@ private:
 
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
+
+    MergeTreeMarksLoader marks_loader;
 };
 }

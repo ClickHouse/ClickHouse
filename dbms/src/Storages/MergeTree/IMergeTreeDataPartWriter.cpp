@@ -291,18 +291,20 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
 void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
 {
     std::cerr << "finishPrimaryIndexSerialization called...\n";
+
+    bool write_final_mark = (with_final_mark && data_written);
+    if (write_final_mark && compute_granularity)
+        index_granularity.appendMark(0);
+
     if (index_stream)
     {
-        if (with_final_mark && data_written)
+        if (write_final_mark)
         {
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
                 index_columns[j]->insert(last_index_row[j]);
                 index_types[j]->serializeBinary(last_index_row[j], *index_stream);
             }
-
-            if (compute_granularity)
-                index_granularity.appendMark(0);
 
             last_index_row.clear();
         }
