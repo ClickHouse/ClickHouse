@@ -1,6 +1,6 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/TTLDestinationType.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -48,10 +48,10 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.part = command_ast->part;
         switch (command_ast->move_destination_type)
         {
-            case TTLDestinationType::DISK:
+            case PartDestinationType::DISK:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::DISK;
                 break;
-            case TTLDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
                 break;
             default:

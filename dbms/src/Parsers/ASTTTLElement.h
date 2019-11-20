@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Storages/MergeTree/TTLDestinationType.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 
 
 namespace DB
@@ -11,10 +11,10 @@ namespace DB
 class ASTTTLElement : public IAST
 {
 public:
-    TTLDestinationType destination_type;
+    PartDestinationType destination_type;
     String destination_name;
 
-    ASTTTLElement(TTLDestinationType destination_type_, const String & destination_name_)
+    ASTTTLElement(PartDestinationType destination_type_, const String & destination_name_)
         : destination_type(destination_type_)
         , destination_name(destination_name_)
     {
