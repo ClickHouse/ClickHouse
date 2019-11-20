@@ -6,7 +6,9 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -39,7 +41,7 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = getBuffer<ReadBufferFromS3>(compression_method, uri, timeouts);
+            read_buf = getReadBuffer<ReadBufferFromS3>(compression_method, uri, timeouts);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -86,7 +88,7 @@ namespace
             const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = getBuffer<WriteBufferFromS3>(compression_method, uri, min_upload_part_size, timeouts);
+            write_buf = getWriteBuffer<WriteBufferFromS3>(compression_method, uri, min_upload_part_size, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 

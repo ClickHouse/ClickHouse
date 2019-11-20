@@ -5,9 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/ExecutionSpeedLimits.h>
-#include <IO/CompressionMethod.h>
 #include <IO/Progress.h>
-#include <IO/ZlibInflatingReadBuffer.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Common/TypePromotion.h>
 
@@ -229,17 +227,6 @@ public:
 
     /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
-
-    template <class TReadBuffer, class... Types>
-    std::unique_ptr<ReadBuffer> getBuffer(const DB::CompressionMethod method, Types... args)
-    {
-        if (method == DB::CompressionMethod::Gzip)
-        {
-            auto read_buf = std::make_unique<TReadBuffer>(args...);
-            return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
-        }
-        return std::make_unique<TReadBuffer>(args...);
-    }
 
 protected:
     /// Order is important: `table_locks` must be destroyed after `children` so that tables from
