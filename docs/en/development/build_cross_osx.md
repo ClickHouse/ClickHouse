@@ -33,7 +33,7 @@ cd cctools-port/cctools
 make install
 ```
 
-Also we need to download MacOS X SDK inside our working tree
+Also, we need to download MacOS X SDK into the working tree.
 
 ```bash
 cd ClickHouse
