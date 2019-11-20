@@ -580,7 +580,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 ## trace_log {#server_settings-trace_log}
 
-Settings for the [trace_log](../system_tables.md#system_tables-trace_log) table operation.
+Settings for the [trace_log](../system_tables.md#system_tables-trace_log) system table operation.
 
 Parameters:
 
