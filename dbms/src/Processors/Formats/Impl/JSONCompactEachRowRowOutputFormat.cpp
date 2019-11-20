@@ -38,7 +38,7 @@ namespace DB
 
     void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     {
-        factory.registerOutputFormatProcessor("JSONEachRow", [](
+        factory.registerOutputFormatProcessor("JSONCompactEachRow", [](
                 WriteBuffer & buf,
                 const Block & sample,
                 const Context &,
