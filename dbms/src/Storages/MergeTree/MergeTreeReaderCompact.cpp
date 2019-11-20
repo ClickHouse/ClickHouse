@@ -19,6 +19,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     , uncompressed_cache_, mark_cache_, mark_ranges_
     , settings_, avg_value_size_hints_)
 {
+    initMarksLoader();
     size_t buffer_size = settings.max_read_buffer_size;
 
     if (uncompressed_cache)
@@ -121,13 +122,14 @@ void MergeTreeReaderCompact::readData(
 }
 
 
-void MergeTreeReaderCompact::loadMarks()
+void MergeTreeReaderCompact::initMarksLoader()
 {
     const auto & index_granularity_info = data_part->index_granularity_info;
     size_t marks_count = data_part->getMarksCount();
     std::string mrk_path = index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
+    size_t columns_num = data_part->columns.size();
 
-    auto load_func = [&]() -> MarkCache::MappedPtr
+    auto load = [&]() -> MarkCache::MappedPtr
     {
         size_t file_size = Poco::File(mrk_path).getSize();
 
@@ -140,7 +142,6 @@ void MergeTreeReaderCompact::loadMarks()
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-        size_t columns_num = data_part->columns.size();
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_num);
 
@@ -168,25 +169,14 @@ void MergeTreeReaderCompact::loadMarks()
         return res;
     };
 
-    std::cerr << "(MergeTreeReaderCompact::loadMarks) table: " << storage.getTableName() << ", part: " << path << "\n";
-    std::cerr << "(MergeTreeReaderCompact::loadMarks) start marks load..." << "\n";
-
-    auto marks_array = IMergeTreeReader::loadMarks(mrk_path, load_func);
-    marks = MarksInCompressedFileCompact(marks_array, columns.size());
+    marks_loader = MergeTreeMarksLoader{mark_cache, mrk_path, load, settings.save_marks_in_cache, columns_num};
 
     std::cerr << "(MergeTreeReaderCompact::loadMarks) end marks load..." << "\n";
 }
 
-const MarkInCompressedFile & MergeTreeReaderCompact::getMark(size_t row, size_t col)
+void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {
-    if (!marks.initialized())
-        loadMarks();
-    return marks.getMark(row, col);
-}
-
-void MergeTreeReaderCompact::seekToMark(size_t row, size_t col)
-{
-    MarkInCompressedFile mark = getMark(row, col);
+    MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
 
     std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
 
@@ -201,7 +191,7 @@ void MergeTreeReaderCompact::seekToMark(size_t row, size_t col)
     {
         /// Better diagnostics.
         if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-            e.addMessage("(while seeking to mark (" + toString(row) + ", " + toString(col) + ")");
+            e.addMessage("(while seeking to mark (" + toString(row_index) + ", " + toString(column_index) + ")");
 
         throw;
     }
