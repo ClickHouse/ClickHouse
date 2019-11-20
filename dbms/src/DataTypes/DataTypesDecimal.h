@@ -186,12 +186,9 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
-        {
             if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            {
                 return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
-            }
-        }
+
         return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
     }
 }
