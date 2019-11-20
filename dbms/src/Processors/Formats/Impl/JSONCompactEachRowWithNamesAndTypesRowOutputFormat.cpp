@@ -10,7 +10,7 @@ JSONCompactEachRowWithNamesAndTypesRowOutputFormat::JSONCompactEachRowWithNamesA
         const Block & header_,
         FormatFactory::WriteCallback callback,
         const FormatSettings & settings_)
-        : JSONCompactEachRowRowOutputFormat(out, header_, callback, settings_)
+        : JSONCompactEachRowRowOutputFormat(out_, header_, callback, settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
