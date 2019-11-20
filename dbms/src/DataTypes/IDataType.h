@@ -638,5 +638,24 @@ template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
+template <typename T>
+class DataTypeDecimal;
+
+template <typename T>
+class DataTypeNumber;
+
+class DataTypeDate;
+class DataTypeDateTime;
+class DataTypeDateTime64;
+
+template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <> constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+
+template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
+
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
 }
 
