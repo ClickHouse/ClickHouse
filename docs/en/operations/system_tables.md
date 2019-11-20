@@ -499,6 +499,9 @@ Columns:
 - `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
 - `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
 - `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+
+    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+
 - `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
 
     - `Real` represents wall-clock time.
