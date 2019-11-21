@@ -974,13 +974,11 @@ public:
         {
             if (this->getName().find("OrZero") != std::string::npos ||
                 this->getName().find("OrNull") != std::string::npos)
-                throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
                         ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
-                throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
