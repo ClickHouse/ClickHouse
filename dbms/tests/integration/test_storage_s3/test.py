@@ -65,6 +65,14 @@ def get_s3_file_content(cluster, filename):
     return data_str
 
 
+# Returns nginx access log lines.
+def get_nginx_access_logs():
+    handle = open("/nginx/access.log", "r")
+    data = handle.readlines()
+    handle.close()
+    return data
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -155,14 +163,29 @@ def test_multipart_put(cluster):
 
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    long_data = [[i, i + 1, i + 2] for i in range(100000)]
-    long_values_csv = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in long_data])
-    filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') format CSV".format(
-        cluster.minio_host, cluster.minio_port, cluster.minio_bucket, filename, table_format)
 
     # Minimum size of part is 5 Mb for Minio.
     # See: https://github.com/minio/minio/blob/master/docs/minio-limits.md
-    run_query(instance, put_query, stdin=long_values_csv, settings={'s3_min_upload_part_size': 5 * 1024 * 1024})
+    min_part_size_bytes = 5 * 1024 * 1024
+    csv_size_bytes = int(min_part_size_bytes * 1.5)  # To have 2 parts.
 
-    assert long_values_csv == get_s3_file_content(cluster, filename)
+    one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
+
+    # Generate data having size more than one part
+    int_data = [[1, 2, 3] for i in range(csv_size_bytes / one_line_length)]
+    csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
+
+    assert len(csv_data) > min_part_size_bytes
+
+    filename = "test_multipart.csv"
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') format CSV".format(
+        cluster.minio_redirect_host, cluster.minio_redirect_port, cluster.minio_bucket, filename, table_format)
+
+    run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
+
+    # Use Nginx access logs to count number of parts uploaded to Minio.
+    nginx_logs = get_nginx_access_logs()
+    uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
+    assert uploaded_parts > 1
+
+    assert csv_data == get_s3_file_content(cluster, filename)
