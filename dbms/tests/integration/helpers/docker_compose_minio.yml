@@ -20,9 +20,12 @@ services:
 # Redirects all requests to origin Minio.
   redirect:
     image: schmunk42/nginx-redirect
+    volumes:
+      - /nginx:/nginx
     environment:
       - SERVER_REDIRECT=minio1:9001
       - SERVER_REDIRECT_CODE=307
+      - SERVER_ACCESS_LOG=/nginx/access.log
 
 volumes:
   data1-1:
