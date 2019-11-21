@@ -190,6 +190,8 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
+- [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
+- [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
 - [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
@@ -257,13 +259,26 @@ This query is replicated. Each replica checks whether there is data in the `deta
 
 So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
+#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+
+```sql
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
+```
+
+This query copies the data partition from the `table1` to `table2` adds data to exsisting in the `table2`. Note that data won't be deleted from `table1`.
+
+For the query to run successfully, the following conditions must be met:
+
+- Both tables must have the same structure.
+- Both tables must have the same partition key.
+
 #### REPLACE PARTITION {#alter_replace-partition}
 
 ```sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`. Note that data won't be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won't be deleted from `table1`.
 
 For the query to run successfully, the following conditions must be met:
 
