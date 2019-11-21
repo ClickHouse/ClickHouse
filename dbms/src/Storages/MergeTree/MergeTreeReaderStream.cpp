@@ -108,12 +108,12 @@ void MergeTreeReaderStream::initMarksLoader()
     if (marks_loader.initialized())
         return;
 
-    std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
-
-    auto load = [&]() -> MarkCache::MappedPtr
+    auto load = [this]() -> MarkCache::MappedPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
+        std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
 
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t expected_file_size = index_granularity_info->mark_size_in_bytes * marks_count;
@@ -150,6 +150,7 @@ void MergeTreeReaderStream::initMarksLoader()
         return res;
     };
 
+    auto mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
     marks_loader = MergeTreeMarksLoader{mark_cache, mrk_path, load, save_marks_in_cache};
 }
 
