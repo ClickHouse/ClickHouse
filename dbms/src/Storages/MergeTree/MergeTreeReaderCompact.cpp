@@ -124,6 +124,9 @@ void MergeTreeReaderCompact::readData(
 
 void MergeTreeReaderCompact::initMarksLoader()
 {
+    if (marks_loader.initialized())
+        return;
+
     const auto & index_granularity_info = data_part->index_granularity_info;
     size_t marks_count = data_part->getMarksCount();
     std::string mrk_path = index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);

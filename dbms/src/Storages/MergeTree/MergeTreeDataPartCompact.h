@@ -38,14 +38,12 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_ = {});
 
     MergeTreeDataPartCompact( 
         MergeTreeData & storage_,
         const String & name_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_ = {});
 

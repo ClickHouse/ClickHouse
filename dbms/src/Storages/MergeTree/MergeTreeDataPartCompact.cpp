@@ -55,10 +55,9 @@ namespace ErrorCodes
 MergeTreeDataPartCompact::MergeTreeDataPartCompact( 
        MergeTreeData & storage_,
         const String & name_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, index_granularity_info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
 {
 }
 
@@ -66,10 +65,9 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, index_granularity_info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
 {
 }
 
@@ -139,31 +137,34 @@ ColumnSize MergeTreeDataPartCompact::getColumnSizeImpl(
   */
 String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
 {
-    const auto & storage_columns = storage.getColumns().getAllPhysical();
-    const std::string * minimum_size_column = nullptr;
-    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
+    /// FIXME: save column sizes
 
-    for (const auto & column : storage_columns)
-    {
-        if (!hasColumnFiles(column.name, *column.type))
-            continue;
+    // const auto & storage_columns = storage.getColumns().getAllPhysical();
+    // const std::string * minimum_size_column = nullptr;
+    // UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-        const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
-        if (size < minimum_size)
-        {
-            minimum_size = size;
-            minimum_size_column = &column.name;
-        }
-    }
+    // for (const auto & column : storage_columns)
+    // {
+    //     if (!hasColumnFiles(column.name, *column.type))
+    //         continue;
 
-    if (!minimum_size_column)
-        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
+    //     const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
+    //     if (size < minimum_size)
+    //     {
+    //         minimum_size = size;
+    //         minimum_size_column = &column.name;
+    //     }
+    // }
 
-    return *minimum_size_column;
+    // if (!minimum_size_column)
+    //     throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
+
+    return columns.front().name;
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
+    index_granularity_info.initialize(storage, getType(), columns.size());
     String full_path = getFullPath();
 
     if (columns.empty())
@@ -196,105 +197,109 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
 {
-    String path = getFullPath();
+    UNUSED(require_part_metadata);
+    /// FIXME implement for compact parts
 
-    if (!checksums.empty())
-    {
-        if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
-            throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        if (require_part_metadata)
-        {
-            for (const NameAndTypePair & name_type : columns)
-            {
-                IDataType::SubstreamPath stream_path;
-                name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-                {
-                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                    String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
-                    String bin_file_name = file_name + ".bin";
-                    if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
-                            ErrorCodes::NO_FILE_IN_DATA_PART);
-                    if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
-                            ErrorCodes::NO_FILE_IN_DATA_PART);
-                }, stream_path);
-            }
-        }
+    // String path = getFullPath();
 
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        {
-            if (!checksums.files.count("count.txt"))
-                throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
+    // if (!checksums.empty())
+    // {
+    //     if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
+    //         throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
-                throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
+    //     if (require_part_metadata)
+    //     {
+    //         for (const NameAndTypePair & name_type : columns)
+    //         {
+    //             IDataType::SubstreamPath stream_path;
+    //             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    //             {
+    //                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+    //                 String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
+    //                 String bin_file_name = file_name + ".bin";
+    //                 if (!checksums.files.count(mrk_file_name))
+    //                     throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
+    //                         ErrorCodes::NO_FILE_IN_DATA_PART);
+    //                 if (!checksums.files.count(bin_file_name))
+    //                     throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
+    //                         ErrorCodes::NO_FILE_IN_DATA_PART);
+    //             }, stream_path);
+    //         }
+    //     }
 
-            if (!isEmpty())
-            {
-                for (const String & col_name : storage.minmax_idx_columns)
-                {
-                    if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
-                        throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
-                }
-            }
-        }
+    //     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    //     {
+    //         if (!checksums.files.count("count.txt"))
+    //             throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        checksums.checkSizes(path);
-    }
-    else
-    {
-        auto check_file_not_empty = [&path](const String & file_path)
-        {
-            Poco::File file(file_path);
-            if (!file.exists() || file.getSize() == 0)
-                throw Exception("Part " + path + " is broken: " + file_path + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-            return file.getSize();
-        };
+    //         if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
+    //             throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        /// Check that the primary key index is not empty.
-        if (!storage.primary_key_columns.empty())
-            check_file_not_empty(path + "primary.idx");
+    //         if (!isEmpty())
+    //         {
+    //             for (const String & col_name : storage.minmax_idx_columns)
+    //             {
+    //                 if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
+    //                     throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+    //             }
+    //         }
+    //     }
 
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        {
-            check_file_not_empty(path + "count.txt");
+    //     checksums.checkSizes(path);
+    // }
+    // else
+    // {
+    //     auto check_file_not_empty = [&path](const String & file_path)
+    //     {
+    //         Poco::File file(file_path);
+    //         if (!file.exists() || file.getSize() == 0)
+    //             throw Exception("Part " + path + " is broken: " + file_path + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+    //         return file.getSize();
+    //     };
 
-            if (storage.partition_key_expr)
-                check_file_not_empty(path + "partition.dat");
+    //     /// Check that the primary key index is not empty.
+    //     if (!storage.primary_key_columns.empty())
+    //         check_file_not_empty(path + "primary.idx");
 
-            for (const String & col_name : storage.minmax_idx_columns)
-                check_file_not_empty(path + "minmax_" + escapeForFileName(col_name) + ".idx");
-        }
+    //     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    //     {
+    //         check_file_not_empty(path + "count.txt");
 
-        /// Check that all marks are nonempty and have the same size.
+    //         if (storage.partition_key_expr)
+    //             check_file_not_empty(path + "partition.dat");
 
-        std::optional<UInt64> marks_size;
-        for (const NameAndTypePair & name_type : columns)
-        {
-            name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-            {
-                Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + index_granularity_info.marks_file_extension);
+    //         for (const String & col_name : storage.minmax_idx_columns)
+    //             check_file_not_empty(path + "minmax_" + escapeForFileName(col_name) + ".idx");
+    //     }
 
-                /// Missing file is Ok for case when new column was added.
-                if (file.exists())
-                {
-                    UInt64 file_size = file.getSize();
+    //     /// Check that all marks are nonempty and have the same size.
 
-                    if (!file_size)
-                        throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+    //     std::optional<UInt64> marks_size;
+    //     for (const NameAndTypePair & name_type : columns)
+    //     {
+    //         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    //         {
+    //             Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + index_granularity_info.marks_file_extension);
 
-                    if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
-                        throw Exception("Part " + path + " is broken: marks have different sizes.",
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-                }
-            });
-        }
-    }
+    //             /// Missing file is Ok for case when new column was added.
+    //             if (file.exists())
+    //             {
+    //                 UInt64 file_size = file.getSize();
+
+    //                 if (!file_size)
+    //                     throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
+    //                         ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+    //                 if (!marks_size)
+    //                     marks_size = file_size;
+    //                 else if (file_size != *marks_size)
+    //                     throw Exception("Part " + path + " is broken: marks have different sizes.",
+    //                         ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+    //             }
+    //         });
+    //     }
+    // }
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Interpreters/AggregationCommon.h>
@@ -205,8 +204,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto reservation = data.reserveSpace(expected_size);
 
 
-    MergeTreeData::MutableDataPartPtr new_data_part =
-        createPart(data, reservation->getDisk(), part_name, new_part_info, TMP_PREFIX + part_name);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
+        part_name, new_part_info, 
+        reservation->getDisk(), block.getNamesAndTypesList(),
+        expected_size, block.rows(),
+        TMP_PREFIX + part_name);
 
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);

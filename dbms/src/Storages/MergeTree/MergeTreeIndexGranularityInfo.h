@@ -2,54 +2,83 @@
 
 #include <optional>
 #include <Core/Types.h>
-// #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart_fwd.h>
 
 namespace DB
 {
 
 class MergeTreeData;
-class IMergeTreeDataPart;
 
 /// Meta information about index granularity
 struct MergeTreeIndexGranularityInfo
 {
 public:
-    using MergeTreeDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
-
     /// Marks file extension '.mrk' or '.mrk2'
     String marks_file_extension;
 
     /// Size of one mark in file two or three size_t numbers
-    UInt8 mark_size_in_bytes;
+    UInt16 mark_size_in_bytes = 0;
 
     /// Is stride in rows between marks non fixed?
-    bool is_adaptive;
+    bool is_adaptive = false;
 
     /// Fixed size in rows of one granule if index_granularity_bytes is zero
-    size_t fixed_index_granularity;
+    size_t fixed_index_granularity = 0;
 
     /// Approximate bytes size of one granule
-    size_t index_granularity_bytes;
+    size_t index_granularity_bytes = 0;
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage,
-    const String & mark_file_extension_, UInt8 mark_size_in_bytes_);
+    bool initialized = false;
 
-    void changeGranularityIfRequired(const String & path);
+    MergeTreeIndexGranularityInfo() {}
+
+    MergeTreeIndexGranularityInfo(
+        const MergeTreeData & storage, MergeTreeDataPartType part_type, size_t columns_num);
+
+    void initialize(const MergeTreeData & storage, MergeTreeDataPartType part_type, size_t columns_num);
+
+    void changeGranularityIfRequired(const std::string & path_to_part);
 
     String getMarksFilePath(const String & path_prefix) const
     {
         return path_prefix + marks_file_extension;
     }
-private:
 
-    void setAdaptive(size_t index_granularity_bytes_);
+    static std::optional<std::string> getMrkExtensionFromFS(const std::string & path_to_table);
+
+private:
+    void setAdaptive(size_t index_granularity_bytes_, MergeTreeDataPartType part_type, size_t columns_num);
     void setNonAdaptive();
-    std::optional<std::string> getMrkExtensionFromFS(const std::string & path_to_table) const;
+    void setCompactAdaptive(size_t index_granularity_bytes_, size_t columns_num);
 };
 
 constexpr inline auto getNonAdaptiveMrkExtension() { return ".mrk"; }
-constexpr inline auto getAdaptiveMrkExtension() { return ".mrk2"; }
 constexpr inline auto getNonAdaptiveMrkSize() { return sizeof(UInt64) * 2; }
-constexpr inline auto getAdaptiveMrkSize() { return sizeof(UInt64) * 3; }
+
+inline std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
+{
+    switch(part_type)
+    {
+        case MergeTreeDataPartType::WIDE:
+            return ".mrk2";
+        case MergeTreeDataPartType::COMPACT:
+            return ".mrk3";
+        default:
+            throw "unknown part type"; /// FIXME normal exception
+    }
+}
+
+inline size_t getAdaptiveMrkSize(MergeTreeDataPartType part_type, size_t columns_num)
+{
+    switch(part_type)
+    {
+        case MergeTreeDataPartType::WIDE:
+            return sizeof(UInt64) * 3;
+        case MergeTreeDataPartType::COMPACT:
+            return sizeof(UInt64) * (columns_num * 2 + 1);
+        default:
+            throw "unknown part type"; /// FIXME normal exception
+    }
+}
 
 }

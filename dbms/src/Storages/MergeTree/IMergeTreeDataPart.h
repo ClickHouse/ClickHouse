@@ -85,7 +85,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    virtual String getColumnNameWithMinumumCompressedSize() const = 0;
+    virtual String getColumnNameWithMinumumCompressedSize() const { return columns.front().name; }
 
     // virtual Checksums check(
     //     bool require_checksums,
@@ -100,12 +100,7 @@ public:
 
     virtual void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
-    enum class Type
-    {
-        WIDE,
-        COMPACT,
-        IN_MEMORY,
-    };
+    using Type = MergeTreeDataPartType;
 
     virtual Type getType() const = 0;
 
@@ -121,14 +116,12 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 

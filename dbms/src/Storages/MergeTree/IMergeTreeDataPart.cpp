@@ -138,13 +138,11 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 IMergeTreeDataPart::IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
-    , index_granularity_info(index_granularity_info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
 {
@@ -154,13 +152,11 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
     , info(info_)
-    , index_granularity_info(index_granularity_info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
 {
@@ -246,6 +242,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & columns_)
     columns = columns_;
     for (const auto & column : columns)
         sample_block.insert({column.type, column.name});
+    index_granularity_info.initialize(storage, getType(), columns.size());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart() = default;
@@ -776,6 +773,8 @@ String IMergeTreeDataPart::typeToString(Type type)
             return "Striped";
         case Type::IN_MEMORY:
             return "InMemory";
+        case Type::UNKNOWN:
+            return "Unknown";
     }
 
     __builtin_unreachable();

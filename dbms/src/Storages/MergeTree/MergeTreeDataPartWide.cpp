@@ -56,10 +56,9 @@ namespace ErrorCodes
 MergeTreeDataPartWide::MergeTreeDataPartWide( 
        MergeTreeData & storage_,
         const String & name_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, index_granularity_info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
 {
 }
 
@@ -67,10 +66,9 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, index_granularity_info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
 {
 }
 
@@ -162,6 +160,7 @@ String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
+    index_granularity_info.initialize(storage, getType(), columns.size());
     String full_path = getFullPath();
     index_granularity_info.changeGranularityIfRequired(full_path);
 

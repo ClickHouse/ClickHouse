@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -564,9 +563,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     extractMergingAndGatheringColumns(
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    
+    size_t total_bytes = 0;
+    size_t total_rows = 0;
+    for (const auto & part : future_part.parts)
+    {
+        total_bytes += part->bytes_on_disk;
+        total_rows += part->rows_count;
+    }
 
-    MergeTreeData::MutableDataPartPtr new_data_part = createPart(
-            data, space_reservation->getDisk(), future_part.name, future_part.part_info, TMP_PREFIX + future_part.name);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
+        future_part.name, future_part.part_info,
+        space_reservation->getDisk(),
+        all_columns, total_bytes, total_rows,
+        TMP_PREFIX + future_part.name);
 
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
@@ -950,8 +960,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = createPart(
-        data, space_reservation->getDisk(), future_part.name, future_part.part_info, "tmp_mut_" + future_part.name);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
+        future_part.name, source_part->getType(),
+        future_part.part_info, space_reservation->getDisk(), 
+        "tmp_mut_" + future_part.name);
 
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -1060,7 +1072,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
         /// Don't change granularity type while mutating subset of columns
-        auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
+        auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType()) : getNonAdaptiveMrkExtension();
         for (const auto & entry : updated_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
