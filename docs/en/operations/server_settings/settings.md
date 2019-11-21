@@ -753,12 +753,12 @@ This section contains the following parameters:
 
     For example:
 
-    ```xml
+```xml
     <node index="1">
         <host>example_host</host>
         <port>2181</port>
     </node>
-    ```
+```
 
     The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
