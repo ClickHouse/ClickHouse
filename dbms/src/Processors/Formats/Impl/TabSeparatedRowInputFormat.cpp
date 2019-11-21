@@ -386,8 +386,8 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
 void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
 {
-    assert(ptr >= in.position());
-    assert(ptr <= in.buffer().end());
+    assert(current >= in.position());
+    assert(current <= in.buffer().end());
 
     const int old_bytes = memory.size();
     const int additional_bytes = current - in.position();
@@ -403,7 +403,7 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
 
 bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
 {
-    assert(ptr <= in.buffer().end());
+    assert(current <= in.buffer().end());
 
     if (current < in.buffer().end())
     {
