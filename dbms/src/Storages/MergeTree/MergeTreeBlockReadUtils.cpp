@@ -8,6 +8,8 @@
 namespace DB
 {
 
+
+/// FIXME: implement for compact parts
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};

@@ -4,8 +4,9 @@
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
@@ -817,8 +818,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
-
-            MutableDataPartPtr part = createPart(*this, part_disk_ptr, part_name, part_info, part_name);
+            
+            auto part = createPart(part_name, part_info, part_disk_ptr, part_name);
             bool broken = false;
 
             try
@@ -1411,6 +1412,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
             getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
+
+/// FIXME implement alter for compact parts
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
     const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
@@ -1423,7 +1426,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     if (part)
         part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
     else
-        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
+        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE); /// FIXME support compact parts
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1574,6 +1577,99 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         LOG_DEBUG(log, out.str());
     }
 }
+
+/// FIXME implement createPart without columns and with loadMetadata
+
+MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_on_disk, size_t rows_count) const
+{
+    const auto settings = getSettings();
+    if (bytes_on_disk < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
+        return MergeTreeDataPartType::COMPACT;
+    
+    return MergeTreeDataPartType::WIDE;
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, MergeTreeDataPartType type,
+    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+{
+    return createPart(name, type, MergeTreePartInfo::fromPartName(name, format_version), disk, relative_path);
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, MergeTreeDataPartType type,
+    const MergeTreePartInfo & part_info,
+    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+{
+    if (type == MergeTreeDataPartType::COMPACT)
+        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
+    else if (type == MergeTreeDataPartType::WIDE)
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);        
+    else
+        throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
+    const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
+    size_t bytes_on_disk, size_t rows_num, const String & relative_path) const
+{
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version),
+        disk, columns, bytes_on_disk, rows_num, relative_path);
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, const MergeTreePartInfo & part_info,
+    const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
+    size_t bytes_on_disk, size_t rows_count, const String & relative_path) const
+{
+    auto part = createPart(name, choosePartType(bytes_on_disk, rows_count), part_info, disk, relative_path);
+
+    part->setColumns(columns);
+    part->bytes_on_disk = bytes_on_disk;
+    part->rows_count = rows_count;
+
+    return part;
+}
+
+static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
+{
+    if (mrk_ext == getNonAdaptiveMrkExtension())
+        return MergeTreeDataPartType::WIDE;
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE))
+        return MergeTreeDataPartType::WIDE;
+    if (mrk_ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
+        return MergeTreeDataPartType::COMPACT;
+
+    return MergeTreeDataPartType::UNKNOWN;
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
+    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+{
+    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), disk, relative_path);
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, const MergeTreePartInfo & part_info,
+    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+{
+    auto type = MergeTreeDataPartType::UNKNOWN;
+    auto full_path = getFullPathOnDisk(disk) + relative_path + "/";
+    auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(full_path);
+    if (mrk_ext)
+        type = getPartTypeFromMarkExtension(*mrk_ext);
+    else
+        /// Didn't find any mark file, suppose that part is empty.
+        type = choosePartType(0, 0);
+
+    MutableDataPartPtr part;
+
+    /// FIXME do not pass emty granularity_info
+    if (type == MergeTreeDataPartType::COMPACT)
+        part = std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
+    else if (type == MergeTreeDataPartType::WIDE)
+        part = std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);        
+    else
+        throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
+
+    return part;
+}   
 
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
@@ -2589,7 +2685,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path)
 {
-    MutableDataPartPtr part = createPart(*this, disk, Poco::Path(relative_path).getFileName(), relative_path);
+    MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), disk, relative_path);
     loadPartAndFixMetadata(part);
     return part;
 }
@@ -3027,8 +3123,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part " << part_names.second);
-        MutableDataPartPtr part = createPart(
-            *this, name_to_disk[part_names.first], part_names.first, source_dir + part_names.second);
+        MutableDataPartPtr part = createPart(part_names.first, name_to_disk[part_names.first], source_dir + part_names.second);
         loadPartAndFixMetadata(part);
         loaded_parts.push_back(part);
     }
@@ -3240,8 +3335,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     LOG_DEBUG(log, "Cloning part " << src_part_absolute_path.toString() << " to " << dst_part_absolute_path.toString());
     localBackup(src_part_absolute_path, dst_part_absolute_path);
 
-    MergeTreeData::MutableDataPartPtr dst_data_part = createPart(
-        *this, reservation->getDisk(), dst_part_name, dst_part_info, tmp_dst_part_name);
+    auto dst_data_part = createPart(dst_part_name, dst_part_info, reservation->getDisk(), tmp_dst_part_name);
 
     dst_data_part->is_temp = true;
 

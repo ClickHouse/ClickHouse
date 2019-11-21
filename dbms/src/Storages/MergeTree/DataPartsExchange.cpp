@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
@@ -269,9 +268,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = createPart(data, reservation->getDisk(), part_name, relative_part_path);
+    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(part_name, reservation->getDisk(),relative_part_path);
     new_data_part->is_temp = true;
-
 
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)

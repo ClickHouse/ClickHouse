@@ -25,8 +25,13 @@ class ASTStorage;
 struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 {
 
+/// FIXME description for settings
 #define LIST_OF_MERGE_TREE_SETTINGS(M)                                 \
     M(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.") \
+    \
+    /** Data storing format settigns. */ \
+    M(SettingUInt64, min_bytes_for_wide_part, 0, "") \
+    M(SettingUInt64, min_rows_for_wide_part, 0, "") \
     \
     /** Merge settings. */ \
     M(SettingUInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, "Maximum in total size of parts to merge, when there are maximum free threads in background pool (or entries in replication queue).") \
