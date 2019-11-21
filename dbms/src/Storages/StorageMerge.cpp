@@ -25,6 +25,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
+#include <Core/SettingsCommon.h>
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/ASTFunction.h>

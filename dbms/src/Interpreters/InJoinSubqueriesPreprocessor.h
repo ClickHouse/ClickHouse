@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsCommon.h>
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>

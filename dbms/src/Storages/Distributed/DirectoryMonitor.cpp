@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
@@ -270,41 +269,17 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 void StorageDistributedDirectoryMonitor::readQueryAndSettings(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
-    UInt64 query_size;
-    readVarUInt(query_size, in);
+    UInt64 magic_number_or_query_size;
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
+    readVarUInt(magic_number_or_query_size, in);
+
+    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
     {
-        /// Read extra information.
-        String extra_info_as_string;
-        readStringBinary(extra_info_as_string, in);
-        readVarUInt(query_size, in);
-        ReadBufferFromString extra_info(extra_info_as_string);
-
-        UInt64 initiator_revision;
-        readVarUInt(initiator_revision, extra_info);
-        if (ClickHouseRevision::get() < initiator_revision)
-        {
-            LOG_WARNING(
-                log,
-                "ClickHouse shard version is older than ClickHouse initiator version. "
-                    << "It may lack support for new features.");
-        }
-
-        insert_settings.deserialize(extra_info);
-
-        /// Add handling new data here, for example:
-        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
-        ///    readVarUInt(my_new_data, extra_info);
+        insert_settings.deserialize(in);
+        readVarUInt(magic_number_or_query_size, in);
     }
-    else if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
-    {
-        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
-        readVarUInt(query_size, in);
-    }
-
-    insert_query.resize(query_size);
-    in.readStrict(insert_query.data(), query_size);
+    insert_query.resize(magic_number_or_query_size);
+    in.readStrict(insert_query.data(), magic_number_or_query_size);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader

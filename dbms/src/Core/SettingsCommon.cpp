@@ -1,17 +1,17 @@
-#include <Core/SettingsCollection.h>
-#include <Core/SettingsCollectionImpl.h>
+#include "SettingsCommon.h"
 
 #include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
-#include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
@@ -90,14 +90,8 @@ void SettingNumber<bool>::set(const String & x)
 }
 
 template <typename Type>
-void SettingNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-         writeStringBinary(toString(), buf);
-         return;
-    }
-
     if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
         writeVarUInt(static_cast<UInt64>(value), buf);
     else if constexpr (is_integral_v<Type> && is_signed_v<Type>)
@@ -105,21 +99,13 @@ void SettingNumber<Type>::serialize(WriteBuffer & buf, SettingsBinaryFormat form
     else
     {
         static_assert(std::is_floating_point_v<Type>);
-        writeStringBinary(toString(), buf);
+        writeBinary(toString(), buf);
     }
 }
 
 template <typename Type>
-void SettingNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+void SettingNumber<Type>::deserialize(ReadBuffer & buf)
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-        String x;
-        readStringBinary(x, buf);
-        set(x);
-        return;
-    }
-
     if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
     {
         UInt64 x;
@@ -136,7 +122,7 @@ void SettingNumber<Type>::deserialize(ReadBuffer & buf, SettingsBinaryFormat for
     {
         static_assert(std::is_floating_point_v<Type>);
         String x;
-        readStringBinary(x, buf);
+        readBinary(x, buf);
         set(x);
     }
 }
@@ -181,27 +167,13 @@ void SettingMaxThreads::set(const String & x)
         set(parse<UInt64>(x));
 }
 
-void SettingMaxThreads::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+void SettingMaxThreads::serialize(WriteBuffer & buf) const
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-        writeStringBinary(is_auto ? "auto" : DB::toString(value), buf);
-        return;
-    }
-
     writeVarUInt(is_auto ? 0 : value, buf);
 }
 
-void SettingMaxThreads::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+void SettingMaxThreads::deserialize(ReadBuffer & buf)
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-        String x;
-        readStringBinary(x, buf);
-        set(x);
-        return;
-    }
-
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
@@ -261,28 +233,14 @@ void SettingTimespan<io_unit>::set(const String & x)
 }
 
 template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::serialize(WriteBuffer & buf, SettingsBinaryFormat format) const
+void SettingTimespan<io_unit>::serialize(WriteBuffer & buf) const
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-        writeStringBinary(toString(), buf);
-        return;
-    }
-
     writeVarUInt(value.totalMicroseconds() / microseconds_per_io_unit, buf);
 }
 
 template <SettingTimespanIO io_unit>
-void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf, SettingsBinaryFormat format)
+void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf)
 {
-    if (format >= SettingsBinaryFormat::STRINGS)
-    {
-        String x;
-        readStringBinary(x, buf);
-        set(x);
-        return;
-    }
-
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
@@ -313,15 +271,15 @@ void SettingString::set(const Field & x)
     set(safeGet<const String &>(x));
 }
 
-void SettingString::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingString::serialize(WriteBuffer & buf) const
 {
-    writeStringBinary(value, buf);
+    writeBinary(value, buf);
 }
 
-void SettingString::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingString::deserialize(ReadBuffer & buf)
 {
     String s;
-    readStringBinary(s, buf);
+    readBinary(s, buf);
     set(s);
 }
 
@@ -356,30 +314,30 @@ void SettingChar::set(const Field & x)
     set(s);
 }
 
-void SettingChar::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingChar::serialize(WriteBuffer & buf) const
 {
-    writeStringBinary(toString(), buf);
+    writeBinary(toString(), buf);
 }
 
-void SettingChar::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingChar::deserialize(ReadBuffer & buf)
 {
     String s;
-    readStringBinary(s, buf);
+    readBinary(s, buf);
     set(s);
 }
 
 
 template <typename EnumType, typename Tag>
-void SettingEnum<EnumType, Tag>::serialize(WriteBuffer & buf, SettingsBinaryFormat) const
+void SettingEnum<EnumType, Tag>::serialize(WriteBuffer & buf) const
 {
-    writeStringBinary(toString(), buf);
+    writeBinary(toString(), buf);
 }
 
 template <typename EnumType, typename Tag>
-void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
+void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
 {
     String s;
-    readStringBinary(s, buf);
+    readBinary(s, buf);
     set(s);
 }
 
@@ -504,43 +462,14 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGU
 
 namespace details
 {
-    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf)
-    {
-        writeStringBinary(name, buf);
-    }
-
     String SettingsCollectionUtils::deserializeName(ReadBuffer & buf)
     {
         String name;
-        readStringBinary(name, buf);
+        readBinary(name, buf);
         return name;
     }
 
-    void SettingsCollectionUtils::serializeFlag(bool flag, WriteBuffer & buf)
-    {
-        buf.write(flag);
-    }
-
-    bool SettingsCollectionUtils::deserializeFlag(ReadBuffer & buf)
-    {
-        char c;
-        buf.readStrict(c);
-        return c;
-    }
-
-    void SettingsCollectionUtils::skipValue(ReadBuffer & buf)
-    {
-        /// Ignore a string written by the function writeStringBinary().
-        UInt64 size;
-        readVarUInt(size, buf);
-        buf.ignore(size);
-    }
-
-    void SettingsCollectionUtils::warningNameNotFound(const StringRef & name)
-    {
-        static auto * log = &Logger::get("Settings");
-        LOG_WARNING(log, "Unknown setting " << name << ", skipping");
-    }
+    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf) { writeBinary(name, buf); }
 
     void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)
     {
