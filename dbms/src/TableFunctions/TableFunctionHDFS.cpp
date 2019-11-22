@@ -9,7 +9,7 @@
 namespace DB
 {
 StoragePtr TableFunctionHDFS::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
+    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const
 {
     return StorageHDFS::create(source,
         getDatabaseName(),
@@ -17,7 +17,8 @@ StoragePtr TableFunctionHDFS::getStorage(
         format,
         columns,
         ConstraintsDescription{},
-        global_context);
+        global_context,
+        compression_method);
 }
 
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
