@@ -95,7 +95,7 @@ Provides possibility to stop background merges for tables in the MergeTree famil
 ```sql
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
-!!! note "Note":
+!!! note "Note"
     `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
 
 
