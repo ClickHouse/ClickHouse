@@ -183,13 +183,13 @@ public:
 
     /// FIXME remove version with columns.
 
-    MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
+    MutableDataPartPtr createPart(const String & name,
+        const MergeTreePartInfo & part_info,const DiskSpace::DiskPtr & disk,
         size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
     
     MutableDataPartPtr createPart(const String & name,
-        const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
-        size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
+        MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
+        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
 
     /// After this methods loadColumnsChecksumsIndexes must be called
     /// FIXME make this inside this function
@@ -197,13 +197,6 @@ public:
         const DiskSpace::DiskPtr & disk, const String & relative_path) const;
     
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
-
-    MutableDataPartPtr createPart(const String & name, MergeTreeDataPartType type,
-        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
-    
-    MutableDataPartPtr createPart(const String & name, MergeTreeDataPartType type,
-        const MergeTreePartInfo & part_info,
         const DiskSpace::DiskPtr & disk, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:

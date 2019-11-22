@@ -575,7 +575,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name, future_part.part_info,
         space_reservation->getDisk(),
-        all_columns, total_bytes, total_rows,
+        total_bytes, total_rows,
         TMP_PREFIX + future_part.name);
 
     new_data_part->partition.assign(future_part.getPartition());

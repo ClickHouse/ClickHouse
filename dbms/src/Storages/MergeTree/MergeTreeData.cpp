@@ -1578,7 +1578,6 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     }
 }
 
-/// FIXME implement createPart without columns and with loadMetadata
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_on_disk, size_t rows_count) const
 {
@@ -1589,14 +1588,9 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_on_disk, size_t
     return MergeTreeDataPartType::WIDE;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, MergeTreeDataPartType type,
-    const DiskSpace::DiskPtr & disk, const String & relative_path) const
-{
-    return createPart(name, type, MergeTreePartInfo::fromPartName(name, format_version), disk, relative_path);
-}
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, MergeTreeDataPartType type,
-    const MergeTreePartInfo & part_info,
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
+    MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
     const DiskSpace::DiskPtr & disk, const String & relative_path) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
@@ -1608,20 +1602,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
-    const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
-    size_t bytes_on_disk, size_t rows_num, const String & relative_path) const
-{
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version),
-        disk, columns, bytes_on_disk, rows_num, relative_path);
-}
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, const MergeTreePartInfo & part_info,
-    const DiskSpace::DiskPtr & disk, const NamesAndTypesList & columns,
+    const MergeTreePartInfo & part_info, const DiskSpace::DiskPtr & disk,
     size_t bytes_on_disk, size_t rows_count, const String & relative_path) const
 {
     auto part = createPart(name, choosePartType(bytes_on_disk, rows_count), part_info, disk, relative_path);
 
-    part->setColumns(columns);
     part->bytes_on_disk = bytes_on_disk;
     part->rows_count = rows_count;
 
@@ -1640,35 +1625,29 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
     return MergeTreeDataPartType::UNKNOWN;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
-    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
+    const String & name, const DiskSpace::DiskPtr & disk, const String & relative_path) const
 {
     return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), disk, relative_path);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name, const MergeTreePartInfo & part_info,
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
+    const String & name, const MergeTreePartInfo & part_info,
     const DiskSpace::DiskPtr & disk, const String & relative_path) const
 {
     auto type = MergeTreeDataPartType::UNKNOWN;
     auto full_path = getFullPathOnDisk(disk) + relative_path + "/";
     auto mrk_ext = MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(full_path);
+
     if (mrk_ext)
         type = getPartTypeFromMarkExtension(*mrk_ext);
     else
+    {
         /// Didn't find any mark file, suppose that part is empty.
         type = choosePartType(0, 0);
+    }
 
-    MutableDataPartPtr part;
-
-    /// FIXME do not pass emty granularity_info
-    if (type == MergeTreeDataPartType::COMPACT)
-        part = std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
-    else if (type == MergeTreeDataPartType::WIDE)
-        part = std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);        
-    else
-        throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
-
-    return part;
+    return createPart(name, type, part_info, disk, relative_path);
 }   
 
 void MergeTreeData::alterDataPart(

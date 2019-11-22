@@ -206,7 +206,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         part_name, new_part_info, 
-        reservation->getDisk(), block.getNamesAndTypesList(),
+        reservation->getDisk(),
         expected_size, block.rows(),
         TMP_PREFIX + part_name);
 
