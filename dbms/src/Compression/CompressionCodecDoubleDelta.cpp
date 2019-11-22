@@ -26,7 +26,7 @@ extern const int CANNOT_DECOMPRESS;
 namespace
 {
 
-Int64 getMaxValueForByteSize(UInt8 byte_size)
+inline Int64 getMaxValueForByteSize(Int8 byte_size)
 {
     switch (byte_size)
     {
@@ -56,6 +56,7 @@ const std::array<UInt8, 5> DELTA_SIZES{7, 9, 12, 32, 64};
 template <typename T>
 WriteSpec getDeltaWriteSpec(const T & value)
 {
+    // TODO: to speed up things a bit by counting number of leading zeroes instead of doing lost of comparisons
     if (value > -63 && value < 64)
     {
         return WriteSpec{2, 0b10, 7};
@@ -107,14 +108,15 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsinged int has granted 2-compliment overflow handling, we are doing math here on unsigned types.
-    // To simplify and booletproof code, we operate enforce ValueType to be unsigned too.
+    // Since only unsinged int has granted 2-compliment overflow handling,
+    // we are doing math here only on unsigned types.
+    // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     // We use signed delta type to turn huge unsigned values into smaller signed:
     // ffffffff => -1
-    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
+    using SignedDeltaType = typename std::make_signed_t<UnsignedDeltaType>;
 
     if (source_size % sizeof(ValueType) != 0)
         throw Exception("Cannot compress, data size " + toString(source_size)
@@ -170,7 +172,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         else
         {
             const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
-            const auto sign = std::signbit(signed_dd);
+            const auto sign = signed_dd < 0;
+
             // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
             const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
