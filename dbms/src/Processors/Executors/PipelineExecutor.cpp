@@ -10,6 +10,7 @@
 #include <boost/lockfree/queue.hpp>
 #include <Common/Stopwatch.h>
 #include <Processors/ISource.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -749,6 +750,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         threads.emplace_back([this, thread_group, thread_num = i, num_threads]
         {
             /// ThreadStatus thread_status;
+
+            setThreadName("QueryPipelineEx");
 
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
