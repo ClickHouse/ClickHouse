@@ -1,4 +1,6 @@
 #-*- coding: utf-8 -*-
+import StringIO
+import gzip
 import requests
 import subprocess
 from tempfile import NamedTemporaryFile
@@ -19,7 +21,7 @@ class HDFSApi(object):
         if response_data.status_code != 200:
             response_data.raise_for_status()
 
-        return response_data.text
+        return response_data.content
 
     # Requests can't put file
     def _curl_to_put(self, filename, path, params):
@@ -44,3 +46,12 @@ class HDFSApi(object):
         output = self._curl_to_put(fpath, path, additional_params)
         if "201 Created" not in output:
             raise Exception("Can't create file on hdfs:\n {}".format(output))
+
+    def write_gzip_data(self, path, content):
+        out = StringIO.StringIO()
+        with gzip.GzipFile(fileobj=out, mode="w") as f:
+            f.write(content)
+        self.write_data(path, out.getvalue())
+
+    def read_gzip_data(self, path):
+        return gzip.GzipFile(fileobj=StringIO.StringIO(self.read_data(path))).read()

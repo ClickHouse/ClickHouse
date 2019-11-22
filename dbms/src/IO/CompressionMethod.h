@@ -12,6 +12,7 @@ enum class CompressionMethod
     /// This option corresponds to HTTP Content-Encoding: deflate.
     Zlib,
     Brotli,
+    None
 };
 
 }
