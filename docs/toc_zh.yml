@@ -212,10 +212,10 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
-  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross.md'
+  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
-  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
+  - '开发者指南': 'development/developer_instruction.md'
   - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':
