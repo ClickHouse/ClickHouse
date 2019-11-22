@@ -388,9 +388,11 @@ bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memo
 {
     bool need_more_data = true;
     char * pos = in.position();
+
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
         pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
+
         if (pos == in.buffer().end())
             continue;
 
@@ -404,10 +406,10 @@ bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memo
         {
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
                 need_more_data = false;
-
             ++pos;
         }
     }
+
     saveUpToPosition(in, memory, pos);
 
     return loadAtPosition(in, memory, pos);
