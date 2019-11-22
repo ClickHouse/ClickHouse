@@ -265,6 +265,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+    new_data_part->setColumns(columns);
 
     MergedBlockOutputStream out(new_data_part, columns, compression_codec);
 

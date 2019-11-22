@@ -564,20 +564,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
     
-    size_t total_bytes = 0;
-    size_t total_rows = 0;
-    for (const auto & part : future_part.parts)
-    {
-        total_bytes += part->bytes_on_disk;
-        total_rows += part->rows_count;
-    }
-
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
-        future_part.name, future_part.part_info,
+        future_part.name,
+        future_part.part_info,
         space_reservation->getDisk(),
-        total_bytes, total_rows,
+        merge_entry->total_size_bytes_compressed,
+        merge_entry->total_rows_count,
         TMP_PREFIX + future_part.name);
 
+    new_data_part->setColumns(all_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
@@ -964,7 +959,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         future_part.name, source_part->getType(),
         future_part.part_info, space_reservation->getDisk(), 
         "tmp_mut_" + future_part.name);
-
+    
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
     new_data_part->index_granularity_info = source_part->index_granularity_info;
