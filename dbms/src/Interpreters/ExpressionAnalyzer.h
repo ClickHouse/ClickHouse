@@ -222,8 +222,9 @@ private:
     /**
     * Checks if subquery is not a plain StorageSet.
     * Because while making set we will read data from StorageSet which is not allowed.
+    * Returns valid SetPtr from StorageSet if last is used after IN or nullptr otherwise.
     */
-    bool allowSetForIndexFromSubquery(const ASTPtr & subquery_of_table_name);
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
