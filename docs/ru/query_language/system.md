@@ -91,7 +91,7 @@ SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```sql
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
-!!! note "Note":
+!!! note "Note"
     `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
 
 
