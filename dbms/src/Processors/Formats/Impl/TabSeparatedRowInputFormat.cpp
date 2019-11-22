@@ -384,39 +384,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
-{
-    assert(current >= in.position());
-    assert(current <= in.buffer().end());
-
-    const int old_bytes = memory.size();
-    const int additional_bytes = current - in.position();
-    const int new_bytes = old_bytes + additional_bytes;
-    /// There are no new bytes to add to memory.
-    /// No need to do extra stuff.
-    if (new_bytes == 0)
-        return;
-    memory.resize(new_bytes);
-    memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
-    in.position() = current;
-}
-
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
-{
-    assert(current <= in.buffer().end());
-
-    if (current < in.buffer().end())
-    {
-        return true;
-    }
-
-    saveUpToPosition(in, memory, current);
-    bool loaded_more = !in.eof();
-    assert(in.position() == in.buffer().begin());
-    current = in.position();
-    return loaded_more;
-}
-
 bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
@@ -425,24 +392,18 @@ bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memo
     {
         pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
         if (pos == in.buffer().end())
-        {
             continue;
-        }
 
         if (*pos == '\\')
         {
             ++pos;
             if (loadAtPosition(in, memory, pos))
-            {
                 ++pos;
-            }
         }
         else if (*pos == '\n' || *pos == '\r')
         {
             if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
-            {
                 need_more_data = false;
-            }
 
             ++pos;
         }
