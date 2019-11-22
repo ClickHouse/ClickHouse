@@ -33,7 +33,7 @@ SELECT bitTest(number, index)
 
 **Возвращаемое значение**
 
-Returns a value of bit at specified position.
+Возвращает значение бита в указанной позиции.
 
 Тип: `UInt8`.
 
