@@ -92,8 +92,8 @@ def build_for_lang(lang, args):
             theme=theme_cfg,
             copyright='©2016–2019 Yandex LLC',
             use_directory_urls=True,
-            repo_name='ClickHouse/ClickHouse',
-            repo_url='https://github.com/ClickHouse/ClickHouse/',
+            repo_name='yandex/ClickHouse',
+            repo_url='https://github.com/yandex/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[

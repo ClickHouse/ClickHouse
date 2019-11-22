@@ -8,11 +8,15 @@ class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMap
 {
 public:
     using Key = StringRef;
+    using key_type = Key;
     using Self = TwoLevelStringHashMap;
     using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, StringHashMap<TMapped, Allocator>>;
-    using LookupResult = typename Base::LookupResult;
-
     using Base::Base;
+    using typename Base::Impl;
+    using mapped_type = TMapped;
+    using value_type = typename Base::value_type;
+
+    using LookupResult = typename Base::LookupResult;
 
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
@@ -21,13 +25,13 @@ public:
             return this->impls[i].forEachMapped(func);
     }
 
-    TMapped & ALWAYS_INLINE operator[](const Key & x)
+    mapped_type & ALWAYS_INLINE operator[](Key x)
     {
         bool inserted;
         LookupResult it;
-        this->emplace(x, it, inserted);
+        emplace(x, it, inserted);
         if (inserted)
-            new (&it->getMapped()) TMapped();
-        return it->getMapped();
+            new (lookupResultGetMapped(it)) mapped_type();
+        return *lookupResultGetMapped(it);
     }
 };

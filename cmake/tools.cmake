@@ -1,6 +1,6 @@
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (COMPILER_GCC 1)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (COMPILER_CLANG 1)
 endif ()
 

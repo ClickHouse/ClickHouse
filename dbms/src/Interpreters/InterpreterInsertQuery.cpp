@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
-    extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -85,8 +84,6 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
-        if (res.has(current_name))
-            throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
         res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
     }
@@ -98,10 +95,7 @@ BlockIO InterpreterInsertQuery::execute()
 {
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
-
-    BlockIO res;
     StoragePtr table = getTable(query);
-    res.pipeline.addStorageHolder(table);
 
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
@@ -137,6 +131,7 @@ BlockIO InterpreterInsertQuery::execute()
     out_wrapper->setProcessListElement(context.getProcessListElement());
     out = std::move(out_wrapper);
 
+    BlockIO res;
     res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?

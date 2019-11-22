@@ -52,13 +52,12 @@ struct HashMapCell
     HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
-    /// Get the key (externally).
-    const Key & getKey() const { return value.first; }
-    Mapped & getMapped() { return value.second; }
-    const Mapped & getMapped() const { return value.second; }
+    const Key & getFirst() const { return value.first; }
+    Mapped & getSecond() { return value.second; }
+    const Mapped & getSecond() const { return value.second; }
+
     const value_type & getValue() const { return value; }
 
-    /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
     bool keyEquals(const Key & key_) const { return value.first == key_; }
@@ -111,6 +110,15 @@ struct HashMapCell
     }
 };
 
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
+
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
+
+
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 {
@@ -128,6 +136,15 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
+
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
+
+
 template <
     typename Key,
     typename Cell,
@@ -139,9 +156,14 @@ class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 public:
     using Self = HashMapTable;
     using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
+
+    using key_type = Key;
+    using value_type = typename Cell::value_type;
+    using mapped_type = typename Cell::Mapped;
+
     using LookupResult = typename Base::LookupResult;
 
-    using Base::Base;
+    using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
 
     /// Merge every cell's value of current map into the destination map via emplace.
     ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
@@ -156,8 +178,8 @@ public:
         {
             typename Self::LookupResult res_it;
             bool inserted;
-            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
-            func(res_it->getMapped(), it->getMapped(), inserted);
+            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
+            func(*lookupResultGetMapped(res_it), it->getSecond(), inserted);
         }
     }
 
@@ -171,11 +193,11 @@ public:
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            auto res_it = that.find(Cell::getKey(it->getValue()), it.getHash());
+            auto res_it = that.find(it->getFirst(), it.getHash());
             if (!res_it)
-                func(it->getMapped(), it->getMapped(), false);
+                func(it->getSecond(), it->getSecond(), false);
             else
-                func(res_it->getMapped(), it->getMapped(), true);
+                func(*lookupResultGetMapped(res_it), it->getSecond(), true);
         }
     }
 
@@ -184,7 +206,7 @@ public:
     void forEachValue(Func && func)
     {
         for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
+            func(v.getFirst(), v.getSecond());
     }
 
     /// Call func(Mapped &) for each hash map element.
@@ -192,12 +214,12 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getMapped());
+            func(v.getSecond());
     }
 
-    typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
+    mapped_type & ALWAYS_INLINE operator[](Key x)
     {
-        LookupResult it;
+        typename HashMapTable::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
@@ -216,9 +238,9 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new(lookupResultGetMapped(it)) mapped_type();
 
-        return it->getMapped();
+        return *lookupResultGetMapped(it);
     }
 };
 

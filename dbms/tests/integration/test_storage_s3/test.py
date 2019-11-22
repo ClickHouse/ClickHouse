@@ -38,7 +38,7 @@ def started_cluster():
         cluster.start()
 
         cluster.communication_port = 10000
-        instance.copy_file_to_container(os.path.join(os.path.dirname(__file__), "server.py"), "test_server.py")
+        instance.copy_file_to_container(os.path.join(os.path.dirname(__file__), "test_server.py"), "test_server.py")
         cluster.bucket = "abc"
         instance.exec_in_container(["python", "test_server.py", str(cluster.communication_port), cluster.bucket], detach=True)
         cluster.mock_host = instance.ip_address

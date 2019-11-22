@@ -75,15 +75,14 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_sub_elem = config_elem + ".allow_databases";
     if (config.has(config_sub_elem))
     {
-        databases = DatabaseSet();
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_sub_elem, config_keys);
 
-        databases->reserve(config_keys.size());
+        databases.reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
             const auto database_name = config.getString(config_sub_elem + "." + key);
-            databases->insert(database_name);
+            databases.insert(database_name);
         }
     }
 
@@ -91,15 +90,14 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_dictionary_sub_elem = config_elem + ".allow_dictionaries";
     if (config.has(config_dictionary_sub_elem))
     {
-        dictionaries = DictionarySet();
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_dictionary_sub_elem, config_keys);
 
-        dictionaries->reserve(config_keys.size());
+        dictionaries.reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
             const auto dictionary_name = config.getString(config_dictionary_sub_elem + "." + key);
-            dictionaries->insert(dictionary_name);
+            dictionaries.insert(dictionary_name);
         }
     }
 

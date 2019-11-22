@@ -25,8 +25,7 @@ private:
         const String & format,
         const ColumnsDescription & columns,
         Context & global_context,
-        const std::string & table_name,
-        const String & compression_method) const override;
+        const std::string & table_name) const override;
 };
 
 }

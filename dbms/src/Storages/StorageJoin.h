@@ -55,7 +55,6 @@ private:
     HashJoinPtr join;
 
     void insertBlock(const Block & block) override;
-    void finishInsert() override {}
     size_t getSize() const override;
 
 protected:

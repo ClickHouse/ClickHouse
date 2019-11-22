@@ -2,12 +2,9 @@
 
 #include <vector>
 #include <Core/Types.h>
-#include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/Allocator.h>
-#include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -50,16 +47,10 @@ private:
     size_t seed;
     size_t words;
     Container filter;
-
-public:
-    static ColumnPtr getPrimitiveColumn(const ColumnPtr & column);
-    static DataTypePtr getPrimitiveType(const DataTypePtr & data_type);
 };
 
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
-
-
 
 }

@@ -155,10 +155,10 @@ int main(int argc, char ** argv)
             map.emplace(rand(), it, inserted);
             if (inserted)
             {
-                new (&it->getMapped()) Arr(n);
+                new(lookupResultGetMapped(it)) Arr(n);
 
                 for (size_t j = 0; j < n; ++j)
-                    (it->getMapped())[j] = field;
+                    (*lookupResultGetMapped(it))[j] = field;
             }
         }
 

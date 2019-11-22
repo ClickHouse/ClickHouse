@@ -2,7 +2,6 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
-#include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -174,30 +173,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
         ColumnPtr column;
 
         if (elem.column && isColumnConst(*elem.column))
-        {
-            /// We expect constant column in block.
-            /// If block is not empty, then get value for constant from it,
-            /// because it may be different for remote server for functions like version(), uptime(), ...
-            if (block.rows() > 0 && block.has(elem.name))
-            {
-                /// Const column is passed as materialized. Get first value from it.
-                ///
-                /// TODO: check that column contains the same value.
-                /// TODO: serialize const columns.
-                auto col = block.getByName(elem.name);
-                col.column = block.getByName(elem.name).column->cut(0, 1);
-
-                column = castColumn(col, elem.type, context);
-
-                if (!isColumnConst(*column))
-                    column = ColumnConst::create(column, block.rows());
-                else
-                    /// It is not possible now. Just in case we support const columns serialization.
-                    column = column->cloneResized(block.rows());
-            }
-            else
-                column = elem.column->cloneResized(block.rows());
-        }
+            /// TODO: check that column from block contains the same value.
+            /// TODO: serialize const columns.
+            column = elem.column->cloneResized(block.rows());
         else
             column = castColumn(block.getByName(elem.name), elem.type, context);
 
@@ -222,7 +200,7 @@ Block RemoteBlockInputStream::readImpl()
         if (isCancelledOrThrowIfKilled())
             return Block();
 
-        Packet packet = multiplexed_connections->receivePacket();
+        Connection::Packet packet = multiplexed_connections->receivePacket();
 
         switch (packet.type)
         {
@@ -301,7 +279,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     tryCancel("Cancelling query because enough data has been read");
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    Packet packet = multiplexed_connections->drain();
+    Connection::Packet packet = multiplexed_connections->drain();
     switch (packet.type)
     {
         case Protocol::Server::EndOfStream:

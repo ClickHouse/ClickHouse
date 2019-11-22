@@ -1,6 +1,7 @@
 #include <Processors/ISimpleTransform.h>
 
 #include <Common/Arena.h>
+#include <Core/SettingsCommon.h>
 
 namespace DB
 {
@@ -10,8 +11,6 @@ using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.

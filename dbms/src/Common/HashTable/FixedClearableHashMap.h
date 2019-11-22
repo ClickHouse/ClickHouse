@@ -11,8 +11,6 @@ struct FixedClearableHashMapCell
     using State = ClearableHashSetState;
 
     using value_type = PairNoInit<Key, Mapped>;
-    using mapped_type = Mapped;
-
     UInt32 version;
     Mapped mapped;
 
@@ -20,12 +18,11 @@ struct FixedClearableHashMapCell
     FixedClearableHashMapCell(const Key &, const State & state) : version(state.version) {}
     FixedClearableHashMapCell(const value_type & value_, const State & state) : version(state.version), mapped(value_.second) {}
 
-    const VoidKey getKey() const { return {}; }
-    Mapped & getMapped() { return mapped; }
-    const Mapped & getMapped() const { return mapped; }
-
+    Mapped & getSecond() { return mapped; }
+    const Mapped & getSecond() const { return mapped; }
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
+    static constexpr bool need_zero_value_storage = false;
 
     struct CellExt
     {
@@ -38,33 +35,32 @@ struct FixedClearableHashMapCell
         }
         Key key;
         FixedClearableHashMapCell * ptr;
-        const Key & getKey() const { return key; }
-        Mapped & getMapped() { return ptr->mapped; }
-        const Mapped & getMapped() const { return *ptr->mapped; }
+        const Key & getFirst() const { return key; }
+        Mapped & getSecond() { return ptr->mapped; }
+        const Mapped & getSecond() const { return *ptr->mapped; }
         const value_type getValue() const { return {key, *ptr->mapped}; }
     };
 };
 
 
 template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
-class FixedClearableHashMap : public FixedHashMap<Key, Mapped, FixedClearableHashMapCell<Key, Mapped>, Allocator>
+class FixedClearableHashMap : public FixedHashMap<Key, FixedClearableHashMapCell<Key, Mapped>, Allocator>
 {
 public:
-    using Base = FixedHashMap<Key, Mapped, FixedClearableHashMapCell<Key, Mapped>, Allocator>;
-    using Self = FixedClearableHashMap;
-    using LookupResult = typename Base::LookupResult;
+    using key_type = Key;
+    using mapped_type = Mapped;
+    using value_type = typename FixedClearableHashMap::cell_type::value_type;
 
-    using Base::Base;
-
-    Mapped & operator[](const Key & x)
+    mapped_type & operator[](Key x)
     {
-        LookupResult it;
+        typename FixedClearableHashMap::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        if (inserted)
-            new (&it->getMapped()) Mapped();
 
-        return it->getMapped();
+        if (inserted)
+            new (&it->second) mapped_type();
+
+        return it->second;
     }
 
     void clear()

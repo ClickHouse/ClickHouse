@@ -146,9 +146,6 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         }
     }
 
-    if (subquery.set)
-        subquery.set->finishInsert();
-
     if (table_out)
         table_out->writeSuffix();
 

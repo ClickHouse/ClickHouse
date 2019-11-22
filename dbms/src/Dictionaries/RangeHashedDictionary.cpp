@@ -127,7 +127,7 @@ void RangeHashedDictionary::getString(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = it->getMapped();
+            const auto & ranges_and_values = *lookupResultGetMapped(it);
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<StringRef> & v)
                   {
@@ -398,7 +398,7 @@ void RangeHashedDictionary::getItemsImpl(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = it->getMapped();
+            const auto & ranges_and_values = *lookupResultGetMapped(it);
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<AttributeType> & v)
                   {
@@ -425,7 +425,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
 
     if (it)
     {
-        auto & values = it->getMapped();
+        auto & values = *lookupResultGetMapped(it);
 
         const auto insert_it
             = std::lower_bound(std::begin(values), std::end(values), range, [](const Value<T> & lhs, const Range & rhs_range)
@@ -498,7 +498,7 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
 
             if (it)
             {
-                auto & values = it->getMapped();
+                auto & values = *lookupResultGetMapped(it);
 
                 const auto insert_it = std::lower_bound(
                     std::begin(values), std::end(values), range, [](const Value<StringRef> & lhs, const Range & rhs_range)
@@ -610,9 +610,9 @@ void RangeHashedDictionary::getIdsAndDates(
 
     for (const auto & key : attr)
     {
-        for (const auto & value : key.getMapped())
+        for (const auto & value : key.getSecond())
         {
-            ids.push_back(key.getKey());
+            ids.push_back(key.getFirst());
             start_dates.push_back(value.range.left);
             end_dates.push_back(value.range.right);
 

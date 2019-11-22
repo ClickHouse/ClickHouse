@@ -20,7 +20,7 @@ class ZlibDeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     ZlibDeflatingWriteBuffer(
-            std::unique_ptr<WriteBuffer> out_,
+            WriteBuffer & out_,
             CompressionMethod compression_method,
             int compression_level,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
@@ -37,7 +37,7 @@ public:
 private:
     void nextImpl() override;
 
-    std::unique_ptr<WriteBuffer> out;
+    WriteBuffer & out;
     z_stream zstr;
     bool finished = false;
 };

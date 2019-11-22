@@ -77,7 +77,7 @@ struct Memory : boost::noncopyable, Allocator
             m_capacity = new_size;
             alloc();
         }
-        else if (new_size <= m_capacity - pad_right)
+        else if (new_size <= m_size)
         {
             m_size = new_size;
             return;

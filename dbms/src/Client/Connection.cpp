@@ -409,11 +409,7 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-    {
-        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                          : SettingsBinaryFormat::OLD;
-        settings->serialize(*out, settings_format);
-    }
+        settings->serialize(*out);
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
@@ -616,7 +612,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Connection::Packet Connection::receivePacket()
 {
     try
     {

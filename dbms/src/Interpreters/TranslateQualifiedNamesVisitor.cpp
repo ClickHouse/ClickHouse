@@ -29,26 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
-{
-    const auto & table = tables[table_pos].first;
-    auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
-    auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
-
-    String short_name = identifier.shortName();
-    const Names & column_names = tables[table_pos].second;
-    for (auto & known_name : column_names)
-    {
-        if (short_name == known_name)
-            return false;
-        if (nested1 && *nested1 == known_name)
-            return false;
-        if (nested2 && *nested2 == known_name)
-            return false;
-    }
-    return !column_names.empty();
-}
-
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Do not go to FROM, JOIN, subqueries.
@@ -86,13 +66,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
         bool allow_ambiguous = data.join_using_columns.count(short_name);
         if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
         {
-            if (data.unknownColumn(table_pos, identifier))
-            {
-                String table_name = data.tables[table_pos].first.getQualifiedNamePrefix(false);
-                throw Exception("There's no column '" + identifier.name + "' in table '" + table_name + "'",
-                                ErrorCodes::UNKNOWN_IDENTIFIER);
-            }
-
             IdentifierSemantic::setMembership(identifier, table_pos);
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.

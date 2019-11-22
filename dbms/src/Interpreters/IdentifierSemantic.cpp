@@ -132,15 +132,6 @@ std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTI
     return { "", identifier.name };
 }
 
-std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
-{
-    if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0])
-        return identifier.name_parts[1] + '.' + identifier.name_parts[2];
-    else if (identifier.name_parts.size() == 2)
-        return identifier.name_parts[0] + '.' + identifier.name_parts[1];
-    return {};
-}
-
 bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
     size_t num_components = identifier.name_parts.size();

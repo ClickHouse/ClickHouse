@@ -5,6 +5,7 @@
 import kafka  # … kafka-python
 
 import argparse
+from pprint import pprint
 
 
 def main():
@@ -45,7 +46,6 @@ def main():
         consumer.close()
 
     client.close()
-    return 0
 
 
 if __name__ == "__main__":

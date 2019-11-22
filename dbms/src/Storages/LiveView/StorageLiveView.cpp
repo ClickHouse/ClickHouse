@@ -88,6 +88,26 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
             DB::ErrorCodes::LOGICAL_ERROR);
 }
 
+static void checkAllowedQueries(const ASTSelectQuery & query)
+{
+    if (query.prewhere() || query.final() || query.sample_size())
+        throw Exception("LIVE VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+
+    ASTPtr subquery = extractTableExpression(query, 0);
+    if (!subquery)
+        return;
+
+    if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
+    {
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+
+        const auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        checkAllowedQueries(inner_query->as<ASTSelectQuery &>());
+    }
+}
+
 
 void StorageLiveView::writeIntoLiveView(
     StorageLiveView & live_view,

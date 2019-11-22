@@ -29,9 +29,6 @@ from .hdfs_api import HDFSApi
 HELPERS_DIR = p.dirname(__file__)
 DEFAULT_ENV_NAME = 'env_file'
 
-SANITIZER_SIGN = "=================="
-
-
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
     with open(full_path, 'w') as f:
@@ -84,7 +81,6 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
-        self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
@@ -399,15 +395,6 @@ class ClickHouseCluster:
 
 
     def shutdown(self, kill=True):
-        sanitizer_assert_instance = None
-        with open(self.docker_logs_path, "w+") as f:
-            subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
-            f.seek(0)
-            for line in f:
-                if SANITIZER_SIGN in line:
-                    sanitizer_assert_instance = line.split('|')[0].strip()
-                    break
-
         if kill:
             subprocess_check_call(self.base_cmd + ['kill'])
         subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
@@ -419,9 +406,6 @@ class ClickHouseCluster:
             instance.docker_client = None
             instance.ip_address = None
             instance.client = None
-
-        if sanitizer_assert_instance is not None:
-            raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
 
     def open_bash_shell(self, instance_name):

@@ -138,10 +138,10 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
-Packet MultiplexedConnections::receivePacket()
+Connection::Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Connection::Packet packet = receivePacketUnlocked();
     return packet;
 }
 
@@ -177,19 +177,19 @@ void MultiplexedConnections::sendCancel()
     cancelled = true;
 }
 
-Packet MultiplexedConnections::drain()
+Connection::Packet MultiplexedConnections::drain()
 {
     std::lock_guard lock(cancel_mutex);
 
     if (!cancelled)
         throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
-    Packet res;
+    Connection::Packet res;
     res.type = Protocol::Server::EndOfStream;
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Connection::Packet packet = receivePacketUnlocked();
 
         switch (packet.type)
         {
@@ -235,7 +235,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return os.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Connection::Packet MultiplexedConnections::receivePacketUnlocked()
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -247,7 +247,7 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket();
+    Connection::Packet packet = current_connection->receivePacket();
 
     switch (packet.type)
     {

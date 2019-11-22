@@ -65,9 +65,9 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
 
     if (prev_positions.size() > key_index
         && prev_positions[key_index]
-        && name == prev_positions[key_index]->getKey())
+        && name == *lookupResultGetKey(prev_positions[key_index]))
     {
-        return prev_positions[key_index]->getMapped();
+        return *lookupResultGetMapped(prev_positions[key_index]);
     }
     else
     {
@@ -78,7 +78,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->getMapped();
+            return *lookupResultGetMapped(it);
         }
         else
             return UNKNOWN_FIELD;

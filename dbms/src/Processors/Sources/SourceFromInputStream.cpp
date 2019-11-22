@@ -7,7 +7,7 @@ namespace DB
 {
 
 SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
-    : ISourceWithProgress(stream_->getHeader())
+    : ISource(stream_->getHeader())
     , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
@@ -115,11 +115,8 @@ Chunk SourceFromInputStream::generate()
 
         if (auto totals_block = stream->getTotals())
         {
-            if (totals_block.rows() == 1) /// Sometimes we can get empty totals. Skip it.
-            {
-                totals.setColumns(totals_block.getColumns(), 1);
-                has_totals = true;
-            }
+            totals.setColumns(totals_block.getColumns(), 1);
+            has_totals = true;
         }
 
         is_stream_finished = true;

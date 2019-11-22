@@ -8,10 +8,10 @@
 namespace DB
 {
 StoragePtr TableFunctionURL::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const
+    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
 {
     Poco::URI uri(source);
-    return StorageURL::create(uri, getDatabaseName(), table_name, format, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageURL::create(uri, getDatabaseName(), table_name, format, columns, ConstraintsDescription{}, global_context);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

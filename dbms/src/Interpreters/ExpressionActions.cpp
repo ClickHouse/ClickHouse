@@ -15,7 +15,6 @@
 #include <set>
 #include <optional>
 #include <Columns/ColumnSet.h>
-#include <Functions/FunctionHelpers.h>
 
 
 namespace ProfileEvents
@@ -1189,9 +1188,8 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     /// Check has column in (empty set).
     String set_to_check;
 
-    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
+    for (auto & action : actions)
     {
-        auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1200,7 +1198,6 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 && action.argument_names.size() > 1)
             {
                 set_to_check = action.argument_names[1];
-                break;
             }
         }
     }
@@ -1211,10 +1208,9 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
-                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
                 {
-                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
+                    if (column_set->getData()->getTotalRowCount() == 0)
                         return true;
                 }
             }

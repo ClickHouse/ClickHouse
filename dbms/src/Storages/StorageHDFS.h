@@ -39,8 +39,7 @@ protected:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_,
-        const String & compression_method_);
+        Context & context_);
 
 private:
     String uri;
@@ -48,7 +47,6 @@ private:
     String table_name;
     String database_name;
     Context & context;
-    String compression_method;
 
     Logger * log = &Logger::get("StorageHDFS");
 };

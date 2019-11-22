@@ -24,8 +24,7 @@ public:
         UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_,
-        const String & compression_method_);
+        Context & context_);
 
     String getName() const override
     {
@@ -62,7 +61,6 @@ private:
     String database_name;
     String table_name;
     UInt64 min_upload_part_size;
-    String compression_method;
 };
 
 }

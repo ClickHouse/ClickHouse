@@ -25,6 +25,3 @@ select arrayIntersect([], []) from array_intersect order by arr;
 
 drop table if exists array_intersect;
 
-select '-';
-select arrayIntersect([-100], [156]);
-select arrayIntersect([1], [257]);

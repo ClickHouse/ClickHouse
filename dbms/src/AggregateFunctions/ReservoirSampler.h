@@ -31,7 +31,7 @@ namespace ReservoirSamplerOnEmpty
     };
 }
 
-template <typename ResultType, bool is_float>
+template <typename ResultType, bool IsFloatingPoint>
 struct NanLikeValueConstructor
 {
     static ResultType getValue()

@@ -581,23 +581,6 @@ public:
         return max_val;
     }
 
-    /**
-     * Replace value
-     */
-    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
-    {
-        if (isSmall())
-            toLarge();
-        for (size_t i = 0; i < num; ++i)
-        {
-            if (from_vals[i] == to_vals[i])
-                continue;
-            bool changed = roaring_bitmap_remove_checked(rb, from_vals[i]);
-            if (changed)
-                roaring_bitmap_add(rb, to_vals[i]);
-        }
-    }
-
 private:
     /// To read and write the DB Buffer directly, migrate code from CRoaring
     void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)

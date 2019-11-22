@@ -141,9 +141,6 @@ void CreatingSetsTransform::work()
 
     auto finishCurrentSubquery = [&]()
     {
-        if (subquery.set)
-            subquery.set->finishInsert();
-
         if (table_out)
             table_out->writeSuffix();
 

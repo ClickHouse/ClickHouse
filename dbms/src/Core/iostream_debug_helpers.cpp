@@ -1,7 +1,6 @@
 #include "iostream_debug_helpers.h"
 
 #include <iostream>
-#include <Client/Connection.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
@@ -93,9 +92,9 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const Packet & what)
+std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what)
 {
-    stream << "Packet("
+    stream << "Connection::Packet("
            << "type = " << what.type;
     // types description: Core/Protocol.h
     if (what.exception)

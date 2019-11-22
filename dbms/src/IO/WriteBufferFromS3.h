@@ -43,7 +43,7 @@ public:
     void nextImpl() override;
 
     /// Receives response from the server after sending all data.
-    void finalize() override;
+    void finalize();
 
     ~WriteBufferFromS3() override;
 

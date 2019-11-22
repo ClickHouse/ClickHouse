@@ -214,8 +214,7 @@ protected:
                     + ", should be at least 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
+        return getLeastSupertype(arguments);
     }
 
 private:

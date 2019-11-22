@@ -16,6 +16,10 @@ template
 class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>
 {
 public:
+    using key_type = Key;
+    using mapped_type = typename Cell::Mapped;
+    using value_type = typename Cell::value_type;
+
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
     using LookupResult = typename Impl::LookupResult;
 
@@ -28,16 +32,16 @@ public:
             this->impls[i].forEachMapped(func);
     }
 
-    typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
+    mapped_type & ALWAYS_INLINE operator[](Key x)
     {
-        LookupResult it;
+        typename TwoLevelHashMapTable::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new(lookupResultGetMapped(it)) mapped_type();
 
-        return it->getMapped();
+        return *lookupResultGetMapped(it);
     }
 };
 

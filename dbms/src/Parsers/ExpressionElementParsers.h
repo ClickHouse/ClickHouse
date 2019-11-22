@@ -90,12 +90,9 @@ protected:
   */
 class ParserFunction : public IParserBase
 {
-public:
-    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-    bool allow_function_parameters;
 };
 
 class ParserCodecDeclarationList : public IParserBase
@@ -278,7 +275,8 @@ class ParserWithOptionalAlias : public IParserBase
 {
 public:
     ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;

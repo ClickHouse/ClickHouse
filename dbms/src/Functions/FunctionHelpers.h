@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
@@ -89,9 +88,5 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
         size_t argument_index, bool (* validator_func)(const IDataType &),
         const char * expected_type_description);
-
-/// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
-checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
 }

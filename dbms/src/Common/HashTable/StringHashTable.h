@@ -3,7 +3,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
-#include <variant>
+struct StringKey0
+{
+};
 
 using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
@@ -110,7 +112,7 @@ public:
     using ConstLookupResult = const Cell *;
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder &&, LookupResult & it, bool & inserted, size_t = 0)
+    void ALWAYS_INLINE emplace(KeyHolder &&, LookupResult & it, bool & inserted, size_t /* hash */)
     {
         if (!hasZero())
         {
@@ -123,16 +125,11 @@ public:
     }
 
     template <typename Key>
-    LookupResult ALWAYS_INLINE find(const Key &, size_t = 0)
+    LookupResult ALWAYS_INLINE find(Key, size_t /* hash */)
     {
         return hasZero() ? zeroValue() : nullptr;
     }
 
-    template <typename Key>
-    ConstLookupResult ALWAYS_INLINE find(const Key &, size_t = 0) const
-    {
-        return hasZero() ? zeroValue() : nullptr;
-    }
 
     void write(DB::WriteBuffer & wb) const { zeroValue()->write(wb); }
     void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
@@ -149,26 +146,6 @@ struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
 {
     // Smooth growing for string maps
     void increaseSize() { this->size_degree += 1; }
-};
-
-template <typename Mapped>
-struct StringHashTableLookupResult
-{
-    Mapped * mapped_ptr;
-    StringHashTableLookupResult() {}
-    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {}
-    StringHashTableLookupResult(std::nullptr_t) {}
-    const VoidKey getKey() const { return {}; }
-    auto & getMapped() { return *mapped_ptr; }
-    auto & operator*() { return *this; }
-    auto & operator*() const { return *this; }
-    auto * operator->() { return this; }
-    auto * operator->() const { return this; }
-    operator bool() const { return mapped_ptr; }
-    friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
-    friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
-    friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
-    friend bool operator!=(const std::nullptr_t &, const StringHashTableLookupResult & b) { return b.mapped_ptr; }
 };
 
 template <typename SubMaps>
@@ -200,12 +177,8 @@ protected:
 public:
     using Key = StringRef;
     using key_type = Key;
-    using mapped_type = typename Ts::mapped_type;
     using value_type = typename Ts::value_type;
-    using cell_type = typename Ts::cell_type;
-
-    using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type>;
-    using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type>;
+    using LookupResult = typename Ts::mapped_type *;
 
     StringHashTable() {}
 
@@ -226,15 +199,16 @@ public:
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
     // NOTE: It relies on Little Endianness
-    template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
+    template <typename KeyHolder, typename Func>
+    decltype(auto) ALWAYS_INLINE dispatch(KeyHolder && key_holder, Func && func)
     {
         const StringRef & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size;
         if (sz == 0)
         {
+            static constexpr StringKey0 key0{};
             keyHolderDiscardKey(key_holder);
-            return func(self.m0, VoidKey{}, 0);
+            return func(m0, key0, 0);
         }
 
         const char * p = x.data;
@@ -265,7 +239,7 @@ public:
                     n[0] >>= s;
                 }
                 keyHolderDiscardKey(key_holder);
-                return func(self.m1, k8, hash(k8));
+                return func(m1, k8, hash(k8));
             }
             case 1: // 9..16 bytes
             {
@@ -274,7 +248,7 @@ public:
                 memcpy(&n[1], lp, 8);
                 n[1] >>= s;
                 keyHolderDiscardKey(key_holder);
-                return func(self.m2, k16, hash(k16));
+                return func(m2, k16, hash(k16));
             }
             case 2: // 17..24 bytes
             {
@@ -283,11 +257,11 @@ public:
                 memcpy(&n[2], lp, 8);
                 n[2] >>= s;
                 keyHolderDiscardKey(key_holder);
-                return func(self.m3, k24, hash(k24));
+                return func(m3, k24, hash(k24));
             }
             default: // >= 25 bytes
             {
-                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+                return func(ms, std::forward<KeyHolder>(key_holder), hash(x));
             }
         }
     }
@@ -305,14 +279,14 @@ public:
         {
             typename Map::LookupResult result;
             map.emplace(key_holder, result, inserted, hash);
-            mapped = &result->getMapped();
+            mapped = lookupResultGetMapped(result);
         }
     };
 
     template <typename KeyHolder>
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
-        this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
+        this->dispatch(key_holder, EmplaceCallable(it, inserted));
     }
 
     struct FindCallable
@@ -321,25 +295,15 @@ public:
         // any key holders here, only with normal keys. The key type is still
         // different for every subtable, this is why it is a template parameter.
         template <typename Submap, typename SubmapKey>
-        auto ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
+        LookupResult ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return &map.find(key, hash)->getMapped();
+            return lookupResultGetMapped(map.find(key, hash));
         }
     };
 
-    LookupResult ALWAYS_INLINE find(const Key & x)
+    LookupResult ALWAYS_INLINE find(Key x)
     {
-        return dispatch(*this, x, FindCallable{});
-    }
-
-    ConstLookupResult ALWAYS_INLINE find(const Key & x) const
-    {
-        return dispatch(*this, x, FindCallable{});
-    }
-
-    bool ALWAYS_INLINE has(const Key & x, size_t = 0) const
-    {
-        return dispatch(*this, x, FindCallable{}) != nullptr;
+        return dispatch(x, FindCallable{});
     }
 
     void write(DB::WriteBuffer & wb) const

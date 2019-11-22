@@ -7,7 +7,7 @@
 namespace DB
 {
 
-template <bool reverse>
+template <bool Reverse>
 struct ArraySplitImpl
 {
     static bool needBoolean() { return true; }
@@ -42,13 +42,13 @@ struct ArraySplitImpl
 
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
-                pos += !reverse;
-                for (; pos < in_offsets[i] - reverse; ++pos)
+                pos += !Reverse;
+                for (; pos < in_offsets[i] - Reverse; ++pos)
                 {
                     if (cut[pos])
-                        out_offsets_2.push_back(pos + reverse);
+                        out_offsets_2.push_back(pos + Reverse);
                 }
-                pos += reverse;
+                pos += Reverse;
 
                 out_offsets_2.push_back(pos);
                 out_offsets_1.push_back(out_offsets_2.size());
@@ -99,7 +99,7 @@ struct NameArrayReverseSplit { static constexpr auto name = "arrayReverseSplit";
 using FunctionArraySplit = FunctionArrayMapped<ArraySplitImpl<false>, NameArraySplit>;
 using FunctionArrayReverseSplit = FunctionArrayMapped<ArraySplitImpl<true>, NameArrayReverseSplit>;
 
-void registerFunctionsArraySplit(FunctionFactory & factory)
+void registerFunctionArraySplit(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArraySplit>();
     factory.registerFunction<FunctionArrayReverseSplit>();

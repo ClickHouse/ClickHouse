@@ -140,8 +140,8 @@ private:
         std::lock_guard lock(mutex);
         map.emplace(addr, it, inserted);
         if (inserted)
-            it->getMapped() = impl(addr);
-        return it->getMapped();
+            *lookupResultGetMapped(it) = impl(addr);
+        return *lookupResultGetMapped(it);
     }
 };
 

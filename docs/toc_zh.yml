@@ -25,7 +25,6 @@ nav:
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
-  - 'C ++客户端库': 'interfaces/cpp.md'
   - '第三方':
     - '客户端库': 'interfaces/third-party/client_libraries.md'
     - '集成': 'interfaces/third-party/integrations.md'
@@ -56,7 +55,6 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
-    - 'Interval': 'data_types/special_data_types/interval.md'    
   - 'Domain类型':
     - '介绍': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'

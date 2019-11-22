@@ -81,13 +81,6 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!contents.parse(pos, contents_node, expected))
         return false;
 
-    bool is_elem = true;
-    if (pos->type == TokenType::Comma)
-    {
-        is_elem = false;
-        ++pos;
-    }
-
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
@@ -101,7 +94,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
     }
 
-    if (expr_list.children.size() == 1 && is_elem)
+    if (expr_list.children.size() == 1)
     {
         node = expr_list.children.front();
     }
@@ -252,7 +245,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
-    if (allow_function_parameters && pos->type == TokenType::OpeningRoundBracket)
+    if (pos->type == TokenType::OpeningRoundBracket)
     {
         ++pos;
 

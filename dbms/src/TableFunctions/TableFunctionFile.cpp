@@ -6,7 +6,7 @@
 namespace DB
 {
 StoragePtr TableFunctionFile::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const std::string & compression_method) const
+    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
 {
     return StorageFile::create(source,
         -1,
@@ -16,8 +16,7 @@ StoragePtr TableFunctionFile::getStorage(
         format,
         columns,
         ConstraintsDescription{},
-        global_context,
-        compression_method);
+        global_context);
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

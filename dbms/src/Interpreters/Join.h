@@ -10,6 +10,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
+#include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
@@ -155,7 +156,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -282,6 +283,8 @@ private:
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;
+    /// Names right-side table keys that are needed in result (would be attached after joined columns).
+    const NameSet required_right_keys;
 
     /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_right_side;
@@ -316,13 +319,9 @@ private:
     Block sample_block_with_columns_to_add;
     /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
     Block right_table_keys;
-    /// Block with key columns right-side table keys that are needed in result (would be attached after joined columns).
-    Block required_right_keys;
-    /// Left table column names that are sources for required_right_keys columns
-    std::vector<String> required_right_keys_sources;
 
     /// Block as it would appear in the BlockList
-    Block saved_block_sample;
+    Block blocklist_sample;
 
     Poco::Logger * log;
 
@@ -341,10 +340,10 @@ private:
       */
     void setSampleBlock(const Block & block);
 
-    /// Modify (structure) and save right block, @returns pointer to saved block
-    Block * storeRightBlock(const Block & stored_block);
-    void initRightBlockStructure();
-    void initRequiredRightKeys();
+    /** Take an inserted block and discard everything that does not need to be stored
+     *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
+     */
+    void prepareBlockListStructure(Block & stored_block);
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(

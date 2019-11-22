@@ -369,7 +369,7 @@ private:
         if (!it)
             return nullptr;
 
-        return it->getMapped();
+        return *lookupResultGetMapped(it);
     }
 
     void rebuildCounterMap()

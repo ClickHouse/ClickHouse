@@ -131,7 +131,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 }
                 else
                 {
-                    index = it->getMapped();
+                    index = *lookupResultGetMapped(it);
 
                     if (seen_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);

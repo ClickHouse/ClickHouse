@@ -34,18 +34,18 @@ struct FilterInfo
     bool do_remove_column = false;
 };
 
-struct InputSortingInfo
+struct SortingInfo
 {
-    SortDescription order_key_prefix_descr;
+    SortDescription prefix_order_descr;
     int direction;
 
-    InputSortingInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+    SortingInfo(const SortDescription & prefix_order_descr_, int direction_)
+        : prefix_order_descr(prefix_order_descr_), direction(direction_) {}
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using InputSortingInfoPtr = std::shared_ptr<InputSortingInfo>;
+using SortingInfoPtr = std::shared_ptr<SortingInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -62,7 +62,7 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
-    InputSortingInfoPtr input_sorting_info;
+    SortingInfoPtr sorting_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

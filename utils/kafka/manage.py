@@ -35,7 +35,6 @@ def main():
         print(client.delete_topics(args.delete))
 
     client.close()
-    return 0
 
 
 if __name__ == "__main__":

@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 为了能够正确的运行这种查询，每台主机必须具有相同的cluster声明（为了简化配置的同步，你可以使用zookeeper的方式进行配置）。同时这些主机还必须链接到zookeeper服务器。
 这个查询将最终在集群的每台主机上运行，即使一些主机当前处于不可用状态。同时它还保证了所有的查询在单台主机中的执行顺序。
+replicated系列表还没有支持`ALTER`查询。
 
 ## CREATE VIEW
 
@@ -248,19 +249,3 @@ SELECT a, b, c FROM (SELECT ...)
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
-
-## CREATE DICTIONARY {#create-dictionary-query}
-
-```sql
-CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
-(
-    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
-    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
-    attr1 type2 [DEFAULT|EXPRESSION expr3],
-    attr2 type2 [DEFAULT|EXPRESSION expr4]
-)
-PRIMARY KEY key1, key2
-SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
-LAYOUT(LAYOUT_NAME([param_name param_value]))
-LIFETIME([MIN val1] MAX val2)
-```

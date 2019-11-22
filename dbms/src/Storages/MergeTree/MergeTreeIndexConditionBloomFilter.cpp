@@ -36,9 +36,9 @@ PreparedSetKey getPreparedSetKey(const ASTPtr & node, const DataTypePtr & data_t
 ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
 {
     if (prepared_set->getDataTypes().size() == 1)
-        return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
+        return {prepared_set->getSetElements()[0], prepared_set->getDataTypes()[0], "dummy"};
 
-    return {ColumnTuple::create(prepared_set->getSetElements()), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
+    return {ColumnTuple::create(prepared_set->getSetElements()), std::make_shared<DataTypeTuple>(prepared_set->getDataTypes()), "dummy"};
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)
@@ -242,7 +242,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
 bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out)
 {
-    const auto prepared_info = getPreparedSetInfo(prepared_set);
+    const auto & prepared_info = getPreparedSetInfo(prepared_set);
     return traverseASTIn(function_name, key_ast, prepared_info.type, prepared_info.column, out);
 }
 
@@ -300,7 +300,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
         const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
         if (function_name == "has")
         {
@@ -309,9 +309,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (!array_type)
                 throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            Field converted_field = convertFieldToType(value_field, *array_type->getNestedType(), &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*array_type->getNestedType(), converted_field)));
         }
         else
         {
@@ -319,9 +318,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 throw Exception("An array type of bloom_filter supports only has() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            Field converted_field = convertFieldToType(value_field, *index_type, &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
         }
 
         return true;

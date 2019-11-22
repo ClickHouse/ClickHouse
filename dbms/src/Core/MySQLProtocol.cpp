@@ -1,4 +1,7 @@
 #include "MySQLProtocol.h"
+
+#if USE_SSL
+
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -101,3 +104,5 @@ size_t getLengthEncodedStringSize(const String & s)
 }
 
 }
+
+#endif // USE_SSL

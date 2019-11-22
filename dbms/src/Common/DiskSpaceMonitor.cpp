@@ -193,7 +193,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         if (has_space_ratio)
         {
-            auto ratio = config.getDouble(disk_config_prefix + ".keep_free_space_ratio");
+            auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
             if (ratio < 0 || ratio > 1)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1",
                                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);

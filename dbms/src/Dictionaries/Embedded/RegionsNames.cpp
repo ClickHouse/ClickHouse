@@ -19,7 +19,7 @@ RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
 {
     for (size_t language_id = 0; language_id < SUPPORTED_LANGUAGES_COUNT; ++language_id)
     {
-        const std::string & language = supported_languages[language_id];
+        const std::string & language = getSupportedLanguages()[language_id];
         names_sources[language_id] = data_provider->getLanguageRegionsNamesSource(language);
     }
 
@@ -34,7 +34,7 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
         if (i > 0)
             res += ", ";
         res += '\'';
-        res += language_aliases[i].first;
+        res += getLanguageAliases()[i].name;
         res += '\'';
     }
     return res;
@@ -48,7 +48,7 @@ void RegionsNames::reload()
     RegionID max_region_id = 0;
     for (size_t language_id = 0; language_id < SUPPORTED_LANGUAGES_COUNT; ++language_id)
     {
-        const std::string & language = supported_languages[language_id];
+        const std::string & language = getSupportedLanguages()[language_id];
 
         auto names_source = names_sources[language_id];
 

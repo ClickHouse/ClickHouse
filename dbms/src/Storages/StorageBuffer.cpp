@@ -265,8 +265,6 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
     try
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
@@ -284,6 +282,9 @@ static void appendBlock(const Block & from, Block & to)
         /// Rollback changes.
         try
         {
+            /// Avoid "memory limit exceeded" exceptions during rollback.
+            auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
@@ -338,7 +339,7 @@ public:
             {
                 LOG_TRACE(storage.log, "Writing block with " << rows << " rows, " << bytes << " bytes directly.");
                 storage.writeBlockToDestination(block, destination);
-            }
+             }
             return;
         }
 
@@ -620,8 +621,6 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << " doesn't exist. Block of data is discarded.");
         return;
     }
-
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     auto insert = std::make_shared<ASTInsertQuery>();
 

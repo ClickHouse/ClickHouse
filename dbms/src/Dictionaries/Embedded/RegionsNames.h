@@ -20,7 +20,7 @@
 class RegionsNames
 {
 public:
-    enum class Language : size_t
+    enum class Language
     {
         RU = 0,
         EN,
@@ -28,35 +28,36 @@ public:
         BY,
         KZ,
         TR,
-
-        END
     };
 
 private:
-    static inline constexpr const char * supported_languages[] =
-    {
-        "ru",
-        "en",
-        "ua",
-        "by",
-        "kz",
-        "tr"
-    };
+    static const size_t ROOT_LANGUAGE = 0;
+    static const size_t SUPPORTED_LANGUAGES_COUNT = 6;
+    static const size_t LANGUAGE_ALIASES_COUNT = 7;
 
-    static inline constexpr std::pair<const char *, Language> language_aliases[] =
+    static const char ** getSupportedLanguages()
     {
-        {"ru", Language::RU},
-        {"en", Language::EN},
-        {"ua", Language::UA},
-        {"uk", Language::UA},
-        {"by", Language::BY},
-        {"kz", Language::KZ},
-        {"tr", Language::TR}
-    };
+        static const char * res[]{"ru", "en", "ua", "by", "kz", "tr"};
+        return res;
+    }
 
-    static constexpr size_t ROOT_LANGUAGE = 0;
-    static constexpr size_t SUPPORTED_LANGUAGES_COUNT = size_t(Language::END);
-    static constexpr size_t LANGUAGE_ALIASES_COUNT = sizeof(language_aliases);
+    struct language_alias
+    {
+        const char * const name;
+        const Language lang;
+    };
+    static const language_alias * getLanguageAliases()
+    {
+        static constexpr const language_alias language_aliases[]{{"ru", Language::RU},
+                                                                 {"en", Language::EN},
+                                                                 {"ua", Language::UA},
+                                                                 {"uk", Language::UA},
+                                                                 {"by", Language::BY},
+                                                                 {"kz", Language::KZ},
+                                                                 {"tr", Language::TR}};
+
+        return language_aliases;
+    }
 
     using NamesSources = std::vector<std::shared_ptr<ILanguageRegionsNamesDataSource>>;
 
@@ -93,9 +94,9 @@ public:
         {
             for (size_t i = 0; i < LANGUAGE_ALIASES_COUNT; ++i)
             {
-                const auto & alias = language_aliases[i];
-                if (language[0] == alias.first[0] && language[1] == alias.first[1])
-                    return alias.second;
+                const auto & alias = getLanguageAliases()[i];
+                if (language[0] == alias.name[0] && language[1] == alias.name[1])
+                    return alias.lang;
             }
         }
         throw Poco::Exception("Unsupported language for region name. Supported languages are: " + dumpSupportedLanguagesNames() + ".");

@@ -188,8 +188,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
 - [DROP PARTITION](#alter_drop-partition) – удалить партицию;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
-- [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
-- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
+- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
@@ -256,29 +255,13 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Это означает, что вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
 
-#### ATTACH PARTITION FROM {#alter_attach-partition-from}
-
-```sql
-ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
-```
-
-Копирует партицию из таблицы `table1` в таблицу `table2` и добавляет к существующим данным `table2`. Данные из `table1` не удаляются.
-
-Следует иметь в виду:
-
-- Таблицы должны иметь одинаковую структуру.
-- Для таблиц должен быть задан одинаковый ключ партиционирования.
-
-Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
-
-
 #### REPLACE PARTITION {#alter_replace-partition}
 
 ```sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`. Данные из `table1` не удаляются.
+Копирует партицию из таблицы `table1` в таблицу `table2`. Данные из `table1` не удаляются.
 
 Следует иметь в виду:
 
@@ -378,16 +361,17 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 #### MOVE PARTITION|PART {#alter_move-partition}
 
-Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
-
 ```sql
 ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
-Запрос `ALTER TABLE t MOVE`:
 
-- Не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
-- Возвращает ошибку, если указан несконфигурированный том или диск. Ошибка также возвращается в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
-- Может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
+Перемещает партицию или кусок на другой том или диск. Запрос работает только для движков семейства MergeTree. Подробнее о хранении данных на разных дисках читайте в разделе [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+Следует иметь ввиду:
+
+- Запрос `ALTER TABLE t MOVE` не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
+- Запрос `ALTER TABLE t MOVE` будет возвращать ошибку, если указан несуществующий том или диск, а также в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
+- Запрос `ALTER TABLE t MOVE` может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
 
 Примеры:
 

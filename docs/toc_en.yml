@@ -26,7 +26,6 @@ nav:
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'
-  - 'C++ Client Library': 'interfaces/cpp.md'
   - 'Third-Party':
     - 'Client Libraries': 'interfaces/third-party/client_libraries.md'
     - 'Integrations': 'interfaces/third-party/integrations.md'
@@ -172,15 +171,10 @@ nav:
       - 'Expression': 'data_types/special_data_types/expression.md'
       - 'Set': 'data_types/special_data_types/set.md'
       - 'Nothing': 'data_types/special_data_types/nothing.md'
-      - 'Interval': 'data_types/special_data_types/interval.md'
     - 'Domains':
       - 'Overview': 'data_types/domains/overview.md'
       - 'IPv4': 'data_types/domains/ipv4.md'
       - 'IPv6': 'data_types/domains/ipv6.md'
-
-- 'Guides':
-  - 'Overview': 'guides/index.md'
-  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - 'Operations':
   - 'Introduction': 'operations/index.md'
@@ -209,6 +203,10 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'

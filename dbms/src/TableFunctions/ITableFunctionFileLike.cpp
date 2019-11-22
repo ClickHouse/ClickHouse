@@ -32,27 +32,21 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() != 3 && args.size() != 4)
-        throw Exception("Table function '" + getName() + "' requires 3 or 4 arguments: filename, format, structure and compression method (default auto).",
+    if (args.size() != 3)
+        throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: filename, format and structure.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < args.size(); ++i)
+    for (size_t i = 0; i < 3; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     std::string filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     std::string structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string compression_method;
-
-    if (args.size() == 4)
-    {
-        compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    } else compression_method = "auto";
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     /// Create table
-    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
+    StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name);
 
     storage->startup();
 

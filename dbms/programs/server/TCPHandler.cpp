@@ -523,9 +523,6 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
-                /// Wait till inner thread finish to avoid possible race with getTotals.
-                async_in.waitInnerThread();
-
                 sendTotals(state.io.in->getTotals());
                 sendExtremes(state.io.in->getExtremes());
                 sendProfileInfo(state.io.in->getProfileInfo());
@@ -533,8 +530,7 @@ void TCPHandler::processOrdinaryQuery()
                 sendLogs();
             }
 
-            if (!block || !state.io.null_format)
-                sendData(block);
+            sendData(block);
             if (!block)
                 break;
         }
@@ -924,9 +920,7 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings.
     Settings & settings = query_context->getSettingsRef();
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
-    settings.deserialize(*in, settings_format);
+    settings.deserialize(*in);
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
@@ -955,9 +949,7 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings & skip_settings = query_context->getSettingsRef();
-    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
-                                                                                                      : SettingsBinaryFormat::OLD;
-    skip_settings.deserialize(*in, settings_format);
+    skip_settings.deserialize(*in);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);

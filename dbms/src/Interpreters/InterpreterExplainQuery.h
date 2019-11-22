@@ -22,7 +22,7 @@ public:
 
 private:
     ASTPtr query;
-    const Context & context;
+    Context context;
 
     BlockInputStreamPtr executeImpl();
 };

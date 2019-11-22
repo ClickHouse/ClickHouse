@@ -85,7 +85,7 @@ int main(int, char **)
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
     for (auto x : map)
-        std::cerr << x.getKey().toString() << " -> " << x.getMapped() << std::endl;
+        std::cerr << x.getFirst().toString() << " -> " << x.getSecond() << std::endl;
 
     return 0;
 }

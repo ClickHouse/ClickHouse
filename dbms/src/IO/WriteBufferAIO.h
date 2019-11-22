@@ -51,7 +51,7 @@ private:
     /// Prepare an asynchronous request.
     void prepare();
     ///
-    void finalize() override;
+    void finalize();
 
 private:
     /// Buffer for asynchronous data writes.

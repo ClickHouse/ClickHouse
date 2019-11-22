@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Common/config.h>
+#if USE_POCO_NETSSL && USE_SSL
+
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>
-#include "IServer.h"
-#if USE_SSL
 #include <openssl/rsa.h>
-#endif
+#include "IServer.h"
 
 namespace DB
 {
@@ -17,7 +17,6 @@ private:
     IServer & server;
     Poco::Logger * log;
 
-#if USE_SSL
     struct RSADeleter
     {
         void operator()(RSA * ptr) { RSA_free(ptr); }
@@ -28,9 +27,6 @@ private:
     RSAPtr private_key;
 
     bool ssl_enabled = true;
-#else
-    bool ssl_enabled = false;
-#endif
 
     std::atomic<size_t> last_connection_id = 0;
 public:
@@ -44,3 +40,4 @@ public:
 };
 
 }
+#endif

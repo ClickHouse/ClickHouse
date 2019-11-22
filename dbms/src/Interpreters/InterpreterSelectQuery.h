@@ -14,7 +14,6 @@
 #include <Storages/TableStructureLockHolder.h>
 
 #include <Processors/QueryPipeline.h>
-#include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
 
@@ -69,7 +68,7 @@ public:
     BlockIO execute() override;
 
     /// Execute the query and return multuple streams for parallel processing.
-    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
+    BlockInputStreams executeWithMultipleStreams();
 
     QueryPipeline executeWithProcessors() override;
     bool canExecuteWithProcessors() const override { return true; }
@@ -137,7 +136,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input);
 
     struct AnalysisResult
     {
@@ -172,8 +171,6 @@ private:
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
         FilterInfoPtr filter_info;
-        ConstantFilterDescription prewhere_constant_filter_description;
-        ConstantFilterDescription where_constant_filter_description;
     };
 
     static AnalysisResult analyzeExpressions(
@@ -184,8 +181,7 @@ private:
         const Context & context,
         const StoragePtr & storage,
         bool only_types,
-        const FilterInfoPtr & filter_info,
-        const Block & source_header);
+        const FilterInfoPtr & filter_info);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
@@ -198,9 +194,8 @@ private:
 
     template <typename TPipeline>
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-        const InputSortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere,
-        QueryPipeline & save_context_and_storage);
+        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info,
+        const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -208,7 +203,7 @@ private:
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
@@ -227,7 +222,7 @@ private:
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
@@ -262,7 +257,7 @@ private:
 
     const SelectQueryOptions options;
     ASTPtr query_ptr;
-    std::shared_ptr<Context> context;
+    Context context;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;

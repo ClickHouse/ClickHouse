@@ -502,13 +502,13 @@ if __name__ == '__main__':
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
-    parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
+    group.add_argument('--client-option', nargs='+', help='Specify additional client argument')
 
     args = parser.parse_args()
 

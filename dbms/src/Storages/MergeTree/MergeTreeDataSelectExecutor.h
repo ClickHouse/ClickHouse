@@ -17,14 +17,14 @@ class KeyCondition;
 class MergeTreeDataSelectExecutor
 {
 public:
-    explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
+    MergeTreeDataSelectExecutor(const MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
-    Pipes read(
+    BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -32,7 +32,7 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    Pipes readFromParts(
+    BlockInputStreams readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -46,7 +46,7 @@ private:
 
     Logger * log;
 
-    Pipes spreadMarkRangesAmongStreams(
+    BlockInputStreams spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -56,7 +56,7 @@ private:
         const Names & virt_columns,
         const Settings & settings) const;
 
-    Pipes spreadMarkRangesAmongStreamsWithOrder(
+    BlockInputStreams spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
@@ -67,7 +67,7 @@ private:
         const Names & virt_columns,
         const Settings & settings) const;
 
-    Pipes spreadMarkRangesAmongStreamsFinal(
+    BlockInputStreams spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const Names & column_names,
         UInt64 max_block_size,

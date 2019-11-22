@@ -293,8 +293,7 @@ private:
 public:
     using value_type = Value;
 
-    /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
-    void ALWAYS_INLINE insert(Value value)
+    void insert(Value value)
     {
         HashValueType hash = getHash(value);
 
@@ -421,8 +420,7 @@ private:
     }
 
     /// Update maximum rank for current bucket.
-    /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
-    void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
+    void update(HashValueType bucket, UInt8 rank)
     {
         typename RankStore::Locus content = rank_store[bucket];
         UInt8 cur_rank = static_cast<UInt8>(content);

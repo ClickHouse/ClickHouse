@@ -6,6 +6,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Poco/Version.h>
+#include <Core/SettingsCommon.h>
 #include <Common/CurrentThread.h>
 
 #ifndef QUERY_PREVIEW_LENGTH
