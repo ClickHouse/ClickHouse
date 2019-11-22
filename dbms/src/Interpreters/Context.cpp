@@ -1891,7 +1891,7 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
 void Context::setMaxTableSizeToDrop(size_t max_size)
 {
-    // Is initialized at server startup
+    // Is initialized at server startup and updated at config reload
     shared->max_table_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
@@ -1906,7 +1906,7 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
-    // Is initialized at server startup
+    // Is initialized at server startup and updated at config reload
     shared->max_partition_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
