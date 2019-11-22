@@ -424,8 +424,6 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
 
 bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
-    skipWhitespacesAndTabs(in);
-
     char * pos = in.position();
     bool quotes = false;
     bool need_more_data = true;
@@ -474,8 +472,9 @@ bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_
             }
         }
     }
-    loadAtPosition(in, memory, pos);
-    return true;
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineCSV(FormatFactory & factory)

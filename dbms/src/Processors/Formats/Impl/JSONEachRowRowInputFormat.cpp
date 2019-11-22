@@ -325,8 +325,9 @@ bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memor
             }
         }
     }
-    loadAtPosition(in, memory, pos)
-    return true;
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
