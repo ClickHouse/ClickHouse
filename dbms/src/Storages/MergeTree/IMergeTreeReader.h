@@ -76,7 +76,6 @@ protected:
     const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
 
-
     friend class MergeTreeRangeReader::DelayedStream;
 };
 
