@@ -446,7 +446,7 @@ bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_
         }
         else
         {
-            pos = find_first_symbols<'"','\r', '\n'>(pos, in.buffer().end());
+            pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
             if (pos == in.buffer().end())
                 continue;
             if (*pos == '"')
