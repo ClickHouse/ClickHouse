@@ -268,9 +268,4 @@ ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFo
     return row_format;
 }
 
-//ParsedTemplateFormatString ParsedTemplateFormatString::setupJSONCompactEachRowFormat(const DB::Context &context)
-//{
-//
-//}
-
 }
