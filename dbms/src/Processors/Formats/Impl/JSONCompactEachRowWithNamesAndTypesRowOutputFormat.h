@@ -19,6 +19,7 @@ public:
     String getName() const override { return "JSONCompactEachRowWithNamesAndTypesRowOutputFormat"; }
 
     void writePrefix() override;
+    void writeSuffix() override;
 
     void writeBeforeTotals() override;
     void writeTotals(const Columns & columns, size_t row_num) override;
