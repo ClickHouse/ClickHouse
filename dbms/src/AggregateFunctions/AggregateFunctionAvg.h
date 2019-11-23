@@ -1,18 +1,17 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -37,7 +36,6 @@ struct AggregateFunctionAvgData
     }
 };
 
-
 /// Calculates arithmetic mean of numbers.
 template <typename Data, typename T, typename F>
 class AggregateFunctionAvgBase : public IAggregateFunctionDataHelper<Data, F>
@@ -49,16 +47,13 @@ public:
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<Float64>>;
 
     /// ctor for native types
-    AggregateFunctionAvgBase(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, F>(argument_types_, {})
-        , scale(0)
-    {}
+    AggregateFunctionAvgBase(const DataTypes & argument_types_) : IAggregateFunctionDataHelper<Data, F>(argument_types_, {}), scale(0) {}
 
     /// ctor for Decimals
     AggregateFunctionAvgBase(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, F>(argument_types_, {})
-        , scale(getDecimalScale(data_type))
-    {}
+        : IAggregateFunctionDataHelper<Data, F>(argument_types_, {}), scale(getDecimalScale(data_type))
+    {
+    }
 
     DataTypePtr getReturnType() const override
     {
@@ -98,18 +93,19 @@ protected:
     UInt32 scale;
 };
 
-
 template <typename T, typename Data>
-class AggregateFunctionAvg  final : public AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>
+class AggregateFunctionAvg final : public AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>
 {
 public:
-
     AggregateFunctionAvg(const DataTypes & argument_types_)
-    : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>(argument_types_) {}
-    
+        : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>(argument_types_)
+    {
+    }
+
     AggregateFunctionAvg(const IDataType & data_type, const DataTypes & argument_types_)
-    : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>(data_type, argument_types_)
-    {}
+        : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvg<T, Data>>(data_type, argument_types_)
+    {
+    }
 
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -120,7 +116,6 @@ public:
     }
 
     String getName() const override { return "avg"; }
-
 };
 
 }
