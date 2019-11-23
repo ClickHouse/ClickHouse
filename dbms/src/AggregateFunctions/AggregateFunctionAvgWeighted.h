@@ -4,8 +4,6 @@
 
 namespace DB
 {
-
-
 template <typename T>
 struct AggregateFunctionAvgWeightedData
 {
@@ -29,15 +27,17 @@ template <typename T, typename Data>
 class AggregateFunctionAvgWeighted final : public AggregateFunctionAvgBase<Data, T, AggregateFunctionAvgWeighted<T, Data>>
 {
 public:
+    AggregateFunctionAvgWeighted(const DataTypes & argument_types_)
+        : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvgWeighted<T, Data>>(argument_types_)
+    {
+    }
 
-	AggregateFunctionAvgWeighted(const DataTypes & argument_types_)
-	: AggregateFunctionAvgBase<Data, T, AggregateFunctionAvgWeighted<T, Data>>(argument_types_) {}
-	
-	AggregateFunctionAvgWeighted(const IDataType & data_type, const DataTypes & argument_types_)
-	: AggregateFunctionAvgBase<Data, T, AggregateFunctionAvgWeighted<T, Data>>(data_type, argument_types_)
-	{}
+    AggregateFunctionAvgWeighted(const IDataType & data_type, const DataTypes & argument_types_)
+        : AggregateFunctionAvgBase<Data, T, AggregateFunctionAvgWeighted<T, Data>>(data_type, argument_types_)
+    {
+    }
 
-	using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & values = static_cast<const ColVecType &>(*columns[0]);
@@ -48,7 +48,6 @@ public:
     }
 
     String getName() const override { return "avgWeighted"; }
-
 };
 
 }
