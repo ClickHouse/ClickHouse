@@ -607,38 +607,56 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## indexHint
+## indexHint {#indexhint}
 
-Outputs data in the range selected by the index without filtering by the expression specified as an argument.
+Outputs all data from the range that contains data where expression is true.
+The expression passed to the function will not be calculated. Range selection is based on the index.
+Dataset may contain some extra data due to sparse index.
 
-The expression passed to the function is not calculated, but ClickHouse applies the index to this expression in the same way as if the expression was in the query without `indexHint`.
+**Syntax** 
+
+```sql
+SELECT * FROM table WHERE indexHint(<expression>)
+```
 
 **Returned value**
 
-- 1.
+Returns range from the index, in which given condition is true.
+
+Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
+
 
 **Example**
 
-Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md).
+Here is the example of test data from the table [ontime](../../getting_started/example_datasets/ontime.md).
+
+Input table:
 
 ```sql
 SELECT count() FROM ontime
 ```
+
 ```text
 ┌─count()─┐
 │ 4276457 │
 └─────────┘
 ```
 
-The table has indexes for the fields `(FlightDate, (Year, FlightDate))`.
+The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
 
-Create a selection by date like this:
+Create a query, where the index is not used.
+
+Query:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
-```text
 
+ClickHouse processed the entire table (`Processed 4.28 million rows`). 
+
+Result:
+
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-01-01 │   13970 │
 │ 2017-01-02 │   15882 │
@@ -649,20 +667,27 @@ SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 └────────────┴─────────┘
 ```
 
-In this selection, the index is not used and ClickHouse processed the entire table (`Processed 4.28 million rows`). To apply the index, select a specific date and run the following query:
+To apply the index, select a specific date.
+
+Query:
 
 ```sql
 SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
+
+By using the index, ClickHouse processed a significantly smaller number of rows (Processed 32.74 thousand rows).
+
+Result:
+
 ```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-15 │   16428 │
 └────────────┴─────────┘
 ```
 
-The last line of output shows that by using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
+Wrap the expression `k = '2017-09-15'` into `indexHint` function.
 
-Now pass the expression `k = '2017-09-15'` to the `indexHint` function:
+Query:
 
 ```sql
 SELECT
@@ -673,6 +698,13 @@ WHERE indexHint(k = '2017-09-15')
 GROUP BY k
 ORDER BY k ASC
 ```
+
+ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`). 
+The expression `k = '2017-09-15'` was not used when generating the result.
+In examle the `indexHint` function allows to see adjacent dates.
+
+Result:
+
 ```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-14 │    7071 │
@@ -681,10 +713,6 @@ ORDER BY k ASC
 │ 2017-09-30 │    8167 │
 └────────────┴─────────┘
 ```
-
-The response to the request shows that ClickHouse applied the index in the same way as the previous time (`Processed 32.74 thousand rows`). However, the resulting set of rows shows that the expression `k = '2017-09-15'` was not used when generating the result.
-
-Because the index is sparse in ClickHouse, "extra" data ends up in the response when reading a range (in this case, the adjacent dates). Use the `indexHint` function to see it.
 
 ## replicate {#other_functions-replicate}
 
