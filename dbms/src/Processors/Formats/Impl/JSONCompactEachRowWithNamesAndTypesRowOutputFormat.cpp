@@ -36,7 +36,22 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
         if (i != fields.size() - 1)
             writeCString(", ", out);
     }
-    writeCString("]\n\n", out);
+    writeCString("]\n", out);
+}
+
+void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
+{
+    writeChar('\n', out);
+    size_t num_columns = columns.size();
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            JSONCompactEachRowRowOutputFormat::writeFieldDelimiter();
+
+        JSONCompactEachRowRowOutputFormat::writeField(*columns[i], *types[i], row_num);
+    }
+    writeChar('\n', out);
 }
 
 
