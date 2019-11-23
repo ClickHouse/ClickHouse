@@ -39,7 +39,7 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
     writeCString("]\n", out);
 }
 
-void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
+void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeSuffix()
 {
     writeCString("prefix!", out);
 }
