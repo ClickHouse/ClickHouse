@@ -8,6 +8,7 @@ namespace DB
 {
 
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
+void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
@@ -51,6 +52,7 @@ void registerAggregateFunctions()
         auto & factory = AggregateFunctionFactory::instance();
 
         registerAggregateFunctionAvg(factory);
+        registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
