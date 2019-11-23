@@ -13,8 +13,8 @@ template <typename T> auto first(const T & value) -> decltype(value.first) { ret
 template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return value.getFirst(); }
-template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return value.getSecond(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
 
 }
 
@@ -787,8 +787,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const bool sparse = name == "sparse_hashed";
         return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
-    factory.registerLayout("hashed", create_layout);
-    factory.registerLayout("sparse_hashed", create_layout);
+    factory.registerLayout("hashed", create_layout, false);
+    factory.registerLayout("sparse_hashed", create_layout, false);
 }
 
 }

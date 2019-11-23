@@ -58,26 +58,27 @@ void AsofRowRefs::insert(Type type, const IColumn * asof_column, const Block * b
     callWithType(type, call);
 }
 
-const RowRef * AsofRowRefs::findAsof(Type type, const IColumn * asof_column, size_t row_num) const
+const RowRef * AsofRowRefs::findAsof(Type type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const
 {
     const RowRef * out = nullptr;
+
+    bool ascending = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::LessOrEquals);
+    bool is_strict = (inequality == ASOF::Inequality::Less) || (inequality == ASOF::Inequality::Greater);
 
     auto call = [&](const auto & t)
     {
         using T = std::decay_t<decltype(t)>;
-        using LookupPtr = typename Entry<T>::LookupPtr;
+        using EntryType = Entry<T>;
+        using LookupPtr = typename EntryType::LookupPtr;
 
         auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
         T key = column->getElement(row_num);
         auto & typed_lookup = std::get<LookupPtr>(lookups);
 
-        // The first thread that calls upper_bound ensures that the data is sorted
-        auto it = typed_lookup->upper_bound(Entry<T>(key));
-
-        // cbegin() is safe to call now because the array is immutable after sorting
-        // hence the pointer to a entry can be returned
-        if (it != typed_lookup->cbegin())
-            out = &((--it)->row_ref);
+        if (is_strict)
+            out = typed_lookup->upperBound(EntryType(key), ascending);
+        else
+            out = typed_lookup->lowerBound(EntryType(key), ascending);
     };
 
     callWithType(type, call);

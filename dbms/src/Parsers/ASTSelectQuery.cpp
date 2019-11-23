@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -274,6 +275,18 @@ bool ASTSelectQuery::final() const
         return {};
 
     return table_expression->final;
+}
+
+bool ASTSelectQuery::withFill() const
+{
+    if (!orderBy())
+        return false;
+
+    for (const auto & order_expression_element : orderBy()->children)
+        if (order_expression_element->as<ASTOrderByElement &>().with_fill)
+            return true;
+
+    return false;
 }
 
 

@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -88,13 +89,17 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
+
+    std::optional<UInt64> totalRows() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -174,6 +179,10 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
 private:
+
+    /// Get a sequential consistent view of current parts.
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
@@ -191,10 +200,10 @@ private:
     using LogEntryPtr = LogEntry::Ptr;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
-    std::mutex current_zookeeper_mutex;            /// To recreate the session in the background thread.
+    mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
 
-    zkutil::ZooKeeperPtr tryGetZooKeeper();
-    zkutil::ZooKeeperPtr getZooKeeper();
+    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// If true, the table is offline and can not be written to it.

@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
 Creates a table with the structure and data returned by a [table function](table_functions/index.md).
@@ -225,7 +225,6 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
 The local version of the query will eventually be implemented on each host in the cluster, even if some hosts are currently not available. The order for executing queries within a single host is guaranteed.
-`ALTER` queries are not yet supported for replicated tables.
 
 ## CREATE VIEW
 
@@ -272,3 +271,27 @@ Views look the same as normal tables. For example, they are listed in the result
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```
+
+Creates [external dictionary](dicts/external_dicts.md) with given [structure](dicts/external_dicts_dict_structure.md), [source](dicts/external_dicts_dict_sources.md), [layout](dicts/external_dicts_dict_layout.md) and [lifetime](dicts/external_dicts_dict_lifetime.md). 
+
+External dictionary structure consists of attributes. Dictionary attributes are specified similarly to table columns. The only required attribute property is its type, all other properties may have default values.
+
+Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
+
+For more information, see [External Dictionaries](dicts/external_dicts.md) section.

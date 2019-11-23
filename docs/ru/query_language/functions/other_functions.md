@@ -782,3 +782,9 @@ SELECT identity(42)
 Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
+
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
+
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.

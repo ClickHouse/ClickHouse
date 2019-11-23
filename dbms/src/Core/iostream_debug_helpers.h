@@ -1,16 +1,17 @@
 #pragma once
 #include <iostream>
 
-#include <Client/Connection.h>
-
-
 namespace DB
 {
+
+// Use template to disable implicit casting for certain overloaded types such as Field, which leads
+// to overload resolution ambiguity.
+class Field;
+template <typename T, typename U = std::enable_if_t<std::is_same_v<T, Field>>>
+std::ostream & operator<<(std::ostream & stream, const T & what);
+
 class IBlockInputStream;
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
-
-class Field;
-std::ostream & operator<<(std::ostream & stream, const Field & what);
 
 struct NameAndTypePair;
 std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);
@@ -36,10 +37,8 @@ std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & w
 class IColumn;
 std::ostream & operator<<(std::ostream & stream, const IColumn & what);
 
-class IAST;
-std::ostream & operator<<(std::ostream & stream, const IAST & what);
-
-std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what);
+struct Packet;
+std::ostream & operator<<(std::ostream & stream, const Packet & what);
 
 struct ExpressionAction;
 std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);

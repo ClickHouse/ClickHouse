@@ -31,7 +31,7 @@ import kafka_pb2
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
-                                main_configs=['configs/kafka.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
@@ -557,9 +557,11 @@ def test_kafka_insert(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_kafka_produce_consume(kafka_cluster):
     instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -567,6 +569,11 @@ def test_kafka_produce_consume(kafka_cluster):
                      kafka_group_name = 'insert2',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
     ''')
 
     messages_num = 10000
@@ -593,16 +600,6 @@ def test_kafka_produce_consume(kafka_cluster):
     for thread in threads:
         time.sleep(random.uniform(0, 1))
         thread.start()
-
-    instance.query('''
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.kafka;
-    ''')
 
     while True:
         result = instance.query('SELECT count() FROM test.view')

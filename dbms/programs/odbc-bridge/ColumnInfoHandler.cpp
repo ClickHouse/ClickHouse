@@ -18,7 +18,9 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
+#include <Poco/NumberParser.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
@@ -37,12 +39,16 @@ namespace
 
         switch (type)
         {
+            case SQL_TINYINT:
+                return factory.get("Int8");
             case SQL_INTEGER:
                 return factory.get("Int32");
             case SQL_SMALLINT:
                 return factory.get("Int16");
+            case SQL_BIGINT:
+                return factory.get("Int64");
             case SQL_FLOAT:
-                return factory.get("Float32");
+                return factory.get("Float64");
             case SQL_REAL:
                 return factory.get("Float32");
             case SQL_DOUBLE:
@@ -90,6 +96,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     std::string schema_name = "";
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
+
     if (params.has("schema"))
     {
         schema_name = params.get("schema");
@@ -101,6 +108,8 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
     try
     {
+        const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
+
         POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
         SQLHDBC hdbc = session.dbc().handle();
 
@@ -154,9 +163,19 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             SQLSMALLINT type = 0;
             /// TODO Why 301?
             SQLCHAR column_name[301];
-            /// TODO Result is not checked.
-            POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
-            columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
+
+            SQLSMALLINT is_nullable;
+            const auto result = POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, &is_nullable);
+            if (POCO_SQL_ODBC_CLASS::Utility::isError(result))
+                throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
+
+            auto column_type = getDataType(type);
+            if (external_table_functions_use_nulls && is_nullable == SQL_NULLABLE)
+            {
+                column_type = std::make_shared<DataTypeNullable>(column_type);
+            }
+
+            columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
         }
 
         WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
