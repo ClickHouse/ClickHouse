@@ -54,7 +54,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
 
@@ -249,6 +249,8 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         if (!set->insertFromBlock(block))
             return;
     }
+
+    set->finishInsert();
     res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);

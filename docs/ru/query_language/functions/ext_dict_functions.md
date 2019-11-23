@@ -16,13 +16,13 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 - `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 - `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 - `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md) или [Tuple](../../data_types/tuple.md) в зависимости от конфигурации словаря.
-- `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключем `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+- `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
 
 **Возвращаемое значение**
 
 - Значение атрибута, соответствующее ключу `id_expr`, если ClickHouse смог привести это значение к [заданному типу данных](../dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes).
 
-- Если ключа, соответствущего `id_expr` в словаре нет, то:
+- Если ключа, соответствующего `id_expr` в словаре нет, то:
     - `dictGet` возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
     - `dictGetOrDefault` возвращает атрибут `default_value_expr`.
 
@@ -177,7 +177,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 - `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 - `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 - `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../data_types/int_uint.md).
-- `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключем `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+- `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions) возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
 
 **Возвращаемое значение**
 

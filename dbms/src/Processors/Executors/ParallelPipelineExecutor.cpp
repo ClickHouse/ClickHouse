@@ -85,7 +85,7 @@ namespace DB
 //            active_processors.insert(current_processor);
 //        }
 //
-//        pool.schedule([processor = current_processor, &watch, this]
+//        pool.scheduleOrThrowOnError([processor = current_processor, &watch, this]
 //        {
 //            processor->work();
 //            {

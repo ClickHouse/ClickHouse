@@ -37,10 +37,12 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -55,7 +57,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
-
+#include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
 #include <Common/hasLinuxCapability.h>
@@ -63,7 +65,6 @@
 #endif
 
 #if USE_POCO_NETSSL
-#include "MySQLHandlerFactory.h"
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -813,7 +814,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_SSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
@@ -825,11 +825,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
             });
         }
 
@@ -920,6 +915,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->tryCreateEmbeddedDictionaries();
                 global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
+
+            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
+            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
+
+            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
+            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
         }
         catch (...)
         {

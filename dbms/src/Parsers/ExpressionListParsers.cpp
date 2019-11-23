@@ -560,7 +560,7 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr node_comp;
-    if (!ParserComparisonExpression{}.parse(pos, node_comp, expected))
+    if (!elem_parser.parse(pos, node_comp, expected))
         return false;
 
     ParserKeyword s_is{"IS"};

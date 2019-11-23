@@ -6,9 +6,11 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
@@ -268,17 +270,41 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 void StorageDistributedDirectoryMonitor::readQueryAndSettings(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
-    UInt64 magic_number_or_query_size;
+    UInt64 query_size;
+    readVarUInt(query_size, in);
 
-    readVarUInt(magic_number_or_query_size, in);
-
-    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
     {
-        insert_settings.deserialize(in);
-        readVarUInt(magic_number_or_query_size, in);
+        /// Read extra information.
+        String extra_info_as_string;
+        readStringBinary(extra_info_as_string, in);
+        readVarUInt(query_size, in);
+        ReadBufferFromString extra_info(extra_info_as_string);
+
+        UInt64 initiator_revision;
+        readVarUInt(initiator_revision, extra_info);
+        if (ClickHouseRevision::get() < initiator_revision)
+        {
+            LOG_WARNING(
+                log,
+                "ClickHouse shard version is older than ClickHouse initiator version. "
+                    << "It may lack support for new features.");
+        }
+
+        insert_settings.deserialize(extra_info);
+
+        /// Add handling new data here, for example:
+        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
+        ///    readVarUInt(my_new_data, extra_info);
     }
-    insert_query.resize(magic_number_or_query_size);
-    in.readStrict(insert_query.data(), magic_number_or_query_size);
+    else if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+    {
+        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
+        readVarUInt(query_size, in);
+    }
+
+    insert_query.resize(query_size);
+    in.readStrict(insert_query.data(), query_size);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -355,8 +381,19 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// we must try to re-send exactly the same batches.
             /// So we save contents of the current batch into the current_batch_file_path file
             /// and truncate it afterwards if all went well.
-            WriteBufferFromFile out{parent.current_batch_file_path};
-            writeText(out);
+
+            /// Temporary file is required for atomicity.
+            String tmp_file{parent.current_batch_file_path + ".tmp"};
+
+            if (Poco::File{tmp_file}.exists())
+                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
+
+            {
+                WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
+                writeText(out);
+            }
+
+            Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);

@@ -15,6 +15,7 @@ namespace JoinCommon
 
 void convertColumnToNullable(ColumnWithTypeAndName & column);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
+void removeColumnNullability(ColumnWithTypeAndName & column);
 ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized);
 void removeLowCardinalityInplace(Block & block);
 
