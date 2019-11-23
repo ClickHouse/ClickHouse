@@ -125,7 +125,11 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       *    the necessity of holding process_list_element shared pointer.
       */
     if (is_local)
-        return executeQuery(load_all_query, context, true).in;
+    {
+        BlockIO res = executeQuery(load_all_query, context, true);
+        /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
+        return res.in;
+    }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
 }
 
