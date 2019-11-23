@@ -17,7 +17,6 @@ namespace DB
 MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
     : database{database_}, table{table_}, partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
-    // FIXME result_part_path
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
     , thread_number{getThreadNumber()}

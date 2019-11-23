@@ -960,6 +960,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->index_granularity_info = source_part->index_granularity_info;
 
     String new_part_tmp_path = new_data_part->getFullPath();
+    merge_entry->result_part_path = new_part_tmp_path;
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
