@@ -15,7 +15,7 @@ public:
     PrometheusMetricsWriter(
         const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 
-    void Write(WriteBuffer & wb) const;
+    void write(WriteBuffer & wb) const;
 
 private:
     const bool send_events;
