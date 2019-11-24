@@ -26,7 +26,7 @@ public:
 
 protected:
     /// No totals and extremes.
-    //void consumeTotals(Chunk) override {}
+    void consumeTotals(Chunk) override {}
     void consumeExtremes(Chunk) override {}
 
 private:

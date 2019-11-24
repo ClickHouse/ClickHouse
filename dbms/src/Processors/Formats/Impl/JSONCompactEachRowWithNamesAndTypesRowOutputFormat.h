@@ -25,6 +25,9 @@ public:
     void writeAfterTotals() override;
 
 protected:
+    /// Totals allowed
+    void consumeTotals(Chunk) override;
+
     NamesAndTypes fields;
 
     FormatSettings settings;

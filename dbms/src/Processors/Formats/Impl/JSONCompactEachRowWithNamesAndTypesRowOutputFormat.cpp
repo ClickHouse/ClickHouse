@@ -63,14 +63,20 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeAfterTotals()
     writeChar('\n', out);
 }
 
+void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::consumeTotals(Chunk chunk)
+{
+    IRowOutputFormat::consumeTotals(chunk);
+}
 
-void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFactory &factory) {
+void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFactory &factory)
+{
     factory.registerOutputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
             const Context &,
             FormatFactory::WriteCallback callback,
-            const FormatSettings &format_settings) {
+            const FormatSettings &format_settings)
+    {
         return std::make_shared<JSONCompactEachRowWithNamesAndTypesRowOutputFormat>(buf, sample, callback, format_settings);
     });
 }
