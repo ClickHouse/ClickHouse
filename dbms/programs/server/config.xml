@@ -289,6 +289,12 @@
     </graphite>
     -->
 
+    <!-- Serve endpoint fot Prometheus monitoring. -->
+    <!--
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+    </prometheus>
+    -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>

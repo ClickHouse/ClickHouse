@@ -9,6 +9,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "NotFoundHandler.h"
 #include "PingRequestHandler.h"
+#include "PrometheusRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "RootRequestHandler.h"
 
@@ -48,6 +49,9 @@ public:
         {
             if (uri == "/")
                 return new RootRequestHandler(server);
+            if (server.config().has("prometheus")
+                && uri == server.config().getString("prometheus.endpoint", "/metrics"))
+                return new PrometheusRequestHandler(server);
             if (uri == "/ping")
                 return new PingRequestHandler(server);
             else if (startsWith(uri, "/replicas_status"))
