@@ -290,9 +290,15 @@
     -->
 
     <!-- Serve endpoint fot Prometheus monitoring. -->
-
+    <!--
+        endpoint - mertics path (relative to root, statring with "/")
+        port - port to setup server. If not defined or 0 than http_port used
+        metrics - send data from table system.metrics
+        events - send data from table system.events
+    -->
     <prometheus>
         <endpoint>/metrics</endpoint>
+        <port>8001</port>
 
         <metrics>true</metrics>
         <events>true</events>
