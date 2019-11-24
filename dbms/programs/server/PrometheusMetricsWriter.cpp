@@ -5,14 +5,14 @@
 namespace
 {
 
-template<typename T>
+template <typename T>
 void writeOutLine(DB::WriteBuffer & wb, T && val)
 {
     DB::writeText(std::forward<T>(val), wb);
     DB::writeChar('\n', wb);
 }
 
-template<typename T, typename... TArgs>
+template <typename T, typename... TArgs>
 void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
 {
     DB::writeText(std::forward<T>(val), wb);
@@ -33,7 +33,7 @@ PrometheusMetricsWriter::PrometheusMetricsWriter(
 {
 }
 
-void PrometheusMetricsWriter::Write(WriteBuffer & wb) const
+void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 {
     if (send_events)
     {

@@ -30,7 +30,7 @@ void PrometheusRequestHandler::handleRequest(
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
         auto wb = WriteBufferFromHTTPServerResponse(request, response, keep_alive_timeout);
-        metrics_writer.Write(wb);
+        metrics_writer.write(wb);
         wb.finalize();
     }
     catch (...)

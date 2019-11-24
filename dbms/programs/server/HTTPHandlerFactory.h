@@ -27,24 +27,24 @@ private:
     Logger * log;
     std::string name;
 
-    std::vector<std::unique_ptr<Poco::Net::HTTPRequestHandlerFactory>> childHandlerFactories;
+    std::vector<std::unique_ptr<Poco::Net::HTTPRequestHandlerFactory>> child_handler_factories;
 
 public:
     HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_);
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
 
-    template<typename T>
+    template <typename T>
     TThis * addHandler()
     {
-        childHandlerFactories.emplace_back(std::make_unique<T>(server));
+        child_handler_factories.emplace_back(std::make_unique<T>(server));
         return this;
     }
 };
 
 
 /// Handle POST or GET with params
-template<typename HandleType>
+template <typename HandleType>
 class HTTPQueryRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
@@ -63,7 +63,7 @@ public:
 
 
 /// Handle GET or HEAD endpoint on specified path
-template<typename TGetEndpoint>
+template <typename TGetEndpoint>
 class HTTPGetRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
@@ -109,8 +109,8 @@ using HTTPRootRequestHandlerFactory = HTTPGetRequestHandlerFactory<RootEndpoint>
 using HTTPPingRequestHandlerFactory = HTTPGetRequestHandlerFactory<PingEndpoint>;
 using HTTPReplicasStatusRequestHandlerFactory = HTTPGetRequestHandlerFactory<ReplicasStatusEndpoint>;
 
-template<typename HandleType>
-HTTPRequestHandlerFactoryMain * CreateDefaultHandlerFatory(IServer & server, const std::string & name)
+template <typename HandleType>
+HTTPRequestHandlerFactoryMain * createDefaultHandlerFatory(IServer & server, const std::string & name)
 {
     auto handlerFactory = new HTTPRequestHandlerFactoryMain(server, name);
     handlerFactory->addHandler<HTTPRootRequestHandlerFactory>()
