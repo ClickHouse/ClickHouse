@@ -708,7 +708,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handlerFactory = CreateDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
-                handlerFactory->addHandler<PrometeusHandlerFactory>();
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handlerFactory->addHandler<PrometeusHandlerFactory>();
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handlerFactory,
@@ -828,6 +829,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+            });
+
+
+            /// Prometheus (if defined and not setup yet with http_port)
+            create_server("prometheus.port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                auto handlerFactory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handlerFactory->addHandler<PrometeusHandlerFactory>();
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handlerFactory,
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening http://" + address.toString());
             });
         }
 
