@@ -26,6 +26,8 @@ namespace CurrentMetrics
 
     /// Get name of metric by identifier. Returns statically allocated string.
     const char * getName(Metric event);
+    /// Get name if metric in snake case with suffix describing the unit.
+    const char * getNameSnake(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
     const char * getDocumentation(Metric event);
 

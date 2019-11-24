@@ -41,7 +41,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         {
             const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
 
-            std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+            std::string metric_name{ProfileEvents::getNameSnake(static_cast<ProfileEvents::Event>(i))};
             std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
 
             std::string key{profile_events_prefix + metric_name};
@@ -58,7 +58,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         {
             const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
-            std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(i))};
+            std::string metric_name{CurrentMetrics::getNameSnake(static_cast<CurrentMetrics::Metric>(i))};
             std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(i))};
 
             std::string key{current_metrics_prefix + metric_name};
