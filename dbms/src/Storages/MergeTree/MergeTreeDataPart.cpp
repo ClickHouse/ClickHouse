@@ -289,6 +289,12 @@ String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) co
         return new_part_info.getPartName();
 }
 
+String MergeTreeDataPart::getNewPath(const MergeTreePartInfo & new_part_info,
+    const DiskSpace::ReservationPtr & reservation) const
+{
+    return storage.getFullPathOnDisk(reservation->getDisk()) + "/" + getNewName(new_part_info) + "/";
+}
+
 DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)

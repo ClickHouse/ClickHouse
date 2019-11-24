@@ -1156,6 +1156,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
+    future_mutated_part.path = source_part->getNewPath(new_part_info, reserved_space);
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
         database_name, table_name, future_mutated_part);
