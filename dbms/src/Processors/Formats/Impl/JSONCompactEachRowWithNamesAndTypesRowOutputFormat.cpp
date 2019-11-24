@@ -65,7 +65,7 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeAfterTotals()
 
 void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::consumeTotals(Chunk chunk)
 {
-    IRowOutputFormat::consumeTotals(chunk);
+    IRowOutputFormat::consumeTotals(std::move(chunk));
 }
 
 void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFactory &factory)
