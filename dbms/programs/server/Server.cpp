@@ -707,8 +707,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+                auto handlerFactory = CreateDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                handlerFactory->addHandler<PrometeusHandlerFactory>();
+
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    handlerFactory,
                     server_pool,
                     socket,
                     http_params));
@@ -725,7 +728,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    CreateDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -783,7 +786,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    CreateDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -799,7 +802,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    CreateDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
