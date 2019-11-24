@@ -320,7 +320,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 }
 
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
-bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
+bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_bytes, int balance)
 {
     skipWhitespaceIfAny(buf);
     if (buf.eof() || *buf.position() == ';')
@@ -328,7 +328,7 @@ bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
     bool quoted = false;
 
     size_t chunk_begin_buf_count = buf.count();
-    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_size))
+    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_bytes))
     {
         buf.position() = find_first_symbols<'\\', '\'', ')', '('>(buf.position(), buf.buffer().end());
         if (buf.position() == buf.buffer().end())

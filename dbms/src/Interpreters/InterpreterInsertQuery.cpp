@@ -98,7 +98,10 @@ BlockIO InterpreterInsertQuery::execute()
 {
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
+
+    BlockIO res;
     StoragePtr table = getTable(query);
+    res.pipeline.addStorageHolder(table);
 
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
@@ -134,7 +137,6 @@ BlockIO InterpreterInsertQuery::execute()
     out_wrapper->setProcessListElement(context.getProcessListElement());
     out = std::move(out_wrapper);
 
-    BlockIO res;
     res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?
