@@ -39,13 +39,9 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writePrefix()
     writeCString("]\n", out);
 }
 
-void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeBeforeTotals()
-{
-    writeChar('\n', out);
-}
-
 void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
+    writeChar('\n', out);
     size_t num_columns = columns.size();
     writeChar('[', out);
     for (size_t i = 0; i < num_columns; ++i)
@@ -56,11 +52,6 @@ void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeTotals(const Colum
         JSONCompactEachRowRowOutputFormat::writeField(*columns[i], *types[i], row_num);
     }
     writeCString("]\n", out);
-}
-
-void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::writeAfterTotals()
-{
-    writeChar('\n', out);
 }
 
 void JSONCompactEachRowWithNamesAndTypesRowOutputFormat::consumeTotals(Chunk chunk)
