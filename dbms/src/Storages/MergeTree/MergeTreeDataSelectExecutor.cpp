@@ -388,18 +388,18 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
+        DataTypePtr sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
 
-        if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
         else
-            throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+            throw Exception("Invalid sampling column type in storage parameters: " + sampling_column_type->getName() + ". Must be unsigned integer type.",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
         if (settings.parallel_replicas_count > 1)
@@ -462,8 +462,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                 sampling_key_ast = std::make_shared<ASTIdentifier>(data.sampling_expr_column_name);
 
                 /// We do spoil available_real_columns here, but it is not used later.
-                auto sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
-                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(type));
+                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(sampling_column_type));
             }
 
             if (has_lower_limit)
