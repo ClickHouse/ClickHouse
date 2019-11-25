@@ -23,10 +23,7 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
-    std::cout << "size1 " << children.size() << std::endl;
     children.insert(children.end(), inputs_.begin(), inputs_.end());
-    std::cout << "size2 " << children.size() << std::endl;
-    std::cout << children.at(0)->getName() << std::endl;
     children.at(0)->dumpTree(std::cout, 0);
     header = children.at(0)->getHeader();
     num_columns = header.columns();
