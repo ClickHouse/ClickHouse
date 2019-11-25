@@ -817,4 +817,18 @@ Result:
 └──────────────┘
 ```
 
+Query:
+
+```sql
+SELECT (SELECT toDate('2015-01-02'), 'Hello') AS x, x, identity((SELECT 1)), identity((SELECT 1) AS y);
+```
+
+Result:
+
+```text
+─x──────────────────────┬─x──────────────────────┬─identity(_subquery7)─┬─identity(y)─┐
+│ ('2015-01-02','Hello') │ ('2015-01-02','Hello') │                    1 │           1 │
+└────────────────────────┴────────────────────────┴──────────────────────┴─────────────┘
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
