@@ -573,11 +573,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         future_part.name,
         future_part.part_info,
         space_reservation->getDisk(),
+        all_columns,
         estimated_bytes_uncompressed,
         sum_input_rows_upper_bound,
         TMP_PREFIX + future_part.name);
 
-    new_data_part->setColumns(all_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
@@ -958,15 +958,32 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
     
+    auto in = mutations_interpreter.execute(table_lock_holder);
+    const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
-        future_part.name, source_part->getType(),
-        future_part.part_info, space_reservation->getDisk(), 
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+
+    const auto & source_column_names = source_part->columns.getNames();
+    const auto & updated_column_names = updated_header.getNames();
+
+    NameSet new_columns_set(source_column_names.begin(), source_column_names.end());
+    new_columns_set.insert(updated_column_names.begin(), updated_column_names.end());
+    auto new_columns = all_columns.filter(new_columns_set);
+
+    auto new_data_part = data.createPart(
+        future_part.name,
+        future_part.part_info,
+        space_reservation->getDisk(),
+        std::move(new_columns),
+        source_part->bytes_on_disk,
+        source_part->rows_count,
         "tmp_mut_" + future_part.name);
     
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
-    new_data_part->index_granularity_info = source_part->index_granularity_info;
+
+    /// FIXME Now it's wrong code. Check if nothing will break
+    // new_data_part->index_granularity_info = source_part->index_granularity_info;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -981,10 +998,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
-    auto in = mutations_interpreter.execute(table_lock_holder);
-    const auto & updated_header = mutations_interpreter.getUpdatedHeader();
-
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
     Block in_header = in->getHeader();
@@ -1141,18 +1154,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);
             new_data_part->checksums.write(out_checksums);
         }
-
-        /// Write the columns list of the resulting part in the same order as all_columns.
-        Names source_column_names = source_part->columns.getNames();
-        NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-        for (auto it = all_columns.begin(); it != all_columns.end();)
-        {
-            if (source_columns_name_set.count(it->name) || updated_header.has(it->name))
-                ++it;
-            else
-                it = new_data_part->columns.erase(it);
-        }
-        new_data_part->setColumns(all_columns);
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);

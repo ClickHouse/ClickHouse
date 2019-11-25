@@ -26,6 +26,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
 {
     auto granule = index->createIndexGranule();
     granule->deserializeBinary(*stream.data_buffer);
+    std::cerr << "(MergeTreeIndexReader) granule.empty(): " << granule->empty() << "\n";
     return granule;
 }
 

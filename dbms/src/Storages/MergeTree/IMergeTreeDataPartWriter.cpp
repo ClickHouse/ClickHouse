@@ -126,7 +126,7 @@ void fillIndexGranularityImpl(
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
 
     /// FIXME correct index granularity for compact
-    index_granularity_for_block = rows_in_block;
+    // index_granularity_for_block = rows_in_block;
 
     /// FIXME: split/join last mark for compact parts
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)

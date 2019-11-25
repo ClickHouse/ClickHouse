@@ -129,11 +129,9 @@ void MergeTreeReaderCompact::initMarksLoader()
     if (marks_loader.initialized())
         return;
 
-    std::string mrk_path = data_part->index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
     size_t columns_num = data_part->columns.size();
 
-    /// FIXME pass mrk_path as argument
-    auto load = [this, columns_num, mrk_path]() -> MarkCache::MappedPtr
+    auto load = [this, columns_num](const String & mrk_path) -> MarkCache::MappedPtr
     {
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t marks_count = data_part->getMarksCount();
@@ -178,9 +176,8 @@ void MergeTreeReaderCompact::initMarksLoader()
         return res;
     };
 
-    marks_loader = MergeTreeMarksLoader{mark_cache, mrk_path, load, settings.save_marks_in_cache, columns_num};
-
-    std::cerr << "(MergeTreeReaderCompact::loadMarks) end marks load..." << "\n";
+    auto mrk_path = data_part->index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
+    marks_loader = MergeTreeMarksLoader{mark_cache, std::move(mrk_path), load, settings.save_marks_in_cache, columns_num};
 }
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)

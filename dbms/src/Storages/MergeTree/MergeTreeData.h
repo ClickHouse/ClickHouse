@@ -180,10 +180,11 @@ public:
 
     MergeTreeDataPartType choosePartType(size_t bytes_on_disk, size_t rows_count) const;
 
-
-
+    /// After this methods setColumns must be called
+    /// FIXME make this inside this function
     MutableDataPartPtr createPart(const String & name,
         const MergeTreePartInfo & part_info,const DiskSpace::DiskPtr & disk,
+        const NamesAndTypesList & columns,
         size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
     
     MutableDataPartPtr createPart(const String & name,

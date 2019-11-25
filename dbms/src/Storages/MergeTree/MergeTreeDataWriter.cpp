@@ -203,10 +203,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
     auto reservation = data.reserveSpace(expected_size);
 
+    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+
     auto new_data_part = data.createPart(
         part_name, new_part_info, 
         reservation->getDisk(),
-        expected_size, block.rows(),
+        columns,
+        expected_size,
+        block.rows(),
         TMP_PREFIX + part_name);
 
     new_data_part->partition = std::move(partition);
@@ -262,9 +266,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
-
-    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
-    new_data_part->setColumns(columns);
 
     MergedBlockOutputStream out(new_data_part, columns, compression_codec);
 
