@@ -810,23 +810,23 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
 
-## arrayCompact(array) {#array_functions-arraycompact}
+## arrayCompact(arr) {#array_functions-arraycompact}
 
 Removes consecutive duplicate elements from an array.
 
 **Syntax**
 
 ```sql
-arrayCompact(array)
+arrayCompact(arr)
 ```
 
 **Parameters**
 
-`array` — [Array](../../data_types/array.md).
+`arr` — [Array](../../data_types/array.md).
 
 **Returned value**
 
-`array` with consecutive duplicate elemnets removed. Type: `Array`.
+`arr` with consecutive duplicate elements removed. Type: `Array`.
 
 **Example**
 
