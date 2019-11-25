@@ -787,7 +787,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan. Returns the same value that was used as its argument. 
+Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
 **Syntax**
 
@@ -798,8 +798,6 @@ identity()
 **Returned value**
 
 Returns the same value that was used as its argument. 
-
-Type: [all Data Types](#https://clickhouse.yandex/docs/en/data_types/).
 
 **Example**
 
