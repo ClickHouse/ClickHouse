@@ -1,11 +1,11 @@
 # Third-party libraries may have substandard code.
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -Wno-shadow")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z -Wno-shadow")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z -Wno-shadow")
 endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -332,7 +332,7 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-add_subdirectory (boringssl-cmake)
+add_subdirectory (grpc-cmake)
 
 #if (USE_INTERNAL_ORC_LIBRARY)
 #    add_subdirectory(orc-cmake)
