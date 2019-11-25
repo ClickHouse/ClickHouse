@@ -625,7 +625,6 @@ Returns range from the index, in which given condition is true.
 
 Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
 
-
 **Example**
 
 Here is the example of test data from the table [ontime](../../getting_started/example_datasets/ontime.md).
@@ -685,7 +684,7 @@ Result:
 └────────────┴─────────┘
 ```
 
-Wrap the expression `k = '2017-09-15'` into `indexHint` function.
+Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
 
 Query:
 
