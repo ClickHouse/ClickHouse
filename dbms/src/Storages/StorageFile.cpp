@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -158,7 +159,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name), context_global(args.context)
+    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name),
+      context_global(args.context), compression_method(args.compression_method)
 {
     setColumns(args.columns);
     setConstraints(args.constraints);
@@ -167,41 +169,44 @@ StorageFile::StorageFile(CommonArguments args)
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
-        : storage(storage_)
+    StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
+        const Context & context, UInt64 max_block_size,
+        std::string file_path,
+        const CompressionMethod compression_method)
+        : storage(std::move(storage_))
     {
-        if (storage.use_table_fd)
+        if (storage->use_table_fd)
         {
-            unique_lock = std::unique_lock(storage.rwlock);
+            unique_lock = std::unique_lock(storage->rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
 
-            if (storage.table_fd_was_used) /// We need seek to initial position
+            if (storage->table_fd_was_used) /// We need seek to initial position
             {
-                if (storage.table_fd_init_offset < 0)
-                    throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                if (storage->table_fd_init_offset < 0)
+                    throw Exception("File descriptor isn't seekable, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
                 /// ReadBuffer's seek() doesn't make sense, since cache is empty
-                if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
-                    throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                if (lseek(storage->table_fd, storage->table_fd_init_offset, SEEK_SET) < 0)
+                    throwFromErrno("Cannot seek file descriptor, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
 
-            storage.table_fd_was_used = true;
-            read_buf = std::make_unique<ReadBufferFromFileDescriptor>(storage.table_fd);
+            storage->table_fd_was_used = true;
+            read_buf = getReadBuffer<ReadBufferFromFileDescriptor>(compression_method, storage->table_fd);
         }
         else
         {
-            shared_lock = std::shared_lock(storage.rwlock);
-            read_buf = std::make_unique<ReadBufferFromFile>(file_path);
+            shared_lock = std::shared_lock(storage->rwlock);
+            read_buf = getReadBuffer<ReadBufferFromFile>(compression_method, file_path);
         }
 
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
     {
-        return storage.getName();
+        return storage->getName();
     }
 
     Block readImpl() override
@@ -222,9 +227,9 @@ public:
     }
 
 private:
-    StorageFile & storage;
+    std::shared_ptr<StorageFile> storage;
     Block sample_block;
-    std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
+    std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
 
     std::shared_lock<std::shared_mutex> shared_lock;
@@ -248,7 +253,8 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return blocks_input;
@@ -258,7 +264,8 @@ BlockInputStreams StorageFile::read(
 class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageFileBlockOutputStream(StorageFile & storage_)
+    explicit StorageFileBlockOutputStream(StorageFile & storage_,
+        const CompressionMethod compression_method)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
@@ -268,13 +275,13 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
+            write_buf = getWriteBuffer<WriteBufferFromFileDescriptor>(compression_method, storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
@@ -305,7 +312,7 @@ public:
 private:
     StorageFile & storage;
     std::unique_lock<std::shared_mutex> lock;
-    std::unique_ptr<WriteBufferFromFileDescriptor> write_buf;
+    std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
 };
 
@@ -313,7 +320,8 @@ BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
     const Context & /*context*/)
 {
-    return std::make_shared<StorageFileBlockOutputStream>(*this);
+    return std::make_shared<StorageFileBlockOutputStream>(*this,
+        IStorage::chooseCompressionMethod(paths[0], compression_method));
 }
 
 Strings StorageFile::getDataPaths() const
@@ -349,16 +357,17 @@ void registerStorageFile(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+        if (!(engine_args.size() >= 1 && engine_args.size() <= 3))
             throw Exception(
-                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+        String compression_method;
         StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name,
-                                                 args.columns, args.constraints, args.context};
+                                                 args.columns, args.constraints, args.context, compression_method};
 
         if (engine_args.size() == 1)    /// Table in database
             return StorageFile::create(args.relative_data_path, common_args);
@@ -366,6 +375,7 @@ void registerStorageFile(StorageFactory & factory)
         /// Will use FD if engine_args[1] is int literal or identifier with std* name
         int source_fd = -1;
         String source_path;
+
         if (auto opt_name = tryGetIdentifierName(engine_args[1]))
         {
             if (*opt_name == "stdin")
@@ -390,6 +400,14 @@ void registerStorageFile(StorageFactory & factory)
             else
                 throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
         }
+
+        if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+            compression_method = "auto";
 
         if (0 <= source_fd)     /// File descriptor
             return StorageFile::create(source_fd, common_args);

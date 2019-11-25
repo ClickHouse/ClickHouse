@@ -39,10 +39,12 @@ protected:
         const std::string & table_name_,
         const String & format_name_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_);
+        const ConstraintsDescription & constraints_,
+        const String & compression_method_);
 
     Poco::URI uri;
     const Context & context_global;
+    String compression_method;
 
 private:
     String format_name;
@@ -80,8 +82,9 @@ public:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_)
-        : IStorageURLBase(uri_, context_, database_name_, table_name_, format_name_, columns_, constraints_)
+        Context & context_,
+        const String & compression_method_)
+        : IStorageURLBase(uri_, context_, database_name_, table_name_, format_name_, columns_, constraints_, compression_method_)
     {
     }
 
