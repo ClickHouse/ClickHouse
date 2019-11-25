@@ -472,7 +472,7 @@ void StorageDistributed::createDirectoryMonitors()
     if (path.empty())
         return;
 
-    Poco::File{path}.createDirectory();
+    Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
