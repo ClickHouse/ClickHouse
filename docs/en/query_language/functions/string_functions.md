@@ -217,17 +217,126 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## trimLeft(s)
+## trimLeft {#trimleft}
 
-Returns a string that removes the whitespace characters on left side.
+Returns a given string with all heading whitespaces removed.
 
-## trimRight(s)
+**Syntax** 
 
-Returns a string that removes the whitespace characters on right side.
+```sql
+trimLeft();
+```
 
-## trimBoth(s)
+Alias: `ltrim`.
+
+
+**Parameters** 
+
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+
+**Returned value**
+
+A string without any heading whitespaces.
+
+Type: `String`.
+
+**Example**
+
+
+Query:
+
+```sql
+SELECT trimLeft('     Hello World!')
+```
+
+Result:
+
+```text
+┌─trimLeft('     Hello World!')─┐
+│ Hello World!                  │
+└───────────────────────────────┘
+```
+
+## trimRight  {#trimright}
+
+Returns a given string with all trailing whitespaces removed.
+
+
+**Syntax** 
+
+```sql
+trimRight();
+```
+
+Alias: `rtrim`.
+
+
+**Parameters**
+
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+
+**Returned value(s)**
+
+A string without any trailing whitespaces.
+
+Type: `String`.
+
+**Example**
+
+
+Query:
+
+```sql
+SELECT trimRight('Hello World!   ')
+```
+
+Result:
+
+```text
+┌─trimLeft('Hello World!   ')───┐
+│ Hello World!                  │
+└───────────────────────────────┘
+```
+
+## trimBoth  {#trimboth}
 
 Returns a string that removes the whitespace characters on either side.
+
+
+**Syntax** 
+
+```sql
+trimBoth();
+```
+
+Alias: `trim`.
+
+
+**Parameters**
+
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+
+**Returned value(s)**
+
+A value without any heading and trailing whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trim('     Hello World!     ')
+```
+
+Result:
+
+```text
+┌─trimBoth('     Hello World!     ')─┐
+│ Hello World!                       │
+└────────────────────────────────────┘
+```
 
 ## CRC32(s)
 
