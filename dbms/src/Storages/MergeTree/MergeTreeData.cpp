@@ -3265,6 +3265,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
+    if (!reservation)
+    {
+        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(src_part->bytes_on_disk) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    }
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();

@@ -56,6 +56,7 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
+        const std::string & compression_method;
     };
 
 protected:
@@ -80,6 +81,7 @@ private:
     const Context & context_global;
 
     int table_fd = -1;
+    String compression_method;
 
     std::vector<std::string> paths;
 

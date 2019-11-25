@@ -119,56 +119,34 @@ public:
       */
     virtual bool isState() const { return false; }
 
-    using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
-
-    /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
-      *  and do a single call to "addBatch" for devirtualization and inlining. When offsets is not
-      *  null, behave like AddBatchArrayFunc (it's used to work around unknown regressions).
-      */
-    using AddBatchFunc = void (*)(
-        const IAggregateFunction *,
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        const UInt64 * offsets,
-        Arena * arena);
-
-    /** The same for single place.
-      */
-    using AddBatchSinglePlaceFunc
-        = void (*)(const IAggregateFunction *, size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena);
-
-    /** In addition to the above method, this variant accepts an array of "offsets" which allows
-      *  collecting multiple rows of arguments into array "places" as long as they are between
-      *  offsets[i-1] and offsets[i]. It is used for arrayReduce and might be used generally to
-      *  break data dependency when array "places" contains a large number of same values
-      *  consecutively.
-      */
-    using AddBatchArrayFunc = void (*)(
-        const IAggregateFunction *,
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        const UInt64 * offsets,
-        Arena * arena);
-
-    struct AddFuncs
-    {
-        AddFunc add;
-        AddBatchFunc add_batch;
-        AddBatchSinglePlaceFunc add_batch_single_place;
-        AddBatchArrayFunc add_batch_array;
-    };
-
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
       * This gives a performance drop on simple queries around 12%.
       * After the appearance of better compilers, the code can be removed.
       */
-    virtual AddFuncs getAddressOfAddFunctions() const = 0;
+    using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
+    virtual AddFunc getAddressOfAddFunction() const = 0;
+
+    /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
+      *  and do a single call to "addBatch" for devirtualization and inlining.
+      */
+    virtual void
+    addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena)
+        const = 0;
+
+    /** The same for single place.
+      */
+    virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
+    /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
+      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  -Array combinator. It might also be used generally to break data dependency when array
+      *  "places" contains a large number of same values consecutively.
+      */
+    virtual void
+    addBatchArray(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const = 0;
 
     /** This is used for runtime code generation to determine, which header files to include in generated source.
       * Always implement it as
@@ -195,58 +173,37 @@ private:
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
 
-    static void addBatch(
-        const IAggregateFunction * that,
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        const UInt64 * offsets,
-        Arena * arena)
-    {
-        if (offsets)
-        {
-            size_t current_offset = 0;
-            for (size_t i = 0; i < batch_size; ++i)
-            {
-                size_t next_offset = offsets[i];
-                for (size_t j = current_offset; j < next_offset; ++j)
-                    static_cast<const Derived *>(that)->add(places[i] + place_offset, columns, j, arena);
-                current_offset = next_offset;
-            }
-        }
-        else
-            for (size_t i = 0; i < batch_size; ++i)
-                static_cast<const Derived *>(that)->add(places[i] + place_offset, columns, i, arena);
-    }
+public:
+    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
+        : IAggregateFunction(argument_types_, parameters_) {}
 
-    static void
-    addBatchSinglePlaceFree(const IAggregateFunction * that, size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena)
+    AddFunc getAddressOfAddFunction() const override { return &addFree; }
+
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
-            static_cast<const Derived *>(that)->add(place, columns, i, arena);
+            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
-    /// TODO: We cannot use this function directly as it slows down aggregate functions like uniqCombined due to unknown reasons.
-    static void addBatchArrayFree(const IAggregateFunction * that,
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchArray(
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const override
     {
         size_t current_offset = 0;
         for (size_t i = 0; i < batch_size; ++i)
         {
             size_t next_offset = offsets[i];
             for (size_t j = current_offset; j < next_offset; ++j)
-                static_cast<const Derived *>(that)->add(places[i] + place_offset, columns, j, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
     }
-
-public:
-    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunction(argument_types_, parameters_) {}
-
-    /// If we return addBatchArrayFree instead of nullptr, it leads to regression.
-    AddFuncs getAddressOfAddFunctions() const override { return {&addFree, &addBatch, &addBatchSinglePlaceFree, nullptr}; }
 };
 
 

@@ -183,8 +183,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         while (auto func = typeid_cast<AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
-        that->getAddressOfAddFunctions().add_batch(
-            that, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
+        that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)

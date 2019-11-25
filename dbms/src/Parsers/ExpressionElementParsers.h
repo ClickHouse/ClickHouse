@@ -90,9 +90,12 @@ protected:
   */
 class ParserFunction : public IParserBase
 {
+public:
+    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    bool allow_function_parameters;
 };
 
 class ParserCodecDeclarationList : public IParserBase

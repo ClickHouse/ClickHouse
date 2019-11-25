@@ -101,10 +101,17 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Deletes the table.
 If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
+```
+DROP DICTIONARY [IF EXISTS] [db.]name
+```
+
+Delets the dictionary.
+If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
+
 ## EXISTS
 
 ```sql
-EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.
