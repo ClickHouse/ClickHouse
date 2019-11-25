@@ -706,9 +706,10 @@ bool StorageMergeTree::tryMutatePart()
             future_part.parts.push_back(part);
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
-            future_part.path = part->getNewPath(new_part_info, tagger->reserved_space);
 
             tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
+
+            future_part.path = part->getNewPath(new_part_info, tagger->reserved_space);
             break;
         }
     }
