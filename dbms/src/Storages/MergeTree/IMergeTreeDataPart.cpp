@@ -326,8 +326,6 @@ String IMergeTreeDataPart::stateString() const
     return stateToString(state);
 }
 
-
-
 void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
 {
     if (!checkState(affordable_states))
@@ -599,9 +597,11 @@ void IMergeTreeDataPart::loadColumns(bool require)
     }
 
     is_frozen = !poco_file_path.canWrite();
-
     ReadBufferFromFile file = openForReading(path);
     columns.readText(file);
+    index_granularity_info.initialize(storage, getType(), columns.size());
+    for (const auto & it : columns)
+        sample_block.insert({it.type, it.name});
 }
 
 

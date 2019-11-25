@@ -203,8 +203,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
     auto reservation = data.reserveSpace(expected_size);
 
-
-    MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
+    auto new_data_part = data.createPart(
         part_name, new_part_info, 
         reservation->getDisk(),
         expected_size, block.rows(),

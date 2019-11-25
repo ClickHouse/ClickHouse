@@ -53,6 +53,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     UNUSED(max_rows_to_read);
     UNUSED(res);
 
+    /// FIXME compute correct granularity
     size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
     size_t read_rows = 0;
 
@@ -114,6 +115,7 @@ void MergeTreeReaderCompact::readData(
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
 
+    std::cerr << "(MergeTreeReaderCompact::readData) end reading column rows: " << column.size() << "\n";
     std::cerr << "(MergeTreeReaderCompact::readData) end reading column: " << name << "\n";
 
     // if (column.size() != rows_to_read)
@@ -127,16 +129,20 @@ void MergeTreeReaderCompact::initMarksLoader()
     if (marks_loader.initialized())
         return;
 
-    const auto & index_granularity_info = data_part->index_granularity_info;
-    size_t marks_count = data_part->getMarksCount();
-    std::string mrk_path = index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
+    std::string mrk_path = data_part->index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
     size_t columns_num = data_part->columns.size();
 
-    auto load = [&]() -> MarkCache::MappedPtr
+    /// FIXME pass mrk_path as argument
+    auto load = [this, columns_num, mrk_path]() -> MarkCache::MappedPtr
     {
         size_t file_size = Poco::File(mrk_path).getSize();
+        size_t marks_count = data_part->getMarksCount();
+        size_t mark_size_in_bytes = data_part->index_granularity_info.mark_size_in_bytes;
 
-        size_t expected_file_size = index_granularity_info.mark_size_in_bytes * marks_count;
+        std::cerr << "(initMarksLoader) marks_count: " << marks_count << "\n";
+        std::cerr << "() mark_size_in_bytes: " << mark_size_in_bytes << "\n";
+
+        size_t expected_file_size = mark_size_in_bytes * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
                 "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
@@ -163,9 +169,9 @@ void MergeTreeReaderCompact::initMarksLoader()
         }
 
         std::cerr << "(MergeTreeReaderCompact::loadMarks) file_size: " << file_size << "\n";
-        std::cerr << "(MergeTreeReaderCompact::loadMarks) correct file size: " << i * index_granularity_info.mark_size_in_bytes << "\n";
+        std::cerr << "(MergeTreeReaderCompact::loadMarks) correct file size: " << i * mark_size_in_bytes << "\n";
 
-        if (i * index_granularity_info.mark_size_in_bytes != file_size)
+        if (i * mark_size_in_bytes != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
         res->protect();
