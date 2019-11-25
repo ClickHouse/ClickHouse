@@ -1,4 +1,3 @@
-
 # OnTime
 
 Этот датасет может быть получен двумя способами:
@@ -8,7 +7,7 @@
 
 ## Импорт из сырых данных
 
-Скачивание данных:
+Скачивание данных (из `https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh`):
 
 ```bash
 for s in `seq 1987 2018`
@@ -19,8 +18,6 @@ wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performa
 done
 done
 ```
-
-(из <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
 
 Создание таблицы:
 
