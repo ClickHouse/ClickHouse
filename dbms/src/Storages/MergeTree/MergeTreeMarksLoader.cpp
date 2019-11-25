@@ -27,22 +27,23 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
 
 void MergeTreeMarksLoader::loadMarks()
 {
+    auto load = std::bind(load_func, mrk_path);
     if (mark_cache)
     {
         auto key = mark_cache->hash(mrk_path);
         if (save_marks_in_cache)
         {
-            marks = mark_cache->getOrSet(key, load_func);
+            marks = mark_cache->getOrSet(key, load);
         }
         else
         {
             marks = mark_cache->get(key);
             if (!marks)
-                marks = load_func();
+                marks = load();
         }
     }
     else
-        marks = load_func();
+        marks = load();
 
     if (!marks)
         throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);   

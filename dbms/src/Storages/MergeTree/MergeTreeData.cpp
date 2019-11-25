@@ -1579,10 +1579,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 }
 
 
-MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_on_disk, size_t rows_count) const
+MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
 {
     const auto settings = getSettings();
-    if (bytes_on_disk < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
+    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
     
     return MergeTreeDataPartType::WIDE;
@@ -1601,15 +1601,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
         throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
-    const MergeTreePartInfo & part_info, const DiskSpace::DiskPtr & disk,
-    size_t bytes_on_disk, size_t rows_count, const String & relative_path) const
+MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
+    const String & name,
+    const MergeTreePartInfo & part_info,
+    const DiskSpace::DiskPtr & disk,
+    const NamesAndTypesList & columns,
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    const String & relative_path) const
 {
-    auto part = createPart(name, choosePartType(bytes_on_disk, rows_count), part_info, disk, relative_path);
-
-    part->bytes_on_disk = bytes_on_disk;
-    part->rows_count = rows_count;
-
+    auto part = createPart(name, choosePartType(bytes_uncompressed, rows_count), part_info, disk, relative_path);
+    part->setColumns(columns);
+    /// Don't save rows_count count here as it can change later 
     return part;
 }
 

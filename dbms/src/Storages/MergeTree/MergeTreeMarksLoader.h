@@ -7,7 +7,7 @@ class MergeTreeMarksLoader
 {
 public:
     using MarksPtr = MarkCache::MappedPtr;
-    using LoadFunc = std::function<MarksPtr()>;
+    using LoadFunc = std::function<MarksPtr(const String &)>;
 
     MergeTreeMarksLoader() {}
 
