@@ -240,10 +240,16 @@ void DatabaseOnDisk::renameTable(
     if (!table)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
+    ASTPtr ast = getQueryFromMetadata(getObjectMetadataPath(table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
+    auto & create = ast->as<ASTCreateQuery &>();
+    create.table = to_table_name;
+
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database.getDatabaseName()) + "/",
+        table->rename(to_database.getDataPath(create),
                       to_database.getDatabaseName(),
                       to_table_name, lock);
     }
@@ -256,11 +262,6 @@ void DatabaseOnDisk::renameTable(
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPoco, e};
     }
-
-    ASTPtr ast = getQueryFromMetadata(getObjectMetadataPath(table_name));
-    if (!ast)
-        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
-    ast->as<ASTCreateQuery &>().table = to_table_name;
 
     /// NOTE Non-atomic.
     to_database.createTable(context, to_table_name, table, ast);
