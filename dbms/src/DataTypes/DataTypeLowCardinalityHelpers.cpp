@@ -92,6 +92,9 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
     if (from_type->equals(*to_type))
         return column;
 
+    if (WhichDataType(to_type).isEnum() && from_type->getTypeId() == to_type->getTypeId())
+        return column;
+
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         auto & nested = column_const->getDataColumnPtr();
