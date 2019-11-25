@@ -1126,11 +1126,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         return streams;
     };
 
-    auto anime = streams_to_merge().at(0)->getHeader();
-    std::cout << anime.dumpNames() << std::endl;
-    std::cout << anime.dumpStructure() << std::endl;
-    std::cout << anime.columns() << std::endl;
-
     BlockInputStreamPtr merged;
     switch (data.merging_params.mode)
     {
