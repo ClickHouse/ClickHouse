@@ -77,7 +77,8 @@ void MergeTreeDataPartWriterCompact::write(
         bool write_marks = true;
         // size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
         size_t rows_to_write = total_rows;
-        index_granularity.appendMark(total_rows);
+        // if (compute_granularity)
+        //     index_granularity.appendMark(total_rows);
 
         if (rows_to_write)
             data_written = true;

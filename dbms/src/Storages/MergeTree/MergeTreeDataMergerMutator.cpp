@@ -563,23 +563,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     extractMergingAndGatheringColumns(
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+
+    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
+    size_t estimated_bytes_uncompressed = 0;
+    for (const auto & part : parts)
+        estimated_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
     
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name,
         future_part.part_info,
         space_reservation->getDisk(),
-        merge_entry->total_size_bytes_compressed,
-        merge_entry->total_rows_count,
+        estimated_bytes_uncompressed,
+        sum_input_rows_upper_bound,
         TMP_PREFIX + future_part.name);
 
     new_data_part->setColumns(all_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
-    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
-
     bool need_remove_expired_values = force_ttl;
-    for (const MergeTreeData::DataPartPtr & part : parts)
+    for (const auto & part : parts)
         new_data_part->ttl_infos.update(part->ttl_infos);
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
@@ -954,6 +957,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     }
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+    
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name, source_part->getType(),
@@ -1080,6 +1084,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             IDataType::SubstreamPath stream_path;
             entry.type->enumerateStreams(callback, stream_path);
         }
+
         for (const auto & index : indices_to_recalc)
         {
             files_to_skip.insert(index->getFileName() + ".idx");

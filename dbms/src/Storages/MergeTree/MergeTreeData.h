@@ -181,7 +181,6 @@ public:
     MergeTreeDataPartType choosePartType(size_t bytes_on_disk, size_t rows_count) const;
 
 
-    /// FIXME remove version with columns.
 
     MutableDataPartPtr createPart(const String & name,
         const MergeTreePartInfo & part_info,const DiskSpace::DiskPtr & disk,

@@ -98,6 +98,7 @@ void fillIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity,
     bool can_use_adaptive_index_granularity)
 {
+    /// FIXME correct index granularity for compact
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
     if (!can_use_adaptive_index_granularity)
@@ -123,6 +124,9 @@ void fillIndexGranularityImpl(
 
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
+
+    /// FIXME correct index granularity for compact
+    index_granularity_for_block = rows_in_block;
 
     /// FIXME: split/join last mark for compact parts
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)

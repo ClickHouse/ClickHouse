@@ -160,7 +160,6 @@ String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    index_granularity_info.initialize(storage, getType(), columns.size());
     String full_path = getFullPath();
     index_granularity_info.changeGranularityIfRequired(full_path);
 
