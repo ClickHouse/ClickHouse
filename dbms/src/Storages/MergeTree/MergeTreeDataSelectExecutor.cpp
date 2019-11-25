@@ -459,10 +459,11 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             ASTPtr sampling_key_ast = data.getSamplingKeyAST();
             if (select.final())
             {
-                auto sampling_column_name = sampling_key_ast->getColumnName();
-                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_column_name);
+                sampling_key_ast = std::make_shared<ASTIdentifier>(data.sampling_expr_column_name);
+
                 /// We do spoil available_real_columns here, but it is not used later.
-                available_real_columns.emplace_back(std::move(sampling_column_name));
+                auto sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
+                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(type));
             }
 
             if (has_lower_limit)
