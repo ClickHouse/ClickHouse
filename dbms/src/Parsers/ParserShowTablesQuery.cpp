@@ -31,6 +31,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ASTPtr like;
     ASTPtr database;
+    ASTPtr limit_length;
 
     auto query = std::make_shared<ASTShowTablesQuery>();
 
@@ -73,16 +74,15 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (s_limit.ignore(pos, expected))
         {
-            if (!limit_p.parse(pos, query->limit_length, expected))
+            if (!limit_p.parse(pos, limit_length, expected))
                 return false;
         }
     }
 
-    tryGetIdentifierNameInto(database, query->from);
-    if (like)
-        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
-
     node = query;
+    query->setChild(ASTShowTablesQueryChildren::LIKE, like);
+    query->setChild(ASTShowTablesQueryChildren::FROM, database);
+    query->setChild(ASTShowTablesQueryChildren::LIMIT_LENGTH, limit_length);
 
     return true;
 }

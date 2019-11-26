@@ -32,10 +32,12 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.databases)
         return "SELECT name FROM system.databases";
 
-    if (query.temporary && !query.from.empty())
+    const auto & from = query.getChild(ASTShowTablesQueryChildren::FROM);
+
+    if (query.temporary && from)
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
+    String database = from ? getIdentifierName(from) : context.getCurrentDatabase();
 
     /** The parameter check_database_access_rights is reset when the SHOW TABLES query is processed,
       * So that all clients can see a list of all databases and tables in them regardless of their access rights
@@ -62,11 +64,11 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
         rewritten_query << "database = " << std::quoted(database, '\'');
 
-    if (!query.like.empty())
-        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+    if (const auto & like = query.getChild(ASTShowTablesQueryChildren::LIKE))
+        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(like->as<ASTLiteral>()->value.get<String>(), '\'');
 
-    if (query.limit_length)
-        rewritten_query << " LIMIT " << query.limit_length;
+    if (const auto & limit_length = query.getChild(ASTShowTablesQueryChildren::LIMIT_LENGTH))
+        rewritten_query << " LIMIT " << limit_length;
 
     return rewritten_query.str();
 }

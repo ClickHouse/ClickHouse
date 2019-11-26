@@ -10,6 +10,7 @@ ASTPtr ASTShowTablesQuery::clone() const
 {
     auto res = std::make_shared<ASTShowTablesQuery>(*this);
     res->children.clear();
+    res->named.clone(named);
     cloneOutputOptions(*res);
     return res;
 }
@@ -25,15 +26,19 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<
              (dictionaries ? "DICTIONARIES" : "TABLES") << (settings.hilite ? hilite_none : "");
 
-        if (!from.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                << backQuoteIfNeed(from);
+        if (const auto & from = getChild(ASTShowTablesQueryChildren::FROM))
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            from->formatImpl(settings, state, frame);
+        }
 
-        if (!like.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "")
-                << std::quoted(like, '\'');
+        if (const auto & like = getChild(ASTShowTablesQueryChildren::LIKE))
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIKE " << (settings.hilite ? hilite_none : "");
+            like->formatImpl(settings, state, frame);
+        }
 
-        if (limit_length)
+        if (const auto & limit_length = getChild(ASTShowTablesQueryChildren::LIMIT_LENGTH))
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
             limit_length->formatImpl(settings, state, frame);

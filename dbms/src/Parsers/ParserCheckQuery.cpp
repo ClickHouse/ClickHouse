@@ -15,10 +15,9 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_check_table("CHECK TABLE");
     ParserKeyword s_partition("PARTITION");
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier identifier_parser;
 
-    ParserIdentifier table_parser;
     ParserPartition partition_parser;
+    ParserIdentifier identifier_parser;
 
     ASTPtr table;
     ASTPtr database;
@@ -42,6 +41,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->database.reset();
     }
 
+    table->as<ASTIdentifier>();
     if (s_partition.ignore(pos, expected))
     {
         if (!partition_parser.parse(pos, query->partition, expected))

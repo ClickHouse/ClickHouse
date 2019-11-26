@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTNamedChildrenHelper.h>
 
 
 namespace DB
@@ -11,7 +12,8 @@ namespace DB
 
 /** Query specifying table name and, possibly, the database and the FORMAT section.
   */
-class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
+class DECLARE_SELF_AND_CHILDREN(ASTQueryWithTableAndOutput, DATABASE, TABLE)
+    : public ASTWithNamedChildren<ASTQueryWithOutput, ASTQueryWithTableAndOutput, ASTQueryWithTableAndOutputChildren>
 {
 public:
     ASTPtr database;

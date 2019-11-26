@@ -938,7 +938,7 @@ private:
 
             if (const auto * use_query = parsed_query->as<ASTUseQuery>())
             {
-                const String & new_database = use_query->database;
+                const String & new_database = getIdentifierName(use_query->named.get(ASTUseQuery::DATABASE));
                 /// If the client initiates the reconnection, it takes the settings from the config.
                 config().setString("database", new_database);
                 /// If the connection initiates the reconnection, it uses its variable.
