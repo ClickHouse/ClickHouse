@@ -34,10 +34,10 @@ public:
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
 
-    template <typename T>
-    TThis * addHandler()
+    template <typename T, typename... TArgs>
+    TThis * addHandler(TArgs &&... args)
     {
-        child_handler_factories.emplace_back(std::make_unique<T>(server));
+        child_handler_factories.emplace_back(std::make_unique<T>(server, std::forward<TArgs>(args)...));
         return this;
     }
 };

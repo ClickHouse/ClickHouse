@@ -39,10 +39,10 @@ private:
     PrometheusMetricsWriter metrics_writer;
 
 public:
-    PrometeusRequestHandlerFactory(IServer & server_)
+    PrometeusRequestHandlerFactory(IServer & server_, const AsynchronousMetrics & async_metrics_)
         : server(server_)
         , endpoint_path(server_.config().getString("prometheus.endpoint", "/metrics"))
-        , metrics_writer(server_.config(), "prometheus")
+        , metrics_writer(server_.config(), "prometheus", async_metrics_)
     {
     }
 
