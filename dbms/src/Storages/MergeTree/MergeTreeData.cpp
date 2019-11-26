@@ -544,19 +544,6 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
         }
     }
 
-    bool has_date_column = false;
-    for (const auto & elem : ttl_expression->getRequiredColumnsWithTypes())
-    {
-        if (typeid_cast<const DataTypeDateTime *>(elem.type.get()) || typeid_cast<const DataTypeDate *>(elem.type.get()))
-        {
-            has_date_column = true;
-            break;
-        }
-    }
-
-    if (!has_date_column)
-        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
-
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
 
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
