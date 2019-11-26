@@ -1694,6 +1694,13 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             if (query_info.prewhere_info)
             {
+                if (query_info.prewhere_info->alias_actions)
+                {
+                    streams.back() = std::make_shared<ExpressionBlockInputStream>(
+                        streams.back(),
+                        query_info.prewhere_info->alias_actions);
+                }
+
                 streams.back() = std::make_shared<FilterBlockInputStream>(
                     streams.back(),
                     prewhere_info->prewhere_actions,
@@ -1718,6 +1725,10 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             if (query_info.prewhere_info)
             {
+                if (query_info.prewhere_info->alias_actions)
+                    pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                        pipe.getHeader(), query_info.prewhere_info->alias_actions));
+
                 pipe.addSimpleTransform(std::make_shared<FilterTransform>(
                         pipe.getHeader(),
                         prewhere_info->prewhere_actions,
