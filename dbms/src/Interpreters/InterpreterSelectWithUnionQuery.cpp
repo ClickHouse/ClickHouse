@@ -126,7 +126,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
                             ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_columns);
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
