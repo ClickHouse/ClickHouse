@@ -27,7 +27,6 @@ def server_address():
         yield cluster.get_instance_ip('node')
     finally:
         cluster.shutdown()
-        pass
 
 
 @pytest.fixture(scope='module')
