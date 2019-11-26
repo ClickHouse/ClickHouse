@@ -147,7 +147,7 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         defaults_expression->execute(block_with_defaults);
     }
 
-    for (const auto & [name, ttl_entry] : storage.ttl_entries_by_name)
+    for (const auto & [name, ttl_entry] : storage.column_ttl_entries_by_name)
     {
         const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
         auto & new_ttl_info = new_ttl_infos.columns_ttl[name];
@@ -194,7 +194,7 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         column_with_type.column = std::move(result_column);
     }
 
-    for (const auto & elem : storage.ttl_entries_by_name)
+    for (const auto & elem : storage.column_ttl_entries_by_name)
         if (block.has(elem.second.result_column))
             block.erase(elem.second.result_column);
 }
