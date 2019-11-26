@@ -411,6 +411,13 @@ void ValuesBlockInputFormat::readSuffix()
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
+void ValuesBlockInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    // i'm not resetting parser modes here.
+    // There is a good chance that all messages has the same format.
+    total_rows = 0;
+}
 
 void registerInputFormatProcessorValues(FormatFactory & factory)
 {
