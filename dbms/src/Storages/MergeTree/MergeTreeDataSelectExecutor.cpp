@@ -1137,7 +1137,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         case MergeTreeData::MergingParams::Summing:
             merged = std::make_shared<SummingSortedBlockInputStream>(streams_to_merge(),
-                                                                     sort_description, data.merging_params.columns_to_sum, max_block_size);
+                    sort_description, data.merging_params.columns_to_sum, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
