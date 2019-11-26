@@ -97,7 +97,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
     }
 
-    String database_engine_name;
     if (!create.storage)
     {
         /// For new-style databases engine is explicitly specified in .sql
@@ -105,27 +104,26 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         // FIXME maybe throw an exception if it's an ATTACH DATABASE query from user (it's not server startup) and engine is not specified
         bool old_style_database = create.attach ||
                                   context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
-        database_engine_name = old_style_database ? "Ordinary" : "Atomic";
         auto engine = std::make_shared<ASTFunction>();
-        engine->name = database_engine_name;
         auto storage = std::make_shared<ASTStorage>();
+        engine->name = old_style_database ? "Ordinary" : "Atomic";
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
-    }
-    else
-    {
-        const ASTStorage & storage = *create.storage;
-        const ASTFunction & engine = *storage.engine;
-        /// Currently, there are no database engines, that support any arguments.
-        if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
-        {
-            std::stringstream ostr;
-            formatAST(storage, ostr, false, false);
-            throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-        }
 
-        database_engine_name = engine.name;
+        if (database_name == "datasets")
+        {
+            //FIXME it's just to run stateful and stress tests without updating docker images
+            engine->name = "Ordinary";
+        }
     }
+    else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
+    {
+        /// Currently, there are no database engines, that support any arguments.
+        std::stringstream ostr;
+        formatAST(*create.storage, ostr, false, false);
+        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    }
+
 
     String database_name_escaped = escapeForFileName(database_name);
 
@@ -162,19 +160,27 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         out.close();
     }
 
+    bool added = false;
+    bool renamed = false;
     try
     {
         context.addDatabase(database_name, database);
+        added = true;
 
         if (need_write_metadata)
+        {
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
+            renamed = true;
+        }
 
         database->loadStoredObjects(context, has_force_restore_data_flag);
     }
     catch (...)
     {
-        if (need_write_metadata)
+        if (renamed)
             Poco::File(metadata_file_tmp_path).remove();
+        if (added)
+            context.detachDatabase(database_name);
 
         throw;
     }

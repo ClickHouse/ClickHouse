@@ -64,7 +64,7 @@ try
     }
     else
     {
-        //FIMXE
+        //FIXME
         //String table_data_path_relative = database_data_path_relative + escapeForFileName(query.table) + '/';
         String table_data_path_relative = database.getDataPath(query);
         auto [table_name, table] = createTableFromAST(query, database_name, table_data_path_relative, context, has_force_restore_data_flag);
