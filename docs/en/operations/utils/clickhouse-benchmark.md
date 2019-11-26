@@ -10,15 +10,11 @@ echo "query" | clickhouse-benchmark [keys]
 
 Keys:
 
-Syntax | Description | Default value
--------|-------------|--------------- 
-`-c  arg`<br/>Alias: `--concurrency`: | Number of queries that `clickhouse-benchmark` sends simultaneously. | 1
-
-
-- `-d [ --delay ] arg ` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
-- `-h [ --host ] arg` — Server host. Default value: `localhost`.
-- `-p [ --port ] arg` — Server port. Default value: 9000.
-- `-i [ --iterations ] arg` — amount of queries to be executed. Default value: 0.
+- `-c  N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
+- `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
+- `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`.
+- `-p N`, `--port=N` — Server port. Default value: 9000.
+- `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 - `-r [ --randomize ] arg (=0)` — randomize order of execution
 - `-s [ --secure ]` — Use TLS connection
 - `-t [ --timelimit ] arg (=0)` — stop launch of queries after specified time limit
@@ -30,7 +26,7 @@ Syntax | Description | Default value
 - `--password arg` —
 - `--stacktrace` — print stack traces of exceptions
 - `--stage arg (=complete)` — request query processing up to specified stage: complete,fetch_columns,with_mergeable_state
-- `--<session setting name> arg` — [Setting](../settings/index.md) for queries. For example, `--max_memory_usage arg`. You can pass any number of setting by this way.
+- `--<session setting name> arg` — [Setting](../../operations/settings/index.md) for queries. For example, `--max_memory_usage arg`. You can pass any number of setting by this way.
 - `--help` — Shows the help message.
 
 
