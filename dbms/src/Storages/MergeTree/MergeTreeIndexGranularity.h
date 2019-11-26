@@ -92,6 +92,8 @@ public:
     /// Add new mark with rows_count
     void appendMark(size_t rows_count);
 
+    void popMark();
+
     /// Add `size` of marks with `fixed_granularity` rows
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
 };

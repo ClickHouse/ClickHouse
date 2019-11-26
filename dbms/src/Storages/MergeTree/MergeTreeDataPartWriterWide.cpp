@@ -19,7 +19,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(part_path_,
         storage_, columns_list_, indices_to_recalc_,
-        marks_file_extension_, default_codec_, settings_, index_granularity_)
+        marks_file_extension_, default_codec_, settings_, index_granularity_, false)
     , can_use_adaptive_granularity(storage_.canUseAdaptiveGranularity())
 {
     const auto & columns = storage.getColumns();

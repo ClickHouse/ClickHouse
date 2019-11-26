@@ -22,7 +22,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 : IMergeTreeDataPartWriter(part_path_,
     storage_, columns_list_,
     indices_to_recalc_, marks_file_extension_,
-    default_codec_, settings_, index_granularity_)
+    default_codec_, settings_, index_granularity_, true)
 {
     stream = std::make_unique<ColumnStream>(
         DATA_FILE_NAME,

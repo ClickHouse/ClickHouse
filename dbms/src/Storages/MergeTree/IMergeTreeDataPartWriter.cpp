@@ -66,7 +66,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const WriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    bool need_finish_last_granule_)
     : part_path(part_path_)
     , storage(storage_)
     , columns_list(columns_list_)
@@ -77,6 +78,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , settings(settings_)
     , compute_granularity(index_granularity.empty())
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
+    , need_finish_last_granule(need_finish_last_granule_)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -96,7 +98,8 @@ void fillIndexGranularityImpl(
     bool blocks_are_granules,
     size_t index_offset,
     MergeTreeIndexGranularity & index_granularity,
-    bool can_use_adaptive_index_granularity)
+    bool can_use_adaptive_index_granularity,
+    bool need_finish_last_granule)
 {
     /// FIXME correct index granularity for compact
     size_t rows_in_block = block.rows();
@@ -129,8 +132,23 @@ void fillIndexGranularityImpl(
     // index_granularity_for_block = rows_in_block;
 
     /// FIXME: split/join last mark for compact parts
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    size_t current_row;
+    for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.appendMark(index_granularity_for_block);
+
+    size_t rows_rest_in_block = rows_in_block - (current_row - index_granularity_for_block);
+    if (need_finish_last_granule && rows_rest_in_block)
+    {
+        /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
+        /// So,real size of granule differs from index_granularity_for_block not more than 50%.
+        if (rows_rest_in_block * 2 >= index_granularity_for_block)
+            index_granularity.appendMark(rows_rest_in_block);
+        else
+        {
+            index_granularity.popMark();
+            index_granularity.appendMark(index_granularity_for_block + rows_rest_in_block);
+        }
+    }
 }
 
 void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
@@ -143,7 +161,8 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
         settings.blocks_are_granules_size,
         index_offset,
         index_granularity,
-        settings.can_use_adaptive_granularity);
+        settings.can_use_adaptive_granularity,
+        need_finish_last_granule);
 }
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()
