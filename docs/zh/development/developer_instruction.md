@@ -2,14 +2,14 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引
 
-如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用"terminal"程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
+如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download 。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用"terminal"程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
 
 
 # 在GitHub上创建源码库
 
 您需要(申请)一个GitHub账户来使用ClickHouse。
 
-如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将其上传到GitHub上。这些交互都是必须的，您也可以使用与其他任何SSH服务器相同的密钥。
+如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将其上传到GitHub上。这些交互都是必须的，也可以使用与其他任何SSH服务器相同的密钥。
 
 要创建ClickHouse源码库的分支，请在https://github.com/ClickHouse/ClickHouse页面上点击右上角的"fork"按钮。它会在本账户上创建您个人的ClickHouse/ClickHouse分支。
 
@@ -24,7 +24,7 @@ sudo apt update
 sudo apt install git
 ```
 
-您可以在https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2.
+在https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2 。
 
 
 # 拷贝源码库到开发机
@@ -36,9 +36,9 @@ sudo apt install git
 git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
 cd ClickHouse
 ```
-请注意，您需要将 *your_github_username* 替换成实际使用的账户名!
+请注意，您需要将*your_github_username* 替换成实际使用的账户名!
 
-这个指令将创建一个包含项目副本的“ ClickHouse”工作目录。
+这个指令将创建一个包含项目副本的`ClickHouse`工作目录。
 
 重要的是，工作目录的路径中不应包含空格，因为这可能会导致运行构建系统时出现问题。
 
@@ -48,7 +48,7 @@ cd ClickHouse
 git submodule init
 git submodule update
 ```
-可以通过 `git submodule status`来检查子模块的状态.
+可以通过 `git submodule status`来检查子模块的状态。
 
 如果提示下列的错误信息:
 
@@ -82,8 +82,8 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 ClickHouse使用 CMake 和 Ninja 来构建系统。
 
-CMake - 一个可以生成Ninja文件的元构建系统（构建任务）
-Ninja - 一个轻量级的构建系统，专注于速度，用于执行这些cmake生成的任务.
+CMake - 一个可以生成Ninja文件的元构建系统（构建任务）。
+Ninja - 一个轻量级的构建系统，专注于速度，用于执行这些cmake生成的任务。
 
 在Ubuntu,Debian或者Mint系统上执行`sudo apt install cmake ninja-build`来安装ninja。
 
@@ -98,7 +98,7 @@ Ninja - 一个轻量级的构建系统，专注于速度，用于执行这些cma
 brew install cmake ninja
 ```
 
-接下来，检查CMake的版本：`cmake --version`。如果版本低于3.3，则需要从以下网站安装更新版本：https://cmake.org/download/。
+接下来，检查CMake的版本：`cmake --version`。如果版本低于3.3，则需要从以下网站安装更新版本：https://cmake.org/download/ 。
 
 
 # 可供选择的外部库
@@ -122,7 +122,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.yandex/docs/en/development/build/#install-gcc-9。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.yandex/docs/en/development/build/#install-gcc-9 。
 
 在Mac OS X上安装GCC，请执行：`brew install gcc`
 
