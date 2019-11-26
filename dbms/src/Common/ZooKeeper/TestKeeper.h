@@ -11,8 +11,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
-#include <grpc++/grpc++.h>
-
 
 namespace Coordination
 {

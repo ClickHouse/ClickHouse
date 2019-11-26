@@ -1764,6 +1764,8 @@ add_library(grpc++
   ${GRPC_SOURCE_DIR}/src/cpp/codegen/codegen_init.cc
 )
 
+target_compile_options(grpc++ PUBLIC -Wno-error=shadow)
+
 target_include_directories(grpc++
   PUBLIC $<INSTALL_INTERFACE:${gRPC_INSTALL_INCLUDEDIR}> $<BUILD_INTERFACE:${GRPC_SOURCE_DIR}/include>
   PRIVATE ${GRPC_SOURCE_DIR}
