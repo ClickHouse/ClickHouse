@@ -123,17 +123,17 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
                             + "\nand\n"
                             + headers[query_num].dumpNames() + "\n",
                             ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+    }
 
-        for (size_t column_num = 0; column_num < num_columns; ++column_num)
-        {
-            std::vector<const ColumnWithTypeAndName *> columns;
-            columns.reserve(num_selects);
-            for (size_t i = 0; i < num_selects; ++i)
-                columns.push_back(&headers[i].getByPosition(column_num));
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
 
-            ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-            result_elem = getLeastSuperColumn(columns);
-        }
+    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    {
+        for (size_t i = 0; i < num_selects; ++i)
+            columns[i] = &headers[i].getByPosition(column_num);
+
+        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
+        result_elem = getLeastSuperColumn(columns);
     }
 
     return common_header;
