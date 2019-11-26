@@ -808,11 +808,9 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
+## arrayCompact {#arraycompact}
 
-## arrayCompact(arr) {#array_functions-arraycompact}
-
-Removes consecutive duplicate elements from an array.
+Removes consecutive duplicate elements from an array. The order of result values is determined by the order in the source array.
 
 **Syntax**
 
@@ -822,11 +820,13 @@ arrayCompact(arr)
 
 **Parameters**
 
-`arr` — [Array](../../data_types/array.md).
+`arr` — The [array](../../data_types/array.md) to inspect.
 
 **Returned value**
 
-`arr` with consecutive duplicate elements removed. Type: `Array`.
+The array without duplicate.
+
+Type: `Array`.
 
 **Example**
 
@@ -844,4 +844,4 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-##
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
