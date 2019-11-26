@@ -5,13 +5,11 @@
 
 ### New Feature
 * Add the ability to create dictionaries with DDL queries. [#7360](https://github.com/ClickHouse/ClickHouse/pull/7360) ([alesapin](https://github.com/alesapin))
-* Authentication in S3 table function and storage. Now we have complete support for S3 import/export. [#7623](https://github.com/ClickHouse/ClickHouse/pull/7623) ([Vladimir Chebotarev](https://github.com/excitoon))
 * Make `bloom_filter` type of index supporting `LowCardinality` and `Nullable` [#7363](https://github.com/ClickHouse/ClickHouse/issues/7363) [#7561](https://github.com/ClickHouse/ClickHouse/pull/7561) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Add function `isValidJSON` to check that passed string is a valid json. [#5910](https://github.com/ClickHouse/ClickHouse/issues/5910) [#7293](https://github.com/ClickHouse/ClickHouse/pull/7293) ([Vdimir](https://github.com/Vdimir))
 * Implement `arrayCompact` function [#7328](https://github.com/ClickHouse/ClickHouse/pull/7328) ([Memo](https://github.com/Joeywzr))
 * Created function `hex` for Decimal numbers. It works like `hex(reinterpretAsString())`, but doesn't delete last zero bytes. [#7355](https://github.com/ClickHouse/ClickHouse/pull/7355) ([Mikhail Korotov](https://github.com/millb))
 * Add `arrayFill` and `arrayReverseFill` functions, which replace elements by other elements in front/back of them in the array. [#7380](https://github.com/ClickHouse/ClickHouse/pull/7380) ([hcz](https://github.com/hczhcz))
-* Up precision of `avg` aggregate function result to max of `Decimal` type [#7446](https://github.com/ClickHouse/ClickHouse/pull/7446) ([Andrey Konyaev](https://github.com/akonyaev90))
 * Add `CRC32IEEE()`/`CRC64()` support [#7480](https://github.com/ClickHouse/ClickHouse/pull/7480) ([Azat Khuzhin](https://github.com/azat))
 * Implement `char` function similar to one in [mysql](https://dev.mysql.com/doc/refman/8.0/en/string-functions.html#function_char)  [#7486](https://github.com/ClickHouse/ClickHouse/pull/7486) ([sundyli](https://github.com/sundy-li))
 * Add `bitmapTransform` function. It transforms an array of values in a bitmap to another array of values, the result is a new bitmap [#7598](https://github.com/ClickHouse/ClickHouse/pull/7598) ([Zhichang Yu](https://github.com/yuzhichang))
