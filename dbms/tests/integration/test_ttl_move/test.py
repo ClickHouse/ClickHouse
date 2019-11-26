@@ -329,7 +329,7 @@ def test_merges_to_disk_work(started_cluster, name, engine):
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         node1.query("SYSTEM START MERGES {}".format(name))
         node1.query("OPTIMIZE TABLE {}".format(name))
@@ -337,7 +337,7 @@ def test_merges_to_disk_work(started_cluster, name, engine):
         time.sleep(1)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'external'}
-        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
 
@@ -390,14 +390,14 @@ def test_merges_to_full_disk_work(started_cluster, name, engine):
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
         node1.query("OPTIMIZE TABLE {}".format(name))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'} # Merged to the same disk against the rule.
-        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
 
@@ -431,7 +431,7 @@ def test_moves_after_merges_work(started_cluster, name, engine):
         node1.query("OPTIMIZE TABLE {}".format(name))
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
 
@@ -473,7 +473,7 @@ def test_merges_to_disk_do_not_work(started_cluster, name, engine):
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         node1.query("SYSTEM START MERGES {}".format(name))
         node1.query("OPTIMIZE TABLE {}".format(name))
@@ -481,7 +481,7 @@ def test_merges_to_disk_do_not_work(started_cluster, name, engine):
         time.sleep(1)
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
 
@@ -515,7 +515,7 @@ def test_moves_after_merges_do_not_work(started_cluster, name, engine):
         node1.query("OPTIMIZE TABLE {}".format(name))
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1'}
-        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).count()
+        assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
 
