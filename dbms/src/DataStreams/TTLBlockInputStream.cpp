@@ -194,9 +194,10 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         column_with_type.column = std::move(result_column);
     }
 
-    for (const auto & elem : storage.column_ttl_entries_by_name)
-        if (block.has(elem.second.result_column))
-            block.erase(elem.second.result_column);
+    for (const auto & [_, ttl_entry] : storage.column_ttl_entries_by_name)
+        if (block.has(ttl_entry.result_column))
+            block.erase(ttl_entry.result_column);
+    /// FIXME: what if table had legitimate column with this name?
 }
 
 void TTLBlockInputStream::updateMovesTTL(Block & block)
@@ -217,9 +218,10 @@ void TTLBlockInputStream::updateMovesTTL(Block & block)
         }
     }
 
-    for (const auto & elem : storage.move_ttl_entries_by_name)
-        if (block.has(elem.second.result_column))
-            block.erase(elem.second.result_column);
+    for (const auto & [_, ttl_entry] : storage.move_ttl_entries_by_name)
+        if (block.has(ttl_entry.result_column))
+            block.erase(ttl_entry.result_column);
+    /// FIXME: what if table had legitimate column with this name?
 }
 
 UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)
