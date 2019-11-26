@@ -668,6 +668,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                return address;
         };
 
+        /// This object will periodically calculate some metrics.
+        AsynchronousMetrics async_metrics(*global_context);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+
         for (const auto & listen_host : listen_hosts)
         {
             auto create_server = [&](const char * port_name, auto && func)
@@ -709,7 +713,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handlerFactory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
                 if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handlerFactory->addHandler<PrometeusHandlerFactory>();
+                    handlerFactory->addHandler<PrometeusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handlerFactory,
@@ -840,7 +844,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handlerFactory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handlerFactory->addHandler<PrometeusHandlerFactory>();
+                handlerFactory->addHandler<PrometeusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handlerFactory,
                     server_pool,
@@ -950,10 +954,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
             throw;
         }
-
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

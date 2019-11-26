@@ -27,9 +27,12 @@ namespace DB
 {
 
 PrometheusMetricsWriter::PrometheusMetricsWriter(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
-    : send_events(config.getBool(config_name + ".events", true))
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
+    const AsynchronousMetrics & async_metrics_)
+    : async_metrics(async_metrics_)
+    , send_events(config.getBool(config_name + ".events", true))
     , send_metrics(config.getBool(config_name + ".metrics", true))
+    , send_asynchronous_metrics(config.getBool(config_name + ".asynchronous_metrics", true))
 {
 }
 
@@ -64,6 +67,20 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string key{current_metrics_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);
+            writeOutLine(wb, "# TYPE", key, "gauge");
+            writeOutLine(wb, key, value);
+        }
+    }
+
+    if (send_asynchronous_metrics)
+    {
+        auto async_metrics_values = async_metrics.getValues();
+        for (const auto & name_value : async_metrics_values)
+        {
+            std::string key{asynchronous_metrics_prefix + name_value.first};
+            auto value = name_value.second;
+
+            // TODO: add HELP section? asynchronous_metrics contains only key and value
             writeOutLine(wb, "# TYPE", key, "gauge");
             writeOutLine(wb, key, value);
         }
