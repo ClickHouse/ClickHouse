@@ -20,6 +20,10 @@
 #include <Poco/DirectoryIterator.h>
 
 
+#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseAtomic.h>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace DB
 {
@@ -232,8 +236,14 @@ void DatabaseOnDisk::renameTable(
         const String & to_table_name,
         TableStructureWriteLockHolder & lock)
 {
+    bool from_ordinary_to_atomic = false;
     if (typeid(*this) != typeid(to_database))
-        throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        if (typeid_cast<DatabaseOrdinary *>(this) && typeid_cast<DatabaseAtomic *>(&to_database))
+            from_ordinary_to_atomic = true;
+        else
+            throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     StoragePtr table = tryGetTable(context, table_name);
 
@@ -245,6 +255,8 @@ void DatabaseOnDisk::renameTable(
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
     auto & create = ast->as<ASTCreateQuery &>();
     create.table = to_table_name;
+    if (from_ordinary_to_atomic)
+        create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
