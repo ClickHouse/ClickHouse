@@ -146,9 +146,13 @@ bool PredicateExpressionsOptimizer::allowPushDown(
         return false;
     else
     {
-        ASTPtr expr_list = ast_select->select();
         ExtractFunctionVisitor::Data extract_data;
-        ExtractFunctionVisitor(extract_data).visit(expr_list);
+
+        ASTPtr expression_list = std::make_shared<ASTExpressionList>();
+        expression_list->children.push_back(subquery->select());
+        expression_list->children.push_back(ast_select->select());
+
+        ExtractFunctionVisitor(extract_data).visit(expression_list);
 
         for (const auto & subquery_function : extract_data.functions)
         {
