@@ -54,20 +54,20 @@ def test_inserts_to_disk_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'external'
+            TTL d1 TO DISK 'external'
             SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine, time=time.time()-2))
+        """.format(name=name, engine=engine))
 
         data = [] # 10MB in total
         for i in range(10):
-            data.append(get_random_string(1024 * 1024)) # 1MB row
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2))) # 1MB row
 
-        node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 10
 
@@ -95,9 +95,9 @@ def test_inserts_to_disk_do_not_work(started_cluster, name, engine):
         for i in range(10):
             data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2 if i > 0 else time.time()+2))) # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["(" + ",".join(x) + ")" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 10
 
@@ -114,24 +114,24 @@ def test_moves_to_disk_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'external'
+            TTL d1 TO DISK 'external'
             SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine, time=time.time()+2))
+        """.format(name=name, engine=engine))
 
         data = [] # 10MB in total
         for i in range(10):
-            data.append(get_random_string(1024 * 1024)) # 1MB row
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
-        node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 10
 
@@ -159,13 +159,13 @@ def test_moves_to_disk_do_not_work(started_cluster, name, engine):
         for i in range(10):
             data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2 if i > 0 else time.time()+6))) # 1MB row
 
-        node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ",".join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 10
 
@@ -183,27 +183,27 @@ def test_moves_to_volume_work(started_cluster, name, engine):
             CREATE TABLE {name} (
                 p1 Int64,
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY p1
-            TTL toDateTime({time}) + toInt64(d1)*0 TO VOLUME 'main'
+            TTL d1 TO VOLUME 'main'
             SETTINGS storage_policy='external_with_jbods'
-        """.format(name=name, engine=engine, time=time.time()+2))
+        """.format(name=name, engine=engine))
 
-        for _ in range(2):
+        for p in range(2):
             data = [] # 20MB in total
             for i in range(10):
-                data.append((p, "'{}'".format(get_random_string(1024 * 1024)))) # 1MB row
+                data.append((p, "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
-            node1.query("INSERT INTO {} (p1, s1) VALUES {}".format(name, ','.join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {'jbod1', 'jbod2'}
 
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 20
 
@@ -221,23 +221,23 @@ def test_inserts_to_volume_work(started_cluster, name, engine):
             CREATE TABLE {name} (
                 p1 Int64,
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY p1
-            TTL toDateTime({time}) + toInt64(d1)*0 TO VOLUME 'main'
+            TTL d1 TO VOLUME 'main'
             SETTINGS storage_policy='external_with_jbods'
-        """.format(name=name, engine=engine, time=time.time()-2))
+        """.format(name=name, engine=engine))
 
-        for _ in range(2):
+        for p in range(2):
             data = [] # 20MB in total
             for i in range(10):
-                data.append((p, "'{}'".format(get_random_string(1024 * 1024)))) # 1MB row
+                data.append((p, "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2))) # 1MB row
 
-            node1.query("INSERT INTO {} (p1, s1) VALUES {}".format(name, ','.join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 20
 
@@ -265,33 +265,33 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         for i in range(35):
             data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
-        assert set(used_disks) == {'jbod2'}
+        assert set(used_disks) == {"jbod2"}
 
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'jbod2'
+            TTL d1 TO DISK 'jbod2'
             SETTINGS storage_policy='jbod1_with_jbod2'
-        """.format(name=name, engine=engine, time=time.time()-2))
+        """.format(name=name, engine=engine))
 
         data = [] # 10MB in total
         for i in range(10):
-            data.append(get_random_string(1024 * 1024)) # 1MB row
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2))) # 1MB row
 
-        node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         node1.query("DROP TABLE {}".format(name_temp))
 
         time.sleep(2)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod2'}
+        assert set(used_disks) == {"jbod2"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 10
 
@@ -309,12 +309,12 @@ def test_merges_to_disk_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'external'
+            TTL d1 TO DISK 'external'
             SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine, time=time.time()+2))
+        """.format(name=name, engine=engine))
 
         node1.query("SYSTEM STOP MERGES {}".format(name))
         node1.query("SYSTEM STOP MOVES {}".format(name))
@@ -322,13 +322,13 @@ def test_merges_to_disk_work(started_cluster, name, engine):
         for _ in range(2):
             data = [] # 16MB in total
             for i in range(8):
-                data.append(get_random_string(1024 * 1024)) # 1MB row
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
-            node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         node1.query("SYSTEM START MERGES {}".format(name))
@@ -336,7 +336,7 @@ def test_merges_to_disk_work(started_cluster, name, engine):
 
         time.sleep(1)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
         assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
@@ -365,38 +365,38 @@ def test_merges_to_full_disk_work(started_cluster, name, engine):
         for i in range(35):
             data.append(get_random_string(1024 * 1024)) # 1MB row
 
-        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ','.join(["('" + x + "')" for x in data])))
+        node1.query("INSERT INTO {} VALUES {}".format(name_temp, ",".join(["('" + x + "')" for x in data])))
         used_disks = get_used_disks_for_table(node1, name_temp)
-        assert set(used_disks) == {'jbod2'}
+        assert set(used_disks) == {"jbod2"}
 
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'external'
+            TTL d1 TO DISK 'external'
             SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine, time=time.time()+2))
+        """.format(name=name, engine=engine))
 
         node1.query("SYSTEM STOP MOVES {}".format(name))
 
         for _ in range(2):
             data = [] # 16MB in total
             for i in range(8):
-                data.append(get_random_string(1024 * 1024)) # 1MB row
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
-            node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
         node1.query("OPTIMIZE TABLE {}".format(name))
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'} # Merged to the same disk against the rule.
+        assert set(used_disks) == {"jbod1"} # Merged to the same disk against the rule.
         assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
@@ -414,29 +414,29 @@ def test_moves_after_merges_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String,
-                d1 DateTime DEFAULT now()
+                d1 DateTime
             ) ENGINE = {engine}
             ORDER BY tuple()
-            TTL toDateTime({time}) + toInt64(d1)*0 TO DISK 'external'
+            TTL d1 TO DISK 'external'
             SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine, time=time.time()+2))
+        """.format(name=name, engine=engine))
 
         for _ in range(2):
             data = [] # 16MB in total
             for i in range(8):
-                data.append(get_random_string(1024 * 1024)) # 1MB row
+                data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
-            node1.query("INSERT INTO {} (s1) VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         node1.query("OPTIMIZE TABLE {}".format(name))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'external'}
+        assert set(used_disks) == {"external"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
 
@@ -468,11 +468,11 @@ def test_merges_to_disk_do_not_work(started_cluster, name, engine):
             for i in range(8):
                 data.append(("'{}'".format(get_random_string(1024 * 1024)), 'toDateTime({})'.format(time.time()+2 if i > 0 else time.time()+7))) # 1MB row
 
-            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ','.join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         time.sleep(4)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "2" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         node1.query("SYSTEM START MERGES {}".format(name))
@@ -480,7 +480,7 @@ def test_merges_to_disk_do_not_work(started_cluster, name, engine):
 
         time.sleep(1)
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
@@ -510,17 +510,17 @@ def test_moves_after_merges_do_not_work(started_cluster, name, engine):
             for i in range(8):
                 data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2 if i > 0 else time.time()+6))) # 1MB row
 
-            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ','.join(["(" + ",".join(x) + ")" for x in data])))
+            node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
         node1.query("OPTIMIZE TABLE {}".format(name))
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
         assert "1" == node1.query("SELECT count() FROM system.parts WHERE table = '{}' AND active = 1".format(name)).strip()
 
         time.sleep(4)
 
         used_disks = get_used_disks_for_table(node1, name)
-        assert set(used_disks) == {'jbod1'}
+        assert set(used_disks) == {"jbod1"}
 
         assert node1.query("SELECT count() FROM {}".format(name=name)).strip() == 16
 
