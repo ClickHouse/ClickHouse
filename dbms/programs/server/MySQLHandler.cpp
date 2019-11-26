@@ -293,7 +293,7 @@ void MySQLHandler::comQuery(ReadBuffer &payload) {
             with_output = true;
         };
 
-        String replacement_query = ("select ''");
+        String replacement_query = "select ''";
         bool should_replace = false;
 
         // Translate query from MySQL to ClickHouse.
@@ -306,7 +306,29 @@ void MySQLHandler::comQuery(ReadBuffer &payload) {
         if (0 == strncasecmp("SHOW TABLE STATUS LIKE", query.c_str(), 22))
         {
             should_replace = true;
-            replacement_query = boost::replace_all_copy(query, "SHOW TABLE STATUS LIKE ", "SELECT name AS Name, engine AS Engine, '10' AS Version, 'Dynamic' AS Row_format, 0 AS Rows, 0 AS Avg_row_length, 0 AS Data_length, 0 AS Max_data_length, 0 AS Index_length, 0 AS Data_free, 'NULL' AS Auto_increment, metadata_modification_time AS Create_time, metadata_modification_time AS Update_time, metadata_modification_time AS Check_time, 'utf8_bin' AS Collation, 'NULL' AS Checksum, '' AS Create_options, '' AS Comment FROM system.tables WHERE name=");
+            replacement_query = boost::replace_all_copy(query, 
+                                                        "SHOW TABLE STATUS LIKE ", 
+                                                        "SELECT \
+                                                            name AS Name, \
+                                                            engine AS Engine, \
+                                                            '10' AS Version, \
+                                                            'Dynamic' AS Row_format, \
+                                                            0 AS Rows, \
+                                                            0 AS Avg_row_length, \
+                                                            0 AS Data_length, \
+                                                            0 AS Max_data_length, \
+                                                            0 AS Index_length, \
+                                                            0 AS Data_free, \
+                                                            'NULL' AS Auto_increment, \
+                                                            metadata_modification_time AS Create_time, \
+                                                            metadata_modification_time AS Update_time, \
+                                                            metadata_modification_time AS Check_time, \
+                                                            'utf8_bin' AS Collation, \
+                                                            'NULL' AS Checksum, \
+                                                            '' AS Create_options, \
+                                                            '' AS Comment \
+                                                        FROM system.tables \
+                                                        WHERE name=");
         }
 
         ReadBufferFromString replacement(replacement_query);
