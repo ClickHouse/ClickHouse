@@ -66,7 +66,8 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const WriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity);
+        const MergeTreeIndexGranularity & index_granularity,
+        bool need_finish_last_granule);
 
     virtual void write(
         const Block & block, const IColumn::Permutation * permutation,
@@ -115,6 +116,7 @@ protected:
 
     bool compute_granularity;
     bool with_final_mark;
+    bool need_finish_last_granule;
 
     size_t current_mark = 0;
     size_t index_offset = 0;
@@ -141,7 +143,6 @@ protected:
     bool data_written = false;
     bool primary_index_initialized = false;
     bool skip_indices_initialized = false;
-
 };
 
 using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
