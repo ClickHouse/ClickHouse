@@ -924,4 +924,8 @@ if (method == DB::CompressionMethod::Gzip)
 return std::make_unique<TReadBuffer>(args...);
 }
 
+/// TODO (akuzm) - write comments for this and next function.
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current);
+
 }

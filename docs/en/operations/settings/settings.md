@@ -999,7 +999,7 @@ Default value: 0.
 - Type: bool
 - Default value: True
 
-Enable order-preserving parallel parsing of data formats. Supported only for TSV format.
+Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
 
 ## min_chunk_bytes_for_parallel_parsing
 
