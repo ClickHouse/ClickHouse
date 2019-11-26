@@ -598,12 +598,12 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         for (const auto & [name, ast] : new_column_ttls)
         {
             if (columns_ttl_forbidden.count(name))
-                throw Exception("Trying to set ttl for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
             else
             {
                 auto new_ttl_entry = create_ttl_entry(ast);
                 if (!only_check)
-                    ttl_entries_by_name.emplace(name, new_ttl_entry);
+                    column_ttl_entries_by_name.emplace(name, new_ttl_entry);
             }
         }
     }
@@ -3729,9 +3729,9 @@ const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
     /// Prefer TTL rule which went into action last.
     time_t max_min_ttl = 0;
 
-    for (const auto & [expression, ttl_entry] : move_ttl_entries_by_name)
+    for (const auto & [name, ttl_entry] : move_ttl_entries_by_name)
     {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(expression);
+        auto ttl_info_it = ttl_infos.moves_ttl.find(name);
         if (ttl_info_it != ttl_infos.moves_ttl.end()
                 && ttl_info_it->second.min >= minimum_time
                 && max_min_ttl <= ttl_info_it->second.min)

@@ -587,8 +587,8 @@ public:
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
-    bool hasTableTTL() const { return ttl_table_ast != nullptr; }
-    bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
+    bool hasTableTTL() const { return ttl_table_entry.expression != nullptr; }
+    bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path);
@@ -734,7 +734,7 @@ public:
     };
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
-    TTLEntriesByName ttl_entries_by_name;
+    TTLEntriesByName column_ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
     TTLEntriesByName move_ttl_entries_by_name;
