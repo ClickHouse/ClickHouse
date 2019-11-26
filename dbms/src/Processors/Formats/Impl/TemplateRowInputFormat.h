@@ -27,6 +27,8 @@ public:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
+    void resetParser() override;
+
 private:
     void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
     void skipField(ColumnFormat col_format);

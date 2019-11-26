@@ -416,6 +416,14 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     }
 }
 
+void CSVRowInputFormat::resetParser()
+{
+    RowInputFormatWithDiagnosticInfo::resetParser();
+    column_indexes_for_input_fields.clear();
+    read_columns.clear();
+    have_always_default_columns = false;
+}
+
 
 void registerInputFormatProcessorCSV(FormatFactory & factory)
 {

@@ -192,6 +192,14 @@ void TSKVRowInputFormat::syncAfterError()
 }
 
 
+void TSKVRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    read_columns.clear();
+    seen_columns.clear();
+    name_buf.clear();
+}
+
 void registerInputFormatProcessorTSKV(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("TSKV", [](

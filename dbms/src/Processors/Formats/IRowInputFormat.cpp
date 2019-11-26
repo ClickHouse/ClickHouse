@@ -161,4 +161,13 @@ void IRowInputFormat::syncAfterError()
     throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+void IRowInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    total_rows = 0;
+    num_errors = 0;
+    block_missing_values.clear();
+}
+
+
 }

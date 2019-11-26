@@ -26,6 +26,8 @@ public:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
+    void resetParser() override;
+
 private:
     bool with_names;
     bool with_types;

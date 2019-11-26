@@ -50,6 +50,8 @@ public:
 
     Chunk generate() override;
 
+    void resetParser() override;
+
 protected:
     /** Read next row and append it to the columns.
       * If no more rows - return false.
