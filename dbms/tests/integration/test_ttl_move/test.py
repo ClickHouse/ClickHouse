@@ -192,7 +192,7 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         """.format(name=name, engine=engine, time=time.time()+2))
 
         for _ in range(2):
-            data = [] # 10MB in total
+            data = [] # 20MB in total
             for i in range(10):
                 data.append((p, "'{}'".format(get_random_string(1024 * 1024)))) # 1MB row
 
@@ -230,7 +230,7 @@ def test_inserts_to_volume_work(started_cluster, name, engine):
         """.format(name=name, engine=engine, time=time.time()-2))
 
         for _ in range(2):
-            data = [] # 10MB in total
+            data = [] # 20MB in total
             for i in range(10):
                 data.append((p, "'{}'".format(get_random_string(1024 * 1024)))) # 1MB row
 
@@ -382,7 +382,7 @@ def test_merges_to_full_disk_work(started_cluster, name, engine):
         node1.query("SYSTEM STOP MOVES {}".format(name))
 
         for _ in range(2):
-            data = [] # 10MB in total
+            data = [] # 16MB in total
             for i in range(8):
                 data.append(get_random_string(1024 * 1024)) # 1MB row
 
