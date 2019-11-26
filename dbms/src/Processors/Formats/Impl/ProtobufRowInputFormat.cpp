@@ -65,7 +65,6 @@ void ProtobufRowInputFormat::syncAfterError()
     reader.endMessage(true);
 }
 
-
 void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Protobuf", [](

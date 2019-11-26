@@ -4,6 +4,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace DB
 {
@@ -93,11 +94,14 @@ Block KafkaBlockInputStream::readImpl()
         block1.setColumns(std::move(columns1));
     };
 
+    auto inp_format = FormatFactory::instance().getInputFormat(
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
+
+    auto child = std::make_shared<InputStreamFromInputFormat>(std::move(inp_format));
+
     auto read_kafka_message = [&, this]
     {
         Block result;
-        auto child = FormatFactory::instance().getInput(
-            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
 
         while (auto block = child->read())
         {
@@ -111,6 +115,7 @@ Block KafkaBlockInputStream::readImpl()
 
             merge_blocks(result, std::move(block));
         }
+        child->resetParser();
 
         return result;
     };
