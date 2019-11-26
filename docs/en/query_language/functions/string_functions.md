@@ -219,20 +219,19 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Returns a given string with all heading whitespaces removed.
+Removes whitespace from the beginning of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
 
 **Syntax** 
 
 ```sql
-trimLeft();
+trimLeft()
 ```
 
 Alias: `ltrim`.
 
-
 **Parameters** 
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
 
 **Returned value**
 
@@ -242,40 +241,37 @@ Type: `String`.
 
 **Example**
 
-
 Query:
 
 ```sql
-SELECT trimLeft('     Hello World!')
+SELECT concat(trimLeft('     Hello,     '), ' world!')
 ```
 
 Result:
 
 ```text
-┌─trimLeft('     Hello World!')─┐
-│ Hello World!                  │
-└───────────────────────────────┘
+┌─concat(trimLeft('     Hello     '), ' World!')─┐
+│ Hello      World!                              │
+└────────────────────────────────────────────────┘
 ```
 
 ## trimRight  {#trimright}
 
-Returns a given string with all trailing whitespaces removed.
-
+Removes whitespace from the end of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
 
 **Syntax** 
 
 ```sql
-trimRight();
+trimRight()
 ```
 
 Alias: `rtrim`.
 
-
 **Parameters**
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
 
-**Returned value(s)**
+**Returned value**
 
 A string without any trailing whitespaces.
 
@@ -283,40 +279,37 @@ Type: `String`.
 
 **Example**
 
-
 Query:
 
 ```sql
-SELECT trimRight('Hello World!   ')
+SELECT concat(trimRight('     Hello,     '), ' world!')
 ```
 
 Result:
 
 ```text
-┌─trimLeft('Hello World!   ')───┐
-│ Hello World!                  │
-└───────────────────────────────┘
+┌─concat(trimRight('     Hello,     '), ' world!')─┐
+│      Hello, world!                               │
+└──────────────────────────────────────────────────┘
 ```
 
 ## trimBoth  {#trimboth}
 
-Returns a string that removes the whitespace characters on either side.
-
+Removes whitespace from both ends of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
 
 **Syntax** 
 
 ```sql
-trimBoth();
+trimBoth()
 ```
 
 Alias: `trim`.
 
-
 **Parameters**
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/)
+- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
 
-**Returned value(s)**
+**Returned value**
 
 A value without any heading and trailing whitespaces.
 
@@ -327,15 +320,15 @@ Type: `String`.
 Query:
 
 ```sql
-SELECT trim('     Hello World!     ')
+SELECT concat(trimBoth('     Hello,     '), ' world!')
 ```
 
 Result:
 
 ```text
-┌─trimBoth('     Hello World!     ')─┐
-│ Hello World!                       │
-└────────────────────────────────────┘
+┌─concat(trimBoth('     Hello,     '), ' world!')─┐
+│ Hello, world!                                   │
+└─────────────────────────────────────────────────┘
 ```
 
 ## CRC32(s)
