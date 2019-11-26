@@ -75,19 +75,24 @@ private:
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
 
-            char charachter;
+            char character;
             size_t ch_num = 0;
+
+            std::default_random_engine generator;
+            std::uniform_int_distribution<int> distribution(32, 127);
+            std::random_device rd;
+
+            std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
+            std::cout<<"size = "<<size<<std::endl;
 
             for (size_t i = 0; i < size; ++i)
             {
-
-                std::default_random_engine generator(i);
-                std::uniform_int_distribution<int> distribution(32, 127);
+                generator.seed( rd() );
 
                 while( ch_num < static_cast<size_t>(vec_from[i])){
-                    charachter = distribution(generator);
-                    std::cout<<"==================="<<charachter<<std::endl;
-                    writeChar(charachter, buf_to);
+                    character = distribution(generator);
+                    std::cout<<"==================="<<character<<std::endl;
+                    writeChar(character, buf_to);
                     ch_num++;
                 }
 
