@@ -28,6 +28,11 @@ public:
         IBlockInputStream::cancel(kill);
     }
 
+    void resetParser()
+    {
+        input_format->resetParser();
+    }
+
     const BlockMissingValues & getMissingValues() const override { return input_format->getMissingValues(); }
 
 protected:
