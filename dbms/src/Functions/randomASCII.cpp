@@ -19,12 +19,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionRandomASKII : public IFunction
+class FunctionRandomASCII : public IFunction
 {
 
 public:
-    static constexpr auto name = "randomASKII";
-    static FunctionPtr create(const Context &){ return std::make_shared<FunctionRandomASKII>(); }
+    static constexpr auto name = "randomASCII";
+    static FunctionPtr create(const Context &){ return std::make_shared<FunctionRandomASCII>(); }
 
     String getName() const override
     {
@@ -78,24 +78,24 @@ private:
             char charachter;
             size_t ch_num = 0;
 
-                for (size_t i = 0; i < size; ++i)
-                {
+            for (size_t i = 0; i < size; ++i)
+            {
 
-            std::default_random_engine generator(i);
-            std::uniform_int_distribution<int> distribution(32, 127);
+                std::default_random_engine generator(i);
+                std::uniform_int_distribution<int> distribution(32, 127);
 
-            while( ch_num < static_cast<size_t>(vec_from[i])){
-                charachter = distribution(generator);
-                std::cout<<"==================="<<charachter<<std::endl;
-                writeChar(charachter, buf_to);
-                ch_num++;
-            }
+                while( ch_num < static_cast<size_t>(vec_from[i])){
+                    charachter = distribution(generator);
+                    std::cout<<"==================="<<charachter<<std::endl;
+                    writeChar(charachter, buf_to);
+                    ch_num++;
+                }
 
 
-//		for (size_t ch_num = 32; ch_num < 45 ; ++ch_num)
-//		{
-//		    writeChar(ch_num, buf_to);
-//		}
+        //		for (size_t ch_num = 32; ch_num < 45 ; ++ch_num)
+        //		{
+        //		    writeChar(ch_num, buf_to);
+        //		}
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
@@ -103,7 +103,7 @@ private:
             buf_to.finish();
             block.getByPosition(result).column = std::move(col_to);
 
-//            block.getByPosition(result).column = DataTypeString().createColumnConst(col_from->size(), "randomASKII");
+//          block.getByPosition(result).column = DataTypeString().createColumnConst(col_from->size(), "randomASCII");
             return true;
         }
 
@@ -112,7 +112,7 @@ private:
 
 
 
-    // explicit FunctionRandomASKII()
+    // explicit FunctionRandomASCII()
     // {
     // }
 
@@ -130,14 +130,14 @@ private:
 
     // void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     // {
-    //     block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, "randomASKII");
+    //     block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, "randomASCII");
     // }
 };
 
 
-void registerFunctionRandomASKII(FunctionFactory & factory)
+void registerFunctionRandomASCII(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRandomASKII>();
+    factory.registerFunction<FunctionRandomASCII>();
 }
 
 }
