@@ -557,7 +557,7 @@ InterpreterSelectQuery::analyzeExpressions(
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
 
-        if (storage && query.sample_size())
+        if (storage && (query.sample_size() || context.getSettingsRef().parallel_replicas_count > 1))
         {
             Names columns_for_sampling = storage->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
