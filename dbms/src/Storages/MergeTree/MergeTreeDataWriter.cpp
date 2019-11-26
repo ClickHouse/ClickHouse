@@ -115,6 +115,8 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
         throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
 
     ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+
+    /// FIXME why we don't erase new column from block?
 }
 
 }
@@ -217,10 +219,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
 
     DB::MergeTreeDataPart::TTLInfos move_ttl_infos;
-    for (const auto & [expression, ttl_entry] : data.move_ttl_entries_by_name)
-    {
-        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[expression], block);
-    }
+    for (const auto & [name, ttl_entry] : data.move_ttl_entries_by_name)
+        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[name], block);
 
     DiskSpace::ReservationPtr reservation = data.reserveSpacePreferringMoveDestination(expected_size, move_ttl_infos, time(nullptr));
 
@@ -275,7 +275,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     if (data.hasTableTTL())
         updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block);
 
-    for (const auto & [name, ttl_entry] : data.ttl_entries_by_name)
+    for (const auto & [name, ttl_entry] : data.column_ttl_entries_by_name)
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
