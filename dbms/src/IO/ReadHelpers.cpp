@@ -1053,7 +1053,6 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-/// TODO (akuzm) - write comments for this and next function.
 void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
 {
     assert(current >= in.position());
