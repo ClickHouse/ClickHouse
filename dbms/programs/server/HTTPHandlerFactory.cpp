@@ -23,7 +23,8 @@ Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactoryMain::createRequestHand
         << ", Content Type: " << request.getContentType()
         << ", Transfer Encoding: " << request.getTransferEncoding());
 
-    for (auto & handlerFactory: child_handler_factories) {
+    for (auto & handlerFactory: child_handler_factories)
+    {
         auto handler = handlerFactory->createRequestHandler(request);
         if (handler != nullptr)
             return handler;

@@ -87,19 +87,22 @@ public:
 };
 
 
-struct RootEndpoint {
+struct RootEndpoint
+{
     static constexpr auto path = "/";
     static constexpr auto strict_path = true;
     using HandleType = RootRequestHandler;
 };
 
-struct PingEndpoint {
+struct PingEndpoint
+{
     static constexpr auto path = "/ping";
     static constexpr auto strict_path = true;
     using HandleType = PingRequestHandler;
 };
 
-struct ReplicasStatusEndpoint {
+struct ReplicasStatusEndpoint
+{
     static constexpr auto path = "/replicas_status";
     static constexpr auto strict_path = false;
     using HandleType = ReplicasStatusHandler;
