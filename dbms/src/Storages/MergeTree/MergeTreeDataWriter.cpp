@@ -116,7 +116,7 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
 
     ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 
-    /// FIXME why we don't erase new column from block?
+    /// FIXME: why we don't erase new column from block?
 }
 
 }
