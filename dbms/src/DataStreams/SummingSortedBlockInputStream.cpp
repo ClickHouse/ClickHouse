@@ -272,7 +272,6 @@ Block SummingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return {};
 
-
     /// Update aggregation result columns for current block
     for (auto & desc : columns_to_aggregate)
     {
@@ -288,7 +287,6 @@ Block SummingSortedBlockInputStream::readImpl()
         }
         else
             desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
-
     }
 
     merge(merged_columns, queue_without_collation);

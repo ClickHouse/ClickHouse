@@ -24,7 +24,6 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
-    children.at(0)->dumpTree(std::cout, 0);
     header = children.at(0)->getHeader();
     num_columns = header.columns();
 }
