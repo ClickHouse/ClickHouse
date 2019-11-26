@@ -1,22 +1,23 @@
 ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
+
 # Windows使用指引
 
-如果您的系统是Windows，您需要创建Ubuntu虚拟机。您可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download。请使用下载好的镜像创建一个虚拟机（您需要确保有虚拟机至少4GB的内存容量）。要在Ubuntu中运行命令行终端，请找到名称中包含"terminal"的程序（gnome-terminal，konsole等），或使用快捷键Ctrl+Alt+T。
+如果您的系统是Windows，则需要创建Ubuntu虚拟机。可以安装VirtualBox来构建虚拟机。Ubuntu的下载链接为：https://www.ubuntu.com/#download。请使用下载好的镜像创建一个虚拟机（请确保虚拟机有至少4GB的内存容量）。在Ubuntu中使用"terminal"程序（gnome-terminal，konsole等）运行命令行终端，或使用快捷键Ctrl+Alt+T。
 
 
 # 在GitHub上创建源码库
 
-如果要开始使用ClickHouse，您需要(申请)一个GitHub账户。
+您需要(申请)一个GitHub账户来使用ClickHouse。
 
-如果您没有账户，请在https://github.com上注册一个账户。如果您没有SSH密钥，请在本地创建密钥并将其上传到GitHub。发送您的这些信息是必须的。您也可以使用与其他任何SSH服务器相同的密钥。
+如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将其上传到GitHub上。这些交互都是必须的，您也可以使用与其他任何SSH服务器相同的密钥。
 
-要创建ClickHouse源码库的分支，您可以在https://github.com/ClickHouse/ClickHouse页面上点击右上角的"fork"按钮。它将会在您的账户上创建属于您的ClickHouse/ClickHouse副本分支。
+要创建ClickHouse源码库的分支，请在https://github.com/ClickHouse/ClickHouse页面上点击右上角的"fork"按钮。它会在本账户上创建您个人的ClickHouse/ClickHouse分支。
 
-若要参与开发，您需要首先在ClickHouse的分支中提交您期望的变更，然后创建一个“pull请求”，以使这些变更能够被接受到(ClickHouse/ClickHouse)主库中。
+若要参与开发，首先请在ClickHouse的分支中提交您期望的变更，然后创建一个“pull请求”，以便这些变更能够被(ClickHouse/ClickHouse)主库接受。
 
-请您先安装`git`来使用git源码库。
+请先安装`git`来使用git源码库。
 
-您可以在Ubuntu终端上使用下列的指令来安装`git`:
+请在Ubuntu终端上使用下列的指令来安装`git`:
 
 ```
 sudo apt update
@@ -26,28 +27,28 @@ sudo apt install git
 您可以在https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf中找到有关使用Git的简易手册。有关Git的详细手册，请参见: https://git-scm.com/book/ru/v2.
 
 
-# 克隆源码库到您的开发机
+# 拷贝源码库到开发机
 
-接下来，您需要将源码下载到开发机上。之所以称为“克隆源码库”，是因为它在您的开发机上创建了源码库的本地副本。
+接下来，请将源码下载到开发机上。这步操作被称为“拷贝源码库”，是因为它在您的开发机上创建了源码库的本地副本。
 
 在终端命令行输入下列指令：
 ```
 git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
 cd ClickHouse
 ```
-请注意，您需要将 *your_github_username* 替换成您实际使用的账户名!
+请注意，您需要将 *your_github_username* 替换成实际使用的账户名!
 
 这个指令将创建一个包含项目副本的“ ClickHouse”工作目录。
 
 重要的是，工作目录的路径中不应包含空格，因为这可能会导致运行构建系统时出现问题。
 
-请注意，ClickHouse源码库使用了`submodules`。这是对其他库的引用（即项目所依赖的外部库）。即在克隆源码库时，您需要如上述指令中那样指定`--recursive`。如果在克隆源码库时没有包含子模块，您需要执行使用下列的指令：
+请注意，ClickHouse源码库使用了`submodules`。这是对其他库的引用（即项目所依赖的外部库）。即在拷贝源码库时，需要如上述指令中那样指定`--recursive`。如果在拷贝源码库时没有包含子模块，需要执行使用下列的指令：
 
 ```
 git submodule init
 git submodule update
 ```
-您可以通过 `git submodule status`来检查子模块的状态.
+可以通过 `git submodule status`来检查子模块的状态.
 
 如果提示下列的错误信息:
 
@@ -58,23 +59,23 @@ fatal: Could not read from remote repository.
 Please make sure you have the correct access rights
 and the repository exists.
 ```
-这通常表示缺少用于连接GitHub的SSH密钥。这些密钥一般都在`~/.ssh`中。要接受SSH密钥，您需要在GitHub UI的设置页面中上传它们。
+这通常表示缺少用于连接GitHub的SSH密钥。这些密钥一般都在`~/.ssh`中。要接受SSH密钥，请在GitHub UI的设置页面中上传它们。
 
-您还可以通过https协议来克隆源码库:
+您还可以通过https协议来拷贝源码库:
 
 ```
 git clone https://github.com/ClickHouse/ClickHouse.git
 ```
 
-但是，这不允许您将变更提交到服务器上。您仍然可以暂时使用。后续再添加SSH密钥并用`git remote`命令替换源码库的远程地址。
+但是，这无法将变更提交到服务器上。您仍然可以暂时使用，并后续再添加SSH密钥，用`git remote`命令替换源码库的远程地址。
 
-您还可以将原始ClickHouse库的地址添加到本地库中，以便从那里获取更新：
+还可以将原始ClickHouse库的地址添加到本地库中，以便从那里获取更新：
 
 ```
 git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 ```
 
-命令执行成功后，您可以通过执行`git pull upstream master`，从ClickHouse的主分支中拉去更新。
+命令执行成功后，可以通过执行`git pull upstream master`，从ClickHouse的主分支中拉去更新。
 
 
 # 构建系统
@@ -88,9 +89,9 @@ Ninja - 一个轻量级的构建系统，专注于速度，用于执行这些cma
 
 在CentOS,RedHat系统上执行`sudo yum install cmake ninja-build`。
 
-如果您使用过Arch或Gentoo，则可能您知道如何安装CMake。
+如果您曾经使用过Arch或Gentoo，那么也许知道如何安装CMake。
 
-若要在Mac OS X上安装CMake和Ninja，请先安装Homebrew，然后再通过brew安装其他所有内容：
+若要在Mac OS X上安装CMake和Ninja，请先安装Homebrew，然后再通过brew安装其他内容：
 
 ```
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
@@ -102,15 +103,13 @@ brew install cmake ninja
 
 # 可供选择的外部库
 
-ClickHouse使用多个外部库进行构建。大多数外部库不需要单独安装，而是和ClickHouse一起在子模块中构建。您可以查看`contrib`中罗列的清单。
+ClickHouse使用多个外部库进行构建。大多数外部库不需要单独安装，而是和ClickHouse一起在子模块中构建。可以查看`contrib`中罗列的清单。
 
 有一些库不是由源构建的，而是由系统提供，例如：ICU以及Readline，也建议安装。
 
 Ubuntu: `sudo apt install libicu-dev libreadline-dev`
 
 Mac OS X: `brew install icu4c readline`
-
-However, these libraries are optional and ClickHouse can well be built without them. ICU is used for support of `COLLATE` in `ORDER BY` (i.e. for sorting in turkish alphabet). Readline is used for more convenient command input in clickhouse-client.
 
 但是，这些库本身都是可选的，ClickHouse即便没有它们也可以构建。ICU用于支持`ORDER BY`中的`COLLATE`(例如，对土耳其字母进行排序)。Readline用于在clickhouse-client中更便捷的指令输入。
 
@@ -119,20 +118,20 @@ However, these libraries are optional and ClickHouse can well be built without t
 
 GCC编译器从版本9开始，以及Clang版本>=8都可支持构建ClickHouse。
 
-Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性能稍好（根据我们的测评，最多可以相差几个百分点）。Clang通常可以更加便捷的开发。但是，我们的持续集成（CI）平台会运行大约十二种构建组合的检查。
+Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性能较好（根据测评，最多可以相差几个百分点）。Clang通常可以更加便捷的开发。我们的持续集成（CI）平台会运行大约十二种构建组合的检查。
 
-在Ubuntu上安装GCC，您可以执行：`sudo apt install gcc g++`
+在Ubuntu上安装GCC，请执行：`sudo apt install gcc g++`
 
-您可以使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.yandex/docs/en/development/build/#install-gcc-9。
+请使用`gcc --version`查看gcc的版本。如果gcc版本低于9，请参考此处的指示：https://clickhouse.yandex/docs/en/development/build/#install-gcc-9。
 
-在Mac OS X上安装GCC，您可以执行：`brew install gcc`
+在Mac OS X上安装GCC，请执行：`brew install gcc`
 
-如果您决定使用Clang，您还可以同时安装 `libc++`以及`lld`，假设您也熟悉它们。此外，也推荐使用`ccache`。
+如果您决定使用Clang，还可以同时安装 `libc++`以及`lld`，前提是您也熟悉它们。此外，也推荐使用`ccache`。
 
 
 # 构建的过程
 
-现在您已经准备好构建ClickHouse，我们建议您在`ClickHouse`中创建一个单独的目录`build`，其中将包含所有构建组件:
+如果当前已经准备好构建ClickHouse，我们建议您在`ClickHouse`中创建一个单独的目录`build`，其中包含所有构建组件:
 
 ```
 mkdir build
@@ -141,7 +140,7 @@ cd build
 
 您也可以有多个不同类型的构建目录（例如，build_release, build_debug等等)。
 
-在`build`目录下，通过运行CMake配置构建。 在第一次运行之前，您需要定义用于指定编译器的环境变量（本示例中为gcc 9 编译器）。
+在`build`目录下，通过运行CMake配置构建。 在第一次运行之前，请定义用于指定编译器的环境变量（本示例中为gcc 9 编译器）。
 
 ```
 export CC=gcc-9 CXX=g++-9
@@ -150,7 +149,7 @@ cmake ..
 
 `CC`变量指代C的编译器（C Compiler的缩写），而`CXX`变量指代要使用哪个C++编译器进行编译。
 
-为了更快的构建，您可以使用`debug`构建类型-不含优化的构建。为此提供以下的参数`-D CMAKE_BUILD_TYPE=Debug`:
+为了更快的构建，请使用`debug`构建类型-不含优化的构建。为此提供以下的参数`-D CMAKE_BUILD_TYPE=Debug`:
 
 ```
 cmake -D CMAKE_BUILD_TYPE=Debug ..
@@ -166,7 +165,7 @@ ninja clickhouse-server clickhouse-client
 
 在此示例中，仅将构建所需的二进制文件。
 
-如果您需要构建所有的二进制文件（utilities和tests），您可以运行不带参数的ninja：
+如果您需要构建所有的二进制文件（utilities和tests），请运行不带参数的ninja：
 
 ```
 ninja
@@ -186,13 +185,13 @@ ninja -j 1 clickhouse-server clickhouse-client
 
 `ninja：error：loading'build.ninja'：No such file or directory`
 
-则表示生成构建配置失败，您需要检查上述消息。
+则表示生成构建配置失败，请检查上述消息。
 
 成功启动构建过程后，您将看到构建进度-已处理任务的数量和任务总数。
 
 在libhdfs2库中生成有关protobuf文件的消息时，可能会显示诸如`libprotobuf WARNING`。它们没有影响，可以忽略不计。
 
-成功构建后，您将得到一个可执行文件`ClickHouse/<build_dir>/dbms/programs/clickhouse`:
+成功构建后，会得到一个可执行文件`ClickHouse/<build_dir>/dbms/programs/clickhouse`:
 
 ```
 ls -l dbms/programs/clickhouse
@@ -201,7 +200,7 @@ ls -l dbms/programs/clickhouse
 
 # 运行ClickHouse可执行文件
 
-要以当前的用户身份运行服务，您需要进入到`ClickHouse/dbms/programs/server/` 目录（在`build`文件夹外）并运行：
+要以当前的用户身份运行服务，请进入到`ClickHouse/dbms/programs/server/` 目录（在`build`文件夹外）并运行：
 
 ```
 ../../../build/dbms/programs/clickhouse server
@@ -209,9 +208,9 @@ ls -l dbms/programs/clickhouse
 
 在这种情况下，ClickHouse将使用位于当前目录中的配置文件。您可以从任何目录运行`Clickhouse server`，并将配置文件`--config-file`的路径指定为命令行参数。
 
-在另外一个终端上连接ClickHouse的clickhouse-client客户端，您需要进入到`ClickHouse/build/dbms/programs/` 并运行`clickhouse client`。
+在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/dbms/programs/` 并运行`clickhouse client`。
 
-如果您在Mac OS X 或者 FreeBSD上收到`Connection refused`的消息，您您可以尝试指定主机地址为127.0.0.1：
+如果您在Mac OS X 或者 FreeBSD上收到`Connection refused`的消息，请尝试指定主机地址为127.0.0.1：
 
 ```
 clickhouse client --host 127.0.0.1
@@ -237,13 +236,13 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 # IDE (集成开发环境)
 
-如果您还不知道使用哪款IDE，我们推荐您使用CLion。CLion是一款商业软件，但能够有30天的免费使用时间。它同时也对学生免费。CLion可以在Linux和Mac OS X上使用。
+如果您还不知道使用哪款IDE，我们推荐使用CLion。CLion是一款商业软件，但能够有30天的免费使用时间。它同时也对学生免费。CLion可以在Linux和Mac OS X上使用。
 
 KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管不太稳定，但KDevelop还是作为一款非常便捷的IDE。如果KDevelop在打开项目后不久崩溃，则您应该在打开项目文件列表后立即单击“全部停止”按钮。按此处理后，KDevelop可以正常使用。
 
 作为简易的代码编辑器，您可以使用Sublime Text或Visual Studio Code或Kate（在Linux上都可用）。
 
-以防万一，值得一提的是CLion会创建自己的`build`路径，它还会自行选择`debug`作为构建类型。对于配置，它使用CLion中定义的CMake版本，而不是您安装的版本。最后，CLion会使用`make`去构建任务，而不是`ninja`。这属于正常的现象，请记住这一点，以免造成混淆。
+值得一提的是CLion会创建自己的`build`路径，它还会自行选择`debug`作为构建类型。对于配置，它使用CLion中定义的CMake版本，而不是您安装的版本。最后，CLion会使用`make`而不是`ninja`去构建任务。这属于正常的现象，请记住这一点，以免造成混淆。
 
 
 # 编写代码
@@ -283,12 +282,12 @@ clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visit
 
 # 创建拉取请求
 
-进入到GitHub 用户界面中的fork库。如果您已经在某个分支中进行开发，则需要选择该分支。在屏幕中有一个 "拉取请求"的按钮。从本质上说，这意味着“创建一个请求以接受您对主库的变更”。
+进入到GitHub 用户界面中的fork库。如果您已经在某个分支中进行开发，则需要选择该分支。在屏幕中有一个 "拉取请求"的按钮。实际上这等价于“创建一个请求以接受对主库的变更”。
 
-即使工作尚未完成，也可以创建拉取请求。在这种情况下，请在标题的开头加上“WIP”（正在进行中），以便后续更改。这对于协同审查和讨论更改以及运行所有可用测试用例很有用。提供有关变更的简短描述很重要，以后将用于生成重新发布变更日志。
+即使工作尚未完成，也可以创建拉取请求。在这种情况下，请在标题的开头加上“WIP”（正在进行中），以便后续更改。这对于协同审查和讨论更改以及运行所有可用测试用例很有用。提供有关变更的简短描述很重要，这将在后续用于生成重新发布变更日志。
 
 Yandex成员一旦在您的拉取请求上贴上“可以测试”标签，就会开始测试。一些初始检查项（例如，代码类型）的结果会在几分钟内反馈。构建的检查结果将在半小时内完成。而主要的测试用例集结果将在一小时内报告给您。
 
-系统将分别为您的拉取请求准备ClickHouse二进制版本。若要检索这些构建信息，请在检查列表中单击“ ClickHouse构建检查”旁边的“详细信息”链接。在这里，您会找到指向ClickHouse的.deb软件包的直接链接，您甚至可以将其部署在生产服务器上（如果您不担心）。
+系统将分别为您的拉取请求准备ClickHouse二进制版本。若要检索这些构建信息，请在检查列表中单击“ ClickHouse构建检查”旁边的“详细信息”链接。在这里，您会找到指向ClickHouse的.deb软件包的直接链接，此外，甚至可以将其部署在生产服务器上（如果您不担心）。
 
 某些构建项很可能会在首次构建时失败。这是因为我们同时检查了基于gcc和clang的构建，几乎所有现有的被clang启用的警告（总是带有`-Werror`标志）。在同一页面上，您可以找到所有构建的日志，因此不必以所有可能的方式构建ClickHouse。
