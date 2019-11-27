@@ -39,22 +39,37 @@ void MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    UNUSED(primary_key_block);
-    UNUSED(skip_indexes_block);
-
     if (!header)
         header = block.cloneEmpty();
 
-    Block result_block = block;
+    /// Fill index granularity for this block
+    /// if it's unknown (in case of insert data or horizontal merge,
+    /// but not in case of vertical merge)
+    /// FIXME maybe it's wrong at this stage.
+    if (compute_granularity)
+        fillIndexGranularity(block);
+
+    Block result_block;
 
     if (permutation)
     {
-        auto it = columns_list.begin();
-        for (size_t i = 0; i < columns_list.size(); ++i)
+        for (const auto & it : columns_list)
         {
-            auto & column = result_block.getByName(it->name);
-            column.column = column.column->permute(*permutation, 0);
+            if (primary_key_block.has(it.name))
+                result_block.insert(primary_key_block.getByName(it.name));
+            else if (skip_indexes_block.has(it.name))
+                result_block.insert(skip_indexes_block.getByName(it.name));
+            else
+            {
+                auto column = block.getByName(it.name);
+                column.column = column.column->permute(*permutation, 0);
+                result_block.insert(column);
+            }
         }
+    }
+    else
+    {
+        result_block = block;
     }
 
     auto result = squashing.add(result_block.mutateColumns());
@@ -71,12 +86,6 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
     size_t total_rows = block.rows();  
     size_t from_mark = current_mark;
     size_t current_row = 0;
-
-    /// Fill index granularity for this block
-    /// if it's unknown (in case of insert data or horizontal merge,
-    /// but not in case of vertical merge)
-    if (compute_granularity)
-        fillIndexGranularity(block);
 
     std::cerr << "(MergeTreeDataPartWriterCompact::write) marks: " << index_granularity.getMarksCount() << "\n";
 

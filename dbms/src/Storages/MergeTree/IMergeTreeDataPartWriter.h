@@ -69,7 +69,6 @@ public:
         const MergeTreeIndexGranularity & index_granularity,
         bool need_finish_last_granule);
 
-    /// FIXME remove indices block
     virtual void write(
         const Block & block, const IColumn::Permutation * permutation,
         /* Blocks with already sorted index columns */

@@ -40,8 +40,6 @@ public:
       */
     Result add(MutableColumns && columns);
 
-    bool hasPendingData() { return !accumulated_columns.empty(); }
-
 private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;

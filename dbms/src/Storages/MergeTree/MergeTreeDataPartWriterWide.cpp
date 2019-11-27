@@ -104,7 +104,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     /// but not in case of vertical merge)
     if (compute_granularity)
         fillIndexGranularity(block);
-    
+
     std::cerr << "(MergeTreeDataPartWriterWide::write) marks_count: " << index_granularity.getMarksCount() << "\n";
 
     WrittenOffsetColumns offset_columns;
