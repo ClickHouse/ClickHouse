@@ -95,4 +95,4 @@ void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     });
 }
 
-};
+}
