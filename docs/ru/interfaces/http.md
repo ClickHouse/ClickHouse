@@ -28,8 +28,12 @@ $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
+Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
-Date: Fri, 16 Nov 2012 19:21:50 GMT
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
+X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
 ```
@@ -83,6 +87,12 @@ $ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/
 
 ```bash
 $ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+К запросу можно добавить заголовок [Content-Type](https://tools.ietf.org/html/rfc7231#section-3.1.1.5) с помощью флага `-H`:
+
+```bash
+$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: text/plain;charset=UTF-8'
 ```
 
 Данные можно отправить отдельно от запроса:
