@@ -900,4 +900,56 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
+## topKArray {#topkarray}
+
+Creates an array of array values with all duplicates removed. The order of result values are determined by frequency of duplication in the first array.
+
+- If the value has no intersections, then the order is determined by the original array.
+- If the optional parameter `N` is passed, сreates a slice of array with n elements returned from the beginning.
+
+**Syntax**
+
+```sql
+topKArray(N)(array)
+```
+
+**Parameters**
+
+- `array` — The array to query. [Array](../../data_types/array.md).
+- `N` — The number of elements to return. Optional parameter. [UInt8](../../data_types/int_uint.md).
+
+**Returned value**
+
+Returns the new array without of intersecting values.
+
+**Example**
+
+Query (without `N`):
+
+```sql
+SELECT topKArray([1, 2, 1, 1, 2, 3, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 9])
+```
+
+Result:
+
+```text
+┌─topKArray([1, 2, 1, 1, 2, 3, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 9])─┐
+│ [5,1,2,3,4,9]                                                  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Query (`N` = 2):
+
+```sql
+SELECT topKArray(2)([1, 2, 1, 1, 2, 3, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 9])
+```
+
+Result:
+
+```text
+┌─topKArray(2)([1, 2, 1, 1, 2, 3, 2, 4, 5, 5, 5, 5, 5, 5, 5, 5, 9])─┐
+│ [5,1]                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
