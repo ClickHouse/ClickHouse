@@ -19,7 +19,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -360,7 +360,7 @@ public:
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
-    DiskSpace::StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
+    StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -590,7 +590,7 @@ public:
     bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
     void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
@@ -658,27 +658,27 @@ public:
     }
 
     /// Get table path on disk
-    String getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const;
+    String getFullPathOnDisk(const DiskPtr & disk) const;
 
     /// Get disk for part. Looping through directories on FS because some parts maybe not in
     /// active dataparts set (detached)
-    DiskSpace::DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
+    DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
 
     /// Get full path for part. Uses getDiskForPart and returns the full path
     String getFullPathForPart(const String & part_name, const String & relative_path = "") const;
 
     Strings getDataPaths() const override;
 
-    using PathWithDisk = std::pair<String, DiskSpace::DiskPtr>;
+    using PathWithDisk = std::pair<String, DiskPtr>;
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB
-    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
+    ReservationPtr reserveSpace(UInt64 expected_size);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    DiskSpace::ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
+    ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -781,7 +781,7 @@ protected:
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
 
-    DiskSpace::StoragePolicyPtr storage_policy;
+    StoragePolicyPtr storage_policy;
 
     /// Work with data parts
 
@@ -934,7 +934,7 @@ protected:
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
-    bool movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space);
+    bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
     /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
@@ -960,7 +960,7 @@ private:
     CurrentlyMovingPartsTagger selectPartsForMove();
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
-    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
+    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 };
 
 }

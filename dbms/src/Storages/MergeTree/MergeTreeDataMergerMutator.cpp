@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
@@ -533,7 +533,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
-    time_t time_of_merge, DiskSpace::Reservation * space_reservation, bool deduplicate, bool force_ttl)
+    time_t time_of_merge, const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -907,7 +907,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
     const Context & context,
-    DiskSpace::Reservation * space_reservation,
+    const ReservationPtr & space_reservation,
     TableStructureReadLockHolder & table_lock_holder)
 {
     auto check_not_cancelled = [&]()
