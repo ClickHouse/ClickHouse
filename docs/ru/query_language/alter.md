@@ -188,7 +188,8 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
 - [DROP PARTITION](#alter_drop-partition) – удалить партицию;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
-- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
+- [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
+- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
@@ -255,13 +256,29 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Это означает, что вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
 
+#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+
+```sql
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
+```
+
+Копирует партицию из таблицы `table1` в таблицу `table2` и добавляет к существующим данным `table2`. Данные из `table1` не удаляются.
+
+Следует иметь в виду:
+
+- Таблицы должны иметь одинаковую структуру.
+- Для таблиц должен быть задан одинаковый ключ партиционирования.
+
+Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
+
 #### REPLACE PARTITION {#alter_replace-partition}
 
 ```sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2`. Данные из `table1` не удаляются.
+Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`. Данные из `table1` не удаляются.
 
 Следует иметь в виду:
 

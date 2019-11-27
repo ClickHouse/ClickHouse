@@ -34,6 +34,15 @@ The configuration looks like this:
 </yandex>
 ```
 
+in case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like
+
+```sql
+CREATE DICTIONARY (...)
+...
+LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
+...
+```
+
 
 ## Ways to Store Dictionaries in Memory
 
@@ -64,6 +73,12 @@ Configuration example:
 </layout>
 ```
 
+or
+
+```sql
+LAYOUT(FLAT())
+```
+
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
@@ -78,6 +93,12 @@ Configuration example:
 </layout>
 ```
 
+or
+
+```sql
+LAYOUT(HASHED())
+```
+
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
@@ -90,6 +111,9 @@ Configuration example:
 </layout>
 ```
 
+```sql
+LAYOUT(SPARSE_HASHED())
+```
 
 ### complex_key_hashed
 
@@ -103,6 +127,9 @@ Configuration example:
 </layout>
 ```
 
+```sql
+LAYOUT(COMPLEX_KEY_HASHED())
+```
 
 ### range_hashed
 
@@ -113,15 +140,15 @@ This storage method works the same way as hashed and allows using date/time (arb
 Example: The table contains discounts for each advertiser in the format:
 
 ```text
-+---------------+---------------------+-------------------+--------+
++---------------|---------------------|-------------------|--------+
 | advertiser id | discount start date | discount end date | amount |
 +===============+=====================+===================+========+
 | 123           | 2015-01-01          | 2015-01-15        | 0.15   |
-+---------------+---------------------+-------------------+--------+
++---------------|---------------------|-------------------|--------+
 | 123           | 2015-01-16          | 2015-01-31        | 0.25   |
-+---------------+---------------------+-------------------+--------+
++---------------|---------------------|-------------------|--------+
 | 456           | 2015-01-01          | 2015-01-15        | 0.05   |
-+---------------+---------------------+-------------------+--------+
++---------------|---------------------|-------------------|--------+
 ```
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md). These elements must contain elements `name` and` type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
@@ -142,6 +169,19 @@ Example:
         <type>Date</type>
     </range_max>
     ...
+```
+
+or
+
+```sql
+CREATE DICTIONARY somedict (
+    id UInt64,
+    first Date,
+    last Date
+)
+PRIMARY KEY id
+LAYOUT(RANGE_HASHED())
+RANGE(MIN first MAX last)
 ```
 
 To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
@@ -193,6 +233,18 @@ Configuration example:
 </yandex>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY somedict(
+    Abcdef UInt64,
+    StartTimeStamp UInt64,
+    EndTimeStamp UInt64,
+    XXXType String DEFAULT ''
+)
+PRIMARY KEY Abcdef
+RANGE(MIN StartTimeStamp MAX EndTimeStamp)
+```
 
 ### cache
 
@@ -218,6 +270,12 @@ Example of settings:
 </layout>
 ```
 
+or
+
+```sql
+LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+```
+
 Set a large enough cache size. You need to experiment to select the number of cells:
 
 1. Set some value.
@@ -241,17 +299,17 @@ This type of storage is for mapping network prefixes (IP addresses) to metadata 
 Example: The table contains network prefixes and their corresponding AS number and country code:
 
 ```text
-  +-----------------+-------+--------+
+  +-----------------|-------|--------+
   | prefix          | asn   | cca2   |
   +=================+=======+========+
   | 202.79.32.0/20  | 17501 | NP     |
-  +-----------------+-------+--------+
+  +-----------------|-------|--------+
   | 2620:0:870::/48 | 3856  | US     |
-  +-----------------+-------+--------+
+  +-----------------|-------|--------+
   | 2a02:6b8:1::/48 | 13238 | RU     |
-  +-----------------+-------+--------+
+  +-----------------|-------|--------+
   | 2001:db8::/32   | 65536 | ZZ     |
-  +-----------------+-------+--------+
+  +-----------------|-------|--------+
 ```
 
 When using this type of layout, the structure must have a composite key.
@@ -277,6 +335,17 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
+```
+
+or
+
+```sql
+CREATE DICTIONARY somedict (
+    prefix String,
+    asn UInt32,
+    cca2 String DEFAULT '??'
+)
+PRIMARY KEY prefix
 ```
 
 The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.

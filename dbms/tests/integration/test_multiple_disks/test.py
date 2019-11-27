@@ -769,11 +769,41 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
+    ("detach_attach_mt","MergeTree()"),
+    ("replicated_detach_attach_mt","ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')",),
+])
+def test_detach_attach(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            SETTINGS storage_policy='moving_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        data = [] # 5MB in total
+        for i in range(5):
+            data.append(get_random_string(1024 * 1024)) # 1MB row
+        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+
+        node1.query("ALTER TABLE {} DETACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "0"
+
+        assert node1.query("SELECT disk FROM system.detached_parts WHERE table = '{}'".format(name)).strip() == "jbod1"
+
+        node1.query("ALTER TABLE {} ATTACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "5"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,engine", [
     ("mutating_mt","MergeTree()"),
     ("replicated_mutating_mt","ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
-
     try:
         node1.query("""
             CREATE TABLE {name} (
