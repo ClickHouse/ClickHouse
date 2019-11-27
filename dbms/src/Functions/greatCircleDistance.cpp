@@ -21,36 +21,40 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const double PI = 3.14159265358979323846;
-static const float TO_RADF = static_cast<float>(PI / 180.0);
-static const float TO_RADF2 = static_cast<float>(PI / 360.0);
+namespace
+{
+const double PI = 3.14159265358979323846;
+const float TO_RADF = static_cast<float>(PI / 180.0);
+const float TO_RADF2 = static_cast<float>(PI / 360.0);
 
 const int GEODIST_TABLE_COS = 1024; // maxerr 0.00063%
 const int GEODIST_TABLE_ASIN = 512;
 const int GEODIST_TABLE_K = 1024;
 
-static float g_GeoCos[GEODIST_TABLE_COS + 1];        ///< cos(x) table
-static float g_GeoAsin[GEODIST_TABLE_ASIN + 1];    ///< asin(sqrt(x)) table
-static float g_GeoFlatK[GEODIST_TABLE_K + 1][2];    ///< GeodistAdaptive() flat ellipsoid method k1,k2 coeffs table
+float g_GeoCos[GEODIST_TABLE_COS + 1];        /// cos(x) table
+float g_GeoAsin[GEODIST_TABLE_ASIN + 1];    /// asin(sqrt(x)) table
+float g_GeoFlatK[GEODIST_TABLE_K + 1][2];    /// geodistAdaptive() flat ellipsoid method k1,k2 coeffs table
 
 inline double sqr(double v)
 {
-    return v*v;
+    return v * v;
 }
+
 inline float fsqr(float v)
 {
-    return v*v;
+    return v * v;
 }
 
-void GeodistInit()
+void geodistInit()
 {
-    for (int i = 0; i <= GEODIST_TABLE_COS; i++)
+    for (size_t i = 0; i <= GEODIST_TABLE_COS; ++i)
         g_GeoCos[i] = static_cast<float>(cos(2 * PI * i / GEODIST_TABLE_COS)); // [0, 2pi] -> [0, COSTABLE]
 
-    for (int i = 0; i <= GEODIST_TABLE_ASIN; i++)
-        g_GeoAsin[i] = static_cast<float>(asin(sqrt(static_cast<double>(i) / GEODIST_TABLE_ASIN))); // [0, 1] -> [0, ASINTABLE]
+    for (size_t i = 0; i <= GEODIST_TABLE_ASIN; ++i)
+        g_GeoAsin[i] = static_cast<float>(asin(
+                sqrt(static_cast<double>(i) / GEODIST_TABLE_ASIN))); // [0, 1] -> [0, ASINTABLE]
 
-    for (int i = 0; i <= GEODIST_TABLE_K; i++)
+    for (size_t i = 0; i <= GEODIST_TABLE_K; ++i)
     {
         double x = PI * i / GEODIST_TABLE_K - PI * 0.5; // [-pi/2, pi/2] -> [0, KTABLE]
         g_GeoFlatK[i][0] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * x) + 1.20 * cos(4 * x)));
@@ -58,7 +62,7 @@ void GeodistInit()
     }
 }
 
-static inline float GeodistDegDiff(float f)
+inline float geodistDegDiff(float f)
 {
     f = static_cast<float>(fabs(f));
     while (f > 360)
@@ -68,7 +72,7 @@ static inline float GeodistDegDiff(float f)
     return f;
 }
 
-static inline float GeodistFastCos(float x)
+inline float geodistFastCos(float x)
 {
     float y = static_cast<float>(fabs(x) * GEODIST_TABLE_COS / PI / 2);
     int i = static_cast<int>(y);
@@ -77,7 +81,7 @@ static inline float GeodistFastCos(float x)
     return g_GeoCos[i] + (g_GeoCos[i + 1] - g_GeoCos[i]) * y;
 }
 
-static inline float GeodistFastSin(float x)
+inline float geodistFastSin(float x)
 {
     float y = static_cast<float>(fabs(x) * GEODIST_TABLE_COS / PI / 2);
     int i = static_cast<int>(y);
@@ -89,7 +93,7 @@ static inline float GeodistFastSin(float x)
 
 /// fast implementation of asin(sqrt(x))
 /// max error in floats 0.00369%, in doubles 0.00072%
-static inline float GeodistFastAsinSqrt(float x)
+inline float geodistFastAsinSqrt(float x)
 {
     if (x < 0.122)
     {
@@ -106,18 +110,20 @@ static inline float GeodistFastAsinSqrt(float x)
     }
     return static_cast<float>(asin(sqrt(x))); // distance over 17083km, just compute honestly
 }
-
+}
 /**
  *  The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
- *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance.
+ *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance .
  *  Throws exception when one or several input values are not within reasonable bounds.
- *  Latitude must be in [-90, 90], longitude must be [-180, 180]
- *
+ *  Latitude must be in [-90, 90], longitude must be [-180, 180].
+ *  Original code of this implementation of this function is here https://github.com/sphinxsearch/sphinx/blob/409f2c2b5b2ff70b04e38f92b6b1a890326bad65/src/sphinxexpr.cpp#L3825.
+ *  Andrey Aksenov, the author of original code, permitted to use this code in ClickHouse under the Apache 2.0 license.
+ *  Presentation about this code from Highload++ Siberia 2019 is here https://github.com/yandex/ClickHouse/files/3324740/1_._._GEODIST_._.pdf
+ *  The main idea of this implementation is optimisations based on Taylor series, trigonometric identity and calculated constants once for cosine, arcsine(sqrt) and look up table.
  */
 class FunctionGreatCircleDistance : public IFunction
 {
 public:
-
     static constexpr auto name = "greatCircleDistance";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionGreatCircleDistance>(); }
 
@@ -188,8 +194,8 @@ private:
                             ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        float dlat = GeodistDegDiff(lat1Deg - lat2Deg);
-        float dlon = GeodistDegDiff(lon1Deg - lon2Deg);
+        float dlat = geodistDegDiff(lat1Deg - lat2Deg);
+        float dlon = geodistDegDiff(lon1Deg - lon2Deg);
 
         if (dlon < 13)
         {
@@ -204,10 +210,10 @@ private:
         }
         // points too far away; use haversine
         static const float D = 2 * 6371000;
-        float a = fsqr(GeodistFastSin(dlat * TO_RADF2)) +
-                  GeodistFastCos(lat1Deg * TO_RADF) * GeodistFastCos(lat2Deg * TO_RADF) *
-                  fsqr(GeodistFastSin(dlon * TO_RADF2));
-        return static_cast<float>(D * GeodistFastAsinSqrt(a));
+        float a = fsqr(geodistFastSin(dlat * TO_RADF2)) +
+                  geodistFastCos(lat1Deg * TO_RADF) * geodistFastCos(lat2Deg * TO_RADF) *
+                  fsqr(geodistFastSin(dlon * TO_RADF2));
+        return static_cast<float>(D * geodistFastAsinSqrt(a));
     }
 
 
@@ -255,7 +261,7 @@ private:
 
 void registerFunctionGreatCircleDistance(FunctionFactory & factory)
 {
-    GeodistInit();
+    geodistInit();
     factory.registerFunction<FunctionGreatCircleDistance>();
 }
 
