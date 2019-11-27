@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <DataStreams/SquashingTransform.h>
 
 namespace DB
 {
@@ -28,7 +29,12 @@ private:
         size_t from_row,
         size_t number_of_rows);
 
+    void writeBlock(const Block & block);
+
     ColumnStreamPtr stream;
+
+    SquashingTransform squashing;
+    Block header;
 };
 
 }

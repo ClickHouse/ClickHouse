@@ -48,6 +48,14 @@ void MergeTreeIndexGranularity::appendMark(size_t rows_count)
         marks_rows_partial_sums.push_back(marks_rows_partial_sums.back() + rows_count);
 }
 
+void MergeTreeIndexGranularity::addRowsToLastMark(size_t rows_count)
+{
+    if (marks_rows_partial_sums.empty())
+        marks_rows_partial_sums.push_back(rows_count);
+    else
+        marks_rows_partial_sums.back() += rows_count;
+}
+
 void MergeTreeIndexGranularity::popMark()
 {
     if (!marks_rows_partial_sums.empty())
