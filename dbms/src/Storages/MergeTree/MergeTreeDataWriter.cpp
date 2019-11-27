@@ -80,8 +80,12 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
     Block & block)
 {
+    bool remove_column = false;
     if (!block.has(ttl_entry.result_column))
+    {
         ttl_entry.expression->execute(block);
+        remove_column = true;
+    }
 
     const auto & current = block.getByName(ttl_entry.result_column);
 
@@ -116,7 +120,10 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
 
     ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 
-    /// FIXME: why we don't erase new column from block?
+    if (remove_column)
+    {
+        block.erase(ttl_entry.result_column);
+    }
 }
 
 }
