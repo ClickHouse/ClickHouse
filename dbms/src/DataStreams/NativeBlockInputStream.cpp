@@ -159,7 +159,7 @@ Block NativeBlockInputStream::readImpl()
             auto & header_column = header.getByName(column.name);
             if (!header_column.type->equals(*column.type))
             {
-                column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+                column.column = recursiveTypeConversion(column.column, column.type, header.getByPosition(i).type);
                 column.type = header.getByPosition(i).type;
             }
         }
@@ -188,7 +188,7 @@ Block NativeBlockInputStream::readImpl()
         for (auto & col : header)
         {
             if (res.has(col.name))
-                tmp_res.insert(std::move(res.getByName(col.name)));
+                tmp_res.insert(res.getByName(col.name));
             else
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
         }

@@ -28,7 +28,7 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
 
     if (with_fill)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
         if (fill_from)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");

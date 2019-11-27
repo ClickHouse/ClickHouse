@@ -772,6 +772,22 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## arrayFlatten(arr) {#array_functions-arrayflatten}
+
+The `arrayFlatten` (or `flatten` alias) method will collapse the elements of an array to create a single array.
+
+Example:
+
+```sql
+SELECT arrayFlatten([[1, 2, 3], [4, 5]])
+```
+
+```text
+┌─arrayFlatten([[1, 2, 3], [4, 5]])─┐
+│                       [1,2,3,4,5] │
+└───────────────────────────────────┘
+```
+
 ## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
