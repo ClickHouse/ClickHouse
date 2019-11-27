@@ -68,6 +68,14 @@ CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE
         shard1.query('''
 CREATE TABLE low_cardinality_all (d Date, x UInt32, s LowCardinality(String)) ENGINE = Distributed('shard_with_low_cardinality', 'default', 'low_cardinality', sipHash64(s))''')
 
+        node1.query('''
+CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
+
+        node2.query('''
+CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
+
+
+
         yield cluster
 
     finally:
@@ -189,3 +197,7 @@ def test_inserts_low_cardinality(started_cluster):
     instance.query("INSERT INTO low_cardinality_all (d,x,s) VALUES ('2018-11-12',1,'123')")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
+
+def test_table_function(started_cluster):
+    node1.query("insert into table function cluster('shard_with_local_replica', 'default', 'table_function') select number, concat('str_', toString(number)) from numbers(100000)")
+    assert node1.query("select count() from cluster('shard_with_local_replica', 'default', 'table_function')").rstrip() == '100000'
