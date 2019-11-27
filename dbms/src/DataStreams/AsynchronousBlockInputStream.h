@@ -70,7 +70,6 @@ public:
         return ready.tryWait(milliseconds);
     }
 
-
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
     void cancel(bool kill) override

@@ -243,7 +243,7 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     while (current_row < total_rows)
     {
         size_t rows_to_write;
-        bool write_marks = true; /// FIXME not always true
+        bool write_marks = true;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (current_row == 0 && index_offset != 0)

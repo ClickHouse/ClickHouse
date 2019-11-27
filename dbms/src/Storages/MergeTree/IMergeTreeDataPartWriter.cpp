@@ -127,28 +127,30 @@ void fillIndexGranularityImpl(
 
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-
-    /// FIXME correct index granularity for compact
-    // index_granularity_for_block = rows_in_block;
-
-    /// FIXME: split/join last mark for compact parts
+    
     size_t current_row;
     for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-
-    size_t rows_rest_in_block = rows_in_block - (current_row - index_granularity_for_block);
-    if (need_finish_last_granule && rows_rest_in_block)
     {
-        /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
-        /// So,real size of granule differs from index_granularity_for_block not more than 50%.
-        if (rows_rest_in_block * 2 >= index_granularity_for_block)
-            index_granularity.appendMark(rows_rest_in_block);
+        size_t rows_rest_in_block = rows_in_block - current_row;
+        std::cerr << "rows_rest_in_block: " << rows_rest_in_block << "\n";
+        std::cerr << "rows_rest_in_block: " << index_granularity_for_block << "\n";
+
+        /// FIXME may be remove need_finish_last_granule and do it always
+        if (need_finish_last_granule && rows_rest_in_block < index_granularity_for_block)
+        {
+            if (rows_rest_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_rest_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_rest_in_block);
+        }
         else
         {
-            index_granularity.popMark();
-            index_granularity.appendMark(index_granularity_for_block + rows_rest_in_block);
+            index_granularity.appendMark(index_granularity_for_block);
         }
     }
+
+    for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+        std::cerr << "marks: " << index_granularity.getMarkRows(i) << "\n";
 }
 
 void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)

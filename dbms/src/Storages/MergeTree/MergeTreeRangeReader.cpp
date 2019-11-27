@@ -31,6 +31,11 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_r
 {
     if (num_rows)
     {
+        std::cerr << "(DelayedStream::readRows) current_mark: " << current_mark << '\n';
+        std::cerr << "(DelayedStream::readRows) continue_reading: " << continue_reading << '\n';
+        std::cerr << "(DelayedStream::readRows) num_rows: " << num_rows << '\n';
+
+
         size_t rows_read = merge_tree_reader->readRows(current_mark, continue_reading, num_rows, block);
         continue_reading = true;
 
