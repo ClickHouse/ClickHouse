@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])

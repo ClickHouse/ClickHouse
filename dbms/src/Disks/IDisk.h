@@ -30,7 +30,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 /**
- *  Provide interface for reservation.
+ * Provide interface for reservation.
  */
 class Space : public std::enable_shared_from_this<Space>
 {
@@ -72,26 +72,33 @@ class IDiskFile : public std::enable_shared_from_this<IDiskFile>
 public:
     friend class DiskDirectoryIterator;
 
+    /// Return disk which the file belongs to.
     const DiskPtr & disk() const { return disk_ptr; }
 
     const String & path() const { return rel_path; }
 
     String fullPath() const { return disk_ptr->getPath() + rel_path; }
 
+    /// Returns true if the file exists.
     virtual bool exists() const = 0;
 
+    /// Returns true if the file is a directory.
     virtual bool isDirectory() const = 0;
 
+    /// Creates a directory.
     virtual void createDirectory() = 0;
 
+    /// Creates a directory and all parent directories if necessary.
     virtual void createDirectories() = 0;
 
     virtual void moveTo(const String & new_path) = 0;
 
     virtual void copyTo(const String & new_path) = 0;
 
+    /// Open the file for read and returns ReadBuffer object.
     virtual std::unique_ptr<ReadBuffer> read() const = 0;
 
+    /// Open the file for write and returns WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> write() = 0;
 
     virtual ~IDiskFile() = default;
@@ -161,7 +168,7 @@ private:
 
 
 /**
- * Information about reserved size on concrete disk.
+ * Information about reserved size on particular disk.
  */
 class IReservation
 {
