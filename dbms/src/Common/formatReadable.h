@@ -1,8 +1,13 @@
 #pragma once
 
 #include <string>
-#include <IO/WriteBuffer.h>
 
+namespace DB
+{
+
+class WriteBuffer;
+
+}
 
 /// Displays the passed size in bytes as 123.45 GiB.
 void formatReadableSizeWithBinarySuffix(double value, DB::WriteBuffer & out, int precision = 2);

@@ -55,13 +55,4 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-/// Parses complete dictionary create query. Uses ParserDictionary and
-/// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
-class ParserCreateDictionaryQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE DICTIONARY"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 }

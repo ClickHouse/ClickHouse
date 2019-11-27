@@ -66,7 +66,9 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
+    QueryPipeline pipeline;
+    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams(pipeline);
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.

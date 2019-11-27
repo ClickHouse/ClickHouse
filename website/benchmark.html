@@ -2008,7 +2008,10 @@ function calculate_totals() {
             var k = current_runs[current_run_idx];
 
             var current_ratios = ratios[j][k].filter(
-                function(x, i) { return x && $("#query_checkbox" + i).is(':checked'); })
+                function(x, i) {
+                    return x && $("#query_checkbox" + i).is(':checked');
+                }
+            );
 
             var ratio = Math.pow(
                 current_ratios.reduce(

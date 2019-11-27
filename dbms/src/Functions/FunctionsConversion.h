@@ -398,7 +398,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
-    else /*if constexpr (std::is_integral_v<typename DataType::FieldType>)*/
+    else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
 }
 
@@ -971,8 +971,16 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            if (this->getName().find("OrZero") != std::string::npos ||
+                this->getName().find("OrNull") != std::string::npos)
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
+                        ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         if (arguments.size() == 2)
         {
@@ -1233,7 +1241,7 @@ struct ToNumberMonotonicity
         /// Integer cases.
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
-        const bool to_is_unsigned = std::is_unsigned_v<T>;
+        const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
@@ -1539,6 +1547,9 @@ public:
     }
 
     String getName() const override { return name; }
+
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
     {

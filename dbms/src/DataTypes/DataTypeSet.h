@@ -17,6 +17,9 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Set; }
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
     bool isParametric() const override { return true; }
+
+    // Used only for debugging, making it DUMPABLE
+    Field getDefault() const override { return Tuple(); }
 };
 
 }

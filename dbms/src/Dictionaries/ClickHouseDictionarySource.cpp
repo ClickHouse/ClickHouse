@@ -52,7 +52,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const Block & sample_block_,
-    Context & context_)
+    const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -125,7 +125,11 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       *    the necessity of holding process_list_element shared pointer.
       */
     if (is_local)
-        return executeQuery(load_all_query, context, true).in;
+    {
+        BlockIO res = executeQuery(load_all_query, context, true);
+        /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
+        return res.in;
+    }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
 }
 
@@ -206,7 +210,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr
+                                 const Context & context) -> DictionarySourcePtr
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };

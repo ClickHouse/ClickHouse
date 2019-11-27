@@ -435,9 +435,9 @@ public:
     DataPartsVector getDataPartsVector() const;
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
-    DataPartPtr getActiveContainingPart(const String & part_name);
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock);
+    DataPartPtr getActiveContainingPart(const String & part_name) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock) const;
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
@@ -452,6 +452,8 @@ public:
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
+
+    size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
     size_t getMaxPartsCountForPartition() const;
@@ -633,7 +635,7 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
@@ -667,6 +669,10 @@ public:
 
     Strings getDataPaths() const override;
 
+    using PathWithDisk = std::pair<String, DiskSpace::DiskPtr>;
+    using PathsWithDisks = std::vector<PathWithDisk>;
+    PathsWithDisks getDataPathsWithDisks() const;
+
     /// Reserves space at least 1MB
     DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
 
@@ -676,7 +682,7 @@ public:
 
     MergeTreeDataFormatVersion format_version;
 
-    Context global_context;
+    Context & global_context;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;

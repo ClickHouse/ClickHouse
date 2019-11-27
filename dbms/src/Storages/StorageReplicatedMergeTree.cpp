@@ -171,13 +171,13 @@ void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
     current_zookeeper = zookeeper;
 }
 
-zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper()
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper() const
 {
     std::lock_guard lock(current_zookeeper_mutex);
     return current_zookeeper;
 }
 
-zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper()
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
 {
     auto res = tryGetZooKeeper();
     if (!res)
@@ -1139,7 +1139,13 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_result);
+    /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
+    DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
+    if (!reserved_space)
+    {
+        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(estimated_space_for_result) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1761,7 +1767,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
-            part_desc->res_part = cloneAndLoadDataPart(
+            part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
                 part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info);
         }
         else if (!part_desc->replica.empty())
@@ -2773,7 +2779,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         get_part = [&, part_to_clone]()
         {
-            return cloneAndLoadDataPart(part_to_clone, "tmp_clone_", part_info);
+            return cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info);
         };
     }
     else
@@ -2920,7 +2926,59 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 }
 
 
-BlockInputStreams StorageReplicatedMergeTree::read(
+ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
+{
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+
+    for (const auto & data_part : getDataParts())
+    {
+        max_added_blocks[data_part->info.partition_id]
+            = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
+    }
+
+    auto zookeeper = getZooKeeper();
+
+    const String quorum_status_path = zookeeper_path + "/quorum/status";
+
+    String value;
+    Coordination::Stat stat;
+
+    if (zookeeper->tryGet(quorum_status_path, value, &stat))
+    {
+        ReplicatedMergeTreeQuorumEntry quorum_entry;
+        quorum_entry.fromString(value);
+
+        auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, format_version);
+
+        max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
+    }
+
+    String added_parts_str;
+    if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
+    {
+        if (!added_parts_str.empty())
+        {
+            ReplicatedMergeTreeQuorumAddedParts part_with_quorum(format_version);
+            part_with_quorum.fromString(added_parts_str);
+
+            auto added_parts = part_with_quorum.added_parts;
+
+            for (const auto & added_part : added_parts)
+                if (!getActiveContainingPart(added_part.second))
+                    throw Exception(
+                        "Replica doesn't have part " + added_part.second
+                            + " which was successfully written to quorum of other replicas."
+                              " Send query to another replica or disable 'select_sequential_consistency' setting.",
+                        ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+
+            for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
+                max_added_blocks[max_block.first] = max_block.second;
+        }
+    }
+    return max_added_blocks;
+}
+
+Pipes StorageReplicatedMergeTree::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -2937,54 +2995,31 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     */
     if (settings_.select_sequential_consistency)
     {
-        ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
-
-        for (const auto & data_part : getDataParts())
-        {
-            max_added_blocks[data_part->info.partition_id] = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
-        }
-
-        auto zookeeper = getZooKeeper();
-
-        const String quorum_status_path = zookeeper_path + "/quorum/status";
-
-        String value;
-        Coordination::Stat stat;
-
-        if (zookeeper->tryGet(quorum_status_path, value, &stat))
-        {
-            ReplicatedMergeTreeQuorumEntry quorum_entry;
-            quorum_entry.fromString(value);
-
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, format_version);
-
-            max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
-        }
-
-        String added_parts_str;
-        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
-        {
-            if (!added_parts_str.empty())
-            {
-                ReplicatedMergeTreeQuorumAddedParts part_with_quorum(format_version);
-                part_with_quorum.fromString(added_parts_str);
-
-                auto added_parts = part_with_quorum.added_parts;
-
-                for (const auto & added_part : added_parts)
-                    if (!getActiveContainingPart(added_part.second))
-                        throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
-                            " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
-
-                for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
-                        max_added_blocks[max_block.first] = max_block.second;
-            }
-        }
-
+        auto max_added_blocks = getMaxAddedBlocks();
         return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
+}
+
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+{
+    size_t res = 0;
+    auto max_added_blocks = getMaxAddedBlocks();
+    auto lock = lockParts();
+    for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (part->isEmpty())
+            continue;
+
+        auto blocks_iterator = max_added_blocks.find(part->info.partition_id);
+        if (blocks_iterator == max_added_blocks.end() || part->info.max_block > blocks_iterator->second)
+            continue;
+
+        res += part->rows_count;
+    }
+    return res;
 }
 
 
@@ -4864,7 +4899,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         UInt64 index = lock->getNumber();
         MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-        auto dst_part = cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info);
+        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info);
 
         src_parts.emplace_back(src_part);
         dst_parts.emplace_back(dst_part);

@@ -1,7 +1,6 @@
 #include <Storages/StorageDistributed.h>
 
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 
@@ -217,7 +216,10 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach_)
-    : table_name(table_name_), database_name(database_name_),
+    : IStorage(ColumnsDescription({
+        {"_shard_num", std::make_shared<DataTypeUInt32>()},
+    }, true)),
+    table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
@@ -306,7 +308,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 }
 
 BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -323,11 +325,17 @@ BlockInputStreams StorageDistributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
+    const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
+
+    bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
+    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
+        has_virtual_shard_num_column = false;
+
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, context.getExternalTables())
+            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     if (settings.optimize_skip_unused_shards)
     {

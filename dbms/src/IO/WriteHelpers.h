@@ -20,11 +20,13 @@
 #include <Common/UInt128.h>
 #include <Common/intExp.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ZlibDeflatingWriteBuffer.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -410,36 +412,36 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
 }
 
 /// Outputs a string in backquotes.
-inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
 }
 
 /// Outputs a string in backquotes for MySQL.
-inline void writeBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 {
     writeChar('`', buf);
-    writeAnyEscapedString<'`', true>(s.data(), s.data() + s.size(), buf);
+    writeAnyEscapedString<'`', true>(s.data, s.data + s.size, buf);
     writeChar('`', buf);
 }
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
 template <typename F>
-inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F && write_quoted_string)
+inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (s.empty() || !isValidIdentifierBegin(s[0]))
+    if (!s.size || !isValidIdentifierBegin(s.data[0]))
         write_quoted_string(s, buf);
     else
     {
-        const char * pos = s.data() + 1;
-        const char * end = s.data() + s.size();
+        const char * pos = s.data + 1;
+        const char * end = s.data + s.size;
         for (; pos < end; ++pos)
             if (!isWordCharASCII(*pos))
                 break;
@@ -450,19 +452,19 @@ inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F
     }
 }
 
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 
@@ -707,7 +709,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 
 /// Methods for output in binary format.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -724,7 +726,7 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -778,7 +780,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -806,7 +808,7 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -835,7 +837,7 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
@@ -906,10 +908,15 @@ inline String toString(const T & x)
     return buf.str();
 }
 
-
-/// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const String & x);
-/// Quote the identifier with backquotes.
-String backQuote(const String & x);
+template <class TWriteBuffer, class... Types>
+std::unique_ptr<WriteBuffer> getWriteBuffer(const DB::CompressionMethod method, Types&&... args)
+{
+    if (method == DB::CompressionMethod::Gzip)
+    {
+        auto write_buf = std::make_unique<TWriteBuffer>(std::forward<Types>(args)...);
+        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
+    }
+    return std::make_unique<TWriteBuffer>(args...);
+}
 
 }

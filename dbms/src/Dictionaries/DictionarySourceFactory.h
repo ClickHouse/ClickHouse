@@ -31,7 +31,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
-        Context & context)>;
+        const Context & context)>;
 
     DictionarySourceFactory();
 
@@ -42,7 +42,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const DictionaryStructure & dict_struct,
-        Context & context) const;
+        const Context & context) const;
 
 private:
     using SourceRegistry = std::unordered_map<std::string, Creator>;

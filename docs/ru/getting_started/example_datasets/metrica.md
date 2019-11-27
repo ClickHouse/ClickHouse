@@ -1,5 +1,6 @@
 # Анонимизированные данные Яндекс.Метрики
-Датасет состоит из двух таблиц, содержащих анонимизированные данные о хитах (`hits_v1`) и визитах (`visits_v1`) Яндекс.Метрики. Каждую из таблиц можно скачать в виде сжатого `.tsv.xz`-файла или в виде уже готовых партиций.
+
+Датасет состоит из двух таблиц, содержащих анонимизированные данные о хитах (`hits_v1`) и визитах (`visits_v1`) Яндекс.Метрики. Каждую из таблиц можно скачать в виде сжатого `.tsv.xz`-файла или в виде уже готовых партиций. Также можно скачать расширенную версию таблицы `hits`, содержащую 100 миллионов строк в виде [архива c файлами TSV](https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz) и в виде [готовых партиций](https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz).
 
 ## Получение таблиц из партиций
 **Скачивание и импортирование партиций hits:**
@@ -48,4 +49,4 @@ $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
 ## Запросы
-Примеры запросов к этим таблицам (они называются `test.hits` и `test.visits`) можно найти среди [stateful тестов](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) и в некоторых [performance тестах](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/performance/test_hits) ClickHouse.
+Примеры запросов к этим таблицам (они называются `test.hits` и `test.visits`) можно найти среди [stateful тестов](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) и в некоторых [performance тестах](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/performance) ClickHouse.

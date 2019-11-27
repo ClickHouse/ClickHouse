@@ -558,7 +558,7 @@ Calculates the approximate number of different argument values.
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
+The `uniqCombined` function is a good choice for calculating the number of different values.
 
 **Parameters**
 
@@ -581,7 +581,7 @@ Function:
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
 
-!! note "Note"
+!!! note "Note"
     Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
@@ -881,7 +881,7 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!! note "Note"
+!!! note "Note"
     For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
 
 **Returned value**
@@ -1069,39 +1069,40 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Fitting
 
-    Such query may be used.
+**1.** Fitting
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Such query may be used.
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    ```
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
 
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+```
 
-2. Predicting
+Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+**2.** Predicting
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
 
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    `test_data` is a table like `train_data` but may not contain target value.
+The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+`test_data` is a table like `train_data` but may not contain target value.
 
 ### Notes {#agg_functions-stochasticlinearregression-notes}
 
@@ -1210,11 +1211,6 @@ SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
 │               3   │
 └───────────────────┘
 
-SELECT groupBitmapAndMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapAnd(z)─┐
-│               3   │
-└───────────────────┘
-
 SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
 │ [6,8,10]                                         │
@@ -1260,11 +1256,6 @@ SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%')
 │             15   │
 └──────────────────┘
 
-SELECT groupBitmapOrMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapOrMerge(z)─┐
-│                  15   │
-└───────────────────────┘
-
 SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
 │ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
@@ -1309,11 +1300,6 @@ SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
 ┌─groupBitmapXor(z)─┐
 │              10   │
 └───────────────────┘
-
-SELECT groupBitmapXorMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapXorMerge(z)─┐
-│                   10   │
-└────────────────────────┘
 
 SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐

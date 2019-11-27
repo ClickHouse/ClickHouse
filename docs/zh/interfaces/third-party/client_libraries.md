@@ -26,7 +26,7 @@
     - [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
     - [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 - Ruby
-    - [clickhouse (Ruby)](https://github.com/archan937/clickhouse)
+    - [ClickHouse (Ruby)](https://github.com/shlima/click_house)
 - R
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
@@ -39,8 +39,6 @@
 - C#
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-- C++
-    - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir
     - [clickhousex](https://github.com/appodeal/clickhousex/)
 - Nim
