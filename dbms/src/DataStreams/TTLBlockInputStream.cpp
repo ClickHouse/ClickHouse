@@ -209,7 +209,6 @@ UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t i
             return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
             return column_const->getValue<UInt32>();
-
     }
 
     throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
