@@ -361,8 +361,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
     }
     catch (const Exception & e)
     {
-        throw Exception("Cannot create table from metadata file " + table_metadata_path + ", error: " + e.displayText() +
-            ", stack trace:\n" + e.getStackTrace().toString(),
+        throw Exception("Cannot create table from metadata file " + table_metadata_path + ", error: " + e.displayText() + DB::getCurrentExceptionMessage(true),
             ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
     }
 }
