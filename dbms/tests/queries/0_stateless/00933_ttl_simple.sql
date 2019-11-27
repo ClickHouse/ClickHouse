@@ -47,14 +47,41 @@ select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
+-- const DateTime TTL positive
 drop table if exists ttl_00933_1;
-
-create table ttl_00933_1 (a Int ttl toDateTime(1)) engine = MergeTree order by tuple() partition by toSecond(d);
+create table ttl_00933_1 (b Int, a Int ttl now()-1000) engine = MergeTree order by tuple() partition by tuple();
 show create table ttl_00933_1;
-insert into ttl_00933_1 values (1);
+insert into ttl_00933_1 values (1, 1);
 select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
-select * from ttl_00933_1 order by d;
+select * from ttl_00933_1;
+
+-- const DateTime TTL negative
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl now()+1000) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
+-- const Date TTL positive
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl today()-1) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
+-- const Date TTL negative
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl today()+1) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
 
 set send_logs_level = 'none';
 
