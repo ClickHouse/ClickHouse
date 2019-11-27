@@ -50,7 +50,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetLimit {#bitmapsubsetlimit}
 
-Возвращает подмножество битового массива. Значения подмножества сортируются в порядке возрастания, а его верхний предел и начальная точка не превышают соответствующие входные значения.
+Создает подмножество битмапа с n элементами, расположенными между `range_start` и `cardinality_limit`.
 
 **Синтаксис**
 
@@ -60,13 +60,13 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Параметры**
 
-- `bitmap` – Битовый массив. [Bitmap object](#bitmap_functions-bitmapbuild).
+- `bitmap` – Битмап. [Bitmap object](#bitmap_functions-bitmapbuild).
 - `range_start` – Начальная точка подмножества. [UInt32](../../data_types/int_uint.md).
 - `cardinality_limit` – Верхний предел подмножества. [UInt32](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
-Подмножество битового массива.
+Подмножество битмапа.
 
 Тип: `Bitmap object`.
 
@@ -75,15 +75,15 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 Запрос:
 
 ```sql
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([30, 20, 10, 1, 2, 3]), toUInt32(2), toUInt32(3))) AS res;
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
 Ответ:
 
 ```text
-┌─res──────┐
-│ [2,3,10] │
-└──────────┘
+┌─res───────────────────────┐
+│ [30,31,32,33,100,200,500] │
+└───────────────────────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}
