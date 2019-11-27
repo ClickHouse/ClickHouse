@@ -15,21 +15,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-enum
-{
-    UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2)
-};
-
-}
 
 JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
         ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
         : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_)
 {
+    std::cerr << "\n\nEnter!\n\n" << std::endl;
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);
 }
@@ -80,6 +71,11 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
         e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
+}
+
+void JSONCompactEachRowRowInputFormat::syncAfterError()
+{
+    skipToUnescapedNextLineOrEOF(in);
 }
 
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory)

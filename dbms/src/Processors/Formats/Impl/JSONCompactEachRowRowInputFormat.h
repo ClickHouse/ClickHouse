@@ -21,6 +21,8 @@ public:
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    bool allowSyncAfterError() const override { return true; }
+    void syncAfterError() override;
 
 
 private:
