@@ -1,173 +1,23 @@
-#include <Common/DiskSpaceMonitor.h>
+#include "DiskSpaceMonitor.h"
+#include "DiskFactory.h"
+#include "DiskLocal.h"
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Interpreters/Context.h>
 
 #include <set>
-
 #include <Poco/File.h>
 
 
 namespace DB
 {
 
-namespace DiskSpace
-{
-
-
-std::mutex Disk::mutex;
-
-std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
-{
-    if (absolute_path.is_relative())
-        throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    absolute_path = std::filesystem::canonical(absolute_path);
-
-    const auto get_device_id = [](const std::filesystem::path & p)
-    {
-        struct stat st;
-        if (stat(p.c_str(), &st))
-            throwFromErrnoWithPath("Cannot stat " + p.string(), p.string(), ErrorCodes::SYSTEM_ERROR);
-        return st.st_dev;
-    };
-
-    /// If /some/path/to/dir/ and /some/path/to/ have different device id,
-    /// then device which contains /some/path/to/dir/filename is mounted to /some/path/to/dir/
-    auto device_id = get_device_id(absolute_path);
-    while (absolute_path.has_relative_path())
-    {
-        auto parent = absolute_path.parent_path();
-        auto parent_device_id = get_device_id(parent);
-        if (device_id != parent_device_id)
-            return absolute_path;
-        absolute_path = parent;
-        device_id = parent_device_id;
-    }
-
-    return absolute_path;
-}
-
-/// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
-[[noreturn]]
-#endif
-std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
-{
-#if defined(__linux__)
-    auto mounted_filesystems = setmntent("/etc/mtab", "r");
-    if (!mounted_filesystems)
-        throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
-    mntent fs_info;
-    constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
-    char buf[buf_size];
-    while (getmntent_r(mounted_filesystems, &fs_info, buf, buf_size) && fs_info.mnt_dir != mount_point)
-        ;
-    endmntent(mounted_filesystems);
-    if (fs_info.mnt_dir != mount_point)
-        throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
-    return fs_info.mnt_fsname;
-#else
-    throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
-#endif
-}
-
-
-ReservationPtr Disk::reserve(UInt64 bytes) const
-{
-    if (!tryReserve(bytes))
-        return {};
-    return std::make_unique<Reservation>(bytes, std::static_pointer_cast<const Disk>(shared_from_this()));
-}
-
-bool Disk::tryReserve(UInt64 bytes) const
-{
-    std::lock_guard lock(mutex);
-    if (bytes == 0)
-    {
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << backQuote(name));
-        ++reservation_count;
-        return true;
-    }
-
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
-    if (unreserved_space >= bytes)
-    {
-        LOG_DEBUG(
-            &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name)
-                << ", having unreserved " << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
-        ++reservation_count;
-        reserved_bytes += bytes;
-        return true;
-    }
-    return false;
-}
-
-UInt64 Disk::getUnreservedSpace() const
-{
-    std::lock_guard lock(mutex);
-    auto available_space = getSpaceInformation().getAvailableSpace();
-    available_space -= std::min(available_space, reserved_bytes);
-    return available_space;
-}
-
-UInt64 Disk::Stat::getTotalSpace() const
-{
-    UInt64 total_size = fs.f_blocks * fs.f_bsize;
-    if (total_size < keep_free_space_bytes)
-        return 0;
-    return total_size - keep_free_space_bytes;
-}
-
-UInt64 Disk::Stat::getAvailableSpace() const
-{
-    /// we use f_bavail, because part of b_free space is
-    /// available for superuser only and for system purposes
-    UInt64 total_size = fs.f_bavail * fs.f_bsize;
-    if (total_size < keep_free_space_bytes)
-        return 0;
-    return total_size - keep_free_space_bytes;
-}
-
-Reservation::~Reservation()
-{
-    try
-    {
-        std::lock_guard lock(Disk::mutex);
-        if (disk_ptr->reserved_bytes < size)
-        {
-            disk_ptr->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size for disk '" + disk_ptr->getName() + "'.");
-        }
-        else
-        {
-            disk_ptr->reserved_bytes -= size;
-        }
-
-        if (disk_ptr->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count for disk '" + disk_ptr->getName() + "'.");
-        else
-            --disk_ptr->reservation_count;
-    }
-    catch (...)
-    {
-        tryLogCurrentException("~DiskSpaceMonitor");
-    }
-}
-
-void Reservation::update(UInt64 new_size)
-{
-    std::lock_guard lock(Disk::mutex);
-    disk_ptr->reserved_bytes -= size;
-    size = new_size;
-    disk_ptr->reserved_bytes += size;
-}
-
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const String & default_path)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
+
+    auto & factory = DiskFactory::instance();
 
     constexpr auto default_disk_name = "default";
     bool has_default_disk = false;
@@ -177,53 +27,15 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")",
                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
+        if (disk_name == default_disk_name)
+            has_default_disk = true;
+
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        bool has_space_ratio = config.has(disk_config_prefix + ".keep_free_space_ratio");
-
-        if (config.has(disk_config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-            throw Exception("Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
-                            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-        UInt64 keep_free_space_bytes = config.getUInt64(disk_config_prefix + ".keep_free_space_bytes", 0);
-
-        String path;
-        if (config.has(disk_config_prefix + ".path"))
-            path = config.getString(disk_config_prefix + ".path");
-
-        if (has_space_ratio)
-        {
-            auto ratio = config.getDouble(disk_config_prefix + ".keep_free_space_ratio");
-            if (ratio < 0 || ratio > 1)
-                throw Exception("'keep_free_space_ratio' have to be between 0 and 1",
-                                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-            String tmp_path = path;
-            if (tmp_path.empty())
-                tmp_path = default_path;
-
-            // Create tmp disk for getting total disk space.
-            keep_free_space_bytes = static_cast<UInt64>(Disk("tmp", tmp_path, 0).getTotalSpace() * ratio);
-        }
-
-        if (disk_name == default_disk_name)
-        {
-            has_default_disk = true;
-            if (!path.empty())
-                throw Exception("\"default\" disk path should be provided in <path> not it <storage_configuration>",
-                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, default_path, keep_free_space_bytes));
-        }
-        else
-        {
-            if (path.empty())
-                throw Exception("Disk path can not be empty. Disk " + disk_name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            if (path.back() != '/')
-                throw Exception("Disk path must end with /. Disk " + disk_name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, path, keep_free_space_bytes));
-        }
+        disks.emplace(disk_name, factory.get(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<const Disk>(default_disk_name, default_path, 0));
+        disks.emplace(default_disk_name, std::make_shared<const DiskLocal>(default_disk_name, context.getPath(), 0));
 }
 
 
@@ -239,7 +51,7 @@ const DiskPtr & DiskSelector::operator[](const String & name) const
 Volume::Volume(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
+    const String & config_prefix,
     const DiskSelector & disk_selector)
     : name(std::move(name_))
 {
@@ -332,7 +144,7 @@ UInt64 Volume::getMaxUnreservedFreeSpace() const
 StoragePolicy::StoragePolicy(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
+    const String & config_prefix,
     const DiskSelector & disks)
     : name(std::move(name_))
 {
@@ -534,8 +346,6 @@ const StoragePolicyPtr & StoragePolicySelector::operator[](const String & name) 
     if (it == policies.end())
         throw Exception("Unknown StoragePolicy " + name, ErrorCodes::UNKNOWN_POLICY);
     return it->second;
-}
-
 }
 
 }

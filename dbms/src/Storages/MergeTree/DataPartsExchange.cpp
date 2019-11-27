@@ -226,7 +226,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     auto server_protocol_version = in.getResponseCookie("server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
 
-    DiskSpace::ReservationPtr reservation;
+    ReservationPtr reservation;
     if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
         size_t sum_files_size;
@@ -247,7 +247,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    const DiskSpace::ReservationPtr reservation,
+    const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
 
