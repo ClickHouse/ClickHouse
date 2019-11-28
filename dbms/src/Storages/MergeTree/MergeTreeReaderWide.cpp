@@ -50,9 +50,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data
 
 size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
 {
-    std::cerr << "(MergeTreeReaderWide::readRows) columns: " << columns.toString() << "\n";
-    std::cerr << "(MergeTreeReaderWide::readRows) from_rows: " << from_mark << "\n";
-    std::cerr << "(MergeTreeReaderWide::readRows) block: " << res.dumpStructure() << "\n";
+    std::cerr << "(MergeTreeReaderWide::readRows) from_mark: " << from_mark << "\n";
+    std::cerr << "(MergeTreeReaderWide::readRows) continue_reading: " << continue_reading << "\n";
 
     size_t read_rows = 0;
     try
@@ -169,6 +168,7 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
+            MergeTreeReaderStream::ReadingMode::COLUMN,
             profile_callback, clock_type));
     };
 

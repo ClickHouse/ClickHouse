@@ -679,6 +679,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Settings & settings,
     const ReaderSettings & reader_settings) const
 {
+    std::cerr << "marks to read: ";
+    for (const auto & part : parts)
+        for (auto range : part.ranges)
+            std::cerr << "(" << range.begin << ", " << range.end << ") ";
+
+
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
     size_t sum_marks = 0;

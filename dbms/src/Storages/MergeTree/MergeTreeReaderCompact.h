@@ -33,6 +33,8 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
+    size_t next_mark = 0;
+
     void initMarksLoader();
     void seekToStart();
     void seekToMark(size_t row, size_t col);

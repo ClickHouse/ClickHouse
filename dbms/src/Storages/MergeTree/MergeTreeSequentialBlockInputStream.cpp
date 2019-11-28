@@ -101,6 +101,11 @@ try
         bool continue_reading = (current_mark != 0);
         size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, res);
 
+        std::cerr << "(MergeTreeSequentialBlockInputStream) rows_to_read: " << rows_to_read << '\n';
+        std::cerr << "(MergeTreeSequentialBlockInputStream) current_mark: " << current_mark << '\n';
+        std::cerr << "(MergeTreeSequentialBlockInputStream) rows_readed: " << rows_readed << '\n';
+
+
         if (res)
         {
             res.checkNumberOfRows();

@@ -106,6 +106,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
         fillIndexGranularity(block);
 
     std::cerr << "(MergeTreeDataPartWriterWide::write) marks_count: " << index_granularity.getMarksCount() << "\n";
+    std::cerr << "(MergeTreeDataPartWriterWide::write) current_mark: " << current_mark << "\n";
+
 
     WrittenOffsetColumns offset_columns;
     MarkWithOffset result;

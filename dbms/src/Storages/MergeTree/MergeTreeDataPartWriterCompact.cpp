@@ -39,9 +39,6 @@ void MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    if (!header)
-        header = block.cloneEmpty();
-
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
@@ -71,6 +68,9 @@ void MergeTreeDataPartWriterCompact::write(
     {
         result_block = block;
     }
+
+    if (!header)
+        header = result_block.cloneEmpty();
 
     auto result = squashing.add(result_block.mutateColumns());
     if (!result.ready)
