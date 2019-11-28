@@ -94,30 +94,52 @@ Block KafkaBlockInputStream::readImpl()
         block1.setColumns(std::move(columns1));
     };
 
-    auto inp_format = FormatFactory::instance().getInputFormat(
+    auto input_format = FormatFactory::instance().getInputFormat(
         storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
 
-    auto child = std::make_shared<InputStreamFromInputFormat>(std::move(inp_format));
+    InputPort port(input_format->getPort().getHeader(), input_format.get());
+    connect(input_format->getPort(), port);
+    port.setNeeded();
 
     auto read_kafka_message = [&, this]
     {
         Block result;
 
-        while (auto block = child->read())
+        while (true)
         {
-            auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
-            virtual_columns = virtual_header.cloneEmptyColumns();
+            auto status = input_format->prepare();
 
-            for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-                block.insert(column);
+            switch (status)
+            {
+                case IProcessor::Status::Ready:
+                    input_format->work();
+                    break;
 
-            /// FIXME: materialize MATERIALIZED columns here.
+                case IProcessor::Status::Finished:
+                    input_format->resetParser();
+                    return result;
 
-            merge_blocks(result, std::move(block));
+                case IProcessor::Status::PortFull:
+                {
+                    auto block = input_format->getPort().getHeader().cloneWithColumns(port.pull().detachColumns());
+                    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+                    virtual_columns = virtual_header.cloneEmptyColumns();
+
+                    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+                        block.insert(column);
+
+                    /// FIXME: materialize MATERIALIZED columns here.
+
+                    merge_blocks(result, std::move(block));
+                    break;
+                }
+                case IProcessor::Status::NeedData:
+                case IProcessor::Status::Async:
+                case IProcessor::Status::Wait:
+                case IProcessor::Status::ExpandPipeline:
+                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
+            }
         }
-        child->resetParser();
-
-        return result;
     };
 
     Block single_block;
