@@ -26,7 +26,7 @@ inline uint32_t HI_32(uint64_t x) { return static_cast<uint32_t>(x >> 32); }
             return std::numeric_limits<unsigned long long>::digits - __builtin_clzll(value);
         }
 #else
-        /// Stupid realization for non GCC-like compilers. Can use BSR from x86 instructions set.
+        /// Stupid implementation for non GCC-like compilers. Can use BSR from x86 instructions set.
         template <typename T>
         inline unsigned GetValueBitCountImpl(T value) noexcept {
             unsigned result = 1; // result == 0 - impossible value, since value cannot be zero

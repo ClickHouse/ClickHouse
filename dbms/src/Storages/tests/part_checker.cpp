@@ -18,7 +18,7 @@ Poco::Path getMarksFile(const std::string & part_path)
             return p;
         ++it;
     }
-    throw Exception("Cannot find any mark file in directory " + part_path, DB::ErrorCodes::METRIKA_OTHER_ERROR);
+    throw Exception("Cannot find any mark file in directory " + part_path, DB::ErrorCodes::POCO_EXCEPTION);
 }
 
 MergeTreeIndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)

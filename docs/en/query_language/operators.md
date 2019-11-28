@@ -7,7 +7,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a[N]` Access to an element of an array; ` arrayElement(a, N) function`.
 
-`a.N` – Access to a tuble element; `tupleElement(a, N)` function.
+`a.N` – Access to a tuple element; `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator
 
