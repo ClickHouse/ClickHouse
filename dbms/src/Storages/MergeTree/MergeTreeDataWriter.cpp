@@ -226,8 +226,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
 
     DB::MergeTreeDataPart::TTLInfos move_ttl_infos;
-    for (const auto & [name, ttl_entry] : data.move_ttl_entries_by_name)
-        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[name], block);
+    for (const auto & ttl_entry : data.move_ttl_entries)
+        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block);
 
     DiskSpace::ReservationPtr reservation = data.reserveSpacePreferringMoveDestination(expected_size, move_ttl_infos, time(nullptr));
 

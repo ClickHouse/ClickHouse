@@ -737,7 +737,7 @@ public:
     TTLEntriesByName column_ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
-    TTLEntriesByName move_ttl_entries_by_name;
+    std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
