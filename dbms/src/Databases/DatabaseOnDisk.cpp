@@ -142,6 +142,16 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
+DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context_)
+    : DatabaseWithOwnTablesBase(name, logger)
+    , metadata_path(metadata_path_)
+    , data_path("data/" + escapeForFileName(database_name) + "/")
+{
+    Poco::File(context_.getPath() + getDataPath()).createDirectories();
+    Poco::File(getMetadataPath()).createDirectories();
+}
+
+
 void DatabaseOnDisk::createTable(
     const Context & context,
     const String & table_name,

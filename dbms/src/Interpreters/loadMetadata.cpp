@@ -1,11 +1,6 @@
-#include <iomanip>
-#include <thread>
-#include <future>
-
 #include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/FileStream.h>
 
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <Common/escapeForFileName.h>
 
-#include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 
 
@@ -39,7 +33,6 @@ static void executeCreateQuery(
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.attach = true;
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
@@ -55,20 +48,27 @@ static void loadDatabase(
     const String & database_path,
     bool force_restore_data)
 {
-    /// There may exist .sql file with database creation statement.
-    /// Or, if it is absent, then database with Ordinary engine is created.
 
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
     if (Poco::File(database_metadata_file).exists())
     {
+        /// There are .sql file with database creation statement.
         ReadBufferFromFile in(database_metadata_file, 1024);
         readStringUntilEOF(database_attach_query, in);
     }
+    else if (Poco::File(database_path).exists())
+    {
+        /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
+        database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
+    }
     else
-        //FIXME
-        database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Atomic";
+    {
+        /// It's first server run and we need create default and system databases.
+        /// .sql file with database engine will be written for CREATE query.
+        database_attach_query = "CREATE DATABASE " + backQuoteIfNeed(database);
+    }
 
     executeCreateQuery(database_attach_query, context, database,
                        database_metadata_file, force_restore_data);
@@ -78,7 +78,7 @@ static void loadDatabase(
 #define SYSTEM_DATABASE "system"
 
 
-void loadMetadata(Context & context)
+void loadMetadata(Context & context, const String & default_database_name)
 {
     String path = context.getPath() + "metadata";
 
@@ -107,6 +107,9 @@ void loadMetadata(Context & context)
 
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
+
+    if (!default_database_name.empty() && !databases.count(default_database_name))
+        databases.emplace(default_database_name, path + "/metadata/" + escapeForFileName(default_database_name));
 
     for (const auto & [name, db_path] : databases)
         loadDatabase(context, name, db_path, has_force_restore_data_flag);

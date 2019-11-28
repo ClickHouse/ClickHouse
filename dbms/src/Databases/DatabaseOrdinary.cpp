@@ -93,9 +93,8 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_,"DatabaseOrdinary (" + name_ + ")")
+    : DatabaseWithDictionaries(name_, metadata_path_,"DatabaseOrdinary (" + name_ + ")", context_)
 {
-    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
 
