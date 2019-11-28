@@ -1,5 +1,5 @@
 #include <Processors/Formats/IInputFormat.h>
-#include <IO/WriteHelpers.h>    // toString
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -14,7 +14,6 @@ IInputFormat::IInputFormat(Block header, ReadBuffer & in_)
     : ISource(std::move(header)), in(in_)
 {
 }
-
 
 void IInputFormat::resetParser()
 {
