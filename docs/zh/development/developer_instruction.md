@@ -9,7 +9,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 您需要(申请)一个GitHub账户来使用ClickHouse。
 
-如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将其上传到GitHub上。这些交互都是必须的，也可以使用与其他任何SSH服务器相同的密钥。
+如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将公钥上传到GitHub上。这有助于你提交更新代码。并且在不同的SSH服务端，你也可以使用相同的SSH密钥。
 
 要创建ClickHouse源码库的分支，请在https://github.com/ClickHouse/ClickHouse页面上点击右上角的"fork"按钮。它会在本账户上创建您个人的ClickHouse/ClickHouse分支。
 
