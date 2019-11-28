@@ -26,7 +26,6 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
 }
 
 bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::RowReadExtension &ext) {
-    auto & read_columns = ext.read_columns;
     skipWhitespaceIfAny(in);
     if (!in.eof() && (*in.position() == ',' || *in.position() == ';'))
         ++in.position();
@@ -37,11 +36,13 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
 
     size_t num_columns = columns.size();
 
+
+    read_columns.assign(num_columns, false);
+
     assertChar('[', in);
     for (size_t index = 0; index < num_columns; ++index)
     {
         readField(index, columns);
-        read_columns[index] = true;
 
         skipWhitespaceIfAny(in);
         if (in.eof())
@@ -53,6 +54,8 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         }
     }
     assertChar(']', in);
+
+    ext.read_columns = read_columns;
     return true;
 }
 
@@ -60,9 +63,10 @@ void JSONCompactEachRowRowInputFormat::readField(size_t index, MutableColumns & 
 {
     try
     {
+        read_columns[index] = true;
         const auto & type = getPort().getHeader().getByPosition(index).type;
         if (format_settings.null_as_default && !type->isNullable())
-            DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
         else
             type->deserializeAsTextJSON(*columns[index], in, format_settings);
     }

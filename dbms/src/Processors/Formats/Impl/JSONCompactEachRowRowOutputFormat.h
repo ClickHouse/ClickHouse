@@ -15,9 +15,15 @@ namespace DB
 class JSONCompactEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONCompactEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    JSONCompactEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_, bool with_names);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
+
+    void writePrefix() override;
+
+    void writeBeforeTotals() override {}
+    void writeTotals(const Columns & columns, size_t row_num) override;
+    void writeAfterTotals() override {}
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -25,11 +31,15 @@ public:
     void writeRowEndDelimiter() override;
 
 protected:
-    /// No totals and extremes.
-    void consumeTotals(Chunk) override {}
+    void consumeTotals(Chunk) override;
+    /// No extremes.
     void consumeExtremes(Chunk) override {}
 
 private:
     FormatSettings settings;
+
+    NamesAndTypes fields;
+
+    bool with_names;
 };
 }

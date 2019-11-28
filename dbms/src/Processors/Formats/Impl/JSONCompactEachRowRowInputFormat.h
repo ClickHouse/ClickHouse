@@ -29,6 +29,8 @@ private:
     void readField(size_t index, MutableColumns & columns);
 
     const FormatSettings format_settings;
+
+    std::vector<UInt8> read_columns;
 };
 
 }
