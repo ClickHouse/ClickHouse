@@ -38,6 +38,7 @@
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
@@ -130,7 +131,6 @@ MergeTreeData::MergeTreeData(
     , merging_params(merging_params_)
     , partition_by_ast(partition_by_ast_)
     , sample_by_ast(sample_by_ast_)
-    , ttl_table_ast(ttl_table_ast_)
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
@@ -580,7 +580,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         String result_column = ttl_ast->getColumnName();
         checkTTLExpression(expr, result_column);
 
-        return {expr, result_column, PartDestinationType::DELETE, {}};
+        return {expr, result_column, PartDestinationType::DELETE, {}, ttl_ast};
     };
 
     if (!new_column_ttls.empty())
