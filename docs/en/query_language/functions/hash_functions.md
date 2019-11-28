@@ -205,15 +205,75 @@ Result:
 └───────────────────────────┘
 ```
 
-## javaHashUTF16LE
+## javaHashUTF16LE {#javahashutf16le}
 
-The same as [JavaHash](#hash_functions-javahash), but for UTF-16LE code points. Works under the assumption that the string contains a set of bytes representing a UTF-16LE encoded text. If this assumption is not met, it returns some result (It only throws an exception in partial cases).
+The same as [JavaHash](#hash_functions-javahash), but for UTF-16LE encoding. 
+Works under the assumption that the string contains a set of bytes representing a UTF-16LE encoded text. 
+If this assumption is not met, it returns some result (It only throws an exception in partial cases).
 
+**Syntax** 
+
+```sql
+javaHashUTF16LE(stringUtf16le);
+```
+
+**Parameters** 
+
+- `stringUtf16le` —  a string in UTF-16LE encoding.
+
+**Returned value**
+
+Returns a set of bytes representing a UTF-16LE encoded text.
+
+Type: `Int32`.
 
 **Example**
 
+Correct query with UTF-16LE encoded string.
+
+Query:
+
 ```sql
-SELECT javaHashUTF16LE(convertCharset('Hello, world!', 'utf-8', 'utf-16le'))
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
+```
+
+Result:
+
+```text
+┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
+│                                                      3556498 │
+└──────────────────────────────────────────────────────────────┘
+```
+ClickHouse's strings have no information about encoding. 
+If string with any other encoding than `utf-16le` has passed then different hash will be returned.
+
+Query:
+
+```sql
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-8'))
+```
+
+Result:
+
+```text
+┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-8'))─┐
+│                                                    834943 │
+└───────────────────────────────────────────────────────────┘
+```
+Without `convertCharset` function some result will be returned.
+
+Query:
+
+```sql
+SELECT javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')
+```
+
+Result:
+
+```text
+┌─javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')─┐
+│                                     -1788019318 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## hiveHash {#hash_functions-hivehash}
