@@ -26,8 +26,8 @@ public:
     bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
 
 protected:
-    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & logger)
-    : DatabaseOnDisk(name, metadata_path_, logger) {}
+    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & logger, const Context & context_)
+    : DatabaseOnDisk(name, metadata_path_, logger, context_) {}
 
     StoragePtr getDictionaryStorage(const Context & context, const String & table_name) const;
 

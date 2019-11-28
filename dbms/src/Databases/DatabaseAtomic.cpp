@@ -17,6 +17,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, const Contex
     : DatabaseOrdinary(name_, metadata_path_, context_)
 {
     data_path = "store/";
+    log = &Logger::get("DatabaseAtomic (" + name_ + ")");
 }
 
 String DatabaseAtomic::getDataPath(const String & table_name) const

@@ -101,9 +101,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
-        // FIXME maybe throw an exception if it's an ATTACH DATABASE query from user (it's not server startup) and engine is not specified
-        bool old_style_database = create.attach ||
-                                  context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
+        //FIXME is it possible, that database engine is not specified in metadata file?
+        if (create.attach)
+            throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
         engine->name = old_style_database ? "Ordinary" : "Atomic";
@@ -126,11 +127,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 
     String database_name_escaped = escapeForFileName(database_name);
-
-    /// Create directories for tables metadata.
     String path = context.getPath();
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
-    Poco::File(metadata_path).createDirectory();
 
     DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
 

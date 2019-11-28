@@ -268,10 +268,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    /// Create directories for 'path' and for default database, if not exist.
-    Poco::File(path + "data/" + default_database).createDirectories();
-    Poco::File(path + "metadata/" + default_database).createDirectories();
-
     /// Check that we have read and write access to all data paths
     auto disk_selector = global_context->getDiskSelector();
     for (const auto & [name, disk] : disk_selector.getDisksMap())
@@ -529,7 +525,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
         /// Then, load remaining databases
-        loadMetadata(*global_context);
+        loadMetadata(*global_context, default_database);
     }
     catch (...)
     {
