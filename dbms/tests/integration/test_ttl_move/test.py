@@ -196,10 +196,10 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
-            ) ENGINE = {engine}
+            ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
-        """.format(name=name_temp, engine=engine))
+        """.format(name=name_temp))
 
         data = [] # 35MB in total
         for i in range(35):
@@ -298,10 +298,10 @@ def test_merges_to_full_disk_work(started_cluster, name, engine):
         node1.query("""
             CREATE TABLE {name} (
                 s1 String
-            ) ENGINE = {engine}
+            ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
-        """.format(name=name_temp, engine=engine))
+        """.format(name=name_temp))
 
         data = [] # 35MB in total
         for i in range(35):
