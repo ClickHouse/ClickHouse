@@ -287,8 +287,8 @@ void MySQLHandler::comQuery(ReadBuffer &payload)
     if (isFederatedServerSetupCommand(query))
     {
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
-    } 
-    else 
+    }
+    else
     {
         bool with_output = false;
         std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
