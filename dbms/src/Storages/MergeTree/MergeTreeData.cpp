@@ -1204,7 +1204,7 @@ void MergeTreeData::rename(
 
     global_context.dropCaches();
 
-    database_name = new_database_name;
+    relative_data_path = new_path_to_table_data;
     renameInMemory(new_database_name, new_table_name);
 }
 
