@@ -1,6 +1,5 @@
 # 如何在Linux中编译Mac OS X ClickHouse
 
-这是当您拥有Linux机器并想要使用它来构建将在OS X上运行的clickhouse二进制文件时的情况。这用于在Linux服务器上运行的持续集成检查。 如果要直接在Mac OS X上构建ClickHouse，请继续执行另一条说明
 Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要直接在Mac OS X上构建ClickHouse，请参考另外一篇指南： https://clickhouse.yandex/docs/zh/development/build_osx/
 
 Mac OS X的交叉编译基于以下构建说明，请首先遵循它们。
@@ -8,7 +7,7 @@ Mac OS X的交叉编译基于以下构建说明，请首先遵循它们。
 # Install Clang-8
 
 按照https://apt.llvm.org/中的说明进行Ubuntu或Debian安装。
-例如，用于Bionic的命令如下：
+例如，按照Bionic的命令如下：
 
 ```bash
 sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
