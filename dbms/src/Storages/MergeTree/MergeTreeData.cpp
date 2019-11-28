@@ -580,7 +580,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         String result_column = ttl_ast->getColumnName();
         checkTTLExpression(expr, result_column);
 
-        return {expr, result_column, PartDestinationType::DELETE, {}, ttl_ast};
+        return {expr, result_column, PartDestinationType::DELETE, {}, {}};
     };
 
     if (!new_column_ttls.empty())
@@ -635,6 +635,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
+                    new_ttl_entry.entry_ast = ttl_element_ptr;
                     new_ttl_entry.destination_type = ttl_element.destination_type;
                     new_ttl_entry.destination_name = ttl_element.destination_name;
                     move_ttl_entries.emplace_back(std::move(new_ttl_entry));
