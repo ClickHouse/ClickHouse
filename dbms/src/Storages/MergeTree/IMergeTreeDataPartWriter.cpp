@@ -221,6 +221,8 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
+
+    std::cerr << "writing index...\n";
     for (size_t i = index_offset; i < rows;)
     {
         if (storage.hasPrimaryKey())
@@ -233,10 +235,12 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
             }
         }
 
-        ++current_mark;
-        if (current_mark < index_granularity.getMarksCount())
-            i += index_granularity.getMarkRows(current_mark);
-        else
+        std::cerr << "(index) i: " << i << "\n";
+        std::cerr << "(index) current_mark: " << current_mark << "\n";
+        std::cerr << "(index) rows in mark: " << index_granularity.getMarkRows(current_mark) << "\n";
+
+        i += index_granularity.getMarkRows(current_mark++);
+        if (current_mark >= index_granularity.getMarksCount())
             break;
     }
 

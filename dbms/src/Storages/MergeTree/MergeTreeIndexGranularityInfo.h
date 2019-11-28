@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/Types.h>
 #include <Storages/MergeTree/IMergeTreeDataPart_fwd.h>
+#include <DataStreams/MarkInCompressedFile.h>
 
 namespace DB
 {
@@ -17,7 +18,9 @@ public:
     String marks_file_extension;
 
     /// Size of one mark in file two or three size_t numbers
-    UInt16 mark_size_in_bytes = 0;
+    UInt32 mark_size_in_bytes = 0;
+
+    UInt8 skip_index_mark_size_in_bytes = 0;
 
     /// Is stride in rows between marks non fixed?
     bool is_adaptive = false;
@@ -53,7 +56,7 @@ private:
 };
 
 constexpr inline auto getNonAdaptiveMrkExtension() { return ".mrk"; }
-constexpr inline auto getNonAdaptiveMrkSize() { return sizeof(UInt64) * 2; }
+constexpr inline auto getNonAdaptiveMrkSize() { return sizeof(MarkInCompressedFile) * 2; }
 
 inline std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
 {

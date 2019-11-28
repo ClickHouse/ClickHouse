@@ -15,16 +15,18 @@ namespace ErrorCodes
 
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        const String & path_prefix_,const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const ReaderSettings & settings,
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        ReadingMode mode_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(settings.save_marks_in_cache)
         , index_granularity_info(index_granularity_info_)
+        , mode(mode_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
@@ -115,8 +117,14 @@ void MergeTreeReaderStream::initMarksLoader()
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
+        std::cerr << "data_file_extension: " << data_file_extension << '\n'; 
+
         size_t file_size = Poco::File(mrk_path).getSize();
-        size_t expected_file_size = index_granularity_info->mark_size_in_bytes * marks_count;
+        size_t mark_size = mode == ReadingMode::INDEX
+            ? index_granularity_info->skip_index_mark_size_in_bytes 
+            : index_granularity_info->mark_size_in_bytes;
+
+        size_t expected_file_size = mark_size * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
                 "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
@@ -143,7 +151,7 @@ void MergeTreeReaderStream::initMarksLoader()
                 buffer.seek(sizeof(size_t), SEEK_CUR);
                 ++i;
             }
-            if (i * index_granularity_info->mark_size_in_bytes != file_size)
+            if (i * mark_size != file_size)
                 throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
         }
         res->protect();

@@ -62,6 +62,7 @@ void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_,
 {
     is_adaptive = true;
     mark_size_in_bytes = getAdaptiveMrkSize(part_type, columns_num);
+    skip_index_mark_size_in_bytes = sizeof(MarkInCompressedFile) + sizeof(UInt64);
     marks_file_extension = getAdaptiveMrkExtension(part_type);
     index_granularity_bytes = index_granularity_bytes_;
 }
@@ -69,7 +70,7 @@ void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_,
 void MergeTreeIndexGranularityInfo::setNonAdaptive()
 {
     is_adaptive = false;
-    mark_size_in_bytes = getNonAdaptiveMrkSize();
+    mark_size_in_bytes = skip_index_mark_size_in_bytes = getNonAdaptiveMrkSize();
     marks_file_extension = getNonAdaptiveMrkExtension();
     index_granularity_bytes = 0;
 }

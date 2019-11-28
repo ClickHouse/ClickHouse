@@ -56,13 +56,16 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     /// FIXME compute correct granularity
     std::cerr << "(MergeTreeReaderCompact::readRows) max_rows_to_read: " << max_rows_to_read << "\n";
 
-    size_t read_rows = 0;
+    std::cerr << "(MergeTreeReaderCompact::readRows) from_mark: " << from_mark << "\n";
+    std::cerr << "(MergeTreeReaderCompact::readRows) continue_reading: " << continue_reading << "\n";
 
+    if (continue_reading)
+        from_mark = next_mark;
+
+    size_t read_rows = 0;
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
-
-        std::cerr << "(MergeTreeReaderCompact::readRows) rows_to_read: " << rows_to_read << "\n";
 
         for (const auto & it : columns)
         {
@@ -75,10 +78,15 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
             try
             {
-                // size_t column_size_before_reading = column->size();
+                size_t column_size_before_reading = column->size();
                 size_t column_position = data_part->getColumnPosition(it.name);
 
                 readData(it.name, *it.type, *column, from_mark, column_position, rows_to_read);
+
+                size_t read_rows_in_column = column->size() - column_size_before_reading;
+                if (read_rows_in_column < rows_to_read)
+                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) + 
+                        ". Rows expected: "+ toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -101,9 +109,13 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
         ++from_mark;
         read_rows += rows_to_read;
+
+        std::cerr << "(MergeTreeReaderCompact::readRows) cur mark: " << from_mark << "\n";
+        std::cerr << "(MergeTreeReaderCompact::readRows) read_rows: " << read_rows << "\n";
+        std::cerr << "(MergeTreeReaderCompact::readRows) rows_to_read: " << rows_to_read << "\n";
     }
 
-    std::cerr << "(MergeTreeReaderCompact::readRows) read_rows: " << read_rows << "\n";
+    next_mark = from_mark;
 
     return read_rows;
 }
@@ -118,23 +130,20 @@ void MergeTreeReaderCompact::readData(
     std::cerr << "(MergeTreeReaderCompact::readData) rows_to_read: " << rows_to_read << "\n";
     std::cerr << "(MergeTreeReaderCompact::readData) start reading column: " << name << "\n";
 
+    /// FIXME seek only if needed
     seekToMark(from_mark, column_position);
     
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return data_buffer; };
-    deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+    // deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
     deserialize_settings.position_independent_encoding = false;
 
     IDataType::DeserializeBinaryBulkStatePtr state;
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
 
-    std::cerr << "(MergeTreeReaderCompact::readData) end reading column rows: " << column.size() << "\n";
-    std::cerr << "(MergeTreeReaderCompact::readData) end reading column: " << name << "\n";
-
-    // if (column.size() != rows_to_read)
-    //     throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: "+ toString(rows_to_read) + ".",
-    //         ErrorCodes::CANNOT_READ_ALL_DATA);
+    // std::cerr << "(MergeTreeReaderCompact::readData) end reading column rows: " << column.size() << "\n";
+    // std::cerr << "(MergeTreeReaderCompact::readData) end reading column: " << name << "\n";
 }
 
 
@@ -198,7 +207,7 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {
     MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
 
-    std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
+    // std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
 
     try
     {
