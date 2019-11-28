@@ -359,10 +359,10 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
             return it->second.table = table;
         }
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
-        e.addMessage("Cannot create table from metadata file " + table_metadata_path + ". Error: " + DB::getCurrentExceptionMessage(true));
-        throw;
+        throw Exception("Cannot create table from metadata file " + table_metadata_path + ". Error: " + DB::getCurrentExceptionMessage(true),
+                e, DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
     }
 }
 

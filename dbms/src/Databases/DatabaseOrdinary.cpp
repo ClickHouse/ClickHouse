@@ -82,7 +82,7 @@ catch (const Exception & e)
 {
     throw Exception(
         "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ". Error: " + DB::getCurrentExceptionMessage(true),
-        ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        e, DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 }
 
 
@@ -137,7 +137,7 @@ void DatabaseOrdinary::loadStoredObjects(
         catch (const Exception & e)
         {
             throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), ErrorCodes::CANNOT_PARSE_TEXT);
+                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
         }
 
     });
