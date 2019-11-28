@@ -310,6 +310,17 @@ public:
         is_finished = true;
     }
 
+    void ALWAYS_INLINE reopen()
+    {
+        assumeConnected();
+
+        if (!isFinished())
+            return;
+
+        state->setFlags(0, State::IS_FINISHED);
+        is_finished = false;
+    }
+
     OutputPort & getOutputPort()
     {
         assumeConnected();
