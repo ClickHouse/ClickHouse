@@ -96,8 +96,22 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTL
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    {
+        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
+        {
+            const auto & date_lut = DateLUT::instance();
+            ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
+        }
+        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+        {
+            ttl_info.update(column_const->getValue<UInt32>());
+        }
+        else
+            throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+    }
     else
-        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
 
     ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
