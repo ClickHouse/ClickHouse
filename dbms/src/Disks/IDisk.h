@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Core/Types.h>
 
 #include <memory>
 #include <utility>
@@ -44,6 +44,13 @@ public:
 
 using SpacePtr = std::shared_ptr<const Space>;
 
+/**
+ * A unit of storage persisting data and metadata.
+ * Abstract underlying storage technology.
+ * Responsible for:
+ * - file management;
+ * - space accounting and reservation.
+ */
 class IDisk : public Space
 {
 public:
