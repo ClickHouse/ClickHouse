@@ -119,15 +119,48 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 Note that the first argument (lambda function) can't be omitted in the `arrayReverseFill` function.
 
-### arraySplit(func, arr1, ...) {#higher_order_functions-array-split}
+### arraySplit {#array-split}
 
-Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
+Creates an array of elements split into groups the length of size (return value from `func`function). When `func` returns something other than 0, the array will be split on the left hand side of the element. If array can't be split evenly, the final chunk will be the remaining elements.
 
-Examples:
+**Syntax**
 
 ```sql
-SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+arraySplit(func, arr1, arr2, ..., arrN)
 ```
+
+**Parameters**
+
+- `func` — The lambda function. **Required**.
+- `arr1`, `arrN` — Any number of [array](../../data_types/array.md) type columns to process.
+
+**Returned value**
+
+Returns the new multidimensional array of chunks.
+
+**Example**
+
+Query:
+
+```sql
+SELECT arraySplit(x -> ((x % 2) = 1), [1, 2, 3, 4, 5]) AS res
+```
+
+Answer:
+
+```text
+┌─res───────────────┐
+│ [[1,2],[3,4],[5]] │
+└───────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arraySplit(x -> ((x % 3) = 1), [1, 2, 3, 4, 5]) AS res
+```
+
+Answer:
 
 ```text
 ┌─res─────────────┐
@@ -135,25 +168,54 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └─────────────────┘
 ```
 
-Note that the first argument (lambda function) can't be omitted in the `arraySplit` function.
+### arrayReverseSplit {#array-reverse-split}
 
-### arrayReverseSplit(func, arr1, ...) {#higher_order_functions-array-reverse-split}
+Creates an array of elements split into groups the length of size (return value from `func`function). When `func` returns something other than 0, the array will be split on the right hand side of the element.  If array can't be split evenly, the final chunk will be the remaining elements.
 
-Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
-
-Examples:
+**Syntax**
 
 ```sql
-SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+arrayReverseSplit(func, arr1, arr2, ..., arrN)
 ```
+
+**Parameters**
+
+- `func` — The lambda function. **Required**.
+- `arr1`, `arrN` — Any number of [array](../../data_types/array.md) type columns to process.
+
+**Returned value**
+
+Returns the new multidimensional array of chunks.
+
+**Example**
+
+Query:
+
+```sql
+SELECT arrayReverseSplit(x -> ((x % 2) = 1), [1, 2, 3, 4, 5]) AS res
+```
+
+Answer:
+
+```text
+┌─res───────────────┐
+│ [[1],[2,3],[4,5]] │
+└───────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayReverseSplit(x -> ((x % 3) = 1), [1, 2, 3, 4, 5]) AS res
+```
+
+Answer:
 
 ```text
 ┌─res───────────────┐
 │ [[1],[2,3,4],[5]] │
 └───────────────────┘
 ```
-
-Note that the first argument (lambda function) can't be omitted in the `arraySplit` function.
 
 ### arrayCount(\[func,\] arr1, ...) {#higher_order_functions-array-count}
 
