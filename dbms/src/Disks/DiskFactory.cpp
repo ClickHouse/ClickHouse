@@ -14,13 +14,13 @@ DiskFactory & DiskFactory::instance()
     return factory;
 }
 
-void DiskFactory::registerDisk(const String & disk_type, DB::DiskFactory::Creator creator)
+void DiskFactory::registerDiskType(const String & disk_type, DB::DiskFactory::Creator creator)
 {
     if (!registry.emplace(disk_type, creator).second)
         throw Exception("DiskFactory: the disk type '" + disk_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
-DiskPtr DiskFactory::get(
+DiskPtr DiskFactory::create(
     const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,

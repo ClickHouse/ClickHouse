@@ -1,9 +1,9 @@
 #include "DiskLocal.h"
 #include "DiskFactory.h"
 
+#include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -73,6 +73,52 @@ UInt64 DiskLocal::getUnreservedSpace() const
 DiskFilePtr DiskLocal::file(const String & path_) const
 {
     return std::make_shared<DiskLocalFile>(std::static_pointer_cast<const DiskLocal>(shared_from_this()), path_);
+}
+
+
+DiskLocalFile::DiskLocalFile(const DiskPtr & disk_ptr_, const String & rel_path_)
+    : IDiskFile(disk_ptr_, rel_path_), file(disk_ptr->getPath() + rel_path)
+{
+}
+
+bool DiskLocalFile::exists() const
+{
+    return file.exists();
+}
+
+bool DiskLocalFile::isDirectory() const
+{
+    return file.isDirectory();
+}
+
+void DiskLocalFile::createDirectory()
+{
+    file.createDirectory();
+}
+
+void DiskLocalFile::createDirectories()
+{
+    file.createDirectories();
+}
+
+void DiskLocalFile::moveTo(const String & new_path)
+{
+    file.renameTo(disk_ptr->getPath() + new_path);
+}
+
+void DiskLocalFile::copyTo(const String & new_path)
+{
+    file.copyTo(disk_ptr->getPath() + new_path);
+}
+
+std::unique_ptr<ReadBuffer> DiskLocalFile::read() const
+{
+    return std::make_unique<ReadBufferFromFile>(file.path());
+}
+
+std::unique_ptr<WriteBuffer> DiskLocalFile::write()
+{
+    return std::make_unique<WriteBufferFromFile>(file.path());
 }
 
 
@@ -188,7 +234,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         return std::make_shared<const DiskLocal>(name, path, keep_free_space_bytes);
     };
-    factory.registerDisk("local", creator);
+    factory.registerDiskType("local", creator);
 }
 
 }

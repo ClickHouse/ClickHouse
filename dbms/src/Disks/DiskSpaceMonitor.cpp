@@ -1,9 +1,10 @@
 #include "DiskSpaceMonitor.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
+
+#include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Interpreters/Context.h>
 
 #include <set>
 #include <Poco/File.h>
@@ -11,7 +12,6 @@
 
 namespace DB
 {
-
 DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -24,15 +24,14 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         if (disk_name == default_disk_name)
             has_default_disk = true;
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        disks.emplace(disk_name, factory.get(disk_name, config, disk_config_prefix, context));
+        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
         disks.emplace(default_disk_name, std::make_shared<const DiskLocal>(default_disk_name, context.getPath(), 0));
@@ -75,8 +74,9 @@ Volume::Volume(
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)
-        throw Exception("Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
-                        ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(
+            "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     if (has_max_bytes)
     {
@@ -86,8 +86,7 @@ Volume::Volume(
     {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
-            throw Exception("'max_data_part_size_ratio' have to be not less then 0.",
-                            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception("'max_data_part_size_ratio' have to be not less then 0.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
         for (const auto & disk : disks)
@@ -98,16 +97,18 @@ Volume::Volume(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(logger, "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) <<
-                                    " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i]) <<
-                                    ") for containing part the size of max_data_part_size (" <<
-                                    formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
+                LOG_WARNING(
+                    logger,
+                    "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) << " have not enough space ("
+                            << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size ("
+                            << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low ("
-            << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
-            << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
+        LOG_WARNING(
+            logger,
+            "Volume " << backQuote(name) << " max_data_part_size is too low (" << formatReadableSizeWithBinarySuffix(max_data_part_size)
+                      << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
 
 
@@ -158,7 +159,8 @@ StoragePolicy::StoragePolicy(
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
-            throw Exception("Volume name can contain only alphanumeric and '_' (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(
+                "Volume name can contain only alphanumeric and '_' (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         volumes.push_back(std::make_shared<Volume>(attr_name, config, volumes_prefix + "." + attr_name, disks));
         if (volumes_names.find(attr_name) != volumes_names.end())
             throw Exception("Volumes names must be unique (" + attr_name + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
@@ -175,7 +177,8 @@ StoragePolicy::StoragePolicy(
         for (const auto & disk : volume->disks)
         {
             if (disk_names.find(disk->getName()) != disk_names.end())
-                throw Exception("Duplicate disk '" + disk->getName() + "' in storage policy '" + name + "'", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+                throw Exception(
+                    "Duplicate disk '" + disk->getName() + "' in storage policy '" + name + "'", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
             disk_names.insert(disk->getName());
         }
@@ -183,23 +186,18 @@ StoragePolicy::StoragePolicy(
 
     move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
-            ErrorCodes::LOGICAL_ERROR);
-
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor), ErrorCodes::LOGICAL_ERROR);
 }
 
 
 StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
-    : volumes(std::move(volumes_))
-    , name(std::move(name_))
-    , move_factor(move_factor_)
+    : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
 {
     if (volumes.empty())
         throw Exception("StoragePolicy must contain at least one Volume.", ErrorCodes::UNKNOWN_POLICY);
 
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < volumes.size(); ++i)
     {
@@ -316,8 +314,8 @@ StoragePolicySelector::StoragePolicySelector(
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception("StoragePolicy name can contain only alphanumeric and '_' (" + name + ")",
-                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(
+                "StoragePolicy name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
         LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << backQuote(name) << " loaded");
@@ -330,10 +328,7 @@ StoragePolicySelector::StoragePolicySelector(
     /// Add default policy if it's not specified explicetly
     if (policies.find(default_storage_policy_name) == policies.end())
     {
-        auto default_volume = std::make_shared<Volume>(
-            default_volume_name,
-            std::vector<DiskPtr>{disks[default_disk_name]},
-            0);
+        auto default_volume = std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks[default_disk_name]}, 0);
 
         auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);

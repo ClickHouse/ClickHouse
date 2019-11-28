@@ -65,26 +65,23 @@ using DiskLocalPtr = std::shared_ptr<const DiskLocal>;
 class DiskLocalFile : public IDiskFile
 {
 public:
-    DiskLocalFile(const DiskPtr & disk_ptr_, const String & rel_path_)
-        : IDiskFile(disk_ptr_, rel_path_), file(disk_ptr->getPath() + rel_path)
-    {
-    }
+    DiskLocalFile(const DiskPtr & disk_ptr_, const String & rel_path_);
 
-    bool exists() const override { return file.exists(); }
+    bool exists() const override;
 
-    bool isDirectory() const override { return file.isDirectory(); }
+    bool isDirectory() const override;
 
-    void createDirectory() override { file.createDirectory(); }
+    void createDirectory() override;
 
-    void createDirectories() override { file.createDirectories(); }
+    void createDirectories() override;
 
-    void moveTo(const String & new_path) override { file.renameTo(new_path); }
+    void moveTo(const String & new_path) override;
 
-    void copyTo(const String & new_path) override { file.copyTo(new_path); }
+    void copyTo(const String & new_path) override;
 
-    std::unique_ptr<ReadBuffer> read() const override { return std::make_unique<ReadBufferFromFile>(file.path()); }
+    std::unique_ptr<ReadBuffer> read() const override;
 
-    std::unique_ptr<WriteBuffer> write() override { return std::make_unique<WriteBufferFromFile>(file.path()); }
+    std::unique_ptr<WriteBuffer> write() override;
 
 private:
     DiskDirectoryIteratorImplPtr iterateDirectory() override;

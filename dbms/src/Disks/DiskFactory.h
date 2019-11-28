@@ -13,20 +13,25 @@ namespace DB
 {
 class Context;
 
+/**
+ * Disk factory. Responsible for creating new disk objects.
+ */
 class DiskFactory final : private boost::noncopyable
 {
 public:
     using Creator = std::function<DiskPtr(
-        const String & name, const Poco::Util::AbstractConfiguration & config,
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const Context & context)>;
 
     static DiskFactory & instance();
 
-    void registerDisk(const String & disk_type, Creator creator);
+    void registerDiskType(const String & disk_type, Creator creator);
 
-    DiskPtr get(
-        const String & name, const Poco::Util::AbstractConfiguration & config,
+    DiskPtr create(
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const Context & context) const;
 

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <Disks/IDisk.h>
+#include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Disks/IDisk.h>
-#include <IO/WriteHelpers.h>
+#include <common/logger_useful.h>
 
 #include <memory>
 #include <mutex>
@@ -38,7 +38,7 @@ public:
     /// Get disk by name
     const DiskPtr & operator[](const String & name) const;
 
-    /// Get all disks name
+    /// Get all disks with names
     const auto & getDisksMap() const { return disks; }
 
 private:
@@ -62,7 +62,10 @@ public:
     }
 
     Volume(
-        String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disk_selector);
+        String name_,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const DiskSelector & disk_selector);
 
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.

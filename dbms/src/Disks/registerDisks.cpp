@@ -2,7 +2,6 @@
 
 namespace DB
 {
-
 void registerDiskLocal(DiskFactory & factory);
 
 void registerDisks()
