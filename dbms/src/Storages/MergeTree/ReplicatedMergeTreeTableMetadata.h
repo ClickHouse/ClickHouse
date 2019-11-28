@@ -28,6 +28,7 @@ struct ReplicatedMergeTreeTableMetadata
     String skip_indices;
     String constraints;
     String ttl_table;
+    String ttl_move;
     UInt64 index_granularity_bytes;
 
     ReplicatedMergeTreeTableMetadata() = default;
@@ -53,9 +54,12 @@ struct ReplicatedMergeTreeTableMetadata
         bool ttl_table_changed = false;
         String new_ttl_table;
 
+        bool ttl_move_changed = false;
+        String new_ttl_move;
+
         bool empty() const
         {
-            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed;
+            return !sorting_key_changed && !skip_indices_changed && !ttl_table_changed && !constraints_changed && !ttl_move_changed;
         }
     };
 

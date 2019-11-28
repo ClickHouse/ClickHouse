@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 
+
 namespace DB
 {
 
@@ -47,6 +48,16 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
     ttl_table = formattedAST(data.ttl_table_ast);
+
+    std::ostringstream ttl_move_stream;
+    for (const auto & ttl_entry : data.move_ttl_entries)
+    {
+        if (ttl_move_stream.tellp() > 0)
+            ttl_move_stream << ", ";
+        ttl_move_stream << formattedAST(ttl_entry.entry_ast);
+    }
+    ttl_move = ttl_move_stream.str();
+
     skip_indices = data.getIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
@@ -77,6 +88,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!ttl_table.empty())
         out << "ttl: " << ttl_table << "\n";
+
+    if (!ttl_move.empty())
+        out << "move ttl: " << ttl_move << "\n";
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
@@ -118,6 +132,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
+
+    if (checkString("move ttl: ", in))
+        in >> ttl_move >> "\n";
 
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
@@ -223,9 +240,24 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
         }
         else
             throw Exception(
-                    "Existing table metadata in ZooKeeper differs in ttl."
+                    "Existing table metadata in ZooKeeper differs in TTL."
                     " Stored in ZooKeeper: " + from_zk.ttl_table +
                     ", local: " + ttl_table,
+                    ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (ttl_move != from_zk.ttl_move)
+    {
+        if (allow_alter)
+        {
+            diff.ttl_move_changed = true;
+            diff.new_ttl_move = from_zk.ttl_move;
+        }
+        else
+            throw Exception(
+                    "Existing table metadata in ZooKeeper differs in move TTL."
+                    " Stored in ZooKeeper: " + from_zk.ttl_move +
+                    ", local: " + ttl_move,
                     ErrorCodes::METADATA_MISMATCH);
     }
 
