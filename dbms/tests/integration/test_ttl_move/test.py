@@ -134,7 +134,7 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         for p in range(2):
             data = [] # 20MB in total
             for i in range(10):
-                data.append((p, "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
+                data.append((str(p), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()+2))) # 1MB row
 
             node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
@@ -172,7 +172,7 @@ def test_inserts_to_volume_work(started_cluster, name, engine):
         for p in range(2):
             data = [] # 20MB in total
             for i in range(10):
-                data.append((p, "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2))) # 1MB row
+                data.append((str(p), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-2))) # 1MB row
 
             node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
 
