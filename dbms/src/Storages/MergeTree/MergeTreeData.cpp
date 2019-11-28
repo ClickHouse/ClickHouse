@@ -631,7 +631,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 {
                     new_ttl_entry.destination_type = ttl_element.destination_type;
                     new_ttl_entry.destination_name = ttl_element.destination_name;
-                    move_ttl_entries_by_name.emplace(new_ttl_entry.result_column, new_ttl_entry);
+                    move_ttl_entries.emplace_back(std::move(new_ttl_entry));
                 }
             }
         }
@@ -3696,9 +3696,9 @@ const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
     /// Prefer TTL rule which went into action last.
     time_t max_min_ttl = 0;
 
-    for (const auto & [name, ttl_entry] : move_ttl_entries_by_name)
+    for (const auto & ttl_entry : move_ttl_entries)
     {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(name);
+        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
         if (ttl_info_it != ttl_infos.moves_ttl.end()
                 && ttl_info_it->second.min >= minimum_time
                 && max_min_ttl <= ttl_info_it->second.min)

@@ -205,9 +205,9 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
 void TTLBlockInputStream::updateMovesTTL(Block & block)
 {
     std::vector<String> columns_to_remove;
-    for (const auto & [name, ttl_entry] : storage.move_ttl_entries_by_name)
+    for (const auto & ttl_entry : storage.move_ttl_entries)
     {
-        auto & new_ttl_info = new_ttl_infos.moves_ttl[name];
+        auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
 
         if (!block.has(ttl_entry.result_column))
         {
