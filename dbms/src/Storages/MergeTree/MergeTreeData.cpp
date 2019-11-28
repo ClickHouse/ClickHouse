@@ -3734,7 +3734,7 @@ const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
     {
         auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
         if (ttl_info_it != ttl_infos.moves_ttl.end()
-                && ttl_info_it->second.min >= minimum_time
+                && ttl_info_it->second.min <= minimum_time
                 && max_min_ttl <= ttl_info_it->second.min)
         {
             result = &ttl_entry;
