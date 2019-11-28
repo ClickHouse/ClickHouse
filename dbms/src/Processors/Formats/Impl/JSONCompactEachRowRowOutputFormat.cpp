@@ -64,7 +64,8 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
     if (with_names)
     {
         writeChar('[', out);
-        for (size_t i = 0; i < fields.size(); ++i) {
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
             writeChar('\"', out);
             writeString(fields[i].name, out);
             writeChar('\"', out);
@@ -72,7 +73,8 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
                 writeCString(", ", out);
         }
         writeCString("]\n[", out);
-        for (size_t i = 0; i < fields.size(); ++i) {
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
             writeJSONString(fields[i].type->getName(), out, settings);
             if (i != fields.size() - 1)
                 writeCString(", ", out);
@@ -98,10 +100,7 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, false);
     });
-}
 
-void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFactory &factory)
-{
     factory.registerOutputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
@@ -112,5 +111,6 @@ void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFact
         return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, callback, format_settings, true);
     });
 }
+
 
 }

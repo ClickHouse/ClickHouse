@@ -283,7 +283,6 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
@@ -339,7 +338,6 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSONEachRow(*this);
     registerInputFormatProcessorJSONCompactEachRow(*this);
     registerOutputFormatProcessorJSONCompactEachRow(*this);
-    registerOutputFormatProcessorJSONCompactEachRowWithNamesAndTypes(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
