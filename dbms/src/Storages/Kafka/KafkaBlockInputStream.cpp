@@ -6,6 +6,8 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
+#include <common/logger_useful.h>
+
 namespace DB
 {
 KafkaBlockInputStream::KafkaBlockInputStream(
@@ -75,24 +77,8 @@ Block KafkaBlockInputStream::readImpl()
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
 
-    auto merge_blocks = [] (Block & block1, Block && block2)
-    {
-        if (!block1)
-        {
-            // Need to make sure that resulting block has the same structure
-            block1 = std::move(block2);
-            return;
-        }
-
-        if (!block2)
-            return;
-
-        auto columns1 = block1.mutateColumns();
-        auto columns2 = block2.mutateColumns();
-        for (size_t i = 0, s = columns1.size(); i < s; ++i)
-            columns1[i]->insertRangeFrom(*columns2[i], 0, columns2[i]->size());
-        block1.setColumns(std::move(columns1));
-    };
+    Block single_block;
+    MutableColumns single_block_columns;
 
     auto input_format = FormatFactory::instance().getInputFormat(
         storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
@@ -101,9 +87,9 @@ Block KafkaBlockInputStream::readImpl()
     connect(input_format->getPort(), port);
     port.setNeeded();
 
-    auto read_kafka_message = [&, this]
+    auto read_kafka_message = [&]
     {
-        Block result;
+        size_t new_rows = 0;
 
         while (true)
         {
@@ -117,20 +103,24 @@ Block KafkaBlockInputStream::readImpl()
 
                 case IProcessor::Status::Finished:
                     input_format->resetParser();
-                    return result;
+                    return new_rows;
 
                 case IProcessor::Status::PortFull:
                 {
                     auto block = input_format->getPort().getHeader().cloneWithColumns(port.pull().detachColumns());
-                    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
-                    virtual_columns = virtual_header.cloneEmptyColumns();
-
-                    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-                        block.insert(column);
+                    new_rows = new_rows + block.rows();
 
                     /// FIXME: materialize MATERIALIZED columns here.
-
-                    merge_blocks(result, std::move(block));
+                    if (!single_block)
+                    {
+                        single_block = std::move(block);
+                        single_block_columns = single_block.mutateColumns();
+                    } else {
+                        // assertBlocksHaveEqualStructure(single_block, block, "KafkaBlockInputStream");
+                        auto block_columns = block.getColumns();
+                        for (size_t i = 0, s = block_columns.size(); i < s; ++i)
+                            single_block_columns[i]->insertRangeFrom(*block_columns[i], 0, block_columns[i]->size());
+                    }
                     break;
                 }
                 case IProcessor::Status::NeedData:
@@ -142,24 +132,25 @@ Block KafkaBlockInputStream::readImpl()
         }
     };
 
-    Block single_block;
-
-    UInt64 total_rows = 0;
+    size_t total_rows = 0;
     while (total_rows < max_block_size)
     {
-        auto new_block = read_kafka_message();
-        auto new_rows = new_block.rows();
-        total_rows += new_rows;
-        merge_blocks(single_block, std::move(new_block));
-
+        auto new_rows = read_kafka_message();
+        total_rows = total_rows + new_rows;
         buffer->allowNext();
-
         if (!new_rows || !checkTimeLimit())
             break;
     }
 
-    if (!single_block)
+    if (total_rows == 0)
         return Block();
+
+    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "virtual_block have now " << virtual_block.rows() << " rows");
+    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "single_block have now " << single_block.rows() << " rows");
+
+    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+        single_block.insert(column);
 
     return ConvertingBlockInputStream(
                context,
