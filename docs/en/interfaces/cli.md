@@ -131,7 +131,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 `clickhouse-client` uses the first existing file of the following:
 
-- Defined in the `-config-file` parameter.
+- Defined in the `--config-file` parameter.
 - `./clickhouse-client.xml`
 - `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`

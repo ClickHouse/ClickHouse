@@ -96,13 +96,13 @@ command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بد
 - `--vertical, -E` اگر مشخص شود، از فرمت Vertical برای نمایش خروجی استفاده می شود. این گزینه مشابه '--format=Vertical' می باشد. در این فرمت، هر مقدار در یک خط جدید چاپ می شود، که در هنگام نمایش جداول عریض مفید است.
 - `--time, -t` اگر مشخص شود، در حالت non-interactive زمان اجرای query در 'stderr' جاپ می شود.
 - `--stacktrace` – اگر مشخص شود stack trase مربوط به اجرای query در هنگام رخ دادن یک exception چاپ می شود.
-- `-config-file` – نام فایل پیکربندی.
+- `--config-file` – نام فایل پیکربندی.
 
 ### فایل های پیکربندی
 
 `clickhouse-client` به ترتیب اولویت زیر از اولین فایل موجود برای ست کردن تنظیمات استفاده می کند:
 
-- مشخص شده در پارامتر `-config-file`
+- مشخص شده در پارامتر `--config-file`
 - `./clickhouse-client.xml`
 - `\~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
