@@ -114,8 +114,7 @@ TEST_P(BitIO, WriteAndRead)
     PODArray<char> data(max_buffer_size);
 
     {
-        WriteBuffer write_buffer(data.data(), data.size());
-        BitWriter writer(write_buffer);
+        BitWriter writer(data.data(), data.size());
         for (const auto & bv : bits_and_vals)
         {
             writer.writeBits(bv.first, bv.second);
@@ -133,7 +132,7 @@ TEST_P(BitIO, WriteAndRead)
             ASSERT_EQ(expected_buffer_binary, actual_buffer_binary);
         }
 
-        BitReader reader(read_buffer);
+        BitReader reader(data.data(), data.size());
 
         int bitpos = 0;
         int item = 0;
@@ -145,7 +144,7 @@ TEST_P(BitIO, WriteAndRead)
                          << ", at bit position: " << std::dec << bitpos
                          << ".\nBuffer memory:\n" << dumpContents(data));
 
-            //EXPECT_EQ(getBits(bv.first, bv.second), reader.peekBits(bv.first));
+//            const UInt8 next_byte = getBits(bv.first, bv.second) &
             EXPECT_EQ(getBits(bv.first, bv.second), reader.readBits(bv.first));
 
             ++item;
