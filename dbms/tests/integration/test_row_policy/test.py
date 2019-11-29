@@ -153,3 +153,57 @@ def test_introspection():
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs('mydb', 'filtered_table3'), id) ORDER BY table, name") == policy3
     assert instance.query("SELECT * from system.row_policies ORDER BY table, name") == policy1 + policy2 + policy3
     assert instance.query("SELECT * from system.row_policies WHERE has(currentRowPolicyIDs(), id) ORDER BY table, name") == policy1 + policy2 + policy3
+
+
+def test_dcl_introspection():
+    assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "default\n"
+    assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table2") == "default\n"
+    assert instance.query("SHOW POLICIES") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
+    assert instance.query("SHOW POLICIES CURRENT") == "default ON mydb.filtered_table1\ndefault ON mydb.filtered_table2\ndefault ON mydb.filtered_table3\n"
+
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING ((a + b) < 1) OR ((c - d) > 5) TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 1 TO default\n"
+
+    copy_policy_xml('all_rows.xml')
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING 1 TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING 1 TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING 1 TO default\n"
+
+    copy_policy_xml('no_rows.xml')
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table1") == "CREATE POLICY default ON mydb.filtered_table1 FOR SELECT USING NULL TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table2") == "CREATE POLICY default ON mydb.filtered_table2 FOR SELECT USING NULL TO default\n"
+    assert instance.query("SHOW CREATE POLICY default ON mydb.filtered_table3") == "CREATE POLICY default ON mydb.filtered_table3 FOR SELECT USING NULL TO default\n"
+
+    copy_policy_xml('no_filters.xml')
+    assert instance.query("SHOW POLICIES") == ""
+
+
+def test_dcl_management():
+    copy_policy_xml('no_filters.xml')
+    assert instance.query("SHOW POLICIES") == ""
+
+    instance.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "0\t0\n0\t1\n1\t0\n1\t1\n"
+    assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table1") == ""
+    assert instance.query("SHOW POLICIES ON mydb.filtered_table1") == "pA\n"
+
+    instance.query("ALTER POLICY pA ON mydb.filtered_table1 TO default")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "0\t1\n"
+    assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table1") == "pA\n"
+
+    instance.query("ALTER POLICY pA ON mydb.filtered_table1 FOR SELECT USING a>b")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n"
+
+    instance.query("ALTER POLICY pA ON mydb.filtered_table1 RENAME TO pB")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "1\t0\n"
+    assert instance.query("SHOW POLICIES CURRENT ON mydb.filtered_table1") == "pB\n"
+    assert instance.query("SHOW CREATE POLICY pB ON mydb.filtered_table1") == "CREATE POLICY pB ON mydb.filtered_table1 FOR SELECT USING a > b TO default\n"
+
+    instance.query("DROP POLICY pB ON mydb.filtered_table1")
+    assert instance.query("SELECT * FROM mydb.filtered_table1") == "0\t0\n0\t1\n1\t0\n1\t1\n"
+    assert instance.query("SHOW POLICIES") == ""
+
+
+def test_users_xml_is_readonly():
+    assert re.search("storage is readonly", instance.query_and_get_error("DROP POLICY default ON mydb.filtered_table1"))
