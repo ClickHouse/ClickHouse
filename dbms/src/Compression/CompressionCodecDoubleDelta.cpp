@@ -151,8 +151,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         prev_value = curr_value;
     }
 
-    WriteBuffer buffer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
-    BitWriter writer(buffer);
+    BitWriter writer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
 
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
@@ -186,7 +185,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + buffer.count();
+    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + writer.count() / 8;
 }
 
 template <typename ValueType>
@@ -223,8 +222,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         dest += sizeof(prev_value);
     }
 
-    ReadBufferFromMemory buffer(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
-    BitReader reader(buffer);
+    BitReader reader(source, source_size - sizeof(prev_value) - sizeof(prev_delta) - sizeof(items_count));
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more that there is.

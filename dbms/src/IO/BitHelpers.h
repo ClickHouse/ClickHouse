@@ -1,9 +1,10 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
+#include <Common/Exception.h>
+
+#include <string.h>
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__)
 #   include <sys/endian.h>
@@ -14,8 +15,15 @@
 #   define be64toh(x) OSSwapBigToHostInt64(x)
 #endif
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+extern const int ATTEMPT_TO_READ_AFTER_EOF;
+}
 
 /** Reads data from underlying ReadBuffer bit by bit, max 64 bits at once.
  *
@@ -34,15 +42,21 @@ namespace DB
 
 class BitReader
 {
-    ReadBuffer & buf;
+    using BufferType = UInt64;
 
-    UInt64 bits_buffer;
+    const char * source_begin;
+    const char * source_current;
+    const char * source_end;
+
+    BufferType bits_buffer;
     UInt8 bits_count;
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
-    BitReader(ReadBuffer & buf_)
-        : buf(buf_),
+    BitReader(const char * begin, size_t size)
+        : source_begin(begin),
+          source_current(begin),
+          source_end(begin + size),
           bits_buffer(0),
           bits_count(0)
     {}
@@ -53,14 +67,12 @@ public:
     inline UInt64 readBits(UInt8 bits)
     {
         UInt64 result = 0;
-        bits = std::min(static_cast<UInt8>(sizeof(result) * 8), bits);
 
         while (bits != 0)
         {
             if (bits_count == 0)
             {
-                fillBuffer();
-                if (bits_count == 0)
+                if (fillBuffer() == 0)
                 {
                     // EOF.
                     break;
@@ -85,9 +97,15 @@ public:
         return result;
     }
 
-    inline UInt64 peekBits(UInt8 /*bits*/)
+    inline UInt8 peekByte() const
     {
-        return 0;
+        UInt8 result = 0;
+        const UInt64 v = bits_buffer >> (bits_count - 8);
+        const UInt64 mask = maskLowBits<UInt64>(8);
+        const UInt64 value = v & mask;
+        result |= value;
+
+        return result;
     }
 
     inline UInt8 readBit()
@@ -97,32 +115,57 @@ public:
 
     inline bool eof() const
     {
-        return bits_count == 0 && buf.eof();
+        return bits_count == 0 && source_current >= source_end;
+    }
+
+    inline UInt64 count() const
+    {
+        return (source_current - source_begin) * 8 + bits_count;
     }
 
 private:
-    void fillBuffer()
+    size_t fillBuffer(UInt8 to_read = BIT_BUFFER_SIZE / 8)
     {
-        auto read = buf.read(reinterpret_cast<char *>(&bits_buffer), BIT_BUFFER_SIZE / 8);
-        bits_buffer = be64toh(bits_buffer);
-        bits_buffer >>= BIT_BUFFER_SIZE - read * 8;
+        const size_t available = source_end - source_current;
+        if (available == 0)
+        {
+            return 0;
+//            throw Exception("Buffer is empty, but requested to read "
+//                            + std::to_string(to_read) + " more bytes.",
+//                            ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+        }
+        to_read = std::min(static_cast<size_t>(to_read), available);
 
-        bits_count = static_cast<UInt8>(read) * 8;
+        memcpy(&bits_buffer, source_current, to_read);
+        source_current += to_read;
+
+        bits_buffer = be64toh(bits_buffer);
+        bits_buffer >>= BIT_BUFFER_SIZE - to_read * 8;
+
+        bits_count = static_cast<UInt8>(to_read) * 8;
+
+        return to_read;
     }
 };
 
 class BitWriter
 {
-    WriteBuffer & buf;
+    using BufferType = UInt64;
 
-    UInt64 bits_buffer;
+    char * dest_begin;
+    char * dest_current;
+    char * dest_end;
+
+    BufferType bits_buffer;
     UInt8 bits_count;
 
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
-    BitWriter(WriteBuffer & buf_)
-        : buf(buf_),
+    BitWriter(char * begin, size_t size)
+        : dest_begin(begin),
+          dest_current(begin),
+          dest_end(begin + size),
           bits_buffer(0),
           bits_count(0)
     {}
@@ -134,8 +177,6 @@ public:
 
     inline void writeBits(UInt8 bits, UInt64 value)
     {
-        bits = std::min(static_cast<UInt8>(sizeof(value) * 8), bits);
-
         while (bits > 0)
         {
             auto v = value;
@@ -172,11 +213,28 @@ public:
         }
     }
 
+    inline UInt64 count() const
+    {
+        return (dest_current - dest_begin) * 8 + bits_count;
+    }
+
 private:
     void doFlush()
     {
         bits_buffer = htobe64(bits_buffer);
-        buf.write(reinterpret_cast<const char *>(&bits_buffer), (bits_count + 7) / 8);
+        const size_t available = dest_end - dest_current;
+        const size_t to_write = (bits_count + 7) / 8;
+
+        if (available < to_write)
+        {
+            throw Exception("Can not write past end of buffer. Space available "
+                            + std::to_string(available) + " bytes, required to write: "
+                            + std::to_string(to_write) + ".",
+                            ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+        }
+
+        memcpy(dest_current, &bits_buffer, to_write);
+        dest_current += to_write;
 
         bits_count = 0;
         bits_buffer = 0;
