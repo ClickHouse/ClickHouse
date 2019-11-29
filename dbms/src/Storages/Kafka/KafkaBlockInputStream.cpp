@@ -64,9 +64,7 @@ Block KafkaBlockInputStream::readImpl()
     if (!buffer)
         return Block();
 
-    Block result_block;
-    MutableColumns result_block_columns;
-
+    MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto read_callback = [&]
@@ -108,22 +106,14 @@ Block KafkaBlockInputStream::readImpl()
 
                 case IProcessor::Status::PortFull:
                 {
-                    auto block = input_format->getPort().getHeader().cloneWithColumns(port.pull().detachColumns());
-                    new_rows = new_rows + block.rows();
+                    auto chunk = port.pull();
+                    new_rows = new_rows + chunk.getNumRows();
 
                     /// FIXME: materialize MATERIALIZED columns here.
-                    if (!result_block)
-                    {
-                        result_block = std::move(block);
-                        result_block_columns = result_block.mutateColumns();
-                    }
-                    else
-                    {
-                        // assertBlocksHaveEqualStructure(result_block, block, "KafkaBlockInputStream");
-                        auto block_columns = block.getColumns();
-                        for (size_t i = 0, s = block_columns.size(); i < s; ++i)
-                            result_block_columns[i]->insertRangeFrom(*block_columns[i], 0, block_columns[i]->size());
-                    }
+
+                    auto columns = chunk.detachColumns();
+                    for (size_t i = 0, s = columns.size(); i < s; ++i)
+                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
                     break;
                 }
                 case IProcessor::Status::NeedData:
@@ -148,7 +138,11 @@ Block KafkaBlockInputStream::readImpl()
     if (total_rows == 0)
         return Block();
 
+    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "virtual_block structure " << virtual_block.dumpStructure());
+    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "result_block structure " << result_block.dumpStructure());
+
     // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "virtual_block have now " << virtual_block.rows() << " rows");
     // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "result_block have now " << result_block.rows() << " rows");
 
