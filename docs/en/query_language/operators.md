@@ -7,7 +7,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a[N]` Access to an element of an array; ` arrayElement(a, N) function`.
 
-`a.N` – Access to a tuble element; `tupleElement(a, N)` function.
+`a.N` – Access to a tuple element; `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator
 
@@ -65,7 +65,9 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b) function.`
 
-## Operator for Working With Dates and Times {#operators-datetime}
+## Operators for Working with Dates and Times {#operators-datetime}
+
+### EXTRACT {#operator-extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -120,13 +122,45 @@ SELECT
 FROM test.Orders;
 ```
 ```text
-
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
 You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+
+### INTERVAL {#operator-interval}
+
+Creates an [Interval](../data_types/special_data_types/interval.md)-type value that should be used in arithmetical operations with [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md)-type values.
+
+Types of intervals:
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
+
+!!! warning "Warning"
+    Intervals of different types can't be combined. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in the units that smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. Also you can use consequtive operations like in the example below.
+
+Example:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+```
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [Interval](../data_types/special_data_types/interval.md) data type
+- [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
 
 ## Logical Negation Operator
 
