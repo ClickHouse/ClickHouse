@@ -179,6 +179,8 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
+**Syntax** 
+
 ```sql
 SELECT javaHash('');
 ```
@@ -207,14 +209,12 @@ Result:
 
 ## javaHashUTF16LE {#javahashutf16le}
 
-The same as [JavaHash](#hash_functions-javahash), but for UTF-16LE encoding. 
-Works under the assumption that the string contains a set of bytes representing a UTF-16LE encoded text. 
-If this assumption is not met, it returns some result (It only throws an exception in partial cases).
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string in UTF-16LE encoding.
 
 **Syntax** 
 
 ```sql
-javaHashUTF16LE(stringUtf16le);
+javaHashUTF16LE(stringUtf16le)
 ```
 
 **Parameters** 
@@ -223,9 +223,9 @@ javaHashUTF16LE(stringUtf16le);
 
 **Returned value**
 
-Returns a set of bytes representing a UTF-16LE encoded text.
+A `Int32` data type hash value.
 
-Type: `Int32`.
+Type: `javaHash`.
 
 **Example**
 
@@ -244,22 +244,23 @@ Result:
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
 ```
-ClickHouse's strings have no information about encoding. 
+
 If string with any other encoding than `utf-16le` has passed then different hash will be returned.
 
 Query:
 
 ```sql
-SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-8'))
+SELECT javaHashUTF16LE('test')
 ```
 
 Result:
 
 ```text
-┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-8'))─┐
-│                                                    834943 │
-└───────────────────────────────────────────────────────────┘
+┌─javaHashUTF16LE('test')─┐
+│                  834943 │
+└─────────────────────────┘
 ```
+
 Without `convertCharset` function some result will be returned.
 
 Query:
