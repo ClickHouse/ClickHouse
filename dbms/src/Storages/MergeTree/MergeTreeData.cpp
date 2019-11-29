@@ -3120,71 +3120,93 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) cons
 
 DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t minimum_time) const
+        time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = tryReserveSpaceOnMoveDestination(expected_size, ttl_infos, minimum_time);
-    if (reservation)
-        return reservation;
+    DiskSpace::ReservationPtr reservation;
+
+    auto ttl_entry = selectMoveDestination(ttl_infos, time_of_move);
+    if (ttl_entry != nullptr)
+    {
+        DiskSpace::SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
+        if (!destination_ptr)
+        {
+            if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                LOG_WARNING(log, "Would like to reserve space on volume '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but volume was not found");
+            else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                LOG_WARNING(log, "Would like to reserve space on disk '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but disk was not found");
+        }
+        else
+        {
+            reservation = destination_ptr->reserve(expected_size);
+            if (reservation)
+                return reservation;
+        }
+    }
 
     reservation = storage_policy->reserve(expected_size);
 
     return returnReservationOrThrowError(expected_size, std::move(reservation));
 }
 
-DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceOnMoveDestination(UInt64 expected_size,
-        const MergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t minimum_time) const
+DiskSpace::ReservationPtr MergeTreeData::reserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto ttl_entry = selectMoveDestination(ttl_infos, minimum_time);
-    if (ttl_entry != nullptr)
-    {
-        DiskSpace::ReservationPtr reservation;
-        if (ttl_entry->destination_type == PartDestinationType::VOLUME)
-        {
-            auto volume_ptr = storage_policy->getVolumeByName(ttl_entry->destination_name);
-            if (volume_ptr)
-            {
-                reservation = volume_ptr->reserve(expected_size);
-            }
-            else
-            {
-                LOG_WARNING(log, "Would like to reserve space on volume '"
-                        << ttl_entry->destination_name << "' by TTL rule of table '"
-                        << log_name << "' but volume was not found");
-            }
-        }
-        else if (ttl_entry->destination_type == PartDestinationType::DISK)
-        {
-            auto disk_ptr = storage_policy->getDiskByName(ttl_entry->destination_name);
-            if (disk_ptr)
-            {
-                reservation = disk_ptr->reserve(expected_size);
-            }
-            else
-            {
-                LOG_WARNING(log, "Would like to reserve space on disk '"
-                        << ttl_entry->destination_name << "' by TTL rule of table '"
-                        << log_name << "' but disk was not found");
-            }
-        }
-        if (reservation)
-            return reservation;
-    }
-
-    return {};
-}
-
-DiskSpace::ReservationPtr MergeTreeData::reserveSpaceOnSpecificDisk(UInt64 expected_size, DiskSpace::DiskPtr disk) const
-{
-    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    auto reservation = disk->reserve(expected_size);
+    auto reservation = space->reserve(expected_size);
 
     return returnReservationOrThrowError(expected_size, std::move(reservation));
+}
+
+DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & storage_policy) const
+{
+    if (destination_type == PartDestinationType::VOLUME)
+        return storage_policy->getVolumeByName(destination_name);
+    else if (destination_type == PartDestinationType::DISK)
+        return storage_policy->getDiskByName(destination_name);
+    else
+        return {};
+}
+
+bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicyPtr & storage_policy, const MergeTreeDataPart & part) const
+{
+    if (destination_type == PartDestinationType::VOLUME)
+    {
+        for (const auto & disk : storage_policy->getVolumeByName(destination_name)->disks)
+            if (disk->getName() == part.disk->getName())
+                return true;
+    }
+    else if (destination_type == PartDestinationType::DISK)
+        return storage_policy->getDiskByName(destination_name)->getName() == part.disk->getName();
+    return false;
+}
+
+const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move) const
+{
+    const MergeTreeData::TTLEntry * result = nullptr;
+    /// Prefer TTL rule which went into action last.
+    time_t max_max_ttl = 0;
+
+    for (const auto & ttl_entry : move_ttl_entries)
+    {
+        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
+        if (ttl_info_it != ttl_infos.moves_ttl.end()
+                && ttl_info_it->second.max <= time_of_move
+                && max_max_ttl >= ttl_info_it->second.max)
+        {
+            result = &ttl_entry;
+            max_max_ttl = ttl_info_it->second.max;
+        }
+    }
+
+    return result;
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3366,7 +3388,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpaceOnSpecificDisk(src_part->bytes_on_disk, src_part->disk);
+    auto reservation = reserveSpaceInSpecificSpace(src_part->bytes_on_disk, src_part->disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3687,29 +3709,6 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
         }
     }
     return true;
-}
-
-const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
-        const MergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t minimum_time) const
-{
-    const MergeTreeData::TTLEntry * result = nullptr;
-    /// Prefer TTL rule which went into action last.
-    time_t max_max_ttl = 0;
-
-    for (const auto & ttl_entry : move_ttl_entries)
-    {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
-        if (ttl_info_it != ttl_infos.moves_ttl.end()
-                && ttl_info_it->second.max <= minimum_time
-                && max_max_ttl >= ttl_info_it->second.max)
-        {
-            result = &ttl_entry;
-            max_max_ttl = ttl_info_it->second.max;
-        }
-    }
-
-    return result;
 }
 
 }
