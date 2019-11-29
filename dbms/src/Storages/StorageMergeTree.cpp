@@ -99,7 +99,8 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
-    moving_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
 
 
@@ -115,7 +116,7 @@ void StorageMergeTree::shutdown()
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
     if (moving_task_handle)
-        global_context.getBackgroundPool().removeTask(moving_task_handle);
+        global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 }
 
 

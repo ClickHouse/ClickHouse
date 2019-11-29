@@ -2878,7 +2878,8 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -2902,7 +2903,7 @@ void StorageReplicatedMergeTree::shutdown()
     queue_task_handle.reset();
 
     if (move_parts_task_handle)
-        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
+        global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)
