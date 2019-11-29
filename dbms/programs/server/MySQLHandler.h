@@ -12,6 +12,8 @@
 namespace DB
 {
 
+
+
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
@@ -76,5 +78,27 @@ private:
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 #endif
+
+const String show_table_status_replacement_query("SELECT"
+                                                 " name AS Name,"
+                                                 " engine AS Engine,"
+                                                 " '10' AS Version,"
+                                                 " 'Dynamic' AS Row_format,"
+                                                 " 0 AS Rows,"
+                                                 " 0 AS Avg_row_length,"
+                                                 " 0 AS Data_length,"
+                                                 " 0 AS Max_data_length,"
+                                                 " 0 AS Index_length,"
+                                                 " 0 AS Data_free,"
+                                                 " 'NULL' AS Auto_increment,"
+                                                 " metadata_modification_time AS Create_time,"
+                                                 " metadata_modification_time AS Update_time,"
+                                                 " metadata_modification_time AS Check_time,"
+                                                 " 'utf8_bin' AS Collation,"
+                                                 " 'NULL' AS Checksum,"
+                                                 " '' AS Create_options,"
+                                                 " '' AS Comment"
+                                                 " FROM system.tables"
+                                                 " WHERE name=");
 
 }
