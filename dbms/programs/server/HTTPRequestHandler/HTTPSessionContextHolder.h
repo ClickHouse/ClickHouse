@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// Manage the lifetime of the session context.
 struct HTTPSessionContextHolder
 {
     ~HTTPSessionContextHolder();

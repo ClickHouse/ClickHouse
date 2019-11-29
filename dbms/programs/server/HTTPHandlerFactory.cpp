@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOW_HTTP_HANDLER_TYPE;
+    extern const int UNKNOWN_HTTP_HANDLER_TYPE;
     extern const int EMPTY_HTTP_HANDLER_IN_CONFIG;
 }
 
@@ -99,13 +99,13 @@ HTTPHandlerMatcher createRootHandlerMatcher(IServer &, const String &);
 HTTPHandlerMatcher createPingHandlerMatcher(IServer &, const String &);
 HTTPHandlerMatcher createDynamicQueryHandlerMatcher(IServer &, const String &);
 HTTPHandlerMatcher createReplicasStatusHandlerMatcher(IServer &, const String &);
-HTTPHandlerMatcher createPredefineQueryHandlerMatcher(IServer &, const String &);
+HTTPHandlerMatcher createPredefinedQueryHandlerMatcher(IServer &, const String &);
 
 HTTPHandlerCreator createRootHandlerCreator(IServer &, const String &);
 HTTPHandlerCreator createPingHandlerCreator(IServer &, const String &);
 HTTPHandlerCreator createDynamicQueryHandlerCreator(IServer &, const String &);
 HTTPHandlerCreator createReplicasStatusHandlerCreator(IServer &, const String &);
-HTTPHandlerCreator createPredefineQueryHandlerCreator(IServer &, const String &);
+HTTPHandlerCreator createPredefinedQueryHandlerCreator(IServer &, const String &);
 
 void HTTPHandlerFactory::updateHTTPHandlersCreator(Poco::Util::AbstractConfiguration & configuration, const String & key)
 {
@@ -126,14 +126,14 @@ void HTTPHandlerFactory::updateHTTPHandlersCreator(Poco::Util::AbstractConfigura
             handlers_creator.push_back({createPingHandlerMatcher(server, handler_key), createPingHandlerCreator(server, handler_key)});
         else if (startsWith(http_handler_type_name, "dynamic_query_handler"))
             handlers_creator.push_back({createDynamicQueryHandlerMatcher(server, handler_key), createDynamicQueryHandlerCreator(server, handler_key)});
-        else if (startsWith(http_handler_type_name, "predefine_query_handler"))
-            handlers_creator.push_back({createPredefineQueryHandlerMatcher(server, handler_key), createPredefineQueryHandlerCreator(server, handler_key)});
+        else if (startsWith(http_handler_type_name, "predefined_query_handler"))
+            handlers_creator.push_back({createPredefinedQueryHandlerMatcher(server, handler_key), createPredefinedQueryHandlerCreator(server, handler_key)});
         else if (startsWith(http_handler_type_name, "replicas_status_handler"))
             handlers_creator.push_back({createReplicasStatusHandlerMatcher(server, handler_key), createReplicasStatusHandlerCreator(server, handler_key)});
         else if (http_handler_type_name == "no_handler_description")
             no_handler_description = configuration.getString(key + ".no_handler_description");
         else
-            throw Exception("Unknown HTTPHandler type name: " + http_handler_type_name, ErrorCodes::UNKNOW_HTTP_HANDLER_TYPE);
+            throw Exception("Unknown HTTPHandler type name: " + http_handler_type_name, ErrorCodes::UNKNOWN_HTTP_HANDLER_TYPE);
     }
 }
 

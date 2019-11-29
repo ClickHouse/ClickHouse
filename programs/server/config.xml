@@ -537,8 +537,8 @@
             url - RE2 compatible regular expression (optional)
             method - HTTP method(optional)
             headers - HTTP Header(optional)
-            queries - predefine queries (mandatory)
-        <predefine_query_handler>
+            queries - predefined queries (mandatory)
+        <predefined_query_handler>
             <url>/test_simple_predefine</url>
             <method>GET</method>
             <headers> <X-ClickHouse-User>default</X-ClickHouse-User></headers>
@@ -546,7 +546,7 @@
                 <query>SELECT 1, {query_prepared_param_1:String}</query>
                 <query>SELECT 1, {query_prepared_param_2:String}</query>
             </queries>
-        </predefine_query_handler>
+        </predefined_query_handler>
         -->
     </http_handlers>
 
