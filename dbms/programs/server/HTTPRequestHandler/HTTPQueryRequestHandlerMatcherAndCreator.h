@@ -48,10 +48,10 @@ private:
     std::map<String, std::map<String, int>> extract_from_headers;
 };
 
-class ExtractorPredefineQueryParameters
+class ExtractorPredefinedQueryParameters
 {
 public:
-    ExtractorPredefineQueryParameters(
+    ExtractorPredefinedQueryParameters(
         Poco::Util::AbstractConfiguration & configuration, const String & key,
         const RegexRule & url_regex_, const HeadersRegexRule & headers_regex_
     );

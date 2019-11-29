@@ -56,7 +56,7 @@ public:
         /// Settings can be overridden in the query.
         /// Some parameters (database, default_format, everything used in the code above) do not
         /// belong to the Settings class.
-        becomeReadonlyIfNeed(request);
+        becomeReadonlyIfNeeded(request);
         changeSettingsFromParams(params, reservedParamSuffixesFilter(is_multipart_data));
 
         if (is_multipart_data || settings_may_in_post)
@@ -82,7 +82,7 @@ private:
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
     /// Only readonly queries are allowed for HTTP GET requests.
-    void becomeReadonlyIfNeed(Poco::Net::HTTPServerRequest & request)
+    void becomeReadonlyIfNeeded(Poco::Net::HTTPServerRequest & request)
     {
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
         {

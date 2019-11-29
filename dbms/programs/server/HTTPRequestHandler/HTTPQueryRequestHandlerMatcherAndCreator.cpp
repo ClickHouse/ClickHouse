@@ -9,12 +9,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_PREDEFINE_QUERY;
+    extern const int EMPTY_PREDEFINED_QUERY;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int DUPLICATE_CAPTURE_QUERY_PARAM;
     extern const int ILLEGAL_HTTP_HANDLER_PARAM_NAME;
-    extern const int TOO_MANY_INSERT_QUERY_WITH_PREDEFINE_QUERY;
+    extern const int TOO_MANY_INSERT_QUERY_WITH_PREDEFINED_QUERY;
 }
 
 ExtractorDynamicQueryParameters::ExtractorDynamicQueryParameters(
@@ -62,6 +62,9 @@ ExtractorDynamicQueryParameters::ExtractorDynamicQueryParameters(
 template <bool remove_prefix_for_param = false>
 void extractParamWithRegex(Context & context, const RegexRule & regex, const std::map<String, int> & extract_params, const String & value)
 {
+    if (value.empty())
+        return;
+
     int num_captures = regex->NumberOfCapturingGroups() + 1;
 
     re2_st::StringPiece matches[num_captures];
@@ -71,16 +74,19 @@ void extractParamWithRegex(Context & context, const RegexRule & regex, const std
     {
         for (const auto & [capturing_name, capturing_index] : extract_params)
         {
-            String param_name = capturing_name;
             const auto & capturing_value = matches[capturing_index];
 
-            if constexpr (remove_prefix_for_param)
+            if (capturing_value.data())
             {
-                const static size_t prefix_size = strlen("param_");
-                param_name = capturing_name.substr(prefix_size);
-            }
+                String param_name = capturing_name;
+                if constexpr (remove_prefix_for_param)
+                {
+                    const static size_t prefix_size = strlen("param_");
+                    param_name = capturing_name.substr(prefix_size);
+                }
 
-            context.setQueryParameter(param_name, String(capturing_value.data(), capturing_value.size()));
+                context.setQueryParameter(param_name, String(capturing_value.data(), capturing_value.size()));
+            }
         }
     }
 }
@@ -93,7 +99,7 @@ ExtractRes ExtractorDynamicQueryParameters::extract(Context & context, Poco::Net
 
     if (!extract_from_headers.empty())
         for (const auto & [header_name, extract_params] : extract_from_headers)
-            extractParamWithRegex<true>(context, headers_regex.at(header_name), extract_params, request.get(header_name));
+            extractParamWithRegex<true>(context, headers_regex.at(header_name), extract_params, request.get(header_name, ""));
 
     String extracted_query_from_params;
     const static size_t prefix_size = strlen("param_");
@@ -112,7 +118,7 @@ ExtractRes ExtractorDynamicQueryParameters::extract(Context & context, Poco::Net
     return {{extracted_query_from_params, true}};
 }
 
-ExtractorPredefineQueryParameters::ExtractorPredefineQueryParameters(
+ExtractorPredefinedQueryParameters::ExtractorPredefinedQueryParameters(
     Poco::Util::AbstractConfiguration & configuration, const String & key, const RegexRule & url_regex_, const HeadersRegexRule & headers_regex_)
     : url_regex(url_regex_), headers_regex(headers_regex_)
 {
@@ -120,7 +126,7 @@ ExtractorPredefineQueryParameters::ExtractorPredefineQueryParameters(
     configuration.keys(key + ".queries", queries_key);
 
     if (queries_key.empty())
-        throw Exception("There must be at least one predefined query in the predefined HTTPHandler.", ErrorCodes::EMPTY_PREDEFINE_QUERY);
+        throw Exception("There must be at least one predefined query in the predefined HTTPHandler.", ErrorCodes::EMPTY_PREDEFINED_QUERY);
 
     for (const auto & query_key : queries_key)
     {
@@ -136,7 +142,7 @@ ExtractorPredefineQueryParameters::ExtractorPredefineQueryParameters(
         bool is_insert_query = extract_query_ast->as<ASTInsertQuery>();
 
         if (has_insert_query && is_insert_query)
-            throw Exception("Too many insert queries in predefined queries.", ErrorCodes::TOO_MANY_INSERT_QUERY_WITH_PREDEFINE_QUERY);
+            throw Exception("Too many insert queries in predefined queries.", ErrorCodes::TOO_MANY_INSERT_QUERY_WITH_PREDEFINED_QUERY);
 
         has_insert_query |= is_insert_query;
         predefine_queries.push_back({predefine_query, is_insert_query});
@@ -186,14 +192,14 @@ ExtractorPredefineQueryParameters::ExtractorPredefineQueryParameters(
     }
 }
 
-ExtractRes ExtractorPredefineQueryParameters::extract(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & params)
+ExtractRes ExtractorPredefinedQueryParameters::extract(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & params)
 {
     if (!extract_from_url.empty())
         extractParamWithRegex<false>(context, url_regex, extract_from_url, Poco::URI{request.getURI()}.getPath());
 
     if (!extract_from_headers.empty())
         for (const auto & [header_name, extract_params] : extract_from_headers)
-            extractParamWithRegex<false>(context, headers_regex.at(header_name), extract_params, request.get(header_name));
+            extractParamWithRegex<false>(context, headers_regex.at(header_name), extract_params, request.get(header_name, ""));
 
     for (const auto & param : params)
         if (queries_names.count(param.first))
@@ -277,6 +283,9 @@ HTTPHandlerMatcher HTTPQueryRequestHandlerMatcherAndCreator::createHandlerMatche
         {
             for (const auto & [header_name, header_rule] : headers_rule)
             {
+                if (!request.has(header_name))
+                    return false;
+
                 const String & header_value = request.get(header_name);
                 if (header_value.size() != findFirstMissingMatchPos(*header_rule, header_value))
                     return false;
@@ -294,7 +303,7 @@ HTTPHandlerMatcher createDynamicQueryHandlerMatcher(IServer & server, const Stri
 }
 
 
-HTTPHandlerMatcher createPredefineQueryHandlerMatcher(IServer & server, const String & key)
+HTTPHandlerMatcher createPredefinedQueryHandlerMatcher(IServer & server, const String & key)
 {
     return HTTPQueryRequestHandlerMatcherAndCreator::invokeWithParsedRegexRule(server.config(), key,
         HTTPQueryRequestHandlerMatcherAndCreator::createHandlerMatcher);
@@ -314,16 +323,16 @@ HTTPHandlerCreator createDynamicQueryHandlerCreator(IServer & server, const Stri
         });
 }
 
-HTTPHandlerCreator createPredefineQueryHandlerCreator(IServer & server, const String & key)
+HTTPHandlerCreator createPredefinedQueryHandlerCreator(IServer & server, const String & key)
 {
     return HTTPQueryRequestHandlerMatcherAndCreator::invokeWithParsedRegexRule(
         server.config(), key, [&](const String &, const RegexRule & url_rule, const HeadersRegexRule & headers_rule)
         {
-            const auto & extract = std::make_shared<ExtractorPredefineQueryParameters>(server.config(), key, url_rule, headers_rule);
+            const auto & extract = std::make_shared<ExtractorPredefinedQueryParameters>(server.config(), key, url_rule, headers_rule);
 
             return [&, query_extract = extract]()
             {
-                return new HTTPQueryRequestHandler<ExtractorPredefineQueryParameters>(server, *query_extract);
+                return new HTTPQueryRequestHandler<ExtractorPredefinedQueryParameters>(server, *query_extract);
             };
         });
 }

@@ -174,6 +174,6 @@ HTTPResponseBufferPtr HTTPQueryRequestHandler<QueryParamExtractor>::createRespon
 
 
 template class HTTPQueryRequestHandler<ExtractorDynamicQueryParameters>;
-template class HTTPQueryRequestHandler<ExtractorPredefineQueryParameters>;
+template class HTTPQueryRequestHandler<ExtractorPredefinedQueryParameters>;
 
 }

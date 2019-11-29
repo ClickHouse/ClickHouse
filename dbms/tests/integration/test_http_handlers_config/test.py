@@ -35,8 +35,8 @@ def test_dynamic_query_handler_with_insert_and_select():
         assert cluster.instance.http_request('query_data_from_test?max_threads=1&test_select_query_param=' + select_data_query, method='GET') == '1\n2\n3\n4\n'
 
 
-def test_predefine_query_handler_with_insert_and_select():
-    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "predefine_insert_and_select", "test_insert_and_select_predefine")) as cluster:
+def test_predefined_query_handler_with_insert_and_select():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "predefined_insert_and_select", "test_insert_and_select_predefined")) as cluster:
         assert cluster.instance.http_request('create_test_table?max_threads=1', method='PUT') == ''
         assert cluster.instance.http_request('insert_data_to_test?max_threads=1', method='POST', data='(1)(2)(3)(4)') == ''
         assert cluster.instance.http_request('query_data_from_test?max_threads=1', method='GET') == '1\n2\n3\n4\n'
@@ -54,18 +54,25 @@ def test_dynamic_query_handler_with_params_and_settings():
         assert 'Syntax error' in cluster.instance.http_request('post_query_params_and_settings?post_query_param=' + test_query + '&' + query_param, method='POST', data=settings)
 
         assert cluster.instance.http_request('get_query_params_and_settings?get_query_param=' + quoted_test_query + '&' + query_param + '&' + settings) == '1\n2\n'
+        assert cluster.instance.http_request('query_param_with_url/123/max_threads?query_param=' + quoted_test_query + '&' + settings + '&param_name_2=max_alter_threads') == '1\n2\n'
         assert cluster.instance.http_request('query_param_with_url/123/max_threads/max_alter_threads?query_param=' + quoted_test_query + '&' + settings) == '1\n2\n'
+        assert '`name_2` is not set' in cluster.instance.http_request('query_param_with_url/123/max_threads?query_param=' + quoted_test_query + '&' + settings)
         assert 'Duplicate name' in cluster.instance.http_request('query_param_with_url/123/max_threads_dump/max_alter_threads_dump?query_param=' + quoted_test_query + '&' + query_param + '&' + settings)
 
         assert cluster.instance.http_request('test_match_headers?query_param=' + quoted_test_query + '&' + settings, headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads/max_alter_threads'}) == '1\n2\n'
+        assert cluster.instance.http_request('test_match_headers?query_param=' + quoted_test_query + '&' + settings + '&param_name_2=max_alter_threads', headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads'}) == '1\n2\n'
+        assert '`name_2` is not set' in cluster.instance.http_request('test_match_headers?query_param=' + quoted_test_query + '&' + settings, headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads'})
+        assert 'There is no handle /test_match_headers' in cluster.instance.http_request('test_match_headers?query_param=' + quoted_test_query + '&' + settings)
 
 
-def test_predefine_query_handler_with_params_and_settings():
-    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "predefine_params_and_settings", "test_param_and_settings_predefine")) as cluster:
+def test_predefined_query_handler_with_params_and_settings():
+    with contextlib.closing(SimpleCluster(ClickHouseCluster(__file__), "predefined_params_and_settings", "test_param_and_settings_predefined")) as cluster:
         settings = 'max_threads=1&max_alter_threads=2'
         query_param = 'name_1=max_threads&name_2=max_alter_threads'
         assert cluster.instance.http_request('get_query_params_and_settings?' + query_param + '&' + settings, method='GET') == '1\nmax_alter_threads\t2\n'
         assert cluster.instance.http_request('query_param_with_url/123/max_threads/max_alter_threads?' + settings) == '1\nmax_alter_threads\t2\n'
+        assert cluster.instance.http_request('query_param_with_url/123/max_threads?' + settings + '&name_2=max_alter_threads') == '1\nmax_alter_threads\t2\n'
+        assert '`name_2` is not set' in cluster.instance.http_request('query_param_with_url/123/max_threads?' + settings)
         assert 'Duplicate name' in cluster.instance.http_request('query_param_with_url/123/max_threads_dump/max_alter_threads_dump?' + query_param + '&' + settings)
 
         assert cluster.instance.http_request('post_query_params_and_settings?' + query_param, method='POST', data=settings) == '1\nmax_alter_threads\t2\n'
@@ -73,6 +80,9 @@ def test_predefine_query_handler_with_params_and_settings():
         assert cluster.instance.http_request('post_query_params_and_settings?' + query_param + '&' + settings, method='POST') == '1\nmax_alter_threads\t2\n'
         assert cluster.instance.http_request('post_query_params_and_settings', method='POST', data=query_param + '&' + settings) == '1\nmax_alter_threads\t2\n'
         assert cluster.instance.http_request('test_match_headers?' + settings, headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads/max_alter_threads'}) == '1\nmax_alter_threads\t2\n'
+        assert cluster.instance.http_request('test_match_headers?' + settings + '&name_2=max_alter_threads', headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads'}) == '1\nmax_alter_threads\t2\n'
+        assert '`name_2` is not set' in cluster.instance.http_request('test_match_headers?' + settings, headers={'XXX': 'TEST_HEADER_VALUE', 'PARAMS_XXX': 'max_threads'})
+        assert 'There is no handle /test_match_headers' in cluster.instance.http_request('test_match_headers?' + settings)
 
 
 def test_other_configs():
