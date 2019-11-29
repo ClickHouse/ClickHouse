@@ -3728,17 +3728,17 @@ const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
 {
     const MergeTreeData::TTLEntry * result = nullptr;
     /// Prefer TTL rule which went into action last.
-    time_t max_min_ttl = 0;
+    time_t max_max_ttl = 0;
 
     for (const auto & ttl_entry : move_ttl_entries)
     {
         auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
         if (ttl_info_it != ttl_infos.moves_ttl.end()
-                && ttl_info_it->second.min <= minimum_time
-                && max_min_ttl <= ttl_info_it->second.min)
+                && ttl_info_it->second.max <= minimum_time
+                && max_max_ttl >= ttl_info_it->second.max)
         {
             result = &ttl_entry;
-            max_min_ttl = ttl_info_it->second.min;
+            max_max_ttl = ttl_info_it->second.max;
         }
     }
 
