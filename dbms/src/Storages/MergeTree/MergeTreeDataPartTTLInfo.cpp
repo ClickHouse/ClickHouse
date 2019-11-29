@@ -19,9 +19,6 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
     {
         moves_ttl[expression].update(ttl_info);
-        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
-        /// FIXME: Possibly one need another logic here, because move TTL may spoil part min/max TTL
-        /// in this case we also need to skip updating part min/max in `updateTTL` method
     }
 
     table_ttl.update(other_infos.table_ttl);
