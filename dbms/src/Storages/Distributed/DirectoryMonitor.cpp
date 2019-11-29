@@ -34,6 +34,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
@@ -577,6 +579,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 
