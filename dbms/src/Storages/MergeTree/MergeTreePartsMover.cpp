@@ -114,15 +114,25 @@ bool MergeTreePartsMover::selectPartsForMove(
         }
     }
 
+    time_t time_of_move = time(nullptr);
+
     for (const auto & part : data_parts)
     {
         String reason;
-        /// Don't report message to log, because logging is excessive
+        /// Don't report message to log, because logging is excessive.
         if (!can_move(part, &reason))
             continue;
 
-        auto reservation = part->storage.tryReserveSpaceOnMoveDestination(part->bytes_on_disk, part->ttl_infos, time(nullptr));
+        const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectMoveDestination(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->disk);
+        DiskSpace::ReservationPtr reservation;
+        if (ttl_entry_ptr)
+        {
+            auto destination = ttl_entry_ptr->getDestination(policy);
+            if (destination && !ttl_entry_ptr->isPartInDestination(policy, *part))
+                reservation = part->storage.reserveSpaceInSpecificSpace(part->bytes_on_disk, ttl_entry_ptr->getDestination(policy));
+        }
+
         if (reservation)
         {
             parts_to_move.emplace_back(part, std::move(reservation));
@@ -149,9 +159,9 @@ bool MergeTreePartsMover::selectPartsForMove(
             auto reservation = policy->reserve(part->bytes_on_disk, min_volume_index);
             if (!reservation)
             {
-                /// Next parts to move from this disk has greater size and same min volume index
-                /// There are no space for them
-                /// But it can be possible to move data from other disks
+                /// Next parts to move from this disk has greater size and same min volume index.
+                /// There are no space for them.
+                /// But it can be possible to move data from other disks.
                 break;
             }
             parts_to_move.emplace_back(part, std::move(reservation));
