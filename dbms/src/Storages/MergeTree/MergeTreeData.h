@@ -678,11 +678,8 @@ public:
     DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size) const;
     DiskSpace::ReservationPtr reserveSpacePreferringMoveDestination(UInt64 expected_size,
                                                                     const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                    time_t minimum_time) const;
-    DiskSpace::ReservationPtr tryReserveSpaceOnMoveDestination(UInt64 expected_size,
-                                                               const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                               time_t minimum_time) const;
-    DiskSpace::ReservationPtr reserveSpaceOnSpecificDisk(UInt64 expected_size, DiskSpace::DiskPtr disk) const;
+                                                                    time_t time_of_move) const;
+    DiskSpace::ReservationPtr reserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -733,7 +730,12 @@ public:
         String destination_name;
 
         ASTPtr entry_ast;
+
+        DiskSpace::SpacePtr getDestination(const DiskSpace::StoragePolicyPtr & storage_policy) const;
+        bool isPartInDestination(const DiskSpace::StoragePolicyPtr & storage_policy, const MergeTreeDataPart & part) const;
     };
+
+    const TTLEntry * selectMoveDestination(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;
@@ -978,9 +980,6 @@ private:
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
-
-    const MergeTreeData::TTLEntry * selectMoveDestination(const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                          time_t minimum_time) const;
 };
 
 }
