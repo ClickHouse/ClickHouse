@@ -142,6 +142,7 @@ private:
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
     bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
     std::shared_ptr<RowPolicyContext> row_policy;
+    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -212,6 +213,7 @@ public:
     std::shared_ptr<QuotaContext> getQuota() const { return quota; }
     void checkQuotaManagementIsAllowed();
     std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
+    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.

@@ -43,6 +43,7 @@ struct User
     std::optional<DictionarySet> dictionaries;
 
     bool is_quota_management_allowed = false;
+    bool is_row_policy_management_allowed = false;
 
     User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
