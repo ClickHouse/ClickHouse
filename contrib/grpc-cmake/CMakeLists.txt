@@ -48,13 +48,13 @@ include(${GRPC_SOURCE_DIR}/cmake/address_sorting.cmake)
 set(_gRPC_ADDRESS_SORTING_INCLUDE_DIR "${GRPC_SOURCE_DIR}/third_party/address_sorting/include")
 set(_gRPC_ADDRESS_SORTING_LIBRARIES address_sorting)
 
-# benchmark.cmake
-set(BENCHMARK_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/benchmark)
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Turn off gTest in gBenchmark")
-add_subdirectory(${BENCHMARK_ROOT_DIR} ${BENCHMARK_ROOT_DIR})
-if(TARGET benchmark)
-  set(_gRPC_BENCHMARK_LIBRARIES benchmark)
-endif()
+# # benchmark.cmake
+# set(BENCHMARK_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/benchmark)
+# set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Turn off gTest in gBenchmark")
+# add_subdirectory(${BENCHMARK_ROOT_DIR} ${BENCHMARK_ROOT_DIR})
+# if(TARGET benchmark)
+#   set(_gRPC_BENCHMARK_LIBRARIES benchmark)
+# endif()
 
 # cares.cmake
 set(CARES_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/cares/cares)
