@@ -113,7 +113,7 @@ private:
 
         while (true)
         {
-            Connection::Packet packet = connection.receivePacket();
+            Packet packet = connection.receivePacket();
             switch (packet.type)
             {
                 case Protocol::Server::Data:

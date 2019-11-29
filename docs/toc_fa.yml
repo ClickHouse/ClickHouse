@@ -57,6 +57,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
+    - 'Interval': 'data_types/special_data_types/interval.md'    
   - 'Domains':
     - 'Overview': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -215,6 +216,7 @@ nav:
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':

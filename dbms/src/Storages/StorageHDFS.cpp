@@ -7,14 +7,16 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromHDFS.h>
 #include <IO/WriteBufferFromHDFS.h>
+#include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -36,12 +38,14 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    Context & context_)
+    Context & context_,
+    const String & compression_method_ = "")
     : uri(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
     , database_name(database_name_)
     , context(context_)
+    , compression_method(compression_method_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -57,9 +61,11 @@ public:
         const String & format,
         const Block & sample_block,
         const Context & context,
-        UInt64 max_block_size)
+        UInt64 max_block_size,
+        const CompressionMethod compression_method)
     {
-        std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+        auto read_buf = getReadBuffer<ReadBufferFromHDFS>(compression_method, uri);
+
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
     }
@@ -99,10 +105,11 @@ public:
     HDFSBlockOutputStream(const String & uri,
         const String & format,
         const Block & sample_block_,
-        const Context & context)
+        const Context & context,
+        const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = std::make_unique<WriteBufferFromHDFS>(uri);
+        write_buf = getWriteBuffer<WriteBufferFromHDFS>(compression_method, uri);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
@@ -130,7 +137,7 @@ public:
 
 private:
     Block sample_block;
-    std::unique_ptr<WriteBufferFromHDFS> write_buf;
+    std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
 };
 
@@ -203,7 +210,7 @@ BlockInputStreams StorageHDFS::read(
     for (const auto & res_path : res_paths)
     {
         result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
-                                                               max_block_size));
+                                                               max_block_size, IStorage::chooseCompressionMethod(res_path, compression_method)));
     }
 
     return result;
@@ -217,7 +224,11 @@ void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_d
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
-    return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
+    return std::make_shared<HDFSBlockOutputStream>(uri,
+        format_name,
+        getSampleBlock(),
+        context,
+        IStorage::chooseCompressionMethod(uri, compression_method));
 }
 
 void registerStorageHDFS(StorageFactory & factory)
@@ -226,9 +237,9 @@ void registerStorageHDFS(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+        if (engine_args.size() != 2 && engine_args.size() != 3)
             throw Exception(
-                "Storage HDFS requires exactly 2 arguments: url and name of used format.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage HDFS requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
@@ -238,7 +249,14 @@ void registerStorageHDFS(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
+        String compression_method;
+        if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        } else compression_method = "auto";
+
+        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context, compression_method);
     });
 }
 
