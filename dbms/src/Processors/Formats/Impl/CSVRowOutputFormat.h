@@ -20,7 +20,7 @@ public:
     /** with_names - output in the first line a header with column names
       * with_types - output in the next line header with the names of the types
       */
-    CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_);
+    CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool text_file_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowOutputFormat"; }
 
@@ -40,7 +40,8 @@ public:
 protected:
 
     bool with_names;
-    const FormatSettings format_settings;
+    bool text_file;
+    FormatSettings format_settings;
     DataTypes data_types;
 };
 

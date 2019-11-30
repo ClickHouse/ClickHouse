@@ -8,9 +8,13 @@ namespace DB
 {
 
 
-CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), format_settings(format_settings_)
+CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool text_file_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), text_file(text_file_), format_settings(format_settings_)
 {
+    if (text_file)
+    {
+        format_settings.csv.delimiter = '\001';
+    }
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     data_types.resize(columns);
@@ -73,15 +77,19 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
-        factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
-            WriteBuffer & buf,
-            const Block & sample,
-            const Context &,
-            FormatFactory::WriteCallback callback,
-            const FormatSettings & format_settings)
+        for (bool text_file : {false, true})
         {
-                return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, callback, format_settings);
-        });
+            std::string format = text_file ? "TextFile" : "CSV";
+            factory.registerOutputFormatProcessor(with_names ? format + "WithNames" : format, [=](
+                WriteBuffer & buf,
+                const Block & sample,
+                const Context &,
+                FormatFactory::WriteCallback callback,
+                const FormatSettings & format_settings)
+            {
+                return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, text_file, callback, format_settings);
+            });
+        }
     }
 }
 

@@ -20,7 +20,7 @@ public:
     /** with_names - in the first line the header with column names
       */
     CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                      bool with_names_, const FormatSettings & format_settings_);
+                      bool with_names_, bool textFile_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
 
@@ -31,7 +31,8 @@ public:
 
 private:
     bool with_names;
-    const FormatSettings format_settings;
+    bool text_file;
+    FormatSettings format_settings;
     DataTypes data_types;
 
     using IndexesMap = std::unordered_map<String, size_t>;

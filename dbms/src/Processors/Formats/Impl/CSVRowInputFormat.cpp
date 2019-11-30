@@ -19,11 +19,17 @@ namespace ErrorCodes
 
 
 CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                                     bool with_names_, const FormatSettings & format_settings_)
+                                     bool with_names_, bool text_file_, const FormatSettings & format_settings_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , with_names(with_names_)
+    , text_file(text_file_)
     , format_settings(format_settings_)
 {
+
+    if (text_file)
+    {
+        format_settings.csv.delimiter = '\001';
+    }
 
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
@@ -43,6 +49,7 @@ CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, co
         data_types[i] = column_info.type;
         column_indexes_by_names.emplace(column_info.name, i);
     }
+
 }
 
 
@@ -410,15 +417,19 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
-        factory.registerInputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
-            ReadBuffer & buf,
-            const Block & sample,
-            const Context &,
-            IRowInputFormat::Params params,
-            const FormatSettings & settings)
+        for (bool text_file : {false, true})
         {
-            return std::make_shared<CSVRowInputFormat>(sample, buf, params, with_names, settings);
-        });
+            std::string format = text_file ? "TextFile" : "CSV";
+            factory.registerInputFormatProcessor(with_names ? format + "WithNames" : format, [=](
+                ReadBuffer & buf,
+                const Block & sample,
+                const Context &,
+                IRowInputFormat::Params params,
+                const FormatSettings & settings)
+            {
+                return std::make_shared<CSVRowInputFormat>(sample, buf, params, with_names, text_file, settings);
+            });
+        }
     }
 }
 
