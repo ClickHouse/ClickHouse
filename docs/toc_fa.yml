@@ -216,6 +216,7 @@ nav:
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':

@@ -83,7 +83,7 @@ private:
 
         SimpleAggregateDescription(const AggregateFunctionPtr & function_, const size_t column_number_) : function(function_), column_number(column_number_)
         {
-            add_function = function->getAddressOfAddFunctions().add;
+            add_function = function->getAddressOfAddFunction();
             state.reset(function->sizeOfData(), function->alignOfData());
         }
 
