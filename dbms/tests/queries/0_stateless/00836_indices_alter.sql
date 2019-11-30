@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS minmax_idx;
 DROP TABLE IF EXISTS minmax_idx2;
 
-SET allow_experimental_data_skipping_indices = 1;
 
 CREATE TABLE minmax_idx
 (

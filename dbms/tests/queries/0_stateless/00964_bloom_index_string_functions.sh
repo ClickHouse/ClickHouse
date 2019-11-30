@@ -7,7 +7,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx;"
 
 # NGRAM BF
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE bloom_filter_idx
 (
     k UInt64,

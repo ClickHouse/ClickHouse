@@ -1,5 +1,4 @@
 SET send_logs_level = 'none';
-SET allow_experimental_data_skipping_indices = 1;
 
 DROP TABLE IF EXISTS mt_with_pk;
 
