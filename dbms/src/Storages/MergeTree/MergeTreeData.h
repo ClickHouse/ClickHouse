@@ -679,7 +679,11 @@ public:
     DiskSpace::ReservationPtr reserveSpacePreferringMoveDestination(UInt64 expected_size,
                                                                     const MergeTreeDataPart::TTLInfos & ttl_infos,
                                                                     time_t time_of_move) const;
+    DiskSpace::ReservationPtr tryReserveSpacePreferringMoveDestination(UInt64 expected_size,
+                                                                    const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                    time_t time_of_move) const;
     DiskSpace::ReservationPtr reserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
+    DiskSpace::ReservationPtr tryReserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
