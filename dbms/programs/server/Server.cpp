@@ -438,6 +438,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -468,13 +475,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 
@@ -814,7 +814,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_SSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
@@ -826,11 +825,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
             });
         }
 

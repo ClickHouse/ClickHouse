@@ -588,8 +588,19 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-            writeVarUInt(UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER), out);
-            context.getSettingsRef().serialize(out);
+            /// We wrap the extra information into a string for compatibility with older versions:
+            /// a shard will able to read this information partly and ignore other parts
+            /// based on its version.
+            WriteBufferFromOwnString extra_info;
+            writeVarUInt(ClickHouseRevision::get(), extra_info);
+            context.getSettingsRef().serialize(extra_info);
+
+            /// Add new fields here, for example:
+            /// writeVarUInt(my_new_data, extra_info);
+
+            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO, out);
+            writeStringBinary(extra_info.str(), out);
+
             writeStringBinary(query_string, out);
 
             stream.writePrefix();

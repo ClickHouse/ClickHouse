@@ -1005,11 +1005,10 @@ protected:
     struct AggregateFunctionInstruction
     {
         const IAggregateFunction * that;
-        IAggregateFunction::AddFuncs funcs;
+        IAggregateFunction::AddFunc func;
         size_t state_offset;
         const IColumn ** arguments;
         const IAggregateFunction * batch_that;
-        IAggregateFunction::AddFuncs batch_funcs;
         const IColumn ** batch_arguments;
         const UInt64 * offsets = nullptr;
     };
