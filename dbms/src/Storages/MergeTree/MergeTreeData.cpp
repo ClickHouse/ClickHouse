@@ -3157,6 +3157,17 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(U
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
+    DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringMoveDestination(expected_size, ttl_infos, time_of_move);
+
+    return returnReservationOrThrowError(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringMoveDestination(UInt64 expected_size,
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
     DiskSpace::ReservationPtr reservation;
 
     auto ttl_entry = selectMoveDestination(ttl_infos, time_of_move);
@@ -3184,16 +3195,23 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(U
 
     reservation = storage_policy->reserve(expected_size);
 
-    return returnReservationOrThrowError(expected_size, std::move(reservation));
+    return reservation;
 }
 
 DiskSpace::ReservationPtr MergeTreeData::reserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = space->reserve(expected_size);
+    auto reservation = tryReserveSpaceInSpecificSpace(expected_size, space);
 
     return returnReservationOrThrowError(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    return space->reserve(expected_size);
 }
 
 DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & storage_policy) const

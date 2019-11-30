@@ -28,6 +28,18 @@
             </volumes>
         </external_with_jbods>
 
+        <jbods_with_external>
+            <volumes>
+                <main>
+                    <disk>jbod1</disk>
+                    <disk>jbod2</disk>
+                </main>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </jbods_with_external>
+
         <small_jbod_with_external>
             <volumes>
                 <main>
