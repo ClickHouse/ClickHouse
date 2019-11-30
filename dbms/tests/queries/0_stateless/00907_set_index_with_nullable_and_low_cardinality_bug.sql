@@ -1,4 +1,3 @@
-SET allow_experimental_data_skipping_indices=1;
 
 drop table if exists null_lc_set_index;
 

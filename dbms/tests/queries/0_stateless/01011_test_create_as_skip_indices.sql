@@ -1,4 +1,3 @@
-SET allow_experimental_data_skipping_indices=1;
 CREATE TABLE foo (key int, INDEX i1 key TYPE minmax GRANULARITY 1) Engine=MergeTree() ORDER BY key;
 CREATE TABLE as_foo AS foo;
 CREATE TABLE dist (key int, INDEX i1 key TYPE minmax GRANULARITY 1) Engine=Distributed(test_shard_localhost, currentDatabase(), 'foo'); -- { serverError 36 }
