@@ -1508,7 +1508,7 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
 {
     auto lock = getLock();
     if (!shared->background_move_pool)
-        shared->background_move_pool.emplace(settings.background_move_pool_size, "BackgroundMovePool", "BgMoveProcPool");
+        shared->background_move_pool.emplace(settings.background_move_pool_size, getConfigRef(), "BackgroundMovePool", "BgMoveProcPool");
     return *shared->background_move_pool;
 }
 
