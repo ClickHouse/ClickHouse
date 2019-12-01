@@ -735,8 +735,8 @@ public:
 
         ASTPtr entry_ast;
 
-        DiskSpace::SpacePtr getDestination(const DiskSpace::StoragePolicyPtr & storage_policy) const;
-        bool isPartInDestination(const DiskSpace::StoragePolicyPtr & storage_policy, const MergeTreeDataPart & part) const;
+        DiskSpace::SpacePtr getDestination(const DiskSpace::StoragePolicyPtr & policy) const;
+        bool isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
     const TTLEntry * selectMoveDestination(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
