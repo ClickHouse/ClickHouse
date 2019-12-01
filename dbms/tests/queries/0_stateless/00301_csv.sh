@@ -39,6 +39,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE textfile (t DateTime, number UInt64, name String, number2 UInt64) ENGINE = Memory";
 $CLICKHOUSE_CLIENT --query="INSERT INTO textfile SELECT now(), 1, '-', 1 FROM numbers(10)";
-$CLICKHOUSE_CLIENT --query="SELECT * FROM textfile FORMAT TextFile" | $CLICKHOUSE_CLIENT --query="INSERT INTO textfile FORMAT TextFile";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM textfile FORMAT HiveTextFile" | $CLICKHOUSE_CLIENT --query="INSERT INTO textfile FORMAT HiveTextFile";
 $CLICKHOUSE_CLIENT --query="SELECT sum(number + number2) FROM textfile"
 $CLICKHOUSE_CLIENT --query="DROP TABLE textfile"

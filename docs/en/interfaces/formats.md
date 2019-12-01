@@ -14,7 +14,9 @@ The supported formats are:
 | [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
+| [HiveTextFile](#HiveTextFile) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
+| [HiveTextFileWithNames](#hivetextwithnames) | ✔ | ✔ |
 | [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
@@ -312,9 +314,18 @@ is enabled.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
-## CSVWithNames
+## CSVWithNames {#csvwithnames}
 
 Also prints the header row, similar to `TabSeparatedWithNames`.
+
+## HiveTextFile {#hivetextfile}
+
+Similar to `CSV`, the fields is separated by CTRL-A (\001), the same way as `set format_csv_delimiter='\x01'` in format `CSV`.
+
+## HiveTextFileWithNames {#hivetextfilewithnames}
+
+Also prints the header row, similar to `CSVWithNames`.
+
 
 ## CustomSeparated {#format-customseparated}
 

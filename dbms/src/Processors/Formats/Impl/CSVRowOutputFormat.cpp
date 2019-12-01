@@ -79,7 +79,7 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
     {
         for (bool text_file : {false, true})
         {
-            std::string format = text_file ? "TextFile" : "CSV";
+            std::string format = text_file ? "HiveTextFile" : "CSV";
             factory.registerOutputFormatProcessor(with_names ? format + "WithNames" : format, [=](
                 WriteBuffer & buf,
                 const Block & sample,

@@ -419,7 +419,7 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     {
         for (bool text_file : {false, true})
         {
-            std::string format = text_file ? "TextFile" : "CSV";
+            std::string format = text_file ? "HiveTextFile" : "CSV";
             factory.registerInputFormatProcessor(with_names ? format + "WithNames" : format, [=](
                 ReadBuffer & buf,
                 const Block & sample,
