@@ -139,6 +139,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
+    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -205,6 +206,7 @@ public:
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
     std::shared_ptr<QuotaContext> getQuota() const { return quota; }
+    void checkQuotaManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.

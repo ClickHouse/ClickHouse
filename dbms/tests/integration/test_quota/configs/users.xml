@@ -12,6 +12,7 @@
             </networks>
             <profile>default</profile>
             <quota>myQuota</quota>
+            <allow_quota_management>true</allow_quota_management>
         </default>
     </users>
 </yandex>
