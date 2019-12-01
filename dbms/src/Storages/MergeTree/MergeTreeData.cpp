@@ -3214,26 +3214,26 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceInSpecificSpace(UInt64 e
     return space->reserve(expected_size);
 }
 
-DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & storage_policy) const
+DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & policy) const
 {
     if (destination_type == PartDestinationType::VOLUME)
-        return storage_policy->getVolumeByName(destination_name);
+        return policy->getVolumeByName(destination_name);
     else if (destination_type == PartDestinationType::DISK)
-        return storage_policy->getDiskByName(destination_name);
+        return policy->getDiskByName(destination_name);
     else
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicyPtr & storage_policy, const MergeTreeDataPart & part) const
+bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const
 {
     if (destination_type == PartDestinationType::VOLUME)
     {
-        for (const auto & disk : storage_policy->getVolumeByName(destination_name)->disks)
+        for (const auto & disk : policy->getVolumeByName(destination_name)->disks)
             if (disk->getName() == part.disk->getName())
                 return true;
     }
     else if (destination_type == PartDestinationType::DISK)
-        return storage_policy->getDiskByName(destination_name)->getName() == part.disk->getName();
+        return policy->getDiskByName(destination_name)->getName() == part.disk->getName();
     return false;
 }
 
