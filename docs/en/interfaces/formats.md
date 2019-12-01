@@ -14,9 +14,9 @@ The supported formats are:
 | [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
-| [HiveTextFile](#HiveTextFile) | ✔ | ✔ |
+| [HiveTextFile](#hivetextfile) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
-| [HiveTextFileWithNames](#hivetextwithnames) | ✔ | ✔ |
+| [HiveTextFileWithNames](#hivetextfilewithnames) | ✔ | ✔ |
 | [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
