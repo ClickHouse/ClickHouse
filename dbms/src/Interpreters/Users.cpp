@@ -129,7 +129,9 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
             }
         }
     }
-}
 
+    if (config.has(config_elem + ".allow_quota_management"))
+        is_quota_management_allowed = config.getBool(config_elem + ".allow_quota_management");
+}
 
 }

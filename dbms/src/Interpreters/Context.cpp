@@ -93,6 +93,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
+    extern const int NOT_ENOUGH_PRIVILEGES;
 }
 
 
@@ -599,6 +600,13 @@ const AccessControlManager & Context::getAccessControlManager() const
     return shared->access_control_manager;
 }
 
+void Context::checkQuotaManagementIsAllowed()
+{
+    if (!is_quota_management_allowed)
+        throw Exception(
+            "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -664,6 +672,7 @@ void Context::calculateUserSettings()
 
     quota = getAccessControlManager().createQuotaContext(
         client_info.current_user, client_info.current_address.host(), client_info.quota_key);
+    is_quota_management_allowed = user->is_quota_management_allowed;
 }
 
 
