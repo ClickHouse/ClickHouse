@@ -153,8 +153,8 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         wait_expire_1_thread.start()
 
         for p in range(2):
-            data = [] # 20MB in total
-            for i in range(10):
+            data = [] # 10MB in total
+            for i in range(5):
                 data.append((str(p), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1))) # 1MB row
 
             node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
@@ -168,7 +168,7 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external"}
 
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "20"
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
 
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
