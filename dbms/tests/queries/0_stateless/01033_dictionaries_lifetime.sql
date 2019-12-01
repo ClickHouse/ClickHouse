@@ -34,6 +34,8 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dic
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
+SELECT 'INITIALIZING DICTIONARY';
+
 SELECT lifetime_min, lifetime_max FROM system.dictionaries WHERE name = 'dict1';
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;
