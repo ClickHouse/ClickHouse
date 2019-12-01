@@ -64,7 +64,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         std::exception_ptr last_exception = load_result.exception;
 
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
-
         if (dict_ptr)
         {
             res_columns[i++]->insert(dict_ptr->getTypeName());
@@ -83,11 +82,8 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             const auto & lifetime = dict_ptr->getLifetime();
             res_columns[i++]->insert(lifetime.min_sec);
             res_columns[i++]->insert(lifetime.max_sec);
-
             if (!last_exception)
                 last_exception = dict_ptr->getLastException();
-
-
         }
         else
         {
