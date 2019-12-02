@@ -41,6 +41,7 @@ struct MergeInfo
     UInt64 total_rows_count;
     UInt64 bytes_read_uncompressed;
     UInt64 bytes_written_uncompressed;
+    UInt64 bytes_written_compressed;
     UInt64 rows_read;
     UInt64 rows_written;
     UInt64 columns_written;
@@ -49,6 +50,7 @@ struct MergeInfo
 };
 
 struct FutureMergedMutatedPart;
+struct MergeTreeMoveEntry;
 
 struct MergeListElement : boost::noncopyable
 {
@@ -75,6 +77,7 @@ struct MergeListElement : boost::noncopyable
     UInt64 total_rows_count{};
     std::atomic<UInt64> bytes_read_uncompressed{};
     std::atomic<UInt64> bytes_written_uncompressed{};
+    std::atomic<UInt64> bytes_written_compressed{};
 
     /// In case of Vertical algorithm they are actual only for primary key columns
     std::atomic<UInt64> rows_read{};
@@ -92,6 +95,7 @@ struct MergeListElement : boost::noncopyable
 
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
+    MergeListElement(const std::string & database, const std::string & table, const MergeTreeMoveEntry & moving_part);
 
     MergeInfo getInfo() const;
 

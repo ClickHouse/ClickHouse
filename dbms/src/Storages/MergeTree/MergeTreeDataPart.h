@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
+#include <Poco/File.h>
 #include <Poco/Path.h>
 
 #include <shared_mutex>
@@ -24,6 +25,7 @@ namespace DB
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
+class MergeListEntry;
 
 
 /// Description of the data part.
@@ -59,6 +61,13 @@ struct MergeTreeDataPart
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
+<<<<<<< HEAD
+=======
+    /// Generate the new path for this part
+    String getNewPath(const DiskSpace::ReservationPtr & reservation) const;
+    String getNewPath(const MergeTreePartInfo & new_part_info, const DiskSpace::ReservationPtr & reservation) const;
+
+>>>>>>> Added moves to `system.merges` (without progress so far).
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
     /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
@@ -259,8 +268,11 @@ struct MergeTreeDataPart
     /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
 
+    /// Makes copy of a directory, counting bytes written.
+    static void copyDirectoryWithProgress(const Poco::File & directory, const String & destination, std::atomic<UInt64> & bytes_written);
+
     /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
+    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation, MergeListEntry & move_entry) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

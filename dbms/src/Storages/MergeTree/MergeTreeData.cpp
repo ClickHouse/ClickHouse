@@ -3593,9 +3593,11 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
                 nullptr);
         };
 
+        MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, moving_part);
+
         try
         {
-            cloned_part = parts_mover.clonePart(moving_part);
+            cloned_part = parts_mover.clonePart(moving_part, *merge_entry);
             parts_mover.swapClonedPart(cloned_part);
             write_part_log({});
         }

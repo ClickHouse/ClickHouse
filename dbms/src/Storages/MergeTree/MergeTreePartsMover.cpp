@@ -134,13 +134,13 @@ bool MergeTreePartsMover::selectPartsForMove(
     return !parts_to_move.empty();
 }
 
-MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part) const
+MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, MergeListEntry & move_entry) const
 {
     if (moves_blocker.isCancelled())
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
     LOG_TRACE(log, "Cloning part " << moving_part.part->name);
-    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
+    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space, move_entry);
 
     MergeTreeData::MutableDataPartPtr cloned_part =
         std::make_shared<MergeTreeData::DataPart>(*data, moving_part.reserved_space->getDisk(), moving_part.part->name);

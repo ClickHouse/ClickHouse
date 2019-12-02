@@ -289,6 +289,17 @@ String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) co
         return new_part_info.getPartName();
 }
 
+String MergeTreeDataPart::getNewPath(const DiskSpace::ReservationPtr & reservation) const
+{
+    return storage.getFullPathOnDisk(reservation->getDisk()) + "/" + relative_path;
+}
+
+String MergeTreeDataPart::getNewPath(const MergeTreePartInfo & new_part_info,
+    const DiskSpace::ReservationPtr & reservation) const
+{
+    return storage.getFullPathOnDisk(reservation->getDisk()) + "/" + getNewName(new_part_info) + "/";
+}
+
 DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
@@ -550,7 +561,14 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
-void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const
+void MergeTreeDataPart::copyDirectoryWithProgress(const Poco::File & directory, const String & destination, std::atomic<UInt64> & bytes_written)
+{
+    /// FIXME
+    directory.copyTo(destination);
+    bytes_written += 1;
+}
+
+void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation, MergeListEntry & move_entry) const
 {
     auto & reserved_disk = reservation->getDisk();
     if (reserved_disk->getName() == disk->getName())
@@ -563,7 +581,7 @@ void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr 
     Poco::File(path_to_clone).createDirectory();
 
     Poco::File cloning_directory(getFullPath());
-    cloning_directory.copyTo(path_to_clone);
+    copyDirectoryWithProgress(cloning_directory, path_to_clone, move_entry->bytes_written_compressed);
 }
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)

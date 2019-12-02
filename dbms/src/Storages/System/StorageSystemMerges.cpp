@@ -25,6 +25,7 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"bytes_read_uncompressed", std::make_shared<DataTypeUInt64>()},
         {"rows_read", std::make_shared<DataTypeUInt64>()},
         {"bytes_written_uncompressed", std::make_shared<DataTypeUInt64>()},
+        {"bytes_written_compressed", std::make_shared<DataTypeUInt64>()},
         {"rows_written", std::make_shared<DataTypeUInt64>()},
         {"columns_written", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
@@ -56,6 +57,7 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
             res_columns[i++]->insert(merge.bytes_read_uncompressed);
             res_columns[i++]->insert(merge.rows_read);
             res_columns[i++]->insert(merge.bytes_written_uncompressed);
+            res_columns[i++]->insert(merge.bytes_written_compressed);
             res_columns[i++]->insert(merge.rows_written);
             res_columns[i++]->insert(merge.columns_written);
             res_columns[i++]->insert(merge.memory_usage);

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Common/CurrentMetrics.h>
 #include <common/getThreadNumber.h>
 #include <Common/CurrentThread.h>
@@ -50,6 +51,29 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     }
 }
 
+MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const MergeTreeMoveEntry & moving_part)
+    : database{database_}, table{table_}, partition_id{moving_part.part->info.partition_id}
+    , result_part_name{moving_part.part->name}
+    , result_part_path{moving_part.part->getNewPath(moving_part.reserved_space)}
+    , result_data_version{moving_part.part->info.getDataVersion()}
+    , num_parts{1}
+    , thread_number{getThreadNumber()}
+{
+    source_part_names.emplace_back(moving_part.part->name);
+    source_part_paths.emplace_back(moving_part.part->getFullPath());
+
+    {
+        std::shared_lock<std::shared_mutex> part_lock(moving_part.part->columns_lock);
+
+        total_size_bytes_compressed += moving_part.part->bytes_on_disk;
+        total_size_marks += moving_part.part->getMarksCount();
+        total_rows_count += moving_part.part->index_granularity.getTotalRows();
+    }
+
+    source_data_version = moving_part.part->info.getDataVersion();
+    is_move = 1;
+}
+
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;
@@ -60,13 +84,15 @@ MergeInfo MergeListElement::getInfo() const
     res.partition_id = partition_id;
     res.is_mutation = is_mutation;
     res.elapsed = watch.elapsedSeconds();
-    res.progress = progress.load(std::memory_order_relaxed);
+    res.progress = !is_move ? progress.load(std::memory_order_relaxed)
+        : std::min(1., 1. * bytes_written_compressed / total_size_bytes_compressed);
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
     res.total_size_marks = total_size_marks;
     res.total_rows_count = total_rows_count;
     res.bytes_read_uncompressed = bytes_read_uncompressed.load(std::memory_order_relaxed);
     res.bytes_written_uncompressed = bytes_written_uncompressed.load(std::memory_order_relaxed);
+    res.bytes_written_compressed = bytes_written_compressed.load(std::memory_order_relaxed);
     res.rows_read = rows_read.load(std::memory_order_relaxed);
     res.rows_written = rows_written.load(std::memory_order_relaxed);
     res.columns_written = columns_written.load(std::memory_order_relaxed);

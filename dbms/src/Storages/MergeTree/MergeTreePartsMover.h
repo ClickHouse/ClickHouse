@@ -10,6 +10,7 @@
 namespace DB
 {
 
+class MergeListEntry;
 
 /// Active part from storage and destination reservation where
 /// it have to be moved.
@@ -50,7 +51,7 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part alredy exists.
-    std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
+    std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part, MergeListEntry & merge_entry) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
