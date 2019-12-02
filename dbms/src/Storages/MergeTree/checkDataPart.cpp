@@ -217,6 +217,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     MergeTreeData::DataPart::Checksums checksums_data;
 
     size_t marks_in_primary_key = 0;
+    if (Poco::File(path + "primary.idx").exists())
     {
         ReadBufferFromFile file_buf(path + "primary.idx");
         HashingReadBuffer hashing_buf(file_buf);
