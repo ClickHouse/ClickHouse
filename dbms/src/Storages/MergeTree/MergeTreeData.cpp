@@ -546,19 +546,6 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
         }
     }
 
-    bool has_date_column = false;
-    for (const auto & elem : ttl_expression->getRequiredColumnsWithTypes())
-    {
-        if (typeid_cast<const DataTypeDateTime *>(elem.type.get()) || typeid_cast<const DataTypeDate *>(elem.type.get()))
-        {
-            has_date_column = true;
-            break;
-        }
-    }
-
-    if (!has_date_column)
-        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
-
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
 
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
@@ -2929,7 +2916,7 @@ MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
-    for (const String & path : getDataPaths())
+    for (const auto & [path, disk] : getDataPathsWithDisks())
     {
         for (Poco::DirectoryIterator it(path + "detached");
             it != Poco::DirectoryIterator(); ++it)
@@ -2940,6 +2927,7 @@ MergeTreeData::getDetachedParts() const
             auto & part = res.back();
 
             DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            part.disk = disk->getName();
         }
     }
     return res;
@@ -3328,6 +3316,15 @@ Strings MergeTreeData::getDataPaths() const
     return res;
 }
 
+MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
+{
+    PathsWithDisks res;
+    auto disks = storage_policy->getDisks();
+    for (const auto & disk : disks)
+        res.emplace_back(getFullPathOnDisk(disk), disk);
+    return res;
+}
+
 void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
@@ -3470,6 +3467,11 @@ bool MergeTreeData::selectPartsAndMove()
         return false;
 
     return moveParts(std::move(moving_tagger));
+}
+
+bool MergeTreeData::areBackgroundMovesNeeded() const
+{
+    return storage_policy->getVolumes().size() > 1;
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space)

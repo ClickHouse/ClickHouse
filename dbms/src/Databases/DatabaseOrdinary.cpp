@@ -22,6 +22,8 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -74,9 +76,8 @@ try
 catch (const Exception & e)
 {
     throw Exception(
-        "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ", error: " + e.displayText() + ", stack trace:\n"
-            + e.getStackTrace().toString(),
-        ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ". Error: " + DB::getCurrentExceptionMessage(true),
+        e, DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
 }
 
 
@@ -126,8 +127,7 @@ void DatabaseOrdinary::loadStoredObjects(
         catch (const Exception & e)
         {
             throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ", error: " + e.displayText() + ", stack trace:\n"
-                    + e.getStackTrace().toString(), ErrorCodes::CANNOT_PARSE_TEXT);
+                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
         }
 
     });
@@ -169,7 +169,15 @@ void DatabaseOrdinary::loadStoredObjects(
     auto & external_loader = context.getExternalDictionariesLoader();
     external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-    external_loader.reload(!lazy_load);
+
+    auto filter = [this](const std::string & dictionary_name) -> bool
+    {
+        if (!startsWith(dictionary_name, database_name + "." /* db name */))
+            return false;
+        LOG_INFO(log, "Loading dictionary " << backQuote(dictionary_name) << ", for database " << backQuote(database_name));
+        return true;
+    };
+    external_loader.reload(filter, !lazy_load);
 }
 
 
