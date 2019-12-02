@@ -114,6 +114,7 @@ public:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         size_t readRows(Block & block, size_t num_rows);
         void toNextMark();
+        size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
 
     /// Statistics after next reading step.

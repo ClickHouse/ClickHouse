@@ -31,6 +31,8 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     virtual size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res) = 0;
 
+    virtual bool canReadIncompleteGranules() const = 0;
+
     virtual ~IMergeTreeReader();
 
     const ValueSizeMap & getAvgValueSizeHints() const;

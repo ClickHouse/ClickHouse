@@ -24,8 +24,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
-}
     extern const int LOGICAL_ERROR;
+}
 
 
 void AggregateFunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)

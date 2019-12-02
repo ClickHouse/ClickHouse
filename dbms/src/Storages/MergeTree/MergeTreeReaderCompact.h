@@ -26,6 +26,8 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res) override;
 
+    bool canReadIncompleteGranules() const override { return false; }
+
 private:
     ReadBuffer * data_buffer;
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
