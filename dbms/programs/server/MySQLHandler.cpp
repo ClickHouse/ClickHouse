@@ -267,12 +267,7 @@ void MySQLHandler::comPing()
     packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
-static bool isFederatedServerSetupCommand(const String &query)
-{
-    return ((0 == strncasecmp("SET NAMES", query.c_str(), 9)) || (0 == strncasecmp("SET character_set_results", query.c_str(), 25))
-        || (0 == strncasecmp("SET FOREIGN_KEY_CHECKS", query.c_str(), 22)) || (0 == strncasecmp("SET AUTOCOMMIT", query.c_str(), 14))
-        || (0 == strncasecmp("SET SESSION TRANSACTION ISOLATION LEVEL", query.c_str(), 39)));
-}
+static bool isFederatedServerSetupCommand(const String &query);
 
 void MySQLHandler::comQuery(ReadBuffer &payload)
 {
@@ -359,5 +354,34 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
 }
 
 #endif
+
+static bool isFederatedServerSetupCommand(const String &query)
+{
+    return 0 == strncasecmp("SET NAMES", query.c_str(), 9) || 0 == strncasecmp("SET character_set_results", query.c_str(), 25)
+        || 0 == strncasecmp("SET FOREIGN_KEY_CHECKS", query.c_str(), 22) || 0 == strncasecmp("SET AUTOCOMMIT", query.c_str(), 14)
+        || 0 == strncasecmp("SET SESSION TRANSACTION ISOLATION LEVEL", query.c_str(), 39);
+}
+
+const String MySQLHandler::show_table_status_replacement_query("SELECT"
+                                                               " name AS Name,"
+                                                               " engine AS Engine,"
+                                                               " '10' AS Version,"
+                                                               " 'Dynamic' AS Row_format,"
+                                                               " 0 AS Rows,"
+                                                               " 0 AS Avg_row_length,"
+                                                               " 0 AS Data_length,"
+                                                               " 0 AS Max_data_length,"
+                                                               " 0 AS Index_length,"
+                                                               " 0 AS Data_free,"
+                                                               " 'NULL' AS Auto_increment,"
+                                                               " metadata_modification_time AS Create_time,"
+                                                               " metadata_modification_time AS Update_time,"
+                                                               " metadata_modification_time AS Check_time,"
+                                                               " 'utf8_bin' AS Collation,"
+                                                               " 'NULL' AS Checksum,"
+                                                               " '' AS Create_options,"
+                                                               " '' AS Comment"
+                                                               " FROM system.tables"
+                                                               " WHERE name=");
 
 }
