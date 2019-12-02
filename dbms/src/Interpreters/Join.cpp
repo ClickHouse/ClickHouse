@@ -677,9 +677,12 @@ private:
 template <typename Map, bool add_missing>
 void addFoundRowAll(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset)
 {
+    if constexpr (add_missing)
+        added.applyLazyDefaults();
+
     for (auto it = mapped.begin(); it.ok(); ++it)
     {
-        added.appendFromBlock<add_missing>(*it->block, it->row_num);
+        added.appendFromBlock<false>(*it->block, it->row_num);
         ++current_offset;
     }
 };
