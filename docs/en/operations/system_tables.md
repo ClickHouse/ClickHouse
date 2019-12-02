@@ -437,17 +437,17 @@ Columns:
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
-- `address` (FixedString(16)) — IP address the query was initiated from.
+- `address` (IPv6) — IP address that was used to make the query.
 - `port` (UInt16) — The client port that was used to make the query.
-- `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
-- `initial_query_id` (String) — ID of the parent query.
-- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
 - `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
 - `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
@@ -491,8 +491,8 @@ To enable query logging, set the [log_query_threads](settings/settings.md#settin
 
 Columns:
 
-- `event_date` (Date) — Thread starting date.
-- `event_time` (DateTime) — Thread starting time.
+- `event_date` (Date) — the date when the thread has finished execution of the query.
+- `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
 - `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
@@ -500,29 +500,29 @@ Columns:
 - `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 - `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
 - `memory_usage` (Int64) — Memory consumption by the whole query.
-- `peak_memory_usage` (Int64) — Maximum memory consumption by the query.
+- `peak_memory_usage` (Int64) — Maximum memory consumption by the whole query.
 - `thread_name` (String) — Name of the thread.
 - `thread_number` (UInt32) — Internal thread ID.
 - `os_thread_id` (Int32) — OS thread ID.
 - `master_thread_number` (UInt32) — Internal ID of initial thread.
-- `master_os_thread_id` (Int32) — OS initial thread ID.
+- `master_os_thread_id` (Int32) — OS initial ID of initial thread.
 - `query` (String) — Query string.
 - `is_initial_query` (UInt8) — Query type. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
-- `address` (FixedString(16)) — IP address the query was initiated from.
+- `address` (IPv6) — IP address that was used to make the query.
 - `port` (UInt16) — The client port that was used to make the query.
-- `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
-- `initial_query_id` (String) — ID of the parent query.
-- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
 - `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) or another TCP client is connected to.
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
 - `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 - `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
 - `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
@@ -535,8 +535,8 @@ Columns:
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
 - `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
 
 By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
