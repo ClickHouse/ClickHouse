@@ -382,6 +382,6 @@ const String MySQLHandler::show_table_status_replacement_query("SELECT"
                                                                " '' AS Create_options,"
                                                                " '' AS Comment"
                                                                " FROM system.tables"
-                                                               " WHERE name=");
+                                                               " WHERE name LIKE ");
 
 }
