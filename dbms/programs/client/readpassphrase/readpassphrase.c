@@ -121,7 +121,6 @@ restart:
 	(void)sigaction(SIGPIPE, &sa, &savepipe);
 	(void)sigaction(SIGQUIT, &sa, &savequit);
 	(void)sigaction(SIGTERM, &sa, &saveterm);
-	(void)sigaction(SIGTSTP, &sa, &savetstp);
 	(void)sigaction(SIGTTIN, &sa, &savettin);
 	(void)sigaction(SIGTTOU, &sa, &savettou);
 
@@ -163,7 +162,6 @@ restart:
 	(void)sigaction(SIGQUIT, &savequit, NULL);
 	(void)sigaction(SIGPIPE, &savepipe, NULL);
 	(void)sigaction(SIGTERM, &saveterm, NULL);
-	(void)sigaction(SIGTSTP, &savetstp, NULL);
 	(void)sigaction(SIGTTIN, &savettin, NULL);
 	(void)sigaction(SIGTTOU, &savettou, NULL);
 	if (input != STDIN_FILENO)
@@ -177,7 +175,6 @@ restart:
 		if (signo[i]) {
 			kill(getpid(), i);
 			switch (i) {
-			case SIGTSTP:
 			case SIGTTIN:
 			case SIGTTOU:
 				need_restart = 1;

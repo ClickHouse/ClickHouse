@@ -110,7 +110,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    if (sig != SIGRTMIN) /// This signal is used for debugging.
+    if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
         ::sleep(10);
@@ -719,9 +719,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    /// SIGRTMIN is added for debugging purposes. To output a stack trace of any running thread at anytime.
+    /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGRTMIN}, faultSignalHandler);
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
@@ -731,8 +731,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
-
-    Logger::root().information("Hint: use signal number " + std::to_string(SIGRTMIN) + " (SIGRTMIN) for user debugging purposes");
 }
 
 void BaseDaemon::logRevision() const
