@@ -975,7 +975,7 @@ private:
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+            if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
                 return never;
 
             if (!error_count)
