@@ -136,7 +136,7 @@ void MergeTreeReaderCompact::readData(
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return data_buffer; };
     // deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
-    deserialize_settings.position_independent_encoding = false;
+    deserialize_settings.position_independent_encoding = true;
 
     IDataType::DeserializeBinaryBulkStatePtr state;
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);

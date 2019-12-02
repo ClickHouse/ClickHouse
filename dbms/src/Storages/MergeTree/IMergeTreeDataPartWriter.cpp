@@ -133,19 +133,24 @@ void fillIndexGranularityImpl(
     {
         size_t rows_left_in_block = rows_in_block - current_row;
         
+        // if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block)
+        // {
+        //     /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
+        //     /// So,real size of granule differs from index_granularity_for_block not more than 50%.
+        //     if (rows_left_in_block * 2 >= index_granularity_for_block)
+        //         index_granularity.appendMark(rows_left_in_block);
+        //     else
+        //         index_granularity.addRowsToLastMark(rows_left_in_block);
+        // }
+        // else
+        // {
+        //     index_granularity.appendMark(index_granularity_for_block);
+        // }
+
         if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block)
-        {
-            /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
-            /// So,real size of granule differs from index_granularity_for_block not more than 50%.
-            if (rows_left_in_block * 2 >= index_granularity_for_block)
-                index_granularity.appendMark(rows_left_in_block);
-            else
-                index_granularity.addRowsToLastMark(rows_left_in_block);
-        }
+            index_granularity.appendMark(rows_left_in_block);
         else
-        {
             index_granularity.appendMark(index_granularity_for_block);
-        }
     }
 
     for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
