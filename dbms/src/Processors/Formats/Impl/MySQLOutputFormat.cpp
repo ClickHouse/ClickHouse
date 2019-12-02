@@ -34,7 +34,8 @@ void MySQLOutputFormat::initialize()
     {
         packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
 
-        for (size_t i = 0; i < header.columns(); i++) {
+        for (size_t i = 0; i < header.columns(); i++)
+        {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             packet_sender.sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
         }
