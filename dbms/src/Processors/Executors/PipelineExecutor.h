@@ -43,8 +43,14 @@ private:
 
     struct Edge
     {
-        Edge(UInt64 to_, bool backward_, UInt64 input_port_number_, UInt64 output_port_number_)
-            : to(to_), backward(backward_), input_port_number(input_port_number_), output_port_number(output_port_number_) {}
+        Edge(UInt64 to_, bool backward_,
+             UInt64 input_port_number_, UInt64 output_port_number_, std::vector<void *> * update_list)
+            : to(to_), backward(backward_)
+            , input_port_number(input_port_number_), output_port_number(output_port_number_)
+        {
+            update_info.update_list = update_list;
+            update_info.id = this;
+        }
 
         UInt64 to = std::numeric_limits<UInt64>::max();
         bool backward;
@@ -53,8 +59,7 @@ private:
 
         /// Edge version is increased when port's state is changed (e.g. when data is pushed). See Port.h for details.
         /// To compare version with prev_version we can decide if neighbour processor need to be prepared.
-        UInt64 version = 1;
-        UInt64 prev_version = 0; /// prev version is zero so ve traverse all edges after the first prepare.
+        Port::UpdateInfo update_info;
     };
 
     /// Use std::list because new ports can be added to processor during execution.
@@ -94,6 +99,9 @@ private:
 
         ExecStatus status;
         std::mutex status_mutex;
+
+        std::vector<void *> post_updated_input_ports;
+        std::vector<void *> post_updated_output_ports;
 
         /// Last state for profiling.
         IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
