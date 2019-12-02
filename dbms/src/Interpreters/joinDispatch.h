@@ -30,6 +30,18 @@ template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness
 template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::All> { using Map = Join::MapsAllFlagged; };
 template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::All> { using Map = Join::MapsAllFlagged; };
 
+/// Only SEMI LEFT and SEMI RIGHT are valid
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsAll; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
+
+/// Only ANTI LEFT and ANTI RIGHT are valid
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+
 template <ASTTableJoin::Kind kind>
 struct MapGetter<kind, ASTTableJoin::Strictness::Asof>
 {
@@ -37,11 +49,13 @@ struct MapGetter<kind, ASTTableJoin::Strictness::Asof>
 };
 
 
-static constexpr std::array<ASTTableJoin::Strictness, 4> STRICTNESSES = {
+static constexpr std::array<ASTTableJoin::Strictness, 6> STRICTNESSES = {
     ASTTableJoin::Strictness::RightAny,
     ASTTableJoin::Strictness::Any,
     ASTTableJoin::Strictness::All,
-    ASTTableJoin::Strictness::Asof
+    ASTTableJoin::Strictness::Asof,
+    ASTTableJoin::Strictness::Semi,
+    ASTTableJoin::Strictness::Anti,
 };
 
 static constexpr std::array<ASTTableJoin::Kind, 4> KINDS = {

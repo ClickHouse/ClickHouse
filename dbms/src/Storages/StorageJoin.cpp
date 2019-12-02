@@ -343,9 +343,11 @@ private:
                 throw Exception("New ANY join storage is not implemented yet (set any_join_distinct_right_table_keys=1 to use old one)",
                                 ErrorCodes::NOT_IMPLEMENTED);
             }
-            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof ||
+                               STRICTNESS == ASTTableJoin::Strictness::Semi ||
+                               STRICTNESS == ASTTableJoin::Strictness::Anti)
             {
-                throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("ASOF|SEMI|ANTI join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
                 for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
