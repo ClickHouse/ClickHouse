@@ -52,7 +52,7 @@ void loadObject(
     Context & context,
     const ASTCreateQuery & query,
     DatabaseOrdinary & database,
-    const String & /*database_data_path_relative*/,
+    //const String & /*database_data_path_relative*/,
     const String & database_name,
     bool has_force_restore_data_flag)
 try
@@ -115,7 +115,7 @@ void DatabaseOrdinary::loadStoredObjects(
         String full_path = metadata_path + "/" + file_name;
         try
         {
-            auto ast = parseCreateQueryFromMetadataFile(full_path, log);
+            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -143,7 +143,7 @@ void DatabaseOrdinary::loadStoredObjects(
     auto loadOneObject = [&](const ASTCreateQuery & query)
     {
         //FIXME
-        loadObject(context, query, *this, getDataPath(query), getDatabaseName(), has_force_restore_data_flag);
+        loadObject(context, query, *this, getDatabaseName(), has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
         if (query.is_dictionary)
