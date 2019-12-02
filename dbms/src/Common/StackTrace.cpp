@@ -157,13 +157,10 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             }
             break;
         }
-
-        case SIGRTMIN:
-        {
-            error << "This is a signal used for debugging purposes by the user.";
-            break;
-        }
     }
+
+    if (sig == SIGRTMIN)
+        error << "This is a signal used for debugging purposes by the user.";
 
     return error.str();
 }
