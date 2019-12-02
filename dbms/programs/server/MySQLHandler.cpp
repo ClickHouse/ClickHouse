@@ -267,9 +267,9 @@ void MySQLHandler::comPing()
     packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
-static bool isFederatedServerSetupCommand(const String &query);
+static bool isFederatedServerSetupCommand(const String & query);
 
-void MySQLHandler::comQuery(ReadBuffer &payload)
+void MySQLHandler::comQuery(ReadBuffer & payload)
 {
     String query = String(payload.position(), payload.buffer().end());
 
@@ -355,7 +355,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
 
 #endif
 
-static bool isFederatedServerSetupCommand(const String &query)
+static bool isFederatedServerSetupCommand(const String & query)
 {
     return 0 == strncasecmp("SET NAMES", query.c_str(), 9) || 0 == strncasecmp("SET character_set_results", query.c_str(), 25)
         || 0 == strncasecmp("SET FOREIGN_KEY_CHECKS", query.c_str(), 22) || 0 == strncasecmp("SET AUTOCOMMIT", query.c_str(), 14)
