@@ -80,11 +80,23 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
   * It is just a hash table: keys -> rows of joined ("right") table.
   * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
   *
-  * JOIN-s could be of nine types: ANY/ALL × LEFT/INNER/RIGHT/FULL, and also CROSS.
+  * JOIN-s could be of these types:
+  * - ALL × LEFT/INNER/RIGHT/FULL
+  * - ANY × LEFT/INNER/RIGHT
+  * - SEMI/ANTI x LEFT/RIGHT
+  * - ASOF x LEFT/INNER
+  * - CROSS
   *
-  * If ANY is specified - then select only one row from the "right" table, (first encountered row), even if there was more matching rows.
-  * If ALL is specified - usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
-  * ANY is more efficient.
+  * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
+  * ANY uses one line per unique key from right talbe. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
+  * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
+  * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
+  * ANTI JOIN is the same as SEMI JOIN but returns rows with joining keys that are NOT present in another table.
+  * SEMI/ANTI JOINs allow to get values from both tables. For filter table it gets any row with joining same key. For ANTI JOIN it returns
+  * defaults other table columns.
+  * ASOF JOIN is not-equi join. For one key column it finds nearest value to join according to join inequality.
+  * It's expected that ANY|SEMI LEFT JOIN is more efficient that ALL one.
   *
   * If INNER is specified - leave only rows that have matching rows from "right" table.
   * If LEFT is specified - in case when there is no matching row in "right" table, fill it with default values instead.
