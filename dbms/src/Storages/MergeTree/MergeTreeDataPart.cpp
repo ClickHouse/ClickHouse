@@ -561,11 +561,26 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
-void MergeTreeDataPart::copyDirectoryWithProgress(const Poco::File & directory, const String & destination, std::atomic<UInt64> & bytes_written)
+void MergeTreeDataPart::copyDirectoryWithProgress(const String & source_directory, const String & destination, std::atomic<UInt64> & bytes_written)
 {
-    /// FIXME
-    directory.copyTo(destination);
-    bytes_written += 1;
+    Poco::Path dest(destination);
+    Poco::File dest_file(dest);
+    Poco::Path src(source_directory);
+    dest.makeDirectory();
+    dest.setFileName(src.getFileName());
+    dest_file.createDirectories();
+    src.makeFile();
+    for (Poco::DirectoryIterator it(src), end; it != end; ++it)
+    {
+        Poco::File entry(*it);
+        if (entry.isDirectory())
+            copyDirectoryWithProgress(it->path(), dest_file.path(), bytes_written);
+        else
+        {
+            it->copyTo(dest_file.path());
+            bytes_written += entry.getSize();
+        }
+    }
 }
 
 void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation, MergeListEntry & move_entry) const
@@ -580,8 +595,7 @@ void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr 
         throw Exception("Path " + path_to_clone + relative_path + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
     Poco::File(path_to_clone).createDirectory();
 
-    Poco::File cloning_directory(getFullPath());
-    copyDirectoryWithProgress(cloning_directory, path_to_clone, move_entry->bytes_written_compressed);
+    copyDirectoryWithProgress(getFullPath(), path_to_clone, move_entry->bytes_written_compressed);
 }
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)

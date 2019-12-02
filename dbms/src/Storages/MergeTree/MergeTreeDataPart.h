@@ -269,7 +269,7 @@ struct MergeTreeDataPart
     void makeCloneInDetached(const String & prefix) const;
 
     /// Makes copy of a directory, counting bytes written.
-    static void copyDirectoryWithProgress(const Poco::File & directory, const String & destination, std::atomic<UInt64> & bytes_written);
+    static void copyDirectoryWithProgress(const String & source_directory, const String & destination, std::atomic<UInt64> & bytes_written);
 
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation, MergeListEntry & move_entry) const;
