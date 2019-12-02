@@ -40,7 +40,35 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8|16|32|64)OrZero
 
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns 0.
+
+**Example**
+
+```sql
+select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
+```
+```text
+┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
+│                  123123 │                         0 │
+└─────────────────────────┴───────────────────────────┘
+```
+
+
 ## toInt(8|16|32|64)OrNull
+
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns NULL.
+
+**Example**
+
+```sql
+select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
+```
+```text
+┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
+│                  123123 │                      ᴺᵁᴸᴸ │
+└─────────────────────────┴───────────────────────────┘
+```
+
 
 ## toUInt(8|16|32|64)
 

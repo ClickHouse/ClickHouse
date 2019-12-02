@@ -218,12 +218,14 @@ nav:
   - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
+  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
+  - 'Подробный roadmap 2020': 'extended_roadmap.md'
 
 - 'F.A.Q.':
   - 'Общие вопросы': 'faq/general.md'

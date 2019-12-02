@@ -6,7 +6,6 @@
 #include <common/StringRef.h>
 #include <Core/Types.h>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -17,6 +16,8 @@ struct SettingChange;
 using SettingsChanges = std::vector<SettingChange>;
 class ReadBuffer;
 class WriteBuffer;
+enum class SettingsBinaryFormat;
+
 
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
@@ -51,10 +52,10 @@ struct SettingNumber
     void set(const String & x);
 
     /// Serialize to binary stream suitable for transfer over network.
-    void serialize(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
 
     /// Read from binary stream.
-    void deserialize(ReadBuffer & buf);
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 using SettingUInt64 = SettingNumber<UInt64>;
@@ -85,8 +86,8 @@ struct SettingMaxThreads
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
     UInt64 getAutoValue() const;
@@ -118,8 +119,8 @@ struct SettingTimespan
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     static constexpr UInt64 microseconds_per_io_unit = (io_unit == SettingTimespanIO::MILLISECOND) ? 1000 : 1000000;
 };
@@ -144,8 +145,8 @@ struct SettingString
     void set(const String & x);
     void set(const Field & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -167,8 +168,8 @@ public:
     void set(const String & x);
     void set(const Field & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -191,8 +192,8 @@ struct SettingEnum
     void set(const Field & x);
     void set(const String & x);
 
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format) const;
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 };
 
 
@@ -269,15 +270,12 @@ enum class LogsLevel
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
 
-namespace details
+enum class SettingsBinaryFormat
 {
-    struct SettingsCollectionUtils
-    {
-        static void serializeName(const StringRef & name, WriteBuffer & buf);
-        static String deserializeName(ReadBuffer & buf);
-        [[noreturn]] static void throwNameNotFound(const StringRef & name);
-    };
-}
+    OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
+    STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
+    DEFAULT = STRINGS,
+};
 
 
 /** Template class to define collections of settings.
@@ -287,9 +285,9 @@ namespace details
   * struct MySettings : public SettingsCollection<MySettings>
   * {
   * #   define APPLY_FOR_MYSETTINGS(M) \
-  *         M(SettingUInt64, a, 100, "Description of a") \
-  *         M(SettingFloat, f, 3.11, "Description of f") \
-  *         M(SettingString, s, "default", "Description of s")
+  *         M(SettingUInt64, a, 100, "Description of a", 0) \
+  *         M(SettingFloat, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
+  *         M(SettingString, s, "default", "Description of s", 0)
   *
   *     DECLARE_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
   * };
@@ -304,21 +302,22 @@ private:
     Derived & castToDerived() { return *static_cast<Derived *>(this); }
     const Derived & castToDerived() const { return *static_cast<const Derived *>(this); }
 
-    using IsChangedFunction = bool (*)(const Derived &);
-    using GetStringFunction = String (*)(const Derived &);
-    using GetFieldFunction = Field (*)(const Derived &);
-    using SetStringFunction = void (*)(Derived &, const String &);
-    using SetFieldFunction = void (*)(Derived &, const Field &);
-    using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf);
-    using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
-    using ValueToStringFunction = String (*)(const Field &);
-    using ValueToCorrespondingTypeFunction = Field (*)(const Field &);
-
     struct MemberInfo
     {
-        IsChangedFunction is_changed;
+        using IsChangedFunction = bool (*)(const Derived &);
+        using GetStringFunction = String (*)(const Derived &);
+        using GetFieldFunction = Field (*)(const Derived &);
+        using SetStringFunction = void (*)(Derived &, const String &);
+        using SetFieldFunction = void (*)(Derived &, const Field &);
+        using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf, SettingsBinaryFormat);
+        using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf, SettingsBinaryFormat);
+        using ValueToStringFunction = String (*)(const Field &);
+        using ValueToCorrespondingTypeFunction = Field (*)(const Field &);
+
         StringRef name;
         StringRef description;
+        bool is_important;
+        IsChangedFunction is_changed;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
@@ -329,52 +328,22 @@ private:
         ValueToCorrespondingTypeFunction value_to_corresponding_type;
     };
 
-    class MemberInfos : private boost::noncopyable
+    class MemberInfos
     {
     public:
-        static const MemberInfos & instance();
-
-        size_t size() const { return infos.size(); }
-        const MemberInfo & operator[](size_t index) const { return infos[index]; }
-        const MemberInfo * begin() const { return infos.data(); }
-        const MemberInfo * end() const { return infos.data() + infos.size(); }
-
-        size_t findIndex(const StringRef & name) const
-        {
-            auto it = by_name_map.find(name);
-            if (it == by_name_map.end())
-                return static_cast<size_t>(-1); // npos
-            return it->second;
-        }
-
-        size_t findIndexStrict(const StringRef & name) const
-        {
-            auto it = by_name_map.find(name);
-            if (it == by_name_map.end())
-                details::SettingsCollectionUtils::throwNameNotFound(name);
-            return it->second;
-        }
-
-        const MemberInfo * find(const StringRef & name) const
-        {
-            auto it = by_name_map.find(name);
-            if (it == by_name_map.end())
-                return end();
-            else
-                return &infos[it->second];
-        }
-
-        const MemberInfo * findStrict(const StringRef & name) const { return &infos[findIndexStrict(name)]; }
-
-    private:
         MemberInfos();
 
-        void add(MemberInfo && member)
-        {
-            size_t index = infos.size();
-            infos.emplace_back(member);
-            by_name_map.emplace(infos.back().name, index);
-        }
+        size_t size() const { return infos.size(); }
+        const MemberInfo * data() const { return infos.data(); }
+        const MemberInfo & operator[](size_t index) const { return infos[index]; }
+
+        const MemberInfo * find(const StringRef & name) const;
+        const MemberInfo & findStrict(const StringRef & name) const;
+        size_t findIndex(const StringRef & name) const;
+        size_t findIndexStrict(const StringRef & name) const;
+
+    private:
+        void add(MemberInfo && member);
 
         std::vector<MemberInfo> infos;
         std::unordered_map<StringRef, size_t> by_name_map;
@@ -396,6 +365,7 @@ public:
         bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }
+
     protected:
         friend class SettingsCollection<Derived>::const_iterator;
         const_reference() : collection(nullptr), member(nullptr) {}
@@ -410,7 +380,7 @@ public:
     public:
         reference(Derived & collection_, const MemberInfo & member_) : const_reference(collection_, member_) {}
         reference(const const_reference & src) : const_reference(src) {}
-        void setValue(const Field & value);
+        void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
         void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
     };
 
@@ -453,7 +423,7 @@ public:
 
     /// Returns description of a setting.
     static StringRef getDescription(size_t index) { return members()[index].description; }
-    static StringRef getDescription(const String & name) { return members().findStrict(name)->description; }
+    static StringRef getDescription(const String & name) { return members().findStrict(name).description; }
 
     /// Searches a setting by its name; returns `npos` if not found.
     static size_t findIndex(const StringRef & name) { return members().findIndex(name); }
@@ -463,36 +433,36 @@ public:
     static size_t findIndexStrict(const StringRef & name) { return members().findIndexStrict(name); }
 
     /// Casts a value to a string according to a specified setting without actual changing this settings.
-    static String valueToString(size_t index, const Field & value);
-    static String valueToString(const StringRef & name, const Field & value);
+    static String valueToString(size_t index, const Field & value) { return members()[index].value_to_string(value); }
+    static String valueToString(const StringRef & name, const Field & value) { return members().findStrict(name).value_to_string(value); }
 
     /// Casts a value to a type according to a specified setting without actual changing this settings.
     /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
     static Field valueToCorrespondingType(size_t index, const Field & value);
     static Field valueToCorrespondingType(const StringRef & name, const Field & value);
 
-    iterator begin() { return iterator(castToDerived(), members().begin()); }
-    const_iterator begin() const { return const_iterator(castToDerived(), members().begin()); }
-    iterator end() { return iterator(castToDerived(), members().end()); }
-    const_iterator end() const { return const_iterator(castToDerived(), members().end()); }
+    iterator begin() { return iterator(castToDerived(), members().data()); }
+    const_iterator begin() const { return const_iterator(castToDerived(), members().data()); }
+    iterator end() { const auto & the_members = members(); return iterator(castToDerived(), the_members.data() + the_members.size()); }
+    const_iterator end() const { const auto & the_members = members(); return const_iterator(castToDerived(), the_members.data() + the_members.size()); }
 
     /// Returns a proxy object for accessing to a setting. Throws an exception if there is not setting with such name.
     reference operator[](size_t index) { return reference(castToDerived(), members()[index]); }
-    reference operator[](const StringRef & name) { return reference(castToDerived(), *(members().findStrict(name))); }
+    reference operator[](const StringRef & name) { return reference(castToDerived(), members().findStrict(name)); }
     const_reference operator[](size_t index) const { return const_reference(castToDerived(), members()[index]); }
-    const_reference operator[](const StringRef & name) const { return const_reference(castToDerived(), *(members().findStrict(name))); }
+    const_reference operator[](const StringRef & name) const { return const_reference(castToDerived(), members().findStrict(name)); }
 
     /// Searches a setting by its name; returns end() if not found.
-    iterator find(const StringRef & name) { return iterator(castToDerived(), members().find(name)); }
-    const_iterator find(const StringRef & name) const { return const_iterator(castToDerived(), members().find(name)); }
+    iterator find(const StringRef & name);
+    const_iterator find(const StringRef & name) const;
 
     /// Searches a setting by its name; throws an exception if not found.
-    iterator findStrict(const StringRef & name) { return iterator(castToDerived(), members().findStrict(name)); }
-    const_iterator findStrict(const StringRef & name) const { return const_iterator(castToDerived(), members().findStrict(name)); }
+    iterator findStrict(const StringRef & name);
+    const_iterator findStrict(const StringRef & name) const;
 
     /// Sets setting's value.
-    void set(size_t index, const Field & value);
-    void set(const StringRef & name, const Field & value);
+    void set(size_t index, const Field & value) { (*this)[index].setValue(value); }
+    void set(const StringRef & name, const Field & value) { (*this)[name].setValue(value); }
 
     /// Sets setting's value. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
@@ -514,11 +484,7 @@ public:
 
     /// Compares two collections of settings.
     bool operator ==(const Derived & rhs) const;
-
-    bool operator !=(const Derived & rhs) const
-    {
-        return !(*this == rhs);
-    }
+    bool operator!=(const Derived & rhs) const { return !(*this == rhs); }
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;
@@ -536,82 +502,16 @@ public:
     /// Writes the settings to buffer (e.g. to be sent to remote server).
     /// Only changed settings are written. They are written as list of contiguous name-value pairs,
     /// finished with empty name.
-    void serialize(WriteBuffer & buf) const
-    {
-        for (const auto & member : members())
-        {
-            if (member.is_changed(castToDerived()))
-            {
-                details::SettingsCollectionUtils::serializeName(member.name, buf);
-                member.serialize(castToDerived(), buf);
-            }
-        }
-        details::SettingsCollectionUtils::serializeName(StringRef{} /* empty string is a marker of the end of settings */, buf);
-    }
+    void serialize(WriteBuffer & buf, SettingsBinaryFormat format = SettingsBinaryFormat::DEFAULT) const;
 
     /// Reads the settings from buffer.
-    void deserialize(ReadBuffer & buf)
-    {
-        const auto & the_members = members();
-        while (true)
-        {
-            String name = details::SettingsCollectionUtils::deserializeName(buf);
-            if (name.empty() /* empty string is a marker of the end of settings */)
-                break;
-            the_members.findStrict(name)->deserialize(castToDerived(), buf);
-        }
-    }
+    void deserialize(ReadBuffer & buf, SettingsBinaryFormat format = SettingsBinaryFormat::DEFAULT);
 };
+
 
 #define DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS_MACRO) \
     LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
-
-#define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
-    template<> \
-    SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::MemberInfos() \
-    { \
-        using Derived = DERIVED_CLASS_NAME; \
-        struct Functions \
-        { \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
-        }; \
-        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
-    } \
-    template <> \
-    const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos & SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::instance() \
-    { \
-        static const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos single_instance; \
-        return single_instance; \
-    } \
-    /** \
-      * Instantiation should happen when all method definitions from SettingsCollectionImpl.h \
-      * are accessible, so we instantiate explicitly. \
-      */ \
-    template class SettingsCollection<DERIVED_CLASS_NAME>;
-
-
-
-#define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+#define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     TYPE NAME {DEFAULT};
-
-
-#define IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    static String NAME##_getString(const Derived & collection) { return collection.NAME.toString(); } \
-    static Field NAME##_getField(const Derived & collection) { return collection.NAME.toField(); } \
-    static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
-    static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
-    static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
-    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
-    static String NAME##_valueToString(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
-    static Field NAME##_valueToCorrespondingType(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
-
-
-#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    add({[](const Derived & d) { return d.NAME.changed; },          \
-         StringRef(#NAME, strlen(#NAME)), StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
-         &Functions::NAME##_getString, &Functions::NAME##_getField, \
-         &Functions::NAME##_setString, &Functions::NAME##_setField, \
-         &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
-         &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType});
 }

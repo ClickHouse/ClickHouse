@@ -5,9 +5,9 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Access Operators
 
-`a[N]` Access to an element of an array, the `arrayElement(a, N)` function.
+`a[N]` – Access to an element of an array. The `arrayElement(a, N)` function.
 
-`a.N` – Access to a tuble element, the `tupleElement(a, N)` function.
+`a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator
 
