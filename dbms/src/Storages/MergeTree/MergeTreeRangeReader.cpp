@@ -472,6 +472,19 @@ size_t MergeTreeRangeReader::Stream::numPendingRows() const
     return rows_between_marks - offset_after_current_mark;
 }
 
+
+size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num) const
+{
+    /// FIXME suboptimal
+    size_t result = 0;
+    size_t from_mark = current_mark;
+    while (result < rows_num && from_mark < last_mark)
+        result += index_granularity->getMarkRows(from_mark++);
+    
+    return result;
+}
+
+
 bool MergeTreeRangeReader::isCurrentRangeFinished() const
 {
     return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished();
@@ -595,14 +608,19 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 ranges.pop_back();
             }
 
-            auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
+            size_t current_space = space_left;
 
-            std::cerr << "(startReadingChain) rows_to_read: " << rows_to_read << "\n";
+            /// If reader can't read part of granule, we have to increase number of reading rows
+            ///  to read complete granules and exceed max_rows a bit.
+            if (!merge_tree_reader->canReadIncompleteGranules())
+                current_space = stream.ceilRowsToCompleteGranules(space_left);
+
+            auto rows_to_read = std::min(current_space, stream.numPendingRowsInCurrentGranule());
 
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
             result.addGranule(rows_to_read);
-            space_left -= rows_to_read;
+            space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }
     }
 
