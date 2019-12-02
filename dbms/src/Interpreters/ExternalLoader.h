@@ -150,11 +150,15 @@ public:
     /// Also function can load dictionary synchronously
     void reload(const String & name, bool load_never_loading = false) const;
 
-
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
     /// The function can either skip them (false) or load for the first time (true).
     void reload(bool load_never_loading = false) const;
+
+    /// Starts reloading of all objects matched `filter_by_name`.
+    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
+    /// The function can either skip them (false) or load for the first time (true).
+    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false) const;
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
