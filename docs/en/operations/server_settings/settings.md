@@ -598,7 +598,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 ```xml
 <query_thread_log>
     <database>system</database>
-    <table>query_log</table>
+    <table>query_thread_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_thread_log>
