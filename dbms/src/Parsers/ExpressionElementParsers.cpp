@@ -252,7 +252,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
-    if (pos->type == TokenType::OpeningRoundBracket)
+    if (allow_function_parameters && pos->type == TokenType::OpeningRoundBracket)
     {
         ++pos;
 
