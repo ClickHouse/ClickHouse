@@ -36,7 +36,8 @@ enum class AttributeUnderlyingType
     utDecimal32,
     utDecimal64,
     utDecimal128,
-    utString
+    utString,
+    //utArray
 };
 
 
