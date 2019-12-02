@@ -217,31 +217,25 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     MergeTreeData::DataPart::Checksums checksums_data;
 
     size_t marks_in_primary_key = 0;
+    if (!primary_key_data_types.empty())
     {
         ReadBufferFromFile file_buf(path + "primary.idx");
         HashingReadBuffer hashing_buf(file_buf);
 
-        if (!primary_key_data_types.empty())
-        {
-            size_t key_size = primary_key_data_types.size();
-            MutableColumns tmp_columns(key_size);
+        size_t key_size = primary_key_data_types.size();
+        MutableColumns tmp_columns(key_size);
 
+        for (size_t j = 0; j < key_size; ++j)
+            tmp_columns[j] = primary_key_data_types[j]->createColumn();
+
+        while (!hashing_buf.eof())
+        {
+            if (is_cancelled())
+                return {};
+
+            ++marks_in_primary_key;
             for (size_t j = 0; j < key_size; ++j)
-                tmp_columns[j] = primary_key_data_types[j]->createColumn();
-
-            while (!hashing_buf.eof())
-            {
-                if (is_cancelled())
-                    return {};
-
-                ++marks_in_primary_key;
-                for (size_t j = 0; j < key_size; ++j)
-                    primary_key_data_types[j]->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
-            }
-        }
-        else
-        {
-            hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+                primary_key_data_types[j]->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
         }
 
         size_t primary_idx_size = hashing_buf.count();
