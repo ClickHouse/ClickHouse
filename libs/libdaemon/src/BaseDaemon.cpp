@@ -732,6 +732,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
 
+    Logger::root().information("Hint: use signal number " + std::to_string(SIGRTMIN) + " (SIGRTMIN) for user debugging purposes");
 }
 
 void BaseDaemon::logRevision() const
