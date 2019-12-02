@@ -6,6 +6,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -75,6 +76,8 @@ public:
     const Block & getHeader() const { return current_header; }
 
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { storage_holder.emplace_back(std::move(storage)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -108,6 +111,12 @@ private:
     Block current_header;
 
     TableStructureReadLocks table_locks;
+
+    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holder;
 
     IOutputFormat * output_format = nullptr;
 

@@ -10,7 +10,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
-#include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>

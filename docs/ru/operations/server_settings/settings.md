@@ -702,12 +702,12 @@ ClickHouse использует ZooKeeper для хранения метадан
 
     Например:
 
-    ```xml
+```xml
     <node index="1">
         <host>example_host</host>
         <port>2181</port>
     </node>
-    ```
+```
 
     Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
 

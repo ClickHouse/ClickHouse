@@ -97,8 +97,7 @@
 #define BRACK_PASTE_LAST '~'
 #define BRACK_PASTE_SLEN 6
 
-/// Make sure we don't get ^J for the enter character.
-/// This handler also bypasses some unused macro/event checkings.
+/// This handler bypasses some unused macro/event checkings.
 static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 {
     std::string buf;
@@ -106,10 +105,10 @@ static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 
     RL_SETSTATE(RL_STATE_MOREINPUT);
     SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    char c;
+    int c;
     while ((c = rl_read_key()) >= 0)
     {
-        if (c == '\r' || c == '\n')
+        if (c == '\r')
             c = '\n';
         buf.push_back(c);
         if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
@@ -1112,7 +1111,14 @@ private:
             /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Exception)
+            {
+                /*
+                 * We're exiting with error, so it makes sense to kill the
+                 * input stream without waiting for it to complete.
+                 */
+                async_block_input->cancel(true);
                 return;
+            }
 
             connection->sendData(block);
             processed_rows += block.rows();
@@ -1226,7 +1232,7 @@ private:
     /// Returns true if one should continue receiving packets.
     bool receiveAndProcessPacket()
     {
-        Connection::Packet packet = connection->receivePacket();
+        Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
@@ -1274,7 +1280,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
@@ -1308,7 +1314,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
