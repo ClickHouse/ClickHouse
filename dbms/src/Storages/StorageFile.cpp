@@ -15,6 +15,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -249,7 +250,7 @@ BlockInputStreams StorageFile::read(
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
@@ -263,7 +264,7 @@ BlockInputStreams StorageFile::read(
                 std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path);
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
-    return blocks_input;
+    return narrowBlockInputStreams(blocks_input, num_streams);
 }
 
 
