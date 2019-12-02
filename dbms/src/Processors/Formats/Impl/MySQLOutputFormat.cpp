@@ -28,18 +28,16 @@ void MySQLOutputFormat::initialize()
 
     initialized = true;
     auto & header = getPort(PortKind::Main).getHeader();
-
+    data_types = header.getDataTypes();
 
     if (header.columns())
     {
-
         packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
 
-        for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
+        for (size_t i = 0; i < header.columns(); i++)
         {
-            ColumnDefinition column_definition(column.name, CharacterSet::binary, 0, ColumnType::MYSQL_TYPE_STRING,
-                                               0, 0);
-            packet_sender.sendPacket(column_definition);
+            const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
+            packet_sender.sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
         }
 
         if (!(context.mysql.client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
@@ -52,22 +50,9 @@ void MySQLOutputFormat::initialize()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
-    initialize();
-
-    auto & header = getPort(PortKind::Main).getHeader();
-
-    size_t rows = chunk.getNumRows();
-    auto & columns = chunk.getColumns();
-
-    for (size_t i = 0; i < rows; i++)
+    for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
-        ResultsetRow row_packet;
-        for (size_t col = 0; col < columns.size(); ++col)
-        {
-            WriteBufferFromOwnString ostr;
-            header.getByPosition(col).type->serializeAsText(*columns[col], i, ostr, format_settings);
-            row_packet.appendColumn(std::move(ostr.str()));
-        }
+        ProtocolText::ResultsetRow row_packet(data_types, chunk.getColumns(), i);
         packet_sender.sendPacket(row_packet);
     }
 }
