@@ -41,8 +41,7 @@ public:
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
-        const String & to_table_name,
-        TableStructureWriteLockHolder &) override;
+        const String & to_table_name) override;
 
     void alterTable(
         const Context & context,

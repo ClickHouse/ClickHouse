@@ -78,11 +78,10 @@ void DatabaseLazy::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name,
-    TableStructureWriteLockHolder & lock)
+    const String & to_table_name)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, lock);
+    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name);
 }
 
 
@@ -234,7 +233,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         StoragePtr table;
         Context context_copy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseCreateQueryFromMetadataFile(table_metadata_path, log);
+        auto ast = parseQueryFromMetadata(table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
             auto & ast_create = ast->as<const ASTCreateQuery &>();
