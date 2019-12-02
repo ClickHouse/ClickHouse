@@ -517,7 +517,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
 Setting up query threads logging.
 
-Queries' threads sent to ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
 
 **Example**:
 
