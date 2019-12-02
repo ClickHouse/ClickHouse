@@ -591,7 +591,7 @@ Use the following parameters to configure logging:
 - `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
 - `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
-If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
+If the table doesn't exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
 **Example**
 
