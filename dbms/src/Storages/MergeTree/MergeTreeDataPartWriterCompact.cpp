@@ -23,7 +23,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     storage_, columns_list_,
     indices_to_recalc_, marks_file_extension_,
     default_codec_, settings_, index_granularity_, true)
-    , squashing(storage.getSettings()->index_granularity, storage.getSettings()->index_granularity_bytes)
+    , squashing(storage.getSettings()->index_granularity, storage.getSettings()->index_granularity_bytes) /// FIXME
 {
     stream = std::make_unique<ColumnStream>(
         DATA_FILE_NAME,
@@ -39,6 +39,8 @@ void MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
+    std::cerr << "(MergeTreeDataPartWriterCompact::write) block111: " << block.dumpStructure() << "\n";
+
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
@@ -87,20 +89,9 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
     size_t from_mark = current_mark;
     size_t current_row = 0;
 
-    std::cerr << "(MergeTreeDataPartWriterCompact::write) marks: " << index_granularity.getMarksCount() << "\n";
-
-    for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
-        std::cerr << "rows in mark: " << index_granularity.getMarkRows(i) << "\n";
-
-    std::cerr << "(MergeTreeDataPartWriterCompact::write) total_rows: " << total_rows << "\n";
-
     while (current_row < total_rows)
     {
-        std::cerr << "(MergeTreeDataPartWriterCompact::write) current_row: " << current_row << "\n";
-
         size_t rows_to_write = index_granularity.getMarkRows(from_mark);
-
-        std::cerr << "(MergeTreeDataPartWriterCompact::write) rows_to_write: " << rows_to_write << "\n";
 
         if (rows_to_write)
             data_written = true;
@@ -138,7 +129,7 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = [this](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->compressed; };
-    serialize_settings.position_independent_encoding = false;
+    serialize_settings.position_independent_encoding = true;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 
     column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);

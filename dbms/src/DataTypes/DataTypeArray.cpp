@@ -265,8 +265,6 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     /// Adjust value size hint. Divide it to the average array size.
     settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
-    std::cerr << "nested_limit: " << nested_limit << "\n";
-
     nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state);
     settings.path.pop_back();
 
