@@ -421,19 +421,19 @@ ClickHouse создаёт таблицу только в том случае, к
 - `result_rows` (UInt64) — количество строк в результате.
 - `result_bytes` (UInt64) — объём результата в байтах.
 - `memory_usage` (UInt64) — потребление RAM запросом.
-- `query` (String) — строка запроса.
-- `exception` (String) — сообщение исключения.
+- `query` (String) — текст запроса.
+- `exception` (String) — сообщение исключения, если запрос завершился по исключению.
 - `stack_trace` (String) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
 - `is_initial_query` (UInt8) — вид запроса. Возможные значения:
     - 1 — запрос был инициирован клиентом.
     - 0 — запрос был инициирован другим запросом при распределенном запросе.
 - `user` (String) — пользователь, запустивший текущий запрос.
 - `query_id` (String) — ID запроса.
-- `address` (FixedString(16)) — IP адрес, с которого пришел запрос.
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
 - `port` (UInt16) — порт, с которого клиент сделал запрос
 - `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
 - `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (FixedString(16)) — IP адрес, с которого пришел родительский запрос.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
 - `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
@@ -483,38 +483,38 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Столбцы:
 
-- `event_date` (Date) — дата начала треда.
-- `event_time` (DateTime) — время начала треда.
+- `event_date` (Date) — дата завершения выполнения запроса потоком.
+- `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
 - `query_start_time` (DateTime) — время начала обработки запроса.
-- `query_duration_ms` (UInt64) — длительность обработки запроса.
+- `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
 - `read_rows` (UInt64) — количество прочитанных строк.
 - `read_bytes` (UInt64) — количество прочитанных байтов.
 - `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
 - `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
-- `memory_usage` (Int64) — Потребление RAM всем запросом.
-- `peak_memory_usage` (Int64) — Максимальное потребление RAM запросом.
+- `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
+- `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
 - `thread_name` (String) — Имя потока.
 - `thread_number` (UInt32) — Внутренний ID потока.
-- `os_thread_id` (Int32) — Системный ID потока.
+- `os_thread_id` (Int32) — tid (ID потока операционной системы).
 - `master_thread_number` (UInt32) — Внутренний ID главного потока.
-- `master_os_thread_id` (Int32) — Системный ID главного потока.
-- `query` (String) — строка запроса.
+- `master_os_thread_id` (Int32) — tid (ID потока операционной системы) главного потока.
+- `query` (String) — текст запроса.
 - `is_initial_query` (UInt8) — вид запроса. Возможные значения:
     - 1 — запрос был инициирован клиентом.
     - 0 — запрос был инициирован другим запросом при распределенном запросе.
 - `user` (String) — пользователь, запустивший текущий запрос.
 - `query_id` (String) — ID запроса.
-- `address` (FixedString(16)) — IP адрес, с которого пришел запрос.
-- `port` (UInt16) — порт, с которого клиент сделал запрос
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, с которого пришел запрос.
 - `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
 - `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (FixedString(16)) — IP адрес, с которого пришел родительский запрос.
-- `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, пришел родительский запрос.
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
-- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 - `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
 - `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
@@ -527,8 +527,8 @@ ClickHouse создаёт таблицу только в том случае, к
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
 - `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events
-- `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events
+- `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
 По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
 
