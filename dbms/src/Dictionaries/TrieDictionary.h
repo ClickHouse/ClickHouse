@@ -47,8 +47,6 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    bool isCached() const override { return false; }
-
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<TrieDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
