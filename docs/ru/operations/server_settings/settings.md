@@ -582,7 +582,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## query_thread_log {#server_settings-query-thread-log}
 
-Настройка логирования тредов запросов, принятых с настройкой [log_query_threads=1](../settings/settings.md#settings-log-query-threads).
+Настройка логирования потоков выполнения запросов, принятых с настройкой [log_query_threads=1](../settings/settings.md#settings-log-query-threads).
 
 Запросы логируются не в отдельный файл, а в системную таблицу [system.query_thread_log](../system_tables.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
@@ -600,7 +600,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```xml
 <query_thread_log>
     <database>system</database>
-    <table>query_log</table>
+    <table>query_thread_log</table>
     <partition_by>toMonday(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_thread_log>
