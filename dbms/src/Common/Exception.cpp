@@ -261,7 +261,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
         stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTrace().toString();
     }
     catch (...) {}
 

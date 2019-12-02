@@ -1197,6 +1197,12 @@ void ExternalLoader::reload(bool load_never_loading) const
     loading_dispatcher->reload(load_never_loading);
 }
 
+void ExternalLoader::reload(const FilterByNameFunction & filter_by_name, bool load_never_loading) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    loading_dispatcher->reload(filter_by_name, load_never_loading);
+}
+
 void ExternalLoader::addObjectAndLoad(
     const String & name,
     const String & external_name,
