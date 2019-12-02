@@ -605,6 +605,13 @@ Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
 
+## cancel_http_readonly_queries_on_client_close
+
+Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+
+Default value: 0
+
+
 ## poll_interval
 
 Lock in a wait loop for the specified number of seconds.
