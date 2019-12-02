@@ -1281,10 +1281,59 @@ protected:
         return res;
     }
 
+    class WarpingUInt32
+    {
+    public:
+        UInt32 value;
+
+        WarpingUInt32(UInt32 _value)
+            : value(_value)
+        {}
+
+        bool operator<(const WarpingUInt32 & other) const
+        {
+            return value != other.value && *this <= other;
+        }
+
+        bool operator<=(const WarpingUInt32 & other) const
+        {
+            const UInt32 HALF = 1 << 31;
+            return (value <= other.value && other.value - value < HALF)
+                || (value >= other.value && value - other.value > HALF);
+        }
+
+        bool operator==(const WarpingUInt32 & other) const
+        {
+            return value == other.value;
+        }
+    };
+
+    class Zxid
+    {
+    public:
+        WarpingUInt32 epoch;
+        WarpingUInt32 counter;
+        Zxid(UInt64 _zxid)
+            : epoch(_zxid >> 32)
+            , counter(_zxid)
+        {}
+
+        bool operator<=(const Zxid & other) const
+        {
+            return (epoch < other.epoch)
+                || (epoch == other.epoch && counter <= other.counter);
+        }
+
+        bool operator==(const Zxid & other) const
+        {
+            return epoch == other.epoch && counter == other.counter;
+        }
+    };
+
     class LogicalClock
     {
     public:
-        std::optional<UInt64> zxid;
+        std::optional<Zxid> zxid;
 
         LogicalClock() = default;
 
@@ -1300,11 +1349,8 @@ protected:
         // happens-before relation with a reasonable time bound
         bool happensBefore(const LogicalClock & other) const
         {
-            const UInt64 HALF = 1ull << 63;
-            return
-                !zxid ||
-                (other.zxid && *zxid <= *other.zxid && *other.zxid - *zxid < HALF) ||
-                (other.zxid && *zxid >= *other.zxid && *zxid - *other.zxid > HALF);
+            return !zxid
+                || (other.zxid && *zxid <= *other.zxid);
         }
 
         bool operator<=(const LogicalClock & other) const
