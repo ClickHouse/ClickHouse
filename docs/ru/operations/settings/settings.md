@@ -490,9 +490,9 @@ ClickHouse использует этот параметр при чтении д
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования тредов запроса.
+Установка логирования информации о потоках выполнения запроса.
 
-Треды запросов, переданных в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log).
+Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log).
 
 **Пример** :
 
