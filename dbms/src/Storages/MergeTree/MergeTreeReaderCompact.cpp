@@ -79,7 +79,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             try
             {
                 size_t column_size_before_reading = column->size();
-                size_t column_position = data_part->getColumnPosition(it.name);
+                auto column_position = *data_part->getColumnPosition(it.name);
 
                 readData(it.name, *it.type, *column, from_mark, column_position, rows_to_read);
 

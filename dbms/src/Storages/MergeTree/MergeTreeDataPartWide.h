@@ -75,6 +75,10 @@ public:
 
     Type getType() const override { return Type::WIDE; }
 
+    ColumnSize getTotalColumnsSize() const override;
+
+    ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
+
     ~MergeTreeDataPartWide() override;
 
 protected:
@@ -84,8 +88,7 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const override;
-
+    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
 };
 
 // using MergeTreeDataPartState =IMergeTreeDataPart::State;

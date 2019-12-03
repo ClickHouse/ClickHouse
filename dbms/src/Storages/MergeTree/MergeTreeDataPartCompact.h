@@ -69,7 +69,11 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
 
-    virtual Type getType() const override { return Type::COMPACT; }
+    Type getType() const override { return Type::COMPACT; }
+
+    ColumnSize getColumnSize(const String & name, const IDataType & type0) const override;
+
+    ColumnSize getTotalColumnsSize() const override;
 
     void checkConsistency(bool /* require_part_metadata */) const override {}
 
@@ -79,9 +83,12 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const override;
+    void loadColumnSizes();
+
 
     void checkConsistency(bool require_part_metadata);
+
+    ColumnSizeByName columns_sizes;
 };
 
 

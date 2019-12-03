@@ -158,6 +158,23 @@ String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
     return *minimum_size_column;
 }
 
+ColumnSize MergeTreeDataPartWide::getTotalColumnsSize() const
+{
+    ColumnSize totals;
+    std::unordered_set<String> processed_substreams;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        totals.add(size);
+    }
+    return totals;
+}
+
+ColumnSize MergeTreeDataPartWide::getColumnSize(const String & column_name, const IDataType & type) const
+{
+    return getColumnSizeImpl(column_name, type, nullptr);
+}
+
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullPath();
