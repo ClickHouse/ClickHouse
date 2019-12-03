@@ -6,7 +6,6 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
-#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -140,11 +139,6 @@ Block KafkaBlockInputStream::readImpl()
 
     auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
-    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "virtual_block structure " << virtual_block.dumpStructure());
-    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "result_block structure " << result_block.dumpStructure());
-
-    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "virtual_block have now " << virtual_block.rows() << " rows");
-    // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "result_block have now " << result_block.rows() << " rows");
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);
