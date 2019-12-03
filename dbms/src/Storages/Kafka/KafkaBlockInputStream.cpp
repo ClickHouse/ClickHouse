@@ -125,12 +125,16 @@ Block KafkaBlockInputStream::readImpl()
     };
 
     size_t total_rows = 0;
-    while (total_rows < max_block_size)
+
+    buffer->allowNext();
+    // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
+    // throw an exception when buffer in empty, so just
+    while (!buffer->eof())
     {
         auto new_rows = read_kafka_message();
         total_rows = total_rows + new_rows;
         buffer->allowNext();
-        if (!new_rows || !checkTimeLimit())
+        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
             break;
     }
 
