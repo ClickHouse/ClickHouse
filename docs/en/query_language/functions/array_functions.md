@@ -772,22 +772,6 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayFlatten(arr) {#array_functions-arrayflatten}
-
-The `arrayFlatten` (or `flatten` alias) method will collapse the elements of an array to create a single array.
-
-Example:
-
-```sql
-SELECT arrayFlatten([[1, 2, 3], [4, 5]])
-```
-
-```text
-┌─arrayFlatten([[1, 2, 3], [4, 5]])─┐
-│                       [1,2,3,4,5] │
-└───────────────────────────────────┘
-```
-
 ## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
@@ -807,6 +791,44 @@ SELECT arrayReverse([1, 2, 3])
 ## reverse(arr) {#array_functions-reverse}
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
+
+## arrayFlatten {#arrayflatten}
+
+Converts array of arrays to a flat array.
+
+Function:
+
+- Applies for any depth of nested arrays, but all the elements should lay at the same level.
+
+    For example, the `[[[1]], [[2], [3]]]` array can be flattened, but the `[[1], [[2], [3]]]` array can't be flattened.
+
+- Does not change arrays that are already flat.
+
+The flattened array contains all the elements from all source arrays.
+
+**Syntax** 
+
+```sql
+flatten(array_of_arrays)
+```
+
+Alias: `flatten`.
+
+
+**Parameters**
+
+- `array_of_arrays` — [Array](../../data_types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
+
+**Examples**
+
+```sql
+SELECT flatten([[[1]], [[2], [3]]])
+```
+```text
+┌─flatten(array(array([1]), array([2], [3])))─┐
+│ [1,2,3]                                     │
+└─────────────────────────────────────────────┘
+```
 
 ## arrayCompact {#arraycompact}
 
