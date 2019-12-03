@@ -1,8 +1,7 @@
 #pragma once
 #include <cmath>
 
-#include <common/arithmeticOverflow.h>
-#include <Common/typeid_cast.h>
+#include <common/likely.h>
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -115,18 +114,12 @@ public:
 
     T wholePart(T x) const
     {
-        if (scale == 0)
-            return x;
-        return x / getScaleMultiplier();
+        return decimalWholePart(x, scale);
     }
 
     T fractionalPart(T x) const
     {
-        if (scale == 0)
-            return 0;
-        if (x < T(0))
-            x *= T(-1);
-        return x % getScaleMultiplier();
+        return decimalFractionalPart(x, scale);
     }
 
     T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
