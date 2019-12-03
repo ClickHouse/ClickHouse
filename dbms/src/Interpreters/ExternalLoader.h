@@ -27,7 +27,7 @@ struct ExternalLoaderConfigSettings
 };
 
 
-/** Iterface for manage user-defined objects.
+/** Interface for manage user-defined objects.
   * Monitors configuration file and automatically reloads objects in separate threads.
   * The monitoring thread wakes up every 'check_period_sec' seconds and checks
   * modification time of objects' configuration file. If said time is greater than

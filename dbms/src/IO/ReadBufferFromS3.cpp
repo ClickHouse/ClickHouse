@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/S3Common.h>
 
 #include <common/logger_useful.h>
 
@@ -10,14 +11,13 @@ namespace DB
 
 const int DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT = 2;
 
-ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
+ReadBufferFromS3::ReadBufferFromS3(const Poco::URI & uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
     const ConnectionTimeouts & timeouts,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    size_t buffer_size_,
     const RemoteHostFilter & remote_host_filter_)
     : ReadBuffer(nullptr, 0)
     , uri {uri_}
-    , method {Poco::Net::HTTPRequest::HTTP_GET}
     , session {makeHTTPSession(uri_, timeouts)}
     , remote_host_filter {remote_host_filter_}
 {
@@ -30,11 +30,13 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
         if (uri.getPath().empty())
             uri.setPath("/");
 
-        request = std::make_unique<Poco::Net::HTTPRequest>(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        request = std::make_unique<Poco::Net::HTTPRequest>(
+            Poco::Net::HTTPRequest::HTTP_GET,
+            uri.getPathAndQuery(),
+            Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(uri.getHost()); // use original, not resolved host name in header
 
-        if (!credentials.getUsername().empty())
-            credentials.authenticate(*request);
+        S3Helper::authenticateRequest(*request, access_key_id_, secret_access_key_);
 
         LOG_TRACE((&Logger::get("ReadBufferFromS3")), "Sending request to " << uri.toString());
 
@@ -57,7 +59,7 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
     }
 
     assertResponseIsOk(*request, response, *istr);
-    impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+    impl = std::make_unique<ReadBufferFromIStream>(*istr, DBMS_DEFAULT_BUFFER_SIZE);
 }
 
 

@@ -105,6 +105,11 @@ public:
         return data->getFloat64(0);
     }
 
+    Float32 getFloat32(size_t) const override
+    {
+        return data->getFloat32(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);

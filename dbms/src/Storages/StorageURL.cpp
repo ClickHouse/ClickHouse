@@ -60,7 +60,18 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(compression_method, uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects, context.getRemoteHostFilter());
+            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(
+                compression_method,
+                uri,
+                method,
+                callback,
+                timeouts,
+                context.getSettingsRef().max_http_get_redirects,
+                Poco::Net::HTTPBasicCredentials{},
+                DBMS_DEFAULT_BUFFER_SIZE,
+                ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                context.getRemoteHostFilter());
+
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
