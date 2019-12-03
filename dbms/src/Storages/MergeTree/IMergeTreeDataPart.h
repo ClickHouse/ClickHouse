@@ -52,6 +52,8 @@ public:
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
         const MarkRanges & mark_ranges,
@@ -70,22 +72,21 @@ public:
      
     virtual bool isStoredOnDisk() const = 0;
 
-    void remove() const;
 
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
     ///   (either by locking columns_lock, or by locking table structure).
-    ColumnSize getColumnSize(const String & name, const IDataType & type);
+    virtual ColumnSize getColumnSize(const String & /* name */, const IDataType & /* type */) const { return {}; }
 
-    /// Initialize columns (from columns.txt if exists, or create from column files if not).
-    /// Load checksums from checksums.txt if exists. Load index if required.
-    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    virtual ColumnSize getTotalColumnsSize() const { return {}; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const { return columns.front().name; }
+
+    virtual ~IMergeTreeDataPart();
 
     // virtual Checksums check(
     //     bool require_checksums,
@@ -97,20 +98,14 @@ public:
     // }
 
     using ColumnToSize = std::map<std::string, UInt64>;
-
     virtual void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
     using Type = MergeTreeDataPartType;
-
     virtual Type getType() const = 0;
 
-    // virtual void renameTo() = 0;
-
     static String typeToString(Type type);
-
     String getTypeName() { return typeToString(getType()); }
 
-    virtual ~IMergeTreeDataPart();
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -127,9 +122,11 @@ public:
 
     void assertOnDisk() const;
 
-    ColumnSize getColumnSize(const String & column_name, const IDataType & type) const;
+    void remove() const;
 
-    ColumnSize getTotalColumnsSize() const;
+    /// Initialize columns (from columns.txt if exists, or create from column files if not).
+    /// Load checksums from checksums.txt if exists. Load index if required.
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
@@ -138,7 +135,7 @@ public:
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     // Block sample_block;
-    size_t getColumnPosition(const String & column_name) const;
+    std::optional<size_t> getColumnPosition(const String & column_name) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -348,8 +345,6 @@ private:
     void loadPartitionAndMinMaxIndex();
 
     String getRelativePathForDetachedPart(const String & prefix) const;
-
-    virtual ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const = 0;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

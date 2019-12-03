@@ -163,24 +163,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 }
 
 
-ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
-{
-    return getColumnSizeImpl(column_name, type, nullptr);
-}
-
-ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
-{
-    ColumnSize totals;
-    std::unordered_set<String> processed_substreams;
-    for (const NameAndTypePair & column : columns)
-    {
-        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
-        totals.add(size);
-    }
-    return totals;
-}
-
-
 String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) const
 {
     if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -198,9 +180,11 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
         return new_part_info.getPartName();
 }
 
-size_t IMergeTreeDataPart::getColumnPosition(const String & column_name) const
+std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
 {
-   return sample_block.getPositionByName(column_name);  
+    if (!sample_block.has(column_name))
+        return {};
+    return sample_block.getPositionByName(column_name);  
 }   
 
 DayNum IMergeTreeDataPart::getMinDate() const
@@ -513,7 +497,7 @@ void IMergeTreeDataPart::loadRowsCount()
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSizeImpl(column.name, *column.type, nullptr).data_uncompressed;
+            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
             if (!column_size)
                 continue;
 

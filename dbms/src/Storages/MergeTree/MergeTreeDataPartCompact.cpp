@@ -98,38 +98,28 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         default_codec, writer_settings, computed_index_granularity);
 }
 
-/// Takes into account the fact that several columns can e.g. share their .size substreams.
-/// When calculating totals these should be counted only once.
-ColumnSize MergeTreeDataPartCompact::getColumnSizeImpl(
-    const String & column_name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
+ColumnSize MergeTreeDataPartCompact::getColumnSize(const String & column_name, const IDataType & /* type */) const
 {
-    UNUSED(column_name);
-    UNUSED(type);
-    UNUSED(processed_substreams);
-    // ColumnSize size;
-    // if (checksums.empty())
-    //     return size;
+    auto column_size = columns_sizes.find(column_name);
+    if (column_size == columns_sizes.end())
+        return {};
+    return column_size->second;
+}
 
-    // type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-    // {
-    //     String file_name = IDataType::getFileNameForStream(column_name, substream_path);
-
-    //     if (processed_substreams && !processed_substreams->insert(file_name).second)
-    //         return;
-
-    //     auto bin_checksum = checksums.files.find(file_name + ".bin");
-    //     if (bin_checksum != checksums.files.end())
-    //     {
-    //         size.data_compressed += bin_checksum->second.file_size;
-    //         size.data_uncompressed += bin_checksum->second.uncompressed_size;
-    //     }
-
-    //     auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
-    //     if (mrk_checksum != checksums.files.end())
-    //         size.marks += mrk_checksum->second.file_size;
-    // }, {});
-
-    return ColumnSize{};
+ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
+{
+    ColumnSize totals;
+    size_t marks_size = 0;
+    for (const auto & column : columns)
+    {
+        auto column_size = getColumnSize(column.name, *column.type);
+        totals.add(column_size);
+        if (!marks_size && column_size.marks)
+            marks_size = column_size.marks;
+    }
+    /// Marks are shared between all columns
+    totals.marks = marks_size;
+    return totals;
 }
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
@@ -137,29 +127,26 @@ ColumnSize MergeTreeDataPartCompact::getColumnSizeImpl(
   */
 String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
 {
-    /// FIXME: save column sizes
+    const auto & storage_columns = storage.getColumns().getAllPhysical();
+    const std::string * minimum_size_column = nullptr;
+    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
+    for (const auto & column : storage_columns)
+    {
+        if (!getColumnPosition(column.name))
+            continue;
 
-    // const auto & storage_columns = storage.getColumns().getAllPhysical();
-    // const std::string * minimum_size_column = nullptr;
-    // UInt64 minimum_size = std::numeric_limits<UInt64>::max();
+        auto size = getColumnSize(column.name, *column.type).data_compressed;
+        if (size < minimum_size)
+        {
+            minimum_size = size;
+            minimum_size_column = &column.name;
+        }
+    }
 
-    // for (const auto & column : storage_columns)
-    // {
-    //     if (!hasColumnFiles(column.name, *column.type))
-    //         continue;
-
-    //     const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
-    //     if (size < minimum_size)
-    //     {
-    //         minimum_size = size;
-    //         minimum_size_column = &column.name;
-    //     }
-    // }
-
-    // if (!minimum_size_column)
-    //     throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
-
-    return columns.front().name;
+    if (!minimum_size_column)
+        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
+    
+    return *minimum_size_column;
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
@@ -197,6 +184,28 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
     index_granularity.setInitialized();    
+}
+
+void MergeTreeDataPartCompact::loadColumnSizes()
+{
+    size_t columns_num = columns.size();
+
+    if (columns_num == 0)
+        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+    
+    auto column_sizes_path = getFullPath() + "columns_sizes.txt";
+    auto columns_sizes_file = Poco::File(column_sizes_path);
+    if (!columns_sizes_file.exists())
+    {
+        LOG_WARNING(storage.log, "No file column_sizes.txt in part " + name);
+        return;
+    }
+
+    ReadBufferFromFile buffer(column_sizes_path, columns_sizes_file.getSize());
+    auto it = columns.begin();
+    for (size_t i = 0; i < columns_num; ++i, ++it)
+        readPODBinary(columns_sizes[it->name], buffer);
+    assertEOF(buffer);
 }
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
