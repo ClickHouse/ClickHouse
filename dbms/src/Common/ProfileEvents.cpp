@@ -455,13 +455,13 @@
       "") \
     \
     M(OSIOWaitMicroseconds, \
-      "osio_wait_microseconds", \
+      "os_io_wait_microseconds", \
       "Total time a thread spent waiting for a result of IO operation, from the OS point of view. This is real IO that doesn't include page cache.") \
     M(OSCPUWaitMicroseconds, \
-      "oscpu_wait_microseconds", \
+      "os_cpu_wait_microseconds", \
       "Total time a thread was ready for execution but waiting to be scheduled by OS, from the OS point of view.") \
     M(OSCPUVirtualTimeMicroseconds, \
-      "oscpu_virtual_time_microseconds", \
+      "os_cpu_virtual_time_microseconds", \
       "CPU time spent seen by OS. Does not include involuntary waits due to virtualization.") \
     M(OSReadBytes, \
       "os_read_bytes", \
