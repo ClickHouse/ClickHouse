@@ -222,7 +222,7 @@ void registerStorageS3(StorageFactory & factory)
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri(url);
 
-        String format_name = engine_args[engine_args.size()-1]->as<ASTLiteral &>().value.safeGet<String>();
+        String format_name = engine_args[engine_args.size() - 1]->as<ASTLiteral &>().value.safeGet<String>();
 
         String access_key_id;
         String secret_access_key;
