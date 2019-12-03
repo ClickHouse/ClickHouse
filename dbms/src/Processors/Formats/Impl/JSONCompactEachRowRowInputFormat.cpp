@@ -161,8 +161,7 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         }
         else
         {
-            String s;
-            readJSONString(s, in);
+            skipJSONField(in, StringRef());
         }
 
         skipWhitespaceIfAny(in);
