@@ -98,6 +98,29 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
+    struct ApplyDescriptions
+    {
+        ApplyDescriptions() = default;
+        ApplyDescriptions(ColumnsDescription & columns_description,
+                          IndicesDescription & indices_description,
+                          ConstraintsDescription & constraints_description):
+                          columns(std::make_shared<ColumnsDescription>(columns_description)),
+                          indices(std::make_shared<IndicesDescription>(indices_description)),
+                          constraints(std::make_shared<ConstraintsDescription>(constraints_description)) {}
+        std::shared_ptr<ColumnsDescription> columns{nullptr};
+        std::shared_ptr<IndicesDescription> indices{nullptr};
+        std::shared_ptr<ConstraintsDescription> constraints{nullptr};
+    };
+
+    struct ApplySupportingASTPtrs
+    {
+        ASTPtr order_by{nullptr};
+        ASTPtr primary_key{nullptr};
+        ASTPtr ttl_table{nullptr};
+    };
+
+    void apply(ApplyDescriptions & descriptions, ApplySupportingASTPtrs & astPtrs, SettingsChanges & changes) const;
+
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
         ConstraintsDescription & constraints_description, ASTPtr & order_by_ast,
         ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
@@ -114,11 +137,16 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
+    using ApplyDescriptions = AlterCommand::ApplyDescriptions;
+    using ApplySupportingASTPtrs = AlterCommand::ApplySupportingASTPtrs;
+
     /// Used for primitive table engines, where only columns metadata can be changed
     void applyForColumnsOnly(ColumnsDescription & columns_description) const;
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
         ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
         ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
+
+    void apply(ApplyDescriptions & descriptions, ApplySupportingASTPtrs & astPtrs, SettingsChanges & changes) const;
 
     /// Apply alter commands only for settings. Exception will be thrown if any other part of table structure will be modified.
     void applyForSettingsOnly(SettingsChanges & changes) const;
