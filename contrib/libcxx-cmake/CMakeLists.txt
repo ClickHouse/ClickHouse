@@ -40,9 +40,14 @@ ${LIBCXX_SOURCE_DIR}/src/random.cpp
 
 add_library(cxx ${SRCS})
 
-target_include_directories(cxx BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
+target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
+
 target_compile_options(cxx PUBLIC -nostdinc++ -Wno-reserved-id-macro)
+if (OS_DARWIN AND (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9) AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
+    target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
+endif ()
+
 target_link_libraries(cxx PUBLIC cxxabi)
 
 install(

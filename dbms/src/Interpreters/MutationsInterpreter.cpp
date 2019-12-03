@@ -1,6 +1,11 @@
+#include "MutationsInterpreter.h"
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -26,17 +31,67 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
 }
 
-bool MutationsInterpreter::isStorageTouchedByMutations() const
+namespace
 {
-    if (commands.empty())
-        return false;
+struct FirstNonDeterministicFuncData
+{
+    using TypeToVisit = ASTFunction;
 
-    for (const MutationCommand & command : commands)
+    explicit FirstNonDeterministicFuncData(const Context & context_)
+        : context{context_}
+    {}
+
+    const Context & context;
+    std::optional<String> nondeterministic_function_name;
+
+    void visit(ASTFunction & function, ASTPtr &)
     {
-        if (!command.predicate) /// The command touches all rows.
-            return true;
+        if (nondeterministic_function_name)
+            return;
+
+        const auto func = FunctionFactory::instance().get(function.name, context);
+        if (!func->isDeterministic())
+            nondeterministic_function_name = func->getName();
+    }
+};
+
+using FirstNonDeterministicFuncFinder =
+        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+
+std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
+{
+    FirstNonDeterministicFuncData finder_data(context);
+
+    switch (command.type)
+    {
+        case MutationCommand::UPDATE:
+        {
+            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(update_assignments_ast);
+
+            if (finder_data.nondeterministic_function_name)
+                return finder_data.nondeterministic_function_name;
+
+            [[fallthrough]];
+        }
+
+        case MutationCommand::DELETE:
+        {
+            auto predicate_ast = command.predicate->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(predicate_ast);
+
+            return finder_data.nondeterministic_function_name;
+        }
+
+        default:
+            break;
     }
 
+    return {};
+}
+
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands)
+{
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
     /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
     /// changes how many rows satisfy the predicates of the subsequent commands).
@@ -65,11 +120,35 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
 
-    auto context_copy = context;
+    return select;
+}
+
+};
+
+bool isStorageTouchedByMutations(
+    StoragePtr storage,
+    const std::vector<MutationCommand> & commands,
+    Context context_copy)
+{
+    if (commands.empty())
+        return false;
+
+    for (const MutationCommand & command : commands)
+    {
+        if (!command.predicate) /// The command touches all rows.
+            return true;
+    }
+
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
+    ASTPtr select_query = prepareQueryAffectedAST(commands);
+
+    /// Interpreter must be alive, when we use result of execute() method.
+    /// For some reason it may copy context and and give it into ExpressionBlockInputStream
+    /// after that we will use context from destroyed stack frame in our stream.
+    InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
+    BlockInputStreamPtr in = interpreter.execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -80,8 +159,23 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
+
 }
 
+MutationsInterpreter::MutationsInterpreter(
+    StoragePtr storage_,
+    std::vector<MutationCommand> commands_,
+    const Context & context_,
+    bool can_execute_)
+    : storage(std::move(storage_))
+    , commands(std::move(commands_))
+    , context(context_)
+    , can_execute(can_execute_)
+{
+    mutation_ast = prepare(!can_execute);
+    auto limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
+    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
+}
 
 static NameSet getKeyColumns(const StoragePtr & storage)
 {
@@ -157,7 +251,7 @@ static void validateUpdateColumns(
 }
 
 
-void MutationsInterpreter::prepare(bool dry_run)
+ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
         throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -304,7 +398,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages_copy.back().output_columns = stage.output_columns;
                 stages_copy.back().filters = stage.filters;
             }
-            auto first_stage_header = prepareInterpreterSelect(stages_copy, /* dry_run = */ true)->getSampleBlock();
+
+            const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
+            InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+
+            auto first_stage_header = interpreter.getSampleBlock();
             auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
             updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
         }
@@ -315,12 +413,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                     column, std::make_shared<ASTIdentifier>(column));
     }
 
-    interpreter_select = prepareInterpreterSelect(stages, dry_run);
-
     is_prepared = true;
+
+    return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
@@ -426,7 +524,7 @@ std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreter
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    return std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
+    return select;
 }
 
 BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const
@@ -462,17 +560,33 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ true);
+    /// For Replicated* storages mutations cannot employ non-deterministic functions
+    /// because that produces inconsistencies between replicas
+    if (startsWith(storage->getName(), "Replicated"))
+    {
+        for (const auto & command : commands)
+        {
+            const auto nondeterministic_func_name = findFirstNonDeterministicFuncName(command, context);
+            if (nondeterministic_func_name)
+                throw Exception(
+                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
+                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = interpreter_select->execute().in->getHeader();
+    Block first_stage_header = select_interpreter->execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ false);
-    BlockInputStreamPtr in = interpreter_select->execute().in;
+    if (!can_execute)
+        throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
+
+    BlockInputStreamPtr in = select_interpreter->execute().in;
     auto result_stream = addStreamsForLaterStages(stages, in);
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -482,6 +596,16 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
 const Block & MutationsInterpreter::getUpdatedHeader() const
 {
     return *updated_header;
+}
+
+
+size_t MutationsInterpreter::evaluateCommandsSize()
+{
+    for (const MutationCommand & command : commands)
+        if (unlikely(!command.predicate)) /// The command touches all rows.
+            return mutation_ast->size();
+
+    return std::max(prepareQueryAffectedAST(commands)->size(), mutation_ast->size());
 }
 
 }

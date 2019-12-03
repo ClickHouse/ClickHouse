@@ -7,21 +7,21 @@ Sign up for a free account at <https://aws.amazon.com>. You will need a credit c
 Run the following in the console:
 
 ```bash
-sudo apt-get install s3cmd
-mkdir tiny; cd tiny;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
-cd ..
-mkdir 1node; cd 1node;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/1node/ .
-cd ..
-mkdir 5nodes; cd 5nodes;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
-cd ..
+$ sudo apt-get install s3cmd
+$ mkdir tiny; cd tiny;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
+$ cd ..
+$ mkdir 1node; cd 1node;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/1node/ .
+$ cd ..
+$ mkdir 5nodes; cd 5nodes;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
+$ cd ..
 ```
 
 Run the following ClickHouse queries:
 
-``` sql
+```sql
 CREATE TABLE rankings_tiny
 (
     pageURL String,
@@ -86,12 +86,12 @@ CREATE TABLE uservisits_5nodes_on_single
 Go back to the console:
 
 ```bash
-for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
-for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
-for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done
-for i in 1node/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_1node FORMAT CSV"; done
-for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_5nodes_on_single FORMAT CSV"; done
-for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
+$ for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
+$ for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
+$ for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done
+$ for i in 1node/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_1node FORMAT CSV"; done
+$ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_5nodes_on_single FORMAT CSV"; done
+$ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
 Queries for obtaining data samples:

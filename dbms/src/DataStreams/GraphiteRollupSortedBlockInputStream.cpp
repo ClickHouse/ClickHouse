@@ -103,7 +103,7 @@ Graphite::RollupRule GraphiteRollupSortedBlockInputStream::selectPatternForPath(
 
 UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
-    static_assert(std::is_signed_v<time_t>, "time_t must be signed type");
+    static_assert(is_signed_v<time_t>, "time_t must be signed type");
 
     for (const auto & retention : retentions)
     {
@@ -321,7 +321,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
 }
 
 
-void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
+void GraphiteRollupSortedBlockInputStream::accumulateRow(SharedBlockRowRef & row)
 {
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)

@@ -639,14 +639,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
         return StorageReplicatedMergeTree::create(
-            zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
+            zookeeper_path, replica_name, args.attach, args.database_name, args.table_name,
             args.columns, indices_description, args.constraints,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
             sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name, args.columns, indices_description,
+            args.database_name, args.table_name, args.columns, indices_description,
             args.constraints, args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
             primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);

@@ -24,7 +24,7 @@ done
 
 Создание таблицы:
 
-``` sql
+```sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -141,17 +141,17 @@ CREATE TABLE `ontime` (
 Загрузка данных:
 
 ```bash
-for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
 ## Скачивание готовых партиций
 
 ```bash
-curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
-tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
-# убедитесь, что установлены корректные права доступа на файлы
-sudo service clickhouse-server restart
-clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
+$ # убедитесь, что установлены корректные права доступа на файлы
+$ sudo service clickhouse-server restart
+$ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
 !!!info
@@ -162,7 +162,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 
 Q0.
 
-``` sql
+```sql
 SELECT avg(c1)
 FROM
 (
@@ -174,7 +174,7 @@ FROM
 
 Q1. Количество полетов в день с 2000 по 2008 года
 
-``` sql
+```sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -184,7 +184,7 @@ ORDER BY c DESC;
 
 Q2. Количество полетов, задержанных более чем на 10 минут, с группировкой по дням неделе, за 2000-2008 года
 
-``` sql
+```sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -194,7 +194,7 @@ ORDER BY c DESC;
 
 Q3. Количество задержек по аэропортам за 2000-2008
 
-``` sql
+```sql
 SELECT Origin, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -205,7 +205,7 @@ LIMIT 10;
 
 Q4. Количество задержек по перевозчикам за 2007 год
 
-``` sql
+```sql
 SELECT Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
@@ -215,7 +215,7 @@ ORDER BY count(*) DESC;
 
 Q5. Процент задержек по перевозчикам за 2007 год
 
-``` sql
+```sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -241,7 +241,7 @@ ORDER BY c3 DESC;
 
 Более оптимальная версия того же запроса:
 
-``` sql
+```sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
@@ -251,7 +251,7 @@ ORDER BY Carrier
 
 Q6. Предыдущий запрос за более широкий диапазон лет, 2000-2008
 
-``` sql
+```sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -277,7 +277,7 @@ ORDER BY c3 DESC;
 
 Более оптимальная версия того же запроса:
 
-``` sql
+```sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -287,7 +287,7 @@ ORDER BY Carrier;
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
 
-``` sql
+```sql
 SELECT Year, c1/c2
 FROM
 (
@@ -311,7 +311,7 @@ ORDER BY Year;
 
 Более оптимальная версия того же запроса:
 
-``` sql
+```sql
 SELECT Year, avg(DepDelay>10)
 FROM ontime
 GROUP BY Year
@@ -320,7 +320,7 @@ ORDER BY Year;
 
 Q8. Самые популярные направления по количеству напрямую соединенных городов для различных диапазонов лет
 
-``` sql
+```sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u F
 ROM ontime
 WHERE Year>=2000 and Year<=2010
@@ -331,7 +331,7 @@ LIMIT 10;
 
 Q9.
 
-``` sql
+```sql
 SELECT Year, count(*) AS c1
 FROM ontime
 GROUP BY Year;
@@ -339,7 +339,7 @@ GROUP BY Year;
 
 Q10.
 
-``` sql
+```sql
 SELECT
    min(Year), max(Year), Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
@@ -357,7 +357,7 @@ LIMIT 1000;
 
 Бонус:
 
-``` sql
+```sql
 SELECT avg(cnt)
 FROM
 (

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <queue>
-#include <stack>
 #include <Processors/IProcessor.h>
-#include <mutex>
+#include <Processors/Executors/ThreadsQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
 
-#include <boost/lockfree/stack.hpp>
+#include <queue>
+#include <stack>
+#include <mutex>
 
 namespace DB
 {
@@ -122,16 +122,14 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
+
+    ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
-    std::condition_variable task_queue_condvar;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
-
-    /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
-    size_t num_waiting_threads = 0;
 
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
@@ -155,9 +153,16 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::condition_variable condvar;
+        std::mutex mutex;
+        bool wake_flag = false;
+
+        std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
+    std::mutex executor_contexts_mutex;
 
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;

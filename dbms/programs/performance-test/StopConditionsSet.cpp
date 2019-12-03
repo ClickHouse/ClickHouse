@@ -31,9 +31,10 @@ void StopConditionsSet::loadFromConfig(const ConfigurationPtr & stop_conditions_
         else if (key == "average_speed_not_changing_for_ms")
             average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
         else
-            throw Exception("Met unkown stop condition: " + key, ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Met unknown stop condition: " + key, ErrorCodes::LOGICAL_ERROR);
+
+        ++initialized_count;
     }
-    ++initialized_count;
 }
 
 void StopConditionsSet::reset()

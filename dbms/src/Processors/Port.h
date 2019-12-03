@@ -6,8 +6,10 @@
 #include <cstdint>
 
 #include <Core/Block.h>
+#include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
+#include <common/likely.h>
 
 namespace DB
 {
@@ -16,6 +18,10 @@ class InputPort;
 class OutputPort;
 class IProcessor;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class Port
 {
@@ -308,6 +314,17 @@ public:
             ++(*version);
 
         is_finished = true;
+    }
+
+    void ALWAYS_INLINE reopen()
+    {
+        assumeConnected();
+
+        if (!isFinished())
+            return;
+
+        state->setFlags(0, State::IS_FINISHED);
+        is_finished = false;
     }
 
     OutputPort & getOutputPort()

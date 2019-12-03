@@ -1,7 +1,6 @@
 #pragma once
 
 
-#include <Core/Field.h>
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
@@ -38,8 +37,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual bool isCached() const = 0;
-
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -48,13 +45,15 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    bool supportUpdates() const override { return !isCached(); }
+    bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {
         auto source = getSource();
         return source && source->isModified();
     }
+
+    virtual std::exception_ptr getLastException() const { return {}; }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {

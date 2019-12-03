@@ -70,4 +70,10 @@ bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
     return table_functions.count(name);
 }
 
+TableFunctionFactory & TableFunctionFactory::instance()
+{
+    static TableFunctionFactory ret;
+    return ret;
+}
+
 }

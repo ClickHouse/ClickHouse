@@ -56,6 +56,7 @@ private:
     size_t error_count{};
     std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
+    std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;

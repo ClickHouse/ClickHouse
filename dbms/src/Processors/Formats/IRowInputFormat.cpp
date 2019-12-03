@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-static bool isParseError(int code)
+bool isParseError(int code)
 {
     return code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
@@ -31,33 +31,6 @@ static bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
-}
-
-
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
-static bool checkTimeLimit(const IRowInputFormat::Params & params, const Stopwatch & stopwatch)
-{
-    if (params.max_execution_time != 0
-        && stopwatch.elapsed() > static_cast<UInt64>(params.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(params.timeout_overflow_mode,
-              "Timeout exceeded: elapsed " + toString(stopwatch.elapsedSeconds())
-              + " seconds, maximum: " + toString(params.max_execution_time.totalMicroseconds() / 1000000.0),
-              ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
 }
 
 
@@ -73,18 +46,12 @@ Chunk IRowInputFormat::generate()
     size_t prev_rows = total_rows;
 
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
+    block_missing_values.clear();
 
     try
     {
-        for (size_t rows = 0, batch = 0; rows < params.max_block_size; ++rows, ++batch)
+        for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
-            if (params.rows_portion_size && batch == params.rows_portion_size)
-            {
-                batch = 0;
-                if (!checkTimeLimit(params, total_stopwatch) || isCancelled())
-                    break;
-            }
-
             try
             {
                 ++total_rows;
@@ -174,7 +141,7 @@ Chunk IRowInputFormat::generate()
     {
         if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
         {
-            Logger * log = &Logger::get("BlockInputStreamFromRowInputStream");
+            Logger * log = &Logger::get("IRowInputFormat");
             LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
         }
 
@@ -191,5 +158,14 @@ void IRowInputFormat::syncAfterError()
 {
     throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
+
+void IRowInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    total_rows = 0;
+    num_errors = 0;
+    block_missing_values.clear();
+}
+
 
 }

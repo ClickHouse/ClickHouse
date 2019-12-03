@@ -1,29 +1,25 @@
-#include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/copyData.h>
-
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-
+#include <Storages/Kafka/StorageKafka.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -34,12 +30,17 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 }
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_)
-    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_), no_squash(no_squash_)
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    : query_ptr(query_ptr_)
+    , context(context_)
+    , allow_materialized(allow_materialized_)
+    , no_squash(no_squash_)
+    , no_destination(no_destination_)
 {
     checkStackSize();
 }
@@ -65,10 +66,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        /// Format Native ignores header and write blocks as is.
-        if (query.format == "Native")
-            return {};
-        else if (query.no_destination)
+        if (no_destination)
             return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
@@ -87,6 +85,8 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+        if (res.has(current_name))
+            throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
         res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
     }
@@ -98,14 +98,22 @@ BlockIO InterpreterInsertQuery::execute()
 {
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
-    StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
+    BlockIO res;
+    StoragePtr table = getTable(query);
+    res.pipeline.addStorageHolder(table);
+
+    auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
+    /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
+    ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
+    if (table->noPushingToViews() && !no_destination)
+        out = table->write(query_ptr, context);
+    else
+        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
@@ -129,7 +137,6 @@ BlockIO InterpreterInsertQuery::execute()
     out_wrapper->setProcessListElement(context.getProcessListElement());
     out = std::move(out_wrapper);
 
-    BlockIO res;
     res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?
@@ -155,7 +162,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
         res.out = nullptr;
     }

@@ -180,7 +180,21 @@
                      <port>9000</port>
                  </replica>
              </shard>
-         </test_cluster_two_shards_localhost>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
         <test_shard_localhost_secure>
             <shard>
                 <replica>
@@ -258,6 +272,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>true</asynchronous_metrics>
     </graphite>
     <graphite>
@@ -269,6 +284,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>false</asynchronous_metrics>
     </graphite>
     -->
@@ -395,7 +411,7 @@
 
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
-         If you want do delete one table and don't want to restart clickhouse-server, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
+         If you want do delete one table and don't want to change clickhouse-server config, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
          By default max_table_size_to_drop is 50GB; max_table_size_to_drop=0 allows to DROP any tables.
          The same for max_partition_size_to_drop.
          Uncomment to disable protection.
@@ -438,6 +454,20 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+
+    <!-- Uncomment to use query masking rules.
+        name - name for the rule (optional)
+        regexp - RE2 compatible regular expression (mandatory)
+        replace - substitution string for sensitive data (optional, by default - six asterisks)
+    <query_masking_rules>
+        <rule>
+            <name>hide SSN</name>
+            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
+            <replace>000-00-0000</replace>
+        </rule>
+    </query_masking_rules>
+    -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

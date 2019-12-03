@@ -4,7 +4,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -142,7 +144,7 @@ public:
     }
 
 
-    void insert(const T value) { data.push_back(value); }
+    void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
     const Container & getData() const { return data; }
     const T & getElement(size_t n) const { return data[n]; }

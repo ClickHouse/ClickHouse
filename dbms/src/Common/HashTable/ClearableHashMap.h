@@ -14,7 +14,6 @@ struct ClearableHashMapCell : public ClearableHashTableCell<Key, HashMapCell<Key
         : Base::BaseCell(value_, state), Base::version(state.version) {}
 };
 
-
 template
 <
     typename Key,
@@ -26,20 +25,16 @@ template
 class ClearableHashMap : public HashTable<Key, ClearableHashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>
 {
 public:
-    using key_type = Key;
-    using mapped_type = Mapped;
-    using value_type = typename ClearableHashMap::cell_type::value_type;
-
-    mapped_type & operator[](Key x)
+    Mapped & operator[](const Key & x)
     {
-        typename ClearableHashMap::iterator it;
+        typename ClearableHashMap::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new(&it->getSecond()) mapped_type();
+            new (&it->getMapped()) Mapped();
 
-        return it->getSecond();
+        return it->getMapped();
     }
 
     void clear()

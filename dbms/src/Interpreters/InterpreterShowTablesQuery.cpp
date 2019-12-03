@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
@@ -43,15 +44,29 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     context.assertDatabaseExists(database, false);
 
     std::stringstream rewritten_query;
-    rewritten_query << "SELECT name FROM system.tables WHERE ";
+    rewritten_query << "SELECT name FROM system.";
+
+    if (query.dictionaries)
+        rewritten_query << "dictionaries ";
+    else
+        rewritten_query << "tables ";
+
+    rewritten_query << "WHERE ";
 
     if (query.temporary)
+    {
+        if (query.dictionaries)
+            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
         rewritten_query << "is_temporary";
+    }
     else
         rewritten_query << "database = " << std::quoted(database, '\'');
 
     if (!query.like.empty())
         rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+
+    if (query.limit_length)
+        rewritten_query << " LIMIT " << query.limit_length;
 
     return rewritten_query.str();
 }

@@ -134,7 +134,7 @@ Geohash - способ преобразования географических
 
 Энтропию следует считать по гистограмме. Пример расчёта гистограммы смотрите в реализации функции `quantileExact`.
 
-https://github.com/yandex/ClickHouse/issues/3266
+https://github.com/ClickHouse/ClickHouse/issues/3266
 
 ## Функции создания и обновления состояния агрегатной функции по одному кортежу аргументов.
 
@@ -152,7 +152,7 @@ https://github.com/yandex/ClickHouse/issues/3266
 
 ## Корректное сравнение Date и DateTime.
 
-https://github.com/yandex/ClickHouse/issues/2011
+https://github.com/ClickHouse/ClickHouse/issues/2011
 
 Нужно сравнивать Date и DateTime так, как будто Date расширено до DateTime на начало суток в том же часовом поясе.
 

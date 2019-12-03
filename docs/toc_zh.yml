@@ -27,6 +27,7 @@ nav:
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
+  - 'C ++客户端库': 'interfaces/cpp.md'
   - '第三方':
     - '客户端库': 'interfaces/third-party/client_libraries.md'
     - '集成': 'interfaces/third-party/integrations.md'
@@ -57,6 +58,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
+    - 'Interval': 'data_types/special_data_types/interval.md'    
   - 'Domain类型':
     - '介绍': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -88,6 +90,7 @@ nav:
     - 'MySQL': 'operations/table_engines/mysql.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
   - '其他表引擎':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'External data': 'operations/table_engines/external_data.md'
@@ -110,6 +113,7 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
+  - 'SHOW': 'query_language/show.md'
   - '其他类型的查询': 'query_language/misc.md'
   - '函数':
     - '介绍': 'query_language/functions/index.md'
@@ -159,6 +163,8 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
+    - 'input': 'query_language/table_functions/input.md'
   - '字典':
     - '介绍': 'query_language/dicts/index.md'
     - '外部字典':
@@ -208,8 +214,10 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
+  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
+  - '开发者指南': 'development/developer_instruction.md'
   - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':

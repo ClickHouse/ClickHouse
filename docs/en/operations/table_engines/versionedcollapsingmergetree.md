@@ -29,7 +29,7 @@ For a description of query parameters, see the [query description](../../query_l
 
 **Engine Parameters**
 
-```
+```sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
@@ -81,7 +81,7 @@ Use the `Sign` column when writing the row. If `Sign = 1` it means that the row 
 
 For example, we want to calculate how many pages users visited on some site and how long they were there. At some point in time we write the following row with the state of user activity:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -89,7 +89,7 @@ For example, we want to calculate how many pages users visited on some site and 
 
 At some point later we register the change of user activity and write it with the following two rows.
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
 │ 4324182021466249494 │         6 │      185 │    1 │       2 |
@@ -102,7 +102,7 @@ The second row contains the current state.
 
 Because we need only the last state of user activity, the rows
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -139,7 +139,7 @@ If you need to extract the data with "collapsing" but without aggregation (for e
 
 Example data:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 |
 │ 4324182021466249494 │         5 │      146 │   -1 │       1 |
@@ -175,11 +175,11 @@ We use two `INSERT` queries to create two different data parts. If we insert the
 
 Getting the data:
 
-```
+```sql
 SELECT * FROM UAct
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         5 │      146 │    1 │       1 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
@@ -205,7 +205,7 @@ FROM UAct
 GROUP BY UserID, Version
 HAVING sum(Sign) > 0
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │       2 │
 └─────────────────────┴───────────┴──────────┴─────────┘
@@ -216,7 +216,7 @@ If we don't need aggregation and want to force collapsing, we can use the `FINAL
 ```sql
 SELECT * FROM UAct FINAL
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
 │ 4324182021466249494 │         6 │      185 │    1 │       2 │
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘

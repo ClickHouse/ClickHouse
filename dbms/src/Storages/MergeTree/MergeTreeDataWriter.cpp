@@ -47,7 +47,7 @@ void buildScatterSelector(
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = hash128(i, columns.size(), columns);
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
 
@@ -57,7 +57,7 @@ void buildScatterSelector(
                 throw Exception("Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).", ErrorCodes::TOO_MANY_PARTS);
 
             partition_num_to_first_row.push_back(i);
-            it->getSecond() = partitions_count;
+            it->getMapped() = partitions_count;
 
             ++partitions_count;
 
@@ -70,7 +70,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->getSecond();
+            selector[i] = it->getMapped();
     }
 }
 
@@ -96,8 +96,22 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTL
         for (const auto & val : column_date_time->getData())
             ttl_info.update(val);
     }
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    {
+        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
+        {
+            const auto & date_lut = DateLUT::instance();
+            ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
+        }
+        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+        {
+            ttl_info.update(column_const->getValue<UInt32>());
+        }
+        else
+            throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+    }
     else
-        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
 
     ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
@@ -198,7 +212,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     else
         part_name = new_part_info.getPartName();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name, new_part_info);
+    /// Size of part would not be grater than block.bytes() + epsilon
+    size_t expected_size = block.bytes();
+    auto reservation = data.reserveSpace(expected_size);
+
+
+    MergeTreeData::MutableDataPartPtr new_data_part =
+        std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name, new_part_info);
+
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;

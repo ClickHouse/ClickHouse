@@ -1,18 +1,21 @@
 #include "config_core.h"
+#include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <set>
 #include <optional>
-#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace ProfileEvents
@@ -45,7 +48,8 @@ Names ExpressionAction::getNeededColumns() const
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
-    res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
+    if (table_join)
+        res.insert(res.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
 
     for (const auto & column : projection)
         res.push_back(column.first);
@@ -159,20 +163,12 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(
-    const ASTTableJoin & join_params,
-    std::shared_ptr<const Join> join_,
-    const Names & join_key_names_left,
-    const Names & join_key_names_right,
-    const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join = std::move(join_);
-    a.join_kind = join_params.kind;
-    a.join_key_names_left = join_key_names_left;
-    a.join_key_names_right = join_key_names_right;
-    a.columns_added_by_join = columns_added_by_join_;
+    a.table_join = table_join;
+    a.join = join;
     return a;
 }
 
@@ -277,51 +273,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case JOIN:
         {
-            bool is_null_used_as_default = settings.join_use_nulls;
-            bool right_or_full_join = isRightOrFull(join_kind);
-            bool left_or_full_join = isLeftOrFull(join_kind);
-
-            for (auto & col : sample_block)
-            {
-                /// Materialize column.
-                /// Column is not empty if it is constant, but after Join all constants will be materialized.
-                /// So, we need remove constants from header.
-                if (col.column)
-                    col.column = nullptr;
-
-                bool make_nullable = is_null_used_as_default && right_or_full_join;
-
-                if (make_nullable && col.type->canBeInsideNullable())
-                    col.type = makeNullable(col.type);
-            }
-
-            for (const auto & col : columns_added_by_join)
-            {
-                auto res_type = col.type;
-
-                bool make_nullable = is_null_used_as_default && left_or_full_join;
-
-                if (!make_nullable)
-                {
-                    /// Keys from right table are usually not stored in Join, but copied from the left one.
-                    /// So, if left key is nullable, let's make right key nullable too.
-                    /// Note: for some join types it's not needed and, probably, may be removed.
-                    /// Note: changing this code, take into account the implementation in Join.cpp.
-                    auto it = std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name);
-                    if (it != join_key_names_right.end())
-                    {
-                        auto pos = it - join_key_names_right.begin();
-                        const auto & left_key_name = join_key_names_left[pos];
-                        make_nullable = sample_block.getByName(left_key_name).type->isNullable();
-                    }
-                }
-
-                if (make_nullable && res_type->canBeInsideNullable())
-                    res_type = makeNullable(res_type);
-
-                sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
-            }
-
+            table_join->addJoinedColumnsAndCorrectNullability(sample_block);
             break;
         }
 
@@ -527,7 +479,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block, join_key_names_left, columns_added_by_join);
+            join->joinBlock(block);
             break;
         }
 
@@ -645,9 +597,10 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+            for (NamesAndTypesList::const_iterator it = table_join->columnsAddedByJoin().begin();
+                 it != table_join->columnsAddedByJoin().end(); ++it)
             {
-                if (it != columns_added_by_join.begin())
+                if (it != table_join->columnsAddedByJoin().begin())
                     ss << ", ";
                 ss << it->name;
             }
@@ -813,17 +766,10 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 
 bool ExpressionActions::hasTotalsInJoin() const
 {
-    bool has_totals_in_join = false;
     for (const auto & action : actions)
-    {
-        if (action.join && action.join->hasTotals())
-        {
-            has_totals_in_join = true;
-            break;
-        }
-    }
-
-    return has_totals_in_join;
+        if (action.table_join && action.join->hasTotals())
+            return true;
+    return false;
 }
 
 void ExpressionActions::executeOnTotals(Block & block) const
@@ -1215,14 +1161,67 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
+JoinPtr ExpressionActions::getTableJoinAlgo() const
 {
     for (const auto & action : actions)
-        if (action.join && isRightOrFull(action.join->getKind()))
-            return action.join->createStreamWithNonJoinedRows(
-                source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
-
+        if (action.join)
+            return action.join;
     return {};
+}
+
+
+bool ExpressionActions::resultIsAlwaysEmpty() const
+{
+    /// Check that has join which returns empty result.
+
+    for (auto & action : actions)
+    {
+        if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
+            return true;
+    }
+
+    return false;
+}
+
+
+bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
+{
+    /// Check has column in (empty set).
+    String set_to_check;
+
+    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
+    {
+        auto & action = *it;
+        if (action.type == action.APPLY_FUNCTION && action.function_base)
+        {
+            auto name = action.function_base->getName();
+            if ((name == "in" || name == "globalIn")
+                && action.result_name == column_name
+                && action.argument_names.size() > 1)
+            {
+                set_to_check = action.argument_names[1];
+                break;
+            }
+        }
+    }
+
+    if (!set_to_check.empty())
+    {
+        for (auto & action : actions)
+        {
+            if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
+            {
+                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
+                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                {
+                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
+                        return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 
@@ -1267,7 +1266,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(col);
             break;
         case JOIN:
-            for (const auto & col : action.columns_added_by_join)
+            for (const auto & col : action.table_join->columnsAddedByJoin())
                 hash.update(col.name);
             break;
         case PROJECT:
@@ -1325,10 +1324,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && argument_names == other.argument_names
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left
-        && join == other.join
-        && join_key_names_left == other.join_key_names_left
-        && join_key_names_right == other.join_key_names_right
-        && columns_added_by_join == other.columns_added_by_join
+        && AnalyzedJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

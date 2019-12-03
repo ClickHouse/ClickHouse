@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 
-#include <Poco/URI.h>
 #include <IO/WriteBufferFromHDFS.h>
 #include <IO/HDFSCommon.h>
 #include <hdfs/hdfs.h>
@@ -16,12 +15,13 @@ namespace ErrorCodes
 extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
+extern const int BAD_ARGUMENTS;
 }
 
 
 struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
-    Poco::URI hdfs_uri;
+    std::string hdfs_uri;
     hdfsFile fout;
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
@@ -31,8 +31,14 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
     {
-        auto & path = hdfs_uri.getPath();
-        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);
+        const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+        const std::string path = hdfs_uri.substr(begin_of_path);
+        if (path.find_first_of("*?{") != std::string::npos)
+            throw Exception("URI '" + hdfs_uri + "' contains globs, so the table is in readonly mode", ErrorCodes::CANNOT_OPEN_FILE);
+
+        if (!hdfsExists(fs.get(), path.c_str()))
+            throw Exception("File: " + path + " is already exists", ErrorCodes::BAD_ARGUMENTS);
+        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 
         if (fout == nullptr)
         {
@@ -52,7 +58,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, size);
         if (bytes_written < 0)
-            throw Exception("Fail to write HDFS file: " + hdfs_uri.toString() + " " + std::string(hdfsGetLastError()),
+            throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::NETWORK_ERROR);
         return bytes_written;
     }
@@ -61,7 +67,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)
-            throwFromErrno("Cannot HDFS sync" + hdfs_uri.toString() + " " + std::string(hdfsGetLastError()),
+            throwFromErrno("Cannot HDFS sync" + hdfs_uri + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::CANNOT_FSYNC);
     }
 };

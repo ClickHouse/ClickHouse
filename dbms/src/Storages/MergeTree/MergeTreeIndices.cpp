@@ -86,4 +86,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerIndex("bloom_filter", bloomFilterIndexCreatorNew);
 }
 
+MergeTreeIndexFactory & MergeTreeIndexFactory::instance()
+{
+    static MergeTreeIndexFactory instance;
+    return instance;
+}
+
 }

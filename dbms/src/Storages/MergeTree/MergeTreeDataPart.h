@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -32,9 +31,9 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_);
+    MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -73,6 +72,7 @@ struct MergeTreeDataPart
 
     const MergeTreeData & storage;
 
+    DiskSpace::DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 
@@ -102,20 +102,22 @@ struct MergeTreeDataPart
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted: we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:  we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Commited:  we successfully committed a part to active dataset
-     * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:      a cleaner selected this part for deletion
-     * Deleting -> Outdated:      if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Commited:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:        a cleaner selected this part for deletion
+     * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Committed -> DeleteOnDestroy if part was moved to another disk
      */
     enum class State
     {
-        Temporary,      /// the part is generating now, it is not in data_parts list
-        PreCommitted,   /// the part is in data_parts, but not used for SELECTs
-        Committed,      /// active data part, used by current and upcoming SELECTs
-        Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
-        Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        Temporary,       /// the part is generating now, it is not in data_parts list
+        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
+        Committed,       /// active data part, used by current and upcoming SELECTs
+        Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
+        Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
     using TTLInfo = MergeTreeDataPartTTLInfo;
@@ -255,6 +257,9 @@ struct MergeTreeDataPart
 
     /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
+
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

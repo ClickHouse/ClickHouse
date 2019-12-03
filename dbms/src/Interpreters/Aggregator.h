@@ -4,8 +4,6 @@
 #include <memory>
 #include <functional>
 
-#include <Poco/TemporaryFile.h>
-
 #include <common/logger_useful.h>
 
 #include <common/StringRef.h>
@@ -13,11 +11,15 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/TwoLevelStringHashMap.h>
+
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -70,12 +72,20 @@ using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
 using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
 
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
+
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
+
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
@@ -140,6 +150,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
 template <typename ... Types>
 using HashTableWithNullKey = AggregationDataWithNullKey<HashMapTable<Types ...>>;
+template <typename ... Types>
+using StringHashTableWithNullKey = AggregationDataWithNullKey<StringHashMap<Types ...>>;
 
 using AggregatedDataWithNullableUInt8Key = AggregationDataWithNullKey<AggregatedDataWithUInt8Key>;
 using AggregatedDataWithNullableUInt16Key = AggregationDataWithNullKey<AggregatedDataWithUInt16Key>;
@@ -150,6 +162,10 @@ using AggregatedDataWithNullableStringKey = AggregationDataWithNullKey<Aggregate
 using AggregatedDataWithNullableUInt64KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+
+using AggregatedDataWithNullableShortStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
+        TwoLevelStringHashMap<AggregateDataPtr, HashTableAllocator, StringHashTableWithNullKey>>;
+
 using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr, DefaultHash<StringRef>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
@@ -164,8 +180,6 @@ struct AggregationMethodOneNumber
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
 
     Data data;
 
@@ -182,9 +196,11 @@ struct AggregationMethodOneNumber
     static const bool low_cardinality_optimization = false;
 
     // Insert the key from the hash table into columns.
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
-        static_cast<ColumnVectorHelper *>(key_columns[0].get())->insertRawData<sizeof(FieldType)>(reinterpret_cast<const char *>(&value.first));
+        auto key_holder = reinterpret_cast<const char *>(&key);
+        auto column = static_cast<ColumnVectorHelper *>(key_columns[0].get());
+        column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
 
@@ -208,9 +224,35 @@ struct AggregationMethodString
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(value.first.data, value.first.size);
+        key_columns[0]->insertData(key.data, key.size);
+    }
+};
+
+
+/// Same as above but without cache
+template <typename TData>
+struct AggregationMethodStringNoCache
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+
+    AggregationMethodStringNoCache() {}
+
+    template <typename Other>
+    AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
+
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
+
+    static const bool low_cardinality_optimization = false;
+
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
 
@@ -234,11 +276,37 @@ struct AggregationMethodFixedString
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        key_columns[0]->insertData(value.first.data, value.first.size);
+        key_columns[0]->insertData(key.data, key.size);
     }
 };
+
+/// Same as above but without cache
+template <typename TData>
+struct AggregationMethodFixedStringNoCache
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+
+    AggregationMethodFixedStringNoCache() {}
+
+    template <typename Other>
+    AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
+
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
+
+    static const bool low_cardinality_optimization = false;
+
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data, key.size);
+    }
+};
+
 
 /// Single low cardinality column.
 template <typename SingleColumnMethod>
@@ -262,10 +330,19 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static const bool low_cardinality_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const Key & key,
+        MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
-        auto ref = BaseState::getValueRef(value);
-        assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
+        auto col = assert_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get());
+
+        if constexpr (std::is_same_v<Key, StringRef>)
+        {
+            col->insertData(key.data, key.size);
+        }
+        else
+        {
+            col->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+        }
     }
 };
 
@@ -277,8 +354,6 @@ struct AggregationMethodKeysFixed
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
@@ -293,7 +368,7 @@ struct AggregationMethodKeysFixed
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const Key & key, MutableColumns & key_columns, const Sizes & key_sizes)
     {
         size_t keys_size = key_columns.size();
 
@@ -330,7 +405,7 @@ struct AggregationMethodKeysFixed
                 /// corresponding key is nullable. Update the null map accordingly.
                 size_t bucket = i / 8;
                 size_t offset = i % 8;
-                UInt8 val = (reinterpret_cast<const UInt8 *>(&value.first)[bucket] >> offset) & 1;
+                UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
                 null_map->insertValue(val);
                 is_null = val == 1;
             }
@@ -340,7 +415,7 @@ struct AggregationMethodKeysFixed
             else
             {
                 size_t size = key_sizes[i];
-                observed_column->insertData(reinterpret_cast<const char *>(&value.first) + pos, size);
+                observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
                 pos += size;
             }
         }
@@ -371,9 +446,9 @@ struct AggregationMethodSerialized
 
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
     {
-        auto pos = value.first.data;
+        auto pos = key.data;
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
     }
@@ -424,16 +499,16 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>         key32;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>         key64;
-    std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>>                    key_string;
-    std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>>               key_fixed_string;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
-    std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>            key_string_two_level;
-    std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>>       key_fixed_string_two_level;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
@@ -733,6 +808,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
+using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingBlockInputStream.)
@@ -834,6 +910,10 @@ public:
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
         bool & no_more_keys);
 
+    bool executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & no_more_keys);
+
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
       *
@@ -846,6 +926,7 @@ public:
     /** Merge several aggregation data structures and output the result as a block stream.
       */
     std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const;
 
     /** Merge the stream of partially aggregated blocks into one data structure.
       * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
@@ -900,6 +981,8 @@ public:
 protected:
     friend struct AggregatedDataVariants;
     friend class MergingAndConvertingBlockInputStream;
+    friend class ConvertingAggregatedToChunksTransform;
+    friend class ConvertingAggregatedToChunksSource;
 
     Params params;
 
@@ -925,6 +1008,9 @@ protected:
         IAggregateFunction::AddFunc func;
         size_t state_offset;
         const IColumn ** arguments;
+        const IAggregateFunction * batch_that;
+        const IColumn ** batch_arguments;
+        const UInt64 * offsets = nullptr;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1080,6 +1166,12 @@ protected:
         bool final,
         size_t bucket) const;
 
+    Block mergeAndConvertOneBucketToBlock(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        size_t bucket) const;
+
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
@@ -1150,6 +1242,5 @@ template <typename Method> Method & getDataVariant(AggregatedDataVariants & vari
 APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
-
 
 }

@@ -30,7 +30,8 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
+                                config_dir='configs',
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
@@ -136,7 +137,7 @@ def kafka_setup_teardown():
 
 # Tests
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_settings_old_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -159,7 +160,7 @@ def test_kafka_settings_old_syntax(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_settings_new_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -195,7 +196,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_csv_with_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -221,7 +222,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_tsv_with_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -247,7 +248,22 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
+def test_kafka_select_empty(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'empty',
+                     kafka_group_name = 'empty',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+        ''')
+
+    assert int(instance.query('SELECT count() FROM test.kafka')) == 0
+
+
+@pytest.mark.timeout(180)
 def test_kafka_json_without_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -277,7 +293,7 @@ def test_kafka_json_without_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_protobuf(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value String)
@@ -302,7 +318,7 @@ def test_kafka_protobuf(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -339,7 +355,7 @@ def test_kafka_materialized_view(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_many_materialized_views(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view1;
@@ -437,7 +453,7 @@ def test_kafka_flush_on_big_message(kafka_cluster):
     assert int(result) == kafka_messages*batch_messages, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_virtual_columns(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -467,7 +483,7 @@ def test_kafka_virtual_columns(kafka_cluster):
     kafka_check_result(result, True, 'test_kafka_virtual1.reference')
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -504,7 +520,7 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
     kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_kafka_insert(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -541,9 +557,11 @@ def test_kafka_insert(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(240)
 def test_kafka_produce_consume(kafka_cluster):
     instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -551,6 +569,11 @@ def test_kafka_produce_consume(kafka_cluster):
                      kafka_group_name = 'insert2',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
     ''')
 
     messages_num = 10000
@@ -578,16 +601,6 @@ def test_kafka_produce_consume(kafka_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    instance.query('''
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.consumer;
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.kafka;
-    ''')
-
     while True:
         result = instance.query('SELECT count() FROM test.view')
         time.sleep(1)
@@ -605,7 +618,7 @@ def test_kafka_produce_consume(kafka_cluster):
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(300)
 def test_kafka_commit_on_block_write(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;

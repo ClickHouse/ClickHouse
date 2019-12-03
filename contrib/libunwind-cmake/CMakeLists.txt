@@ -11,7 +11,9 @@ endif ()
 set(LIBUNWIND_C_SOURCES
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1.c
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1-gcc-ext.c
-    ${LIBUNWIND_SOURCE_DIR}/src/Unwind-sjlj.c)
+    ${LIBUNWIND_SOURCE_DIR}/src/Unwind-sjlj.c
+    # Use unw_backtrace to override libgcc's backtrace symbol for better ABI compatibility
+    unwind-override.c)
 set_source_files_properties(${LIBUNWIND_C_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c99")
 
 set(LIBUNWIND_ASM_SOURCES

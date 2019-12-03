@@ -36,11 +36,13 @@
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -54,10 +56,10 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
+#include <Common/SensitiveDataMasker.h>
 #include "MySQLHandlerFactory.h"
 
-
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <Common/hasLinuxCapability.h>
 #include <sys/mman.h>
 #endif
@@ -87,6 +89,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -269,6 +272,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
+    /// Check that we have read and write access to all data paths
+    auto disk_selector = global_context->getDiskSelector();
+    for (const auto & [name, disk] : disk_selector.getDisksMap())
+    {
+        Poco::File disk_path(disk->getPath());
+        if (!disk_path.canRead() || !disk_path.canWrite())
+            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -278,7 +290,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
         global_context->shutdown();
+
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -407,6 +421,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),
@@ -418,6 +438,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -448,13 +475,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 
@@ -520,7 +540,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+    ///
+    /// It also cannot work with sanitizers.
+    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    ///  and query profiler decide to unwind stack with libunwind at this moment.
+    ///
+    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+    ///
+    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+    ///
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
@@ -783,7 +814,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
@@ -795,11 +825,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
             });
         }
 
@@ -888,8 +913,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (!config().getBool("dictionaries_lazy_load", true))
             {
                 global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionaries().enableAlwaysLoadEverything(true);
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
+
+            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
+            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
+
+            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
+            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
         }
         catch (...)
         {

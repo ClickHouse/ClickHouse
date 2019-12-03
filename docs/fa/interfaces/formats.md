@@ -12,6 +12,8 @@ Format | INSERT | SELECT
 [TabSeparatedRaw](formats.md#tabseparatedraw)  | ✗ | ✔ |
 [TabSeparatedWithNames](formats.md#tabseparatedwithnames) | ✔ | ✔ |
 [TabSeparatedWithNamesAndTypes](formats.md#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+[Template](#format-template) | ✔ | ✔ |
+[TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 [CSV](formats.md#csv) | ✔ | ✔ |
 [CSVWithNames](formats.md#csvwithnames) | ✔ | ✔ |
 [Values](formats.md#data-format-values) | ✔ | ✔ |
@@ -114,6 +116,122 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 تفاوت آن با `TabSeparated` در این است که در این فرمت نام ستون ها در سطر اول نوشته می شود، و type ستون ها در سطر دوم نوشته می شود. در طی پارسینگ، سطر اول و دوم به طور کامل نادیده گرفته می شوند.
 
 همچنین این فرمت تحت عنوان ` TSVWithNamesAndTypes`وجود دارد.
+
+
+## Template {#format-template}
+
+This format allows to specify a custom format string with placeholders for values with specified escaping rule.
+
+It uses settings `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+
+Format string `format_schema_rows` specifies rows format with the following syntax:
+
+ `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
+
+  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
+  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
+  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+  
+  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+  - `Escaped` (similarly to `TSV`)
+  - `Quoted` (similarly to `Values`)
+  - `Raw` (without escaping, similarly to `TSVRaw`)
+  - `None` (no escaping rule, see further)
+  
+  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+  
+  So, for the following format string:
+    
+    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+    
+  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+
+  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+  
+ The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+
+Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+
+ - `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+ - `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
+ - `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
+ - `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+ - `rows` is the total number of output rows
+ - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
+ - `time` is the request execution time in seconds
+ - `rows_read` is the number of rows have been read
+ - `bytes_read` is the number of bytes (uncompressed) have been read
+ 
+ The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
+ If the `format_schema` setting is an empty string, `${data}` is used as default value.
+  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
+ 
+ `Select` example:
+```sql
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
+FORMAT Template 
+SETTINGS format_schema = '<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    ${data}
+  </table>
+  <table border="1"> <caption>Max</caption>
+    ${max}
+  </table>
+  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
+ </body>
+</html>',
+format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
+format_schema_rows_between_delimiter = '\n    '
+```
+```html
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    <tr> <td></td> <td>8267016</td> </tr>
+    <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
+    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
+    <tr> <td>freeform photos</td> <td>1480</td> </tr>
+  </table>
+  <table border="1"> <caption>Max</caption>
+    <tr> <td></td> <td>8873898</td> </tr>
+  </table>
+  <b>Processed 3095973 rows in 0.1569913 sec</b>
+ </body>
+</html>
+```
+
+`Insert` example:
+```
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
+```
+```sql
+INSERT INTO UserActivity FORMAT Template SETTINGS 
+format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
+format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+```
+`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
+All delimiters in the input data must be strictly equal to delimiters in specified format strings.
+ 
+## TemplateIgnoreSpaces {#templateignorespaces}
+
+This format is suitable only for input.
+Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters. 
+It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
+```sql
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
+format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
+format_schema_rows_between_delimiter = ','
+```
 
 ## TSKV
 

@@ -1,6 +1,6 @@
 #include "config_formats.h"
 
-#if USE_ORC or USE_PARQUET
+#if USE_ORC || USE_PARQUET
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>

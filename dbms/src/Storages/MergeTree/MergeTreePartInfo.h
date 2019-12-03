@@ -95,6 +95,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
     String dir_name;
     String prefix;
 
+    String disk;
+
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 

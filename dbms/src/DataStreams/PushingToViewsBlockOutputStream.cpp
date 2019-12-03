@@ -26,7 +26,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
+    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -129,7 +129,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.schedule([=]
+            pool.scheduleOrThrowOnError([=]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)
@@ -203,6 +203,19 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     {
         BlockInputStreamPtr in;
 
+        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+        ///
+        /// - We copy Context inside InterpreterSelectQuery to support
+        ///   modification of context (Settings) for subqueries
+        /// - InterpreterSelectQuery lives shorter than query pipeline.
+        ///   It's used just to build the query pipeline and no longer needed
+        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+        ///   **can** take a reference to Context from InterpreterSelectQuery
+        ///   (the problem raises only when function uses context from the
+        ///    execute*() method, like FunctionDictGet do)
+        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+        std::optional<InterpreterSelectQuery> select;
+
         if (view.query)
         {
             /// We create a table with the same name as original table and the same alias columns,
@@ -212,8 +225,8 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             local_context.addViewSource(
                     StorageValues::create(storage->getDatabaseName(), storage->getTableName(), storage->getColumns(),
                                           block));
-            InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+            select.emplace(view.query, local_context, SelectQueryOptions());
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

@@ -6,9 +6,11 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
@@ -32,6 +34,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
@@ -41,7 +45,6 @@ namespace ErrorCodes
 
 namespace
 {
-    static constexpr const std::chrono::seconds max_sleep_time{30};
     static constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
@@ -66,6 +69,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
+    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
 {
@@ -138,7 +142,7 @@ void StorageDistributedDirectoryMonitor::run()
                 ++error_count;
                 sleep_time = std::min(
                     std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
-                    std::chrono::milliseconds{max_sleep_time});
+                    max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
             }
         }
@@ -189,7 +193,9 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
+    const auto settings = storage.global_context.getSettings();
+    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
+        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 }
 
 
@@ -266,17 +272,41 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 void StorageDistributedDirectoryMonitor::readQueryAndSettings(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
-    UInt64 magic_number_or_query_size;
+    UInt64 query_size;
+    readVarUInt(query_size, in);
 
-    readVarUInt(magic_number_or_query_size, in);
-
-    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
     {
-        insert_settings.deserialize(in);
-        readVarUInt(magic_number_or_query_size, in);
+        /// Read extra information.
+        String extra_info_as_string;
+        readStringBinary(extra_info_as_string, in);
+        readVarUInt(query_size, in);
+        ReadBufferFromString extra_info(extra_info_as_string);
+
+        UInt64 initiator_revision;
+        readVarUInt(initiator_revision, extra_info);
+        if (ClickHouseRevision::get() < initiator_revision)
+        {
+            LOG_WARNING(
+                log,
+                "ClickHouse shard version is older than ClickHouse initiator version. "
+                    << "It may lack support for new features.");
+        }
+
+        insert_settings.deserialize(extra_info);
+
+        /// Add handling new data here, for example:
+        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
+        ///    readVarUInt(my_new_data, extra_info);
     }
-    insert_query.resize(magic_number_or_query_size);
-    in.readStrict(insert_query.data(), magic_number_or_query_size);
+    else if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+    {
+        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
+        readVarUInt(query_size, in);
+    }
+
+    insert_query.resize(query_size);
+    in.readStrict(insert_query.data(), query_size);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -353,8 +383,19 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// we must try to re-send exactly the same batches.
             /// So we save contents of the current batch into the current_batch_file_path file
             /// and truncate it afterwards if all went well.
-            WriteBufferFromFile out{parent.current_batch_file_path};
-            writeText(out);
+
+            /// Temporary file is required for atomicity.
+            String tmp_file{parent.current_batch_file_path + ".tmp"};
+
+            if (Poco::File{tmp_file}.exists())
+                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
+
+            {
+                WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
+                writeText(out);
+            }
+
+            Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
@@ -390,7 +431,8 @@ struct StorageDistributedDirectoryMonitor::Batch
                 remote->writePrepared(in);
             }
 
-            remote->writeSuffix();
+            if (remote)
+                remote->writeSuffix();
         }
         catch (const Exception & e)
         {
@@ -537,6 +579,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 

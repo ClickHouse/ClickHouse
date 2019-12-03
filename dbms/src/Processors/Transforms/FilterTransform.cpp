@@ -1,6 +1,8 @@
 #include <Processors/Transforms/FilterTransform.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -62,7 +64,8 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (constant_filter_description.always_false)
+    if (constant_filter_description.always_false
+        || expression->checkColumnIsAlwaysFalse(filter_column_name))
     {
         input.close();
         output.finish();
@@ -128,7 +131,7 @@ void FilterTransform::transform(Chunk & chunk)
     size_t first_non_constant_column = num_columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!isColumnConst(*columns[i]))
+        if (i != filter_column_position && !isColumnConst(*columns[i]))
         {
             first_non_constant_column = i;
             break;

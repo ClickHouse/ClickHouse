@@ -7,6 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int POSITION_OUT_OF_BOUND;
 }
 
@@ -94,6 +95,15 @@ Columns Chunk::detachColumns()
 {
     num_rows = 0;
     return std::move(columns);
+}
+
+void Chunk::addColumn(ColumnPtr column)
+{
+    if (column->size() != num_rows)
+        throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
+                        toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
+
+    columns.emplace_back(std::move(column));
 }
 
 void Chunk::erase(size_t position)

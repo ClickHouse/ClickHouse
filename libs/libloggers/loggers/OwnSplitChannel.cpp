@@ -9,7 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <common/getThreadNumber.h>
-
+#include <Common/SensitiveDataMasker.h>
 
 namespace DB
 {
@@ -20,6 +20,24 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 
+    if (auto masker = SensitiveDataMasker::getInstance())
+    {
+        auto message_text = msg.getText();
+        auto matches = masker->wipeSensitiveData(message_text);
+        if (matches > 0)
+        {
+            logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
+            return;
+        }
+
+    }
+
+    logSplit(msg);
+}
+
+
+void OwnSplitChannel::logSplit(const Poco::Message & msg)
+{
     ExtendedLogMessage msg_ext = ExtendedLogMessage::getFrom(msg);
 
     /// Log data to child channels
@@ -30,6 +48,8 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         else
             channel.first->log(msg); // ordinary child
     }
+
+    auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
     /// Log to "TCP queue" if message is not too noisy
     if (logs_queue && msg.getPriority() <= logs_queue->max_priority)
@@ -79,6 +99,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (auto log = text_log.lock())
         log->add(elem);
 }
+
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
 {

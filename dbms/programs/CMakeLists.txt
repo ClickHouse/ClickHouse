@@ -205,6 +205,9 @@ else ()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
+    if (USE_GDB_ADD_INDEX)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
+    endif()
 endif ()
 
 if (TARGET clickhouse-server AND TARGET copy-headers)

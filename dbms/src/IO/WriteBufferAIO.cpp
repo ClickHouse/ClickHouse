@@ -1,6 +1,7 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferAIO.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/ProfileEvents.h>
 
 #include <limits>
@@ -199,6 +200,9 @@ bool WriteBufferAIO::waitForAIOCompletion()
             throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::CANNOT_IO_GETEVENTS);
         }
     }
+
+    // Unpoison the memory returned from an uninstrumented system function.
+    __msan_unpoison(&event, sizeof(event));
 
     is_pending_write = false;
 #if defined(__FreeBSD__)

@@ -48,7 +48,6 @@ struct ClearableHashTableCell : public BaseCell
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
-
 template
 <
     typename Key,
@@ -59,8 +58,8 @@ template
 class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
-    using key_type = Key;
-    using value_type = typename ClearableHashSet::cell_type::value_type;
+    using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
+    using typename Base::LookupResult;
 
     void clear()
     {
@@ -79,9 +78,6 @@ template
 class ClearableHashSetWithSavedHash: public HashTable<Key, ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
-    using key_type = Key;
-    using value_type = typename ClearableHashSetWithSavedHash::cell_type::value_type;
-
     void clear()
     {
         ++this->version;

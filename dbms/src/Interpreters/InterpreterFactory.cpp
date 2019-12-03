@@ -133,7 +133,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
-    else if (query->as<ASTExistsQuery>())
+    else if (query->as<ASTExistsTableQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsDictionaryQuery>())
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
@@ -142,6 +146,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
     else if (query->as<ASTShowCreateDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateDictionaryQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }

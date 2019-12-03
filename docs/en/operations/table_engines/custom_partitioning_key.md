@@ -6,7 +6,7 @@ A partition is a logical combination of records in a table by a specified criter
 
 The partition is specified in the `PARTITION BY expr` clause when [creating a table](mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
-``` sql
+```sql
 CREATE TABLE visits
 (
     VisitDate Date,
@@ -20,7 +20,7 @@ ORDER BY Hour;
 
 The partition key can also be a tuple of expressions (similar to the [primary key](mergetree.md#primary-keys-and-indexes-in-queries)). For example:
 
-``` sql
+```sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
 PARTITION BY (toMonday(StartDate), EventType)
 ORDER BY (CounterID, StartDate, intHash32(UserID));
@@ -35,7 +35,7 @@ When inserting new data to a table, this data is stored as a separate part (chun
 
 Use the [system.parts](../system_tables.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
-``` sql
+```sql
 SELECT
     partition,
     name,
@@ -44,7 +44,7 @@ FROM system.parts
 WHERE table = 'visits'
 ```
 
-```
+```text
 ┌─partition─┬─name───────────┬─active─┐
 │ 201901    │ 201901_1_3_1   │      0 │
 │ 201901    │ 201901_1_9_2   │      1 │
@@ -74,11 +74,11 @@ The `active` column shows the status of the part. `1` is active; `0` is inactive
 
 As you can see in the example, there are several separated parts of the same partition (for example, `201901_1_3_1` and `201901_1_9_2`). This means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately 15 minutes after inserting. In addition, you can perform a non-scheduled merge using the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query. Example:
 
-``` sql
+```sql
 OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
-```
+```text
 ┌─partition─┬─name───────────┬─active─┐
 │ 201901    │ 201901_1_3_1   │      0 │
 │ 201901    │ 201901_1_9_2   │      1 │
@@ -96,7 +96,7 @@ Inactive parts will be deleted approximately 10 minutes after merging.
 Another way to view a set of parts and partitions is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example:
 
 ```bash
-dev:/var/lib/clickhouse/data/default/visits$ ls -l
+/var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2

@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -397,7 +398,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
-    else /*if constexpr (std::is_integral_v<typename DataType::FieldType>)*/
+    else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
 }
 
@@ -636,7 +637,7 @@ struct ConvertImplGenericFromString
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeAsTextEscaped(column_to, read_buffer, format_settings);
+                data_type_to.deserializeAsWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
@@ -970,8 +971,16 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            if (this->getName().find("OrZero") != std::string::npos ||
+                this->getName().find("OrNull") != std::string::npos)
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
+                        ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         if (arguments.size() == 2)
         {
@@ -1232,7 +1241,7 @@ struct ToNumberMonotonicity
         /// Integer cases.
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
-        const bool to_is_unsigned = std::is_unsigned_v<T>;
+        const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
@@ -1539,6 +1548,9 @@ public:
 
     String getName() const override { return name; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
     bool hasInformationAboutMonotonicity() const override
     {
         return static_cast<bool>(monotonicity_for_range);
@@ -1667,6 +1679,21 @@ private:
                                 " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
             }
         };
+    }
+
+    WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
+    {
+        /// Conversion from String through parsing.
+        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
+        {
+            return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+            {
+                ConvertImplGenericFromString::execute(block, arguments, result);
+            };
+        }
+        else
+            throw Exception{"Conversion from " + from_type_untyped->getName() + " to " + to_type->getName() +
+                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
@@ -2145,12 +2172,11 @@ private:
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
 
+            case TypeIndex::AggregateFunction:
+                return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             default:
                 break;
         }
-
-        /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
-        ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
         throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
@@ -2171,6 +2197,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 protected:
 

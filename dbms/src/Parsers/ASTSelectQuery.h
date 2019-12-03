@@ -42,6 +42,7 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
+    bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -82,6 +83,7 @@ public:
     ASTPtr array_join_expression_list() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
+    bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
     void addTableFunction(ASTPtr & table_function_ptr);
 

@@ -2,15 +2,18 @@
 
 #include <Core/Names.h>
 #include <Core/Types.h>
-#include <IO/DelimitedReadBuffer.h>
-#include <common/logger_useful.h>
+#include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
 
-using ConsumerBufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
@@ -25,6 +28,7 @@ public:
         const std::atomic<bool> & stopped_);
     ~ReadBufferFromKafkaConsumer() override;
 
+    void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
@@ -47,6 +51,7 @@ private:
     const size_t poll_timeout = 0;
     bool stalled = false;
     bool intermediate_commit = true;
+    bool allowed = true;
 
     const std::atomic<bool> & stopped;
 

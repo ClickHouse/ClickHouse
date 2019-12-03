@@ -23,9 +23,11 @@
 
 #include <Formats/FormatSettings.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
+#include <IO/ZlibInflatingReadBuffer.h>
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -39,7 +41,8 @@
 #endif
 
 
-#define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
 
 
 namespace DB
@@ -271,7 +274,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '+':
                 break;
             case '-':
-                if (std::is_signed_v<T>)
+                if (is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -338,7 +341,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (unlikely(buf.eof()))
         return on_error();
 
-    if (std::is_signed_v<T> && *buf.position() == '-')
+    if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -371,7 +374,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    x = std::is_signed_v<T> && negative ? -res : res;
+    x = is_signed_v<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -652,7 +655,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
@@ -667,7 +670,7 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
@@ -690,7 +693,7 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
@@ -712,7 +715,7 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -751,7 +754,7 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
@@ -909,5 +912,30 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
+
+template <class TReadBuffer, class... Types>
+std::unique_ptr<ReadBuffer> getReadBuffer(const DB::CompressionMethod method, Types&&... args)
+{
+if (method == DB::CompressionMethod::Gzip)
+{
+    auto read_buf = std::make_unique<TReadBuffer>(std::forward<Types>(args)...);
+    return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
+}
+return std::make_unique<TReadBuffer>(args...);
+}
+
+/** This function just copies the data from buffer's internal position (in.position())
+  * to current position (from arguments) into memory.
+  */
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
+
+/** This function is negative to eof().
+  * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
+  * And saves data from buffer's position to current if there is no pending data in buffer.
+  * Why we have to use this strange function? Consider we have buffer's internal position in the middle
+  * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
+  * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
+  */
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current);
 
 }

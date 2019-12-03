@@ -47,12 +47,12 @@ private:
     /// Read is finished.
     bool finished = false;
 
-    RowRef current_key;         /// The current primary key.
-    RowRef next_key;            /// The primary key of the next row.
+    SharedBlockRowRef current_key;         /// The current primary key.
+    SharedBlockRowRef next_key;            /// The primary key of the next row.
 
-    RowRef first_negative;        /// The first negative row for the current primary key.
-    RowRef last_positive;         /// The last positive row for the current primary key.
-    RowRef last_negative;         /// Last negative row. It is only stored if there is not one row is written to output.
+    SharedBlockRowRef first_negative;        /// The first negative row for the current primary key.
+    SharedBlockRowRef last_positive;         /// The last positive row for the current primary key.
+    SharedBlockRowRef last_negative;         /// Last negative row. It is only stored if there is not one row is written to output.
 
     size_t count_positive = 0;    /// The number of positive rows for the current primary key.
     size_t count_negative = 0;    /// The number of negative rows for the current primary key.

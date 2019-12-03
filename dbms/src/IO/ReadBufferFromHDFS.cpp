@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 #include <IO/HDFSCommon.h>
-#include <Poco/URI.h>
 #include <hdfs/hdfs.h>
 
 
@@ -16,7 +15,7 @@ namespace ErrorCodes
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
-    Poco::URI hdfs_uri;
+    std::string hdfs_uri;
     hdfsFile fin;
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
@@ -26,8 +25,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
     {
-
-        auto & path = hdfs_uri.getPath();
+        const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+        const std::string path = hdfs_uri.substr(begin_of_path);
         fin = hdfsOpenFile(fs.get(), path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
@@ -39,7 +38,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     {
         int bytes_read = hdfsRead(fs.get(), fin, start, size);
         if (bytes_read < 0)
-            throw Exception("Fail to read HDFS file: " + hdfs_uri.toString() + " " + std::string(hdfsGetLastError()),
+            throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::NETWORK_ERROR);
         return bytes_read;
     }

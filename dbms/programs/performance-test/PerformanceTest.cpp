@@ -35,7 +35,7 @@ void waitQuery(Connection & connection)
         if (!connection.poll(1000000))
             continue;
 
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
@@ -120,7 +120,7 @@ bool PerformanceTest::checkPreconditions() const
 
             while (true)
             {
-                Connection::Packet packet = connection.receivePacket();
+                Packet packet = connection.receivePacket();
 
                 if (packet.type == Protocol::Server::Data)
                 {

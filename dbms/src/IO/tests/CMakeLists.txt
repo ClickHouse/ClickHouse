@@ -59,10 +59,10 @@ target_link_libraries (write_int PRIVATE clickhouse_common_io)
 
 if (OS_LINUX OR OS_FREEBSD)
     add_executable(write_buffer_aio write_buffer_aio.cpp)
-    target_link_libraries (write_buffer_aio PRIVATE clickhouse_common_io stdc++fs)
+    target_link_libraries (write_buffer_aio PRIVATE clickhouse_common_io)
 
     add_executable(read_buffer_aio read_buffer_aio.cpp)
-    target_link_libraries (read_buffer_aio PRIVATE clickhouse_common_io stdc++fs)
+    target_link_libraries (read_buffer_aio PRIVATE clickhouse_common_io)
 endif ()
 
 add_executable (zlib_buffers zlib_buffers.cpp)

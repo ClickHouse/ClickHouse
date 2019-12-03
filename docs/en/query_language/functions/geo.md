@@ -1,10 +1,10 @@
-# Functions for working with geographical coordinates
+# Functions for Working with Geographical Coordinates
 
 ## greatCircleDistance
 
 Calculate the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
-```
+```sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 ```
 
@@ -25,11 +25,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-``` sql
+```sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```
+```text
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
@@ -38,8 +38,9 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ## pointInEllipses
 
 Checks whether the point belongs to at least one of the ellipses.
+Coordinates are geometric in the Cartesian coordinate system.
 
-```
+```sql
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 ```
 
@@ -47,7 +48,7 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 - `x, y` — Coordinates of a point on the plane.
 - `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
-- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in meters.
+- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in units of x, y coordinates.
 
 The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
@@ -57,21 +58,21 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-``` sql
-SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
-```
-┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
-│                                                                   1 │
-└─────────────────────────────────────────────────────────────────────┘
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## pointInPolygon
 
 Checks whether the point belongs to the polygon on the plane.
 
-```
+```sql
 pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 ```
 
@@ -88,11 +89,11 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-``` sql
+```sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
-```
+```text
 ┌─res─┐
 │   1 │
 └─────┘
@@ -101,7 +102,7 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ## geohashEncode
 
 Encodes latitude and longitude as a geohash-string, please see (http://geohash.org/, https://en.wikipedia.org/wiki/Geohash).
-```
+```sql
 geohashEncode(longitude, latitude, [precision])
 ```
 
@@ -117,11 +118,11 @@ geohashEncode(longitude, latitude, [precision])
 
 **Example**
 
-``` sql
+```sql
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
 ```
 
-```
+```text
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
@@ -141,11 +142,11 @@ Decodes any geohash-encoded string into longitude and latitude.
 
 **Example**
 
-``` sql
+```sql
 SELECT geohashDecode('ezs42') AS res
 ```
 
-```
+```text
 ┌─res─────────────────────────────┐
 │ (-5.60302734375,42.60498046875) │
 └─────────────────────────────────┘
@@ -155,7 +156,7 @@ SELECT geohashDecode('ezs42') AS res
 
 Calculates [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
 
-```
+```sql
 geoToH3(lon, lat, resolution)
 ```
 
@@ -174,10 +175,10 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
-``` sql
+```sql
 SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ```
-```
+```text
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
@@ -206,10 +207,10 @@ Please note that function will throw an exception if resulting array is over 10'
 
 **Example**
 
-```
+```sql
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
 ```
-```
+```text
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘

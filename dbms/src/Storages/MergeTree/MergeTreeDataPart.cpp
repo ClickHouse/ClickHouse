@@ -43,6 +43,17 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
+static String getFileNameForColumn(const NameAndTypePair & column)
+{
+    String filename;
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column.name, substream_path);
+    });
+    return filename;
+}
+
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const String & part_path)
 {
     size_t minmax_idx_size = data.minmax_idx_column_types.size();
@@ -134,16 +145,22 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
+MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_)
     : storage(storage_)
+    , disk(disk_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
     , index_granularity_info(storage)
 {
 }
 
-MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+MergeTreeDataPart::MergeTreeDataPart(
+    const MergeTreeData & storage_,
+    const DiskSpace::DiskPtr & disk_,
+    const String & name_,
+    const MergeTreePartInfo & info_)
     : storage(storage_)
+    , disk(disk_)
     , name(name_)
     , info(info_)
     , index_granularity_info(storage)
@@ -240,9 +257,9 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 String MergeTreeDataPart::getFullPath() const
 {
     if (relative_path.empty())
-        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return storage.full_path + relative_path + "/";
+    return storage.getFullPathOnDisk(disk) + relative_path + "/";
 }
 
 String MergeTreeDataPart::getNameWithPrefix() const
@@ -308,7 +325,7 @@ time_t MergeTreeDataPart::getMaxTime() const
 
 MergeTreeDataPart::~MergeTreeDataPart()
 {
-    if (is_temp)
+    if (state == State::DeleteOnDestroy || is_temp)
     {
         try
         {
@@ -318,11 +335,14 @@ MergeTreeDataPart::~MergeTreeDataPart()
             if (!dir.exists())
                 return;
 
-            if (!startsWith(getNameWithPrefix(), "tmp"))
+            if (is_temp)
             {
-                LOG_ERROR(storage.log, "~DataPart() should remove part " << path
-                    << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
-                return;
+                if (!startsWith(getNameWithPrefix(), "tmp"))
+                {
+                    LOG_ERROR(storage.log, "~DataPart() should remove part " << path
+                        << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+                    return;
+                }
             }
 
             dir.remove(true);
@@ -364,10 +384,11 @@ void MergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+    String full_path = storage.getFullPathOnDisk(disk);
+    String from = full_path + relative_path;
+    String to = full_path + "delete_tmp_" + name;
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
-    String from = storage.full_path + relative_path;
-    String to = storage.full_path + "delete_tmp_" + name;
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};
@@ -447,7 +468,7 @@ void MergeTreeDataPart::remove() const
 void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
 {
     String from = getFullPath();
-    String to = storage.full_path + new_relative_path + "/";
+    String to = storage.getFullPathOnDisk(disk) + new_relative_path + "/";
 
     Poco::File from_file(from);
     if (!from_file.exists())
@@ -468,7 +489,7 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
         }
         else
         {
-            throw Exception("part directory " + to + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            throw Exception("Part directory " + to + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
         }
     }
 
@@ -495,7 +516,7 @@ String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) 
         res = "detached/" + (prefix.empty() ? "" : prefix + "_")
             + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
-        if (!Poco::File(storage.full_path + res).exists())
+        if (!Poco::File(storage.getFullPathOnDisk(disk) + res).exists())
             return res;
 
         LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists."
@@ -519,9 +540,25 @@ UInt64 MergeTreeDataPart::getMarksCount() const
 void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
     Poco::Path src(getFullPath());
-    Poco::Path dst(storage.full_path + getRelativePathForDetachedPart(prefix));
+    Poco::Path dst(storage.getFullPathOnDisk(disk) + getRelativePathForDetachedPart(prefix));
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(src, dst, 0);
+}
+
+void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const
+{
+    auto & reserved_disk = reservation->getDisk();
+    if (reserved_disk->getName() == disk->getName())
+        throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
+
+    String path_to_clone = storage.getFullPathOnDisk(reserved_disk) + "detached/";
+
+    if (Poco::File(path_to_clone + relative_path).exists())
+        throw Exception("Path " + path_to_clone + relative_path + " already exists. Can not clone ", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    Poco::File(path_to_clone).createDirectory();
+
+    Poco::File cloning_directory(getFullPath());
+    cloning_directory.copyTo(path_to_clone);
 }
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
@@ -551,8 +588,9 @@ void MergeTreeDataPart::loadIndexGranularity()
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
+
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + escapeForFileName(columns.front().name));
+    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + getFileNameForColumn(columns.front()));
     if (!Poco::File(marks_file_path).exists())
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -636,10 +674,10 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
     else
     {
-        String full_path = getFullPath();
-        partition.load(storage, full_path);
+        String path = getFullPath();
+        partition.load(storage, path);
         if (!isEmpty())
-            minmax_idx.load(storage, full_path);
+            minmax_idx.load(storage, path);
     }
 
     String calculated_partition_id = partition.getID(storage.partition_key_sample);
@@ -782,7 +820,7 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : storage.getColumns().getAllPhysical())
-            if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
+            if (Poco::File(getFullPath() + getFileNameForColumn(column) + ".bin").exists())
                 columns.push_back(column);
 
         if (columns.empty())
@@ -955,6 +993,8 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
             return "Outdated";
         case State::Deleting:
             return "Deleting";
+        case State::DeleteOnDestroy:
+            return "DeleteOnDestroy";
     }
 
     __builtin_unreachable();

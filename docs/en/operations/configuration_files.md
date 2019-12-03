@@ -1,10 +1,11 @@
 # Configuration Files {#configuration_files}
 
-The main server config file is `config.xml`. It resides in the `/etc/clickhouse-server/` directory.
+ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml`. Other files must be in the `/etc/clickhouse-server/config.d` directory.
 
-Individual settings can be overridden in the `*.xml` and `*.conf` files in the `config.d` directory next to the config file.
+!!! note "Note"
+    All the configuration files should be in XML format. Also, they should have the same root element, usually `<yandex>`.
 
-The `replace` or `remove` attributes can be specified for the elements of these config files.
+Some settings specified in the main configuration file can be overridden in other configuration files. The `replace` or `remove` attributes can be specified for the elements of these configuration files.
 
 If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
 
@@ -19,8 +20,10 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the 'users_config' element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
 In addition, `users_config` may have overrides in files from the `users_config.d` directory (for example, `users.d`) and substitutions. For example, you can have separate config file for each user like this:
-``` xml
+```bash
 $ cat /etc/clickhouse-server/users.d/alice.xml
+```
+```xml
 <yandex>
     <users>
       <alice>

@@ -27,7 +27,7 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
         throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(std::is_signed_v<A> && std::is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
@@ -37,7 +37,7 @@ inline bool divisionLeadsToFPE(A a, B b)
     if (unlikely(b == 0))
         return true;
 
-    if (unlikely(std::is_signed_v<A> && std::is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
+    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
     return false;
@@ -58,7 +58,7 @@ struct DivideIntegralImpl
 
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        if constexpr (std::is_integral_v<A> && std::is_integral_v<B> && (std::is_signed_v<A> || std::is_signed_v<B>))
+        if constexpr (is_integral_v<A> && is_integral_v<B> && (is_signed_v<A> || is_signed_v<B>))
             return std::make_signed_t<A>(a) / std::make_signed_t<B>(b);
         else
             return a / b;

@@ -12,7 +12,15 @@ if (GLIBC_COMPATIBILITY)
 
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
-    list(APPEND glibc_compatibility_sources musl/syscall.s musl/longjmp.s)
+    if (ARCH_ARM)
+        list (APPEND glibc_compatibility_sources musl/aarch64/syscall.s musl/aarch64/longjmp.s)
+        set (musl_arch_include_dir musl/aarch64)
+    elseif (ARCH_AMD64)
+        list (APPEND glibc_compatibility_sources musl/x86_64/syscall.s musl/x86_64/longjmp.s)
+        set (musl_arch_include_dir musl/x86_64)
+    else ()
+        message (FATAL_ERROR "glibc_compatibility can only be used on x86_64 or aarch64.")
+    endif ()
 
     list(REMOVE_ITEM glibc_compatibility_sources musl/getentropy.c)
     if(HAVE_SYS_RANDOM_H)
@@ -25,10 +33,10 @@ if (GLIBC_COMPATIBILITY)
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
-    target_include_directories(glibc-compatibility PRIVATE libcxxabi)
+    target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
-    if (USE_STATIC_LIBRARIES=0 AND MAKE_STATIC_LIBRARIES=OFF)
-        target_compile_options(PRIVATE -fPIC)
+    if (NOT USE_STATIC_LIBRARIES AND NOT MAKE_STATIC_LIBRARIES)
+        target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility)

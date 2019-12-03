@@ -17,7 +17,7 @@ If you use Oracle through the ODBC driver as a source of external dictionaries, 
 
 **Example**
 
-```
+```sql
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 

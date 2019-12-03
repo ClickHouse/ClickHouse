@@ -26,7 +26,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    String getDataPath() const override { return path; }
+    Strings getDataPaths() const override { return {path}; }
 
 protected:
     StorageSetOrJoinBase(
@@ -50,6 +50,8 @@ private:
 
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block) = 0;
+    /// Call after all blocks were inserted.
+    virtual void finishInsert() = 0;
     virtual size_t getSize() const = 0;
 };
 
@@ -75,6 +77,7 @@ private:
     SetPtr set;
 
     void insertBlock(const Block & block) override;
+    void finishInsert() override;
     size_t getSize() const override;
 
 protected:

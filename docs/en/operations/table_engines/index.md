@@ -45,6 +45,7 @@ Engines in the family:
 - [MySQL](mysql.md)
 - [ODBC](odbc.md)
 - [JDBC](jdbc.md)
+- [HDFS](hdfs.md)
 
 ### Special engines
 

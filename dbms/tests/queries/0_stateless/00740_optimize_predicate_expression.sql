@@ -12,11 +12,11 @@ SELECT
             SELECT perf_1.site, perf_1.z AS z_1
             FROM perf AS perf_1
             WHERE user_id = 000
-        ) ALL INNER JOIN (
+        ) jss1 ALL INNER JOIN (
             SELECT perf_2.site, perf_2.z AS z_2
             FROM perf AS perf_2
             WHERE user_id = 999
-        ) USING site) as avg_values,
+        ) jss2 USING site) as avg_values,
        z_1 - avg_values.1 AS dif_1, 
        z_2 - avg_values.2 AS dif_2, 
        dif_1 * dif_2 AS mul, 
@@ -26,10 +26,10 @@ FROM (
             SELECT perf_1.site, perf_1.z AS z_1
             FROM perf AS perf_1
             WHERE user_id = 000
-) ALL INNER JOIN (
+) js1 ALL INNER JOIN (
             SELECT perf_2.site, perf_2.z AS z_2
             FROM perf AS perf_2
             WHERE user_id = 999
-) USING site);
+) js2 USING site);
 
 DROP TABLE perf;
