@@ -792,7 +792,7 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
-## flatten {#flatten}
+## arrayFlatten {#arrayflatten}
 
 Converts array of arrays to a flat array.
 
@@ -812,7 +812,7 @@ The flattened array contains all the elements from all source arrays.
 flatten(array_of_arrays)
 ```
 
-Alias: `arrayFlatten`.
+Alias: `flatten`.
 
 
 **Parameters**
