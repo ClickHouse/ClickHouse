@@ -76,8 +76,8 @@ Now it's time to fill our ClickHouse server with some sample data. In this tutor
 ### Download and Extract Table Data
 
 ``` bash
-curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv 
-curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv 
+curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.
@@ -484,9 +484,28 @@ clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.visits_v1"
 ```
 
-## Queries
+## Example Queries
 
-TODO
+``` sql
+SELECT
+    StartURL AS URL,
+    AVG(Duration) AS AvgDuration
+FROM tutorial.visits_v1
+WHERE StartDate BETWEEN '2014-03-23' AND '2014-03-30'
+GROUP BY URL
+ORDER BY AvgDuration DESC
+LIMIT 10
+```
+
+
+``` sql
+SELECT
+    sum(Sign) AS visits,
+    sumIf(Sign, has(Goals.ID, 1105530)) AS goal_visits,
+    (100. * goal_visits) / visits AS goal_percent
+FROM tutorial.visits_v1
+WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
+```
 
 ## Cluster Deployment
 
@@ -525,7 +544,7 @@ ClickHouse cluster is a homogenous cluster. Steps to set up:
 </remote_servers>
 ```
 </details>
-    
+
 Creating a local table:
 ``` sql
 CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
@@ -577,7 +596,7 @@ To provide for resilience in production environment we recommend that each shard
 </remote_servers>
 ```
 </details>
-    
+
 To enable replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
         automatically. It's recommended to deploy ZooKeeper cluster to separate servers.
 
