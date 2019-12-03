@@ -189,8 +189,6 @@ SELECT javaHash('');
 
 A `Int32` data type hash value.
 
-Type: `javaHash`.
-
 **Example**
 
 Query:
@@ -209,7 +207,7 @@ Result:
 
 ## javaHashUTF16LE {#javahashutf16le}
 
-Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string in UTF-16LE encoding.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
 
 **Syntax** 
 
@@ -224,8 +222,6 @@ javaHashUTF16LE(stringUtf16le)
 **Returned value**
 
 A `Int32` data type hash value.
-
-Type: `javaHash`.
 
 **Example**
 
@@ -243,38 +239,6 @@ Result:
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
-```
-
-If string with any other encoding than `utf-16le` has passed then different hash will be returned.
-
-Query:
-
-```sql
-SELECT javaHashUTF16LE('test')
-```
-
-Result:
-
-```text
-┌─javaHashUTF16LE('test')─┐
-│                  834943 │
-└─────────────────────────┘
-```
-
-Without `convertCharset` function some result will be returned.
-
-Query:
-
-```sql
-SELECT javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')
-```
-
-Result:
-
-```text
-┌─javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')─┐
-│                                     -1788019318 │
-└─────────────────────────────────────────────────┘
 ```
 
 ## hiveHash {#hash_functions-hivehash}
