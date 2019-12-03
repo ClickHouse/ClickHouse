@@ -54,6 +54,7 @@ class MergeList;
 class Cluster;
 class Compiler;
 class MarkCache;
+class QueryCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
@@ -440,6 +441,11 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of query results of specified size. This can be done only once.
+    void setQueryCache(size_t cache_size_in_bytes, const std::chrono::seconds & expiration_delay);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void dropQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

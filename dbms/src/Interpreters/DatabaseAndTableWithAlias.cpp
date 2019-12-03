@@ -17,6 +17,9 @@ NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 struct ASTTableExpression;
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(String database_, String table_, String alias_) :
+    database(database_), table(table_), alias(alias_) {}
+
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
     alias = identifier.tryGetAlias();

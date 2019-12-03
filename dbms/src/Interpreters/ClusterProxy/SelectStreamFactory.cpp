@@ -1,5 +1,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/QueryCache.h>
+#include <DataStreams/CacheBlockInputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
@@ -69,10 +71,25 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Block & header, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
+    if (context.getSettingsRef().use_experimental_distributed_query_cache)
+    {
+        auto key = QueryCache::getKey(*query_ast, 0, processed_stage);
+        auto cache = context.getQueryCache()->getCache(key, context);
+        if (cache)
+            return std::make_shared<CacheBlockInputStream>(*cache->blocks);
+    }
+
     checkStackSize();
 
     InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
     BlockInputStreamPtr stream = interpreter.execute().in;
+    if (context.getSettingsRef().use_experimental_distributed_query_cache)
+    {
+        auto key = QueryCache::getKey(*query_ast, 0, processed_stage);
+        auto tables = QueryCache::getRefTables(*query_ast, context);
+        if (tables)
+            stream->enableQueryCache(key, tables, context.getQueryCache());
+    }
 
     /** Materialization is needed, since from remote servers the constants come materialized.
       * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -117,11 +134,29 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_remote_stream = [&]()
     {
+        if (context.getSettingsRef().use_experimental_distributed_query_cache)
+        {
+            auto key = QueryCache::getKey(*query_ast, shard_info.shard_num, processed_stage);
+            auto cache = context.getQueryCache()->getCache(key, context);
+            if (cache)
+            {
+                res.emplace_back(std::make_shared<CacheBlockInputStream>(*cache->blocks));
+                return;
+            }
+        }
+
         auto stream = std::make_shared<RemoteBlockInputStream>(
             shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
+        if (context.getSettingsRef().use_experimental_distributed_query_cache)
+        {
+            auto key = QueryCache::getKey(*query_ast, shard_info.shard_num, processed_stage);
+            auto tables = QueryCache::getRefTables(*query_ast, context);
+            if (tables)
+                stream->enableQueryCache(key, tables, context.getQueryCache());
+        }
         res.emplace_back(std::move(stream));
     };
 

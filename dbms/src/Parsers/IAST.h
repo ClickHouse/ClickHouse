@@ -156,6 +156,7 @@ public:
         bool one_line;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        bool with_alias = true;
 
         char nl_or_ws;
 
@@ -167,7 +168,8 @@ public:
 
         FormatSettings(std::ostream & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            with_alias(other.with_alias)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }

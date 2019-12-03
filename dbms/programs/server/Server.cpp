@@ -508,6 +508,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
+    /// Size of cache for query results.
+    size_t query_cache_size = config().getUInt64("query_cache_memory_size", 0);
+    if (!query_cache_size)
+        LOG_ERROR(log, "Too low query cache memory size will lead to performance degradation.");
+    if (query_cache_size > max_cache_size)
+    {
+        query_cache_size = max_cache_size;
+        LOG_INFO(log, "Query cache memory size was lowered to " << formatReadableSizeWithBinarySuffix(query_cache_size)
+            << " because the system has low amount of memory");
+    }
+    size_t query_cache_min_lifetime = config().getUInt64("query_cache_min_lifetime", 600);
+    global_context->setQueryCache(query_cache_size, std::chrono::seconds(query_cache_min_lifetime));
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)

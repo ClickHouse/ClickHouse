@@ -15,6 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
+    bool query_cache;
     bool temporary{false};
 
 protected:

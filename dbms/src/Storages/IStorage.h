@@ -435,6 +435,7 @@ public:
         return {};
     }
 
+    virtual UInt64 getVersion() const { return 0; }
     static DB::CompressionMethod chooseCompressionMethod(const String & uri, const String & compression_method);
 
 private:

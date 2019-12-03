@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryCache.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
@@ -58,7 +59,17 @@ Block IBlockInputStream::read()
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
+    {
         res = readImpl();
+
+        if (query_cache_key.length() > 0 && query_cache)
+        {
+            if (res && res.rows() > 0)
+                result_blocks.push_back(res);
+            else if (result_blocks.size() > 0)
+                query_cache->set(query_cache_key, std::make_shared<QueryResult>(query_cache_tables, std::make_shared<Blocks>(result_blocks)));
+        }
+    }
 
     if (res)
     {
