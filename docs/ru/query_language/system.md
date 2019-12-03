@@ -3,7 +3,7 @@
 - [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 - [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 - [DROP DNS CACHE](#query_language-system-drop-dns-cache)
-- [DROP MARKS CACHE](#query_language-system-drop-marks-cache)
+- [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 - [FLUSH LOGS](#query_language-system-flush_logs)
 - [RELOAD CONFIG](#query_language-system-reload-config)
 - [SHUTDOWN](#query_language-system-shutdown)
@@ -36,7 +36,7 @@ SELECT name, status FROM system.dictionaries;
 
 Для более удобного (автоматического) управления кешем см. параметры disable_internal_dns_cache, dns_cache_update_period.
 
-## DROP MARKS CACHE {#query_language-system-drop-marks-cache}
+## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
 Сбрасывает кеш "засечек" (`mark cache`). Используется при разработке ClickHouse и тестах производительности.
 
@@ -91,7 +91,7 @@ SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```sql
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
-!!! note "Note":
+!!! note "Note"
     `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
 
 

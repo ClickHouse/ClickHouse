@@ -513,6 +513,16 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
     log_queries=1
 
+## log_query_threads {#settings-log-query-threads}
+
+Setting up query threads logging.
+
+Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+
+**Example**:
+
+    log_query_threads=1
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks to form for insertion into a table.
@@ -594,6 +604,13 @@ Default value: 100,000 (checks for canceling and sends the progress ten times pe
 Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
+
+## cancel_http_readonly_queries_on_client_close
+
+Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+
+Default value: 0
+
 
 ## poll_interval
 
@@ -994,6 +1011,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
+<<<<<<< HEAD
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
@@ -1005,5 +1023,20 @@ Possible values:
 
 Default value: 0.
 
+=======
+## input_format_parallel_parsing
+
+- Type: bool
+- Default value: True
+
+Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
+
+## min_chunk_bytes_for_parallel_parsing
+
+- Type: unsigned int
+- Default value: 1 MiB
+
+The minimum chunk size in bytes, which each thread will parse in parallel.
+>>>>>>> da754943d87c78168b9c2f5510b727def69b600c
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
