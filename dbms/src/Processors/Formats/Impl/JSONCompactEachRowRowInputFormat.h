@@ -43,11 +43,10 @@ private:
 
     DataTypes data_types;
     std::vector<UInt8> read_columns;
+    std::vector<size_t> not_seen_columns;
 
     /// This is for the correct exceptions in skipping unknown fields.
     std::vector<String> names_of_columns;
-
-    bool have_always_default_columns = false;
 
     bool with_names;
 };

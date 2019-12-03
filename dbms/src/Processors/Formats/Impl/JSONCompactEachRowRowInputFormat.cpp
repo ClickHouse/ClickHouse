@@ -97,12 +97,11 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
         }
     }
 
-    for (auto read_column : read_columns)
+    for (size_t i = 0; i < read_columns.size(); ++i)
     {
-        if (!read_column)
+        if (!read_columns[i])
         {
-            have_always_default_columns = true;
-            break;
+            not_seen_columns.emplace_back(i);
         }
     }
 }
@@ -147,7 +146,6 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
     size_t num_columns = columns.size();
 
     read_columns.assign(num_columns, false);
-    bool have_default_columns = have_always_default_columns;
 
     assertChar('[', in);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
@@ -156,8 +154,6 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         if (table_column)
         {
             readField(*table_column, columns);
-            if (!read_columns[*table_column])
-                have_default_columns = true;
         }
         else
         {
@@ -175,15 +171,9 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
     }
     assertChar(']', in);
 
-    if (have_default_columns)
+    for (size_t i = 0; i < not_seen_columns.size(); i++)
     {
-        for (size_t i = 0; i < read_columns.size(); i++)
-        {
-            if (!read_columns[i])
-            {
-                columns[i]->insertDefault();
-            }
-        }
+        columns[not_seen_columns[i]]->insertDefault();
     }
 
     ext.read_columns = read_columns;
