@@ -34,7 +34,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<const DiskLocal>(default_disk_name, context.getPath(), 0));
+        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0));
 }
 
 
@@ -112,7 +112,7 @@ Volume::Volume(
 }
 
 
-ReservationPtr Volume::reserve(UInt64 expected_size) const
+ReservationPtr Volume::reserve(UInt64 expected_size)
 {
     /// This volume can not store files which size greater than max_data_part_size
 

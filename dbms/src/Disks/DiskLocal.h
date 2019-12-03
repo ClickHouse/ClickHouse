@@ -23,17 +23,17 @@ public:
     friend class DiskLocalReservation;
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-        : name(name_), path(path_), keep_free_space_bytes(keep_free_space_bytes_)
+        : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
     {
-        if (path.back() != '/')
-            throw Exception("Disk path must ends with '/', but '" + path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+        if (disk_path.back() != '/')
+            throw Exception("Disk disk_path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return path; }
+    const String & getPath() const override { return disk_path; }
 
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr reserve(UInt64 bytes) override;
 
     UInt64 getTotalSpace() const override;
 
@@ -43,73 +43,58 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 
-    DiskFilePtr file(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
+
+    bool isDirectory(const String & path) const override;
+
+    void createDirectory(const String & path) override;
+
+    void createDirectories(const String & path) override;
+
+    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+
+    void moveFile(const String & from_path, const String & to_path) override;
+
+    void copyFile(const String & from_path, const String & to_path) override;
+
+    std::unique_ptr<ReadBuffer> readFile(const String & path) const override;
+
+    std::unique_ptr<WriteBuffer> writeFile(const String & path) override;
+
+    bool supportsAtomicMove() const override { return true; }
 
 private:
-    bool tryReserve(UInt64 bytes) const;
+    bool tryReserve(UInt64 bytes);
 
 private:
     const String name;
-    const String path;
+    const String disk_path;
     const UInt64 keep_free_space_bytes;
 
     /// Used for reservation counters modification
     static std::mutex mutex;
-    mutable UInt64 reserved_bytes = 0;
-    mutable UInt64 reservation_count = 0;
+    UInt64 reserved_bytes = 0;
+    UInt64 reservation_count = 0;
 };
 
-using DiskLocalPtr = std::shared_ptr<const DiskLocal>;
+using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 
 
-class DiskLocalFile : public IDiskFile
+class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    DiskLocalFile(const DiskPtr & disk_ptr_, const String & rel_path_);
+    explicit DiskLocalDirectoryIterator(const String & path) : iter(path) {}
 
-    bool exists() const override;
+    void next() override { ++iter; }
 
-    bool isDirectory() const override;
+    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
 
-    void createDirectory() override;
-
-    void createDirectories() override;
-
-    void moveTo(const String & new_path) override;
-
-    void copyTo(const String & new_path) override;
-
-    std::unique_ptr<ReadBuffer> read() const override;
-
-    std::unique_ptr<WriteBuffer> write() override;
+    String name() const override { return iter.name(); }
 
 private:
-    DiskDirectoryIteratorImplPtr iterateDirectory() override;
-
-private:
-    Poco::File file;
-};
-
-class DiskLocalDirectoryIterator : public IDiskDirectoryIteratorImpl
-{
-public:
-    explicit DiskLocalDirectoryIterator(const DiskFilePtr & parent_);
-
-    const String & name() const override { return iter.name(); }
-
-    const DiskFilePtr & get() const override { return current_file; }
-
-    void next() override;
-
-    bool isValid() const override { return bool(current_file); }
-
-private:
-    void updateCurrentFile();
-
-private:
-    DiskFilePtr parent;
     Poco::DirectoryIterator iter;
-    DiskFilePtr current_file;
 };
 
 /**
@@ -119,11 +104,23 @@ private:
 class DiskLocalReservation : public IReservation
 {
 public:
-    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_) : IReservation(disk_, size_) {}
+    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk() const override { return disk; }
 
     void update(UInt64 new_size) override;
 
     ~DiskLocalReservation() override;
+
+private:
+    DiskLocalPtr disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
 };
 
 }

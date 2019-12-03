@@ -547,7 +547,7 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 
 void MergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
 {
-    auto & reserved_disk = reservation->getDisk();
+    auto reserved_disk = reservation->getDisk();
     if (reserved_disk->getName() == disk->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
 
