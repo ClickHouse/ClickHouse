@@ -27,6 +27,7 @@ private:
     String buffer_string;
     std::unique_ptr<WriteBufferFromString> temporary_buffer;
     size_t last_part_size;
+    RemoteHostFilter remote_host_filter;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finish upload with listing all our parts.
@@ -38,7 +39,8 @@ public:
         size_t minimum_upload_part_size_,
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const RemoteHostFilter & remote_host_filter_ = {});
 
     void nextImpl() override;
 

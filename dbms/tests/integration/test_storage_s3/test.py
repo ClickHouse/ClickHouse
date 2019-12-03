@@ -189,3 +189,16 @@ def test_multipart_put(cluster):
     assert uploaded_parts > 1
 
     assert csv_data == get_s3_file_content(cluster, filename)
+
+
+def test_remote_host_filter(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    put_communication_data(started_cluster, "=== RemoteHostFilter test ===")
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format("invalid_host", started_cluster.redirecting_to_http_port, format)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
+    other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format("invalid_host", started_cluster.redirecting_preserving_data_port, started_cluster.bucket, format, other_values)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
