@@ -97,8 +97,6 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
         }
     }
 
-    have_always_default_columns = false;
-
     for (auto read_column : read_columns)
     {
         if (!read_column)
@@ -111,6 +109,8 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
 
 void JSONCompactEachRowRowInputFormat::addInputColumn(const String & column_name)
 {
+    names_of_columns.emplace_back(StringRef(column_name.data(), column_name.size()));
+
     const auto column_it = column_indexes_by_names.find(column_name);
     if (column_it == column_indexes_by_names.end())
     {
@@ -161,7 +161,7 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         }
         else
         {
-            skipJSONField(in, StringRef());
+            skipJSONField(in, names_of_columns[file_column]);
         }
 
         skipWhitespaceIfAny(in);
