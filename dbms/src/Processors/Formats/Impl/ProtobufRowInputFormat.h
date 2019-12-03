@@ -33,8 +33,6 @@ public:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
-//    void resetParser() override;
-
 private:
     DataTypes data_types;
     ProtobufReader reader;
