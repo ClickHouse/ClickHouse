@@ -36,7 +36,7 @@ void test_basic_operations()
 {
     const char * KEY = "query";
 
-    QueryCache cache(1024*1024);
+    QueryCache cache(1024*1024, QueryCache::Delay::zero());
 
     ASSERT(!cache.get(KEY));
     cache.set(KEY, toPtr(QueryResult{}));

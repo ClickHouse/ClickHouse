@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS query_cache;
 CREATE TABLE query_cache (dt Date, id int, name String) ENGINE = MergeTree() PARTITION BY dt ORDER BY id;
 
 DROP TABLE IF EXISTS distributed_query_cache;
-CREATE TABLE distributed_query_cache (dt Date, id int, name String) ENGINE = Distributed('test_cluster_two_shards', default, query_cache);
+CREATE TABLE distributed_query_cache (dt Date, id int, name String) ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), query_cache);
 
 SELECT count() from distributed_query_cache where id in (SELECT id from query_cache WHERE dt = '2019-11-11' GROUP BY id); -- 0
 DROP QUERY_CACHE;
