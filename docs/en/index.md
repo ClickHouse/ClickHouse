@@ -1,8 +1,8 @@
-# ClickHouseとは?
+# What is ClickHouse?
 
-ClickHouseは、クエリのオンライン分析処理（OLAP）用の列指向のデータベース管理システム（DBMS）です。
+ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
 
-「通常の」行指向のDBMSでは、データは次の順序で保存されます。
+In a "normal" row-oriented DBMS, data is stored in this order:
 
 | Row | WatchID | JavaEnable | Title | GoodEvent | EventTime |
 | ------ | ------------------- | ---------- | ------------------ | --------- | ------------------- |
@@ -11,12 +11,12 @@ ClickHouseは、クエリのオンライン分析処理（OLAP）用の列指向
 | #2 | 89953706054 | 1 | Mission | 1 | 2016-05-18 07:38:00 |
 | #N | ... | ... | ... | ... | ... |
 
-つまり、行に関連するすべての値は物理的に隣り合わせに格納されます。
+In other words, all the values related to a row are physically stored next to each other.
 
-行指向のDBMSの例：MySQL, Postgres および MS SQL Server
+Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 {: .grey }
 
-列指向のDBMSでは、データは次のように保存されます：
+In a column-oriented DBMS, data is stored like this:
 
 | Row: | #0 | #1 | #2 | #N |
 | ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
@@ -26,74 +26,68 @@ ClickHouseは、クエリのオンライン分析処理（OLAP）用の列指向
 | GoodEvent: | 1 | 1 | 1 | ... |
 | EventTime: | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ... |
 
-これらの例は、データが配置される順序のみを示しています。
-異なる列の値は別々に保存され、同じ列のデータは一緒に保存されます。
+These examples only show the order that data is arranged in.
+The values from different columns are stored separately, and data from the same column is stored together.
 
-列指向DBMSの例：Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid および kdb+
+Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+.
 {: .grey }
 
-異なったデータ格納の順序は、異なったシナリオにより適します。
-データアクセスシナリオとは、クエリの実行内容、頻度、割合を指します。クエリで読み取られるの各種データの量（行、列、バイト）。データの読み取りと更新の関係。作業データのサイズとローカルでの使用方法。トランザクションが使用されるかどうか、およびそれらがどの程度分離されているか。データ複製と論理的整合性の要件。クエリの種類ごとの遅延とスループットの要件など。
+Different orders for storing data are better suited to different scenarios.
+The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 
-システムの負荷が高いほど、使用シナリオの要件に一致するようにセットアップされたシステムをカスタマイズすることがより重要になり、このカスタマイズはより細かくなります。大きく異なるシナリオに等しく適したシステムはありません。システムがさまざまなシナリオに適応可能である場合、高負荷下では、システムはすべてのシナリオを同等に不十分に処理するか、1つまたはいくつかの可能なシナリオでうまく機能します。
+The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-## OLAPシナリオの主要なプロパティ
+## Key Properties of the OLAP scenario
 
-- リクエストの大部分は読み取りアクセス用である。
-- データは、単一行ではなく、かなり大きなバッチ（> 1000行）で更新されます。または、まったく更新されない。
-- データはDBに追加されるが、変更されない。
-- 読み取りの場合、非常に多くの行がDBから抽出されるが、一部の列のみ。
-- テーブルは「幅が広く」、多数の列が含まれる。
-- クエリは比較的まれ（通常、サーバーあたり毎秒数百あるいはそれ以下の数のクエリ）。
-- 単純なクエリでは、約50ミリ秒の遅延が容認される。
-- 列の値はかなり小さく、数値や短い文字列（たとえば、URLごとに60バイト）。
-- 単一のクエリを処理する場合、高いスループットが必要（サーバーあたり毎秒最大数十億行）。
-- トランザクションは必要ない。
-- データの一貫性の要件が低い。
-- クエリごとに1つの大きなテーブルがある。 1つを除くすべてのテーブルは小さい。
-- クエリ結果は、ソースデータよりも大幅に小さくなる。つまり、データはフィルター処理または集計されるため、結果は単一サーバーのRAMに収まる。
+- The vast majority of requests are for read access.
+- Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
+- Data is added to the DB but is not modified.
+- For reads, quite a large number of rows are extracted from the DB, but only a small subset of columns.
+- Tables are "wide," meaning they contain a large number of columns.
+- Queries are relatively rare (usually hundreds of queries per server or less per second).
+- For simple queries, latencies around 50 ms are allowed.
+- Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
+- Requires high throughput when processing a single query (up to billions of rows per second per server).
+- Transactions are not necessary.
+- Low requirements for data consistency.
+- There is one large table per query. All tables are small, except for one.
+- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
 
-OLAPシナリオは、他の一般的なシナリオ（OLTPやKey-Valueアクセスなど）とは非常に異なることが容易にわかります。 したがって、まともなパフォーマンスを得るには、OLTPまたはKey-Value DBを使用して分析クエリを処理しようとするのは無意味です。 たとえば、分析にMongoDBまたはRedisを使用しようとすると、OLAPデータベースに比べてパフォーマンスが非常に低下します。
+It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-## OLAPシナリオで列指向データベースがよりよく機能する理由
+## Why Column-Oriented Databases Work Better in the OLAP Scenario
 
-列指向データベースは、OLAPシナリオにより適しています。ほとんどのクエリの処理が少なくとも100倍高速です。 理由を以下に詳しく説明しますが、その根拠は視覚的に簡単に説明できます：
+Column-oriented databases are better suited to OLAP scenarios: they are at least 100 times faster in processing most queries. The reasons are explained in detail below, but the fact is easier to demonstrate visually:
 
-**行指向DBMS**
+**Row-oriented DBMS**
 
 ![Row-oriented](images/row_oriented.gif#)
 
-**列指向DBMS**
+**Column-oriented DBMS**
 
 ![Column-oriented](images/column_oriented.gif#)
 
-違いがわかりましたか？
+See the difference?
 
 ### Input/output
 
-1. 分析クエリでは、少数のテーブル列のみを読み取る必要があります。列指向のデータベースでは、必要なデータのみを読み取ることができます。たとえば、100のうち5つの列が必要な場合、I/Oが20倍削減されることが期待できます。
-2. データはパケットで読み取られるため、圧縮が容易です。列のデータも圧縮が簡単です。これにより、I/Oボリュームがさらに削減されます。
-3. I/Oの削減により、より多くのデータがシステムキャッシュに収まります。
+1. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
+2. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
+3. Due to the reduced I/O, more data fits in the system cache.
 
-たとえば、「各広告プラットフォームのレコード数をカウントする」クエリでは、1つの「広告プラットフォームID」列を読み取る必要がありますが、これは非圧縮では1バイトの領域を要します。トラフィックのほとんどが広告プラットフォームからのものではない場合、この列は少なくとも10倍の圧縮が期待できます。高速な圧縮アルゴリズムを使用すれば、1秒あたり少なくとも非圧縮データに換算して数ギガバイトの速度でデータを展開できます。つまり、このクエリは、単一のサーバーで1秒あたり約数十億行の速度で処理できます。この速度はまさに実際に達成されます。
+For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
 <details markdown="1"><summary>Example</summary>
-```
+```bash
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.52053.
-
-:) SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-
-SELECT
-CounterID,
-count()
-FROM hits
-GROUP BY CounterID
-ORDER BY count() DESC
-LIMIT 20
-
+```
+```sql
+SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
+```
+```text
 ┌─CounterID─┬──count()─┐
 │    114208 │ 56057344 │
 │    115080 │ 51619590 │
@@ -116,27 +110,23 @@ LIMIT 20
 │    115079 │  8837972 │
 │    337234 │  8205961 │
 └───────────┴──────────┘
-
-20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
-
-:)
 ```
 
 </details>
 
 ### CPU
 
-クエリを実行するには大量の行を処理する必要があるため、個別の行ではなくベクター全体のすべての操作をディスパッチするか、ディスパッチコストがほとんどないようにクエリエンジンを実装すると効率的です。 適切なディスクサブシステムでこれを行わないと、クエリインタープリターが必然的にCPUを失速させます。
-データを列に格納し、可能な場合は列ごとに処理することは理にかなっています。
+Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
+It makes sense to both store data in columns and process it, when possible, by columns.
 
-これを行うには2つの方法があります:
+There are two ways to do this:
 
-1. ベクトルエンジン。 すべての操作は、個別の値ではなく、ベクトルに対して記述されます。 これは、オペレーションを頻繁に呼び出す必要がなく、ディスパッチコストが無視できることを意味します。 操作コードには、最適化された内部サイクルが含まれています。
+1. A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
 
-2. コード生成。 クエリ用に生成されたコードには、すべての間接的な呼び出しが含まれています。
+2. Code generation. The code generated for the query has all the indirect calls in it.
 
-これは、単純なクエリを実行する場合には意味がないため、「通常の」データベースでは実行されません。 ただし、例外があります。 たとえば、MemSQLはコード生成を使用して、SQLクエリを処理する際の遅延を減らします。 （比較のために、分析DBMSではレイテンシではなくスループットの最適化が必要です。）
+This is not done in "normal" databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
 
-CPU効率のために、クエリ言語は宣言型（SQLまたはMDX）、または少なくともベクトル（J、K）でなければなりません。 クエリには、最適化を可能にする暗黙的なループのみを含める必要があります。
+Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
 
 [Original article](https://clickhouse.yandex/docs/en/) <!--hide-->
