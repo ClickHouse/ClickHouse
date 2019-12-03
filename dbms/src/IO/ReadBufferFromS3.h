@@ -17,8 +17,6 @@ class ReadBufferFromS3 : public ReadBuffer
 {
 protected:
     Poco::URI uri;
-    std::string method;
-
     HTTPSessionPtr session;
     std::istream * istr; /// owned by session
     std::unique_ptr<ReadBuffer> impl;
@@ -26,11 +24,11 @@ protected:
     RemoteHostFilter remote_host_filter;
 
 public:
-    explicit ReadBufferFromS3(Poco::URI uri_,
+    explicit ReadBufferFromS3(const Poco::URI & uri_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
         const ConnectionTimeouts & timeouts = {},
-        const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const RemoteHostFilter & remote_host_filter_ = {});
+	const RemoteHostFilter & remote_host_filter_ = {});
 
     bool nextImpl() override;
 };
