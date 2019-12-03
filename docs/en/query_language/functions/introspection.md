@@ -1,6 +1,6 @@
 # Introspection Functions
 
-You can use functions described in this chapter to introspect ELF and DWARF for query profiling.
+You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
 !!! warning "Warning"
     These functions are slow and may impose security considerations.
@@ -16,7 +16,9 @@ ClickHouse saves profiler reports to the [trace_log](../../operations/system_tab
 
 ## addressToLine {#addresstoline}
 
-Converts virtual memory address inside ClickHouse server process to the filename and the number of a string in ClickHouse source code, using the debug information installed by the `clickhouse-common-static-dbg` package.
+Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
+
+If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
 
 **Syntax**
 
@@ -26,11 +28,16 @@ addressToLine(address_of_binary_instruction)
 
 **Parameters**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of code instruction that have been executed at the moment of sampling.
+- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
-- Source code filename and the number of string in this file.
+- Source code filename and the line number in this file delimited by colon.
+
+    For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+
+- Name of a binary, if the function couldn't find the debug information.
+- Empty string, if the address is not valid.
 
 Type: [String](../../data_types/string.md).
 
@@ -45,8 +52,37 @@ SET allow_introspection_functions=1
 Selecting the first string from the `trace_log` system table:
 
 ```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+```text
+Row 1:
+──────
+event_date:              2019-11-19
+event_time:              2019-11-19 18:57:23
+revision:                54429
+timer_type:              Real
+thread_number:           48
+query_id:                421b6855-1858-45a5-8f37-f383409d6d72
+trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
+```
+
+The `trace` field contains the stack trace at the moment of sampling.
+
+Getting the source code filename and the line number for a single address:
+
+```sql
+SELECT addressToLine(94784076370703) \G
+```
+```text
+Row 1:
+──────
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
+```
+
+Applying the function to the whole stack trace:
+
+```sql
 SELECT 
-    *,
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines  
 FROM system.trace_log 
 LIMIT 1 
@@ -58,13 +94,6 @@ The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) funct
 ```text
 Row 1:
 ──────
-event_date:              2019-11-19
-event_time:              2019-11-19 18:57:23
-revision:                54429
-timer_type:              Real
-thread_number:           48
-query_id:                421b6855-1858-45a5-8f37-f383409d6d72
-trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
 /build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
@@ -88,11 +117,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Parameters**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of code instruction that have been executed at the moment of sampling.
+- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
 - Symbol from ClickHouse object files.
+- Empty string, if the address is not valid.
 
 Type: [String](../../data_types/string.md).
 
@@ -107,8 +137,37 @@ SET allow_introspection_functions=1
 Selecting the first string from the `trace_log` system table:
 
 ```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+```text
+Row 1:
+──────
+event_date:    2019-11-20
+event_time:    2019-11-20 16:57:59
+revision:      54429
+timer_type:    Real
+thread_number: 48
+query_id:      724028bf-f550-45aa-910d-2af6212b94ac
+trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+```
+
+The `trace` field contains the stack trace at the moment of sampling.
+
+Getting a symbol for a single address:
+
+```sql
+SELECT addressToSymbol(94138803686098) \G
+```
+```text
+Row 1:
+──────
+addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
+```
+
+Applying the function to the whole stack trace:
+
+```sql
 SELECT 
-    *, 
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
@@ -121,13 +180,6 @@ The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) funct
 ```text
 Row 1:
 ──────
-event_date:    2019-11-20
-event_time:    2019-11-20 16:57:59
-revision:      54429
-timer_type:    Real
-thread_number: 48
-query_id:      724028bf-f550-45aa-910d-2af6212b94ac
-trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
 _ZNK2DB10Aggregator21executeWithoutKeyImplERPcmPNS0_28AggregateFunctionInstructionEPNS_5ArenaE
 _ZN2DB10Aggregator14executeOnBlockESt6vectorIN3COWINS_7IColumnEE13immutable_ptrIS3_EESaIS6_EEmRNS_22AggregatedDataVariantsERS1_IPKS3_SaISC_EERS1_ISE_SaISE_EERb
@@ -167,6 +219,7 @@ demangle(symbol)
 **Returned value**
 
 - Name of the C++ function.
+- Empty string if a symbol is not valid.
 
 Type: [String](../../data_types/string.md).
 
@@ -181,8 +234,37 @@ SET allow_introspection_functions=1
 Selecting the first string from the `trace_log` system table:
 
 ```sql
+SELECT * FROM system.trace_log LIMIT 1 \G
+```
+```text
+Row 1:
+──────
+event_date:    2019-11-20
+event_time:    2019-11-20 16:57:59
+revision:      54429
+timer_type:    Real
+thread_number: 48
+query_id:      724028bf-f550-45aa-910d-2af6212b94ac
+trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+```
+
+The `trace` field contains the stack trace at the moment of sampling.
+
+Getting a function name for a single address:
+
+```sql
+SELECT demangle(addressToSymbol(94138803686098)) \G
+```
+```text
+Row 1:
+──────
+demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
+```
+
+Applying the function to the whole stack trace:
+
+```sql
 SELECT 
-    *, 
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
@@ -191,17 +273,9 @@ LIMIT 1
 
 The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
-
 ```text
 Row 1:
 ──────
-event_date:      2019-11-20
-event_time:      2019-11-20 16:57:59
-revision:        54429
-timer_type:      Real
-thread_number:   48
-query_id:        724028bf-f550-45aa-910d-2af6212b94ac
-trace:           [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const
 DB::Aggregator::executeOnBlock(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn> > >, unsigned long, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)

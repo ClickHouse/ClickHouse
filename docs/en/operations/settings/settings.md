@@ -1011,7 +1011,6 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
-<<<<<<< HEAD
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
@@ -1023,7 +1022,6 @@ Possible values:
 
 Default value: 0.
 
-=======
 ## input_format_parallel_parsing
 
 - Type: bool
@@ -1037,6 +1035,5 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 - Default value: 1 MiB
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
->>>>>>> da754943d87c78168b9c2f5510b727def69b600c
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
