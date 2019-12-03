@@ -364,7 +364,7 @@ private:
       */
     void setSampleBlock(const Block & block);
 
-    /// Modify (structure) and save right block, @returns pointer to saved block
+    /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure();
     void initRequiredRightKeys();
