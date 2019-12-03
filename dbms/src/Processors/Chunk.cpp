@@ -34,11 +34,13 @@ static Columns unmuteColumns(MutableColumns && mut_columns)
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
     : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_)
 {
+    checkNumRowsIsConsistent();
 }
 
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
 {
+    checkNumRowsIsConsistent();
 }
 
 Chunk Chunk::clone() const
