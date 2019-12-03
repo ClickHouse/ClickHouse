@@ -415,7 +415,7 @@ void ValuesBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
-    // There is a good chance that all messages has the same format.
+    // There is a good chance that all messages have the same format.
     total_rows = 0;
 }
 
