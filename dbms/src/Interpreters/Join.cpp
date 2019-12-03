@@ -531,37 +531,45 @@ bool Join::addJoinedBlock(const Block & block)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    Block structured_block = structureRightBlock(block);
-
-    std::unique_lock lock(rwlock);
-
-    blocks.emplace_back(std::move(structured_block));
-    Block * stored_block = &blocks.back();
-
-    size_t rows = block.rows();
-    if (rows)
-        has_no_rows_in_maps = false;
-
-    if (kind != ASTTableJoin::Kind::Cross)
-    {
-        joinDispatch(kind, strictness, maps, [&](auto, auto strictness_, auto & map)
-        {
-            insertFromBlockImpl<strictness_>(*this, type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
-        });
-    }
-
     /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
+    UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
     {
-        UInt8 has_null = 0;
-        for (size_t i = 0; !has_null && i < null_map->size(); ++i)
-            has_null |= (*null_map)[i];
-
-        if (has_null)
-            blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+        for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
+            save_nullmap |= (*null_map)[i];
     }
 
-    return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    Block structured_block = structureRightBlock(block);
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
+
+    {
+        std::unique_lock lock(rwlock);
+
+        blocks.emplace_back(std::move(structured_block));
+        Block * stored_block = &blocks.back();
+
+        size_t rows = block.rows();
+        if (rows)
+            has_no_rows_in_maps = false;
+
+        if (kind != ASTTableJoin::Kind::Cross)
+        {
+            joinDispatch(kind, strictness, maps, [&](auto, auto strictness_, auto & map)
+            {
+                insertFromBlockImpl<strictness_>(*this, type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+            });
+        }
+
+        if (save_nullmap)
+            blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+
+        /// TODO: Do not calculate them every time
+        total_rows = getTotalRowCount();
+        total_bytes = getTotalByteCount();
+    }
+
+    return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
