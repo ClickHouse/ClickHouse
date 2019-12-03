@@ -233,8 +233,15 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
+
     if (prepared_sets.count(set_key))
         return; /// Already prepared.
+
+    if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
+    {
+        prepared_sets.insert({set_key, set_ptr_from_storage_set});
+        return;
+    }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
     BlockIO res = interpreter_subquery->execute();
@@ -254,6 +261,19 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
+}
+
+SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+{
+    const auto * table = subquery_or_table_name->as<ASTIdentifier>();
+    if (!table)
+        return nullptr;
+    const DatabaseAndTableWithAlias database_table(*table);
+    const auto storage = context.getTable(database_table.database, database_table.table);
+    if (storage->getName() != "Set")
+        return nullptr;
+    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    return storage_set->getSet();
 }
 
 

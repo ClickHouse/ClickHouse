@@ -140,6 +140,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
+    std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -150,12 +151,12 @@ struct ContextShared
     /// Storage policy chooser
     mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
 
-    std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
-    size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
-    size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
+    std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
+    std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
+    std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
+    std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
 
     std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
@@ -287,6 +288,7 @@ struct ContextShared
         external_dictionaries_loader.reset();
         external_models_loader.reset();
         background_pool.reset();
+        background_move_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
 
@@ -1489,6 +1491,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
+BackgroundProcessingPool & Context::getBackgroundMovePool()
+{
+    auto lock = getLock();
+    if (!shared->background_move_pool)
+        shared->background_move_pool.emplace(settings.background_move_pool_size, "BackgroundMovePool", "BgMoveProcPool");
+    return *shared->background_move_pool;
+}
+
 BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
@@ -1891,14 +1901,14 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
 void Context::setMaxTableSizeToDrop(size_t max_size)
 {
-    // Is initialized at server startup
-    shared->max_table_size_to_drop = max_size;
+    // Is initialized at server startup and updated at config reload
+    shared->max_table_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop;
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load(std::memory_order_relaxed);
 
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
@@ -1906,14 +1916,14 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
-    // Is initialized at server startup
-    shared->max_partition_size_to_drop = max_size;
+    // Is initialized at server startup and updated at config reload
+    shared->max_partition_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
 
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
