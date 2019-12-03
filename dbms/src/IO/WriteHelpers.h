@@ -702,8 +702,8 @@ inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const D
 {
     const auto & values = date_lut.getValues(datetime);
 
-    static const char week_days[3 * 7 + 1] = "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
-    static const char months[3 * 12 + 1] = "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
+    static const char week_days[3 * 8 + 1] = "XXX" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
+    static const char months[3 * 13 + 1] = "XXX" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
 
     buf.write(&week_days[values.day_of_week * 3], 3);
     buf.write(", ", 2);
