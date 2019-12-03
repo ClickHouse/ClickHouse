@@ -91,6 +91,7 @@ class CompiledExpressionCache;
 #endif
 
 /// (database name, table name)
+//FIXME replace with StorageID
 using DatabaseAndTableName = std::pair<String, String>;
 
 /// Table -> set of table-views that make SELECT from it.

@@ -65,6 +65,35 @@ struct ColumnSize
     }
 };
 
+struct StorageID
+{
+    String database_name;
+    String table_name;
+    String uuid;
+
+    StorageID() = delete;
+    StorageID(const String & database, const String & table, const String & uuid_ = {})
+        : database_name(database), table_name(table), uuid(uuid_) {}
+
+    String getFullTableName() const
+    {
+        return (database_name.empty() ? "" : database_name + ".") + table_name;
+    }
+
+    String getNameForLogs() const
+    {
+        return "`" + getFullTableName() + "` (UUID = " + uuid +")";
+    }
+
+    String getId() const
+    {
+        //if (uuid.empty())
+            return getFullTableName();
+        //else
+        //    return uuid;
+    }
+};
+
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
   * - the definition in which files (or not in files) the data is stored;
@@ -75,8 +104,9 @@ struct ColumnSize
 class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
 {
 public:
-    IStorage() = default;
-    explicit IStorage(ColumnsDescription virtuals_);
+    IStorage() = delete;
+    explicit IStorage(StorageID id_) : id(std::move(id_)) {}
+    IStorage(StorageID id_, ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -86,8 +116,19 @@ public:
     virtual std::string getName() const = 0;
 
     /// The name of the table.
-    virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const { return {}; }
+    StorageID getStorageID(std::unique_lock<std::mutex> * lock = nullptr) const;
+
+    // FIXME remove those methods
+    std::string getTableName() const
+    {
+        std::lock_guard lock(id_mutex);
+        return id.table_name;
+    }
+    std::string getDatabaseName() const
+    {
+        std::lock_guard lock(id_mutex);
+        return id.database_name;
+    }
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -166,6 +207,8 @@ protected: /// still thread-unsafe part.
     IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
+    StorageID id;
+    mutable std::mutex id_mutex;
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};
     IndicesDescription indices;
@@ -304,11 +347,17 @@ public:
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
       */
-    virtual void rename(const String & /*new_path_to_table_data*/, const String & /*new_database_name*/, const String & /*new_table_name*/,
+    virtual void rename(const String & /*new_path_to_table_data*/, const String & new_database_name, const String & new_table_name,
                         TableStructureWriteLockHolder &)
     {
-        throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        renameInMemory(new_database_name, new_table_name);
     }
+
+    /**
+     * Just updates names of database and table without moving any data on disk
+     * Can be called only from DatabaseAtomic.
+     */
+    virtual void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr);
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.

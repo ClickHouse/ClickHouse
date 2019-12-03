@@ -28,8 +28,6 @@ class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorag
     friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
@@ -48,8 +46,6 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const Context & context) override;
-
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void updateDependencies() override;
 
@@ -79,8 +75,6 @@ protected:
 
 private:
     // Configuration and state
-    String table_name;
-    String database_name;
     Context global_context;
     Context kafka_context;
     Names topics;
@@ -118,7 +112,7 @@ private:
 
     void threadFunc();
     bool streamToViews();
-    bool checkDependencies(const String & database_name, const String & table_name);
+    bool checkDependencies(const StorageID & table_id);
 };
 
 }

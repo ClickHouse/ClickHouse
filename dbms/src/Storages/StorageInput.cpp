@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 StorageInput::StorageInput(const String &table_name_, const ColumnsDescription & columns_)
-    : IStorage(columns_), table_name(table_name_)
+    : IStorage({"", table_name_}, columns_)
 {
     setColumns(columns_);
 }

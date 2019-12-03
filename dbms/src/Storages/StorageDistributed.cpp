@@ -216,10 +216,9 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & relative_data_path_,
     bool attach_)
-    : IStorage(ColumnsDescription({
+    : IStorage({database_name_, table_name_}, ColumnsDescription({
         {"_shard_num", std::make_shared<DataTypeUInt32>()},
     }, true)),
-    table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
     path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
@@ -237,8 +236,8 @@ StorageDistributed::StorageDistributed(
     if (!attach_ && !cluster_name.empty())
     {
         size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
-        if (num_local_shards && remote_database == database_name && remote_table == table_name)
-            throw Exception("Distributed table " + table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
+        if (num_local_shards && remote_database == database_name_ && remote_table == table_name_)
+            throw Exception("Distributed table " + table_name_ + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
 }
 
@@ -342,17 +341,18 @@ BlockInputStreams StorageDistributed::read(
         if (has_sharding_key)
         {
             auto smaller_cluster = skipUnusedShards(cluster, query_info);
+            auto storage_id = getStorageID();
 
             if (smaller_cluster)
             {
                 cluster = smaller_cluster;
-                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << storage_id.getNameForLogs() << ": "
                                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
             {
-                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << storage_id.getNameForLogs() << ": "
                                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
             }
         }
@@ -599,8 +599,6 @@ void StorageDistributed::flushClusterNodesAllData()
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
                                 TableStructureWriteLockHolder &)
 {
-    table_name = new_table_name;
-    database_name = new_database_name;
     if (!path.empty())
     {
         auto new_path = global_context.getPath() + new_path_to_table_data;
@@ -610,6 +608,7 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Str
         for (auto & node : cluster_nodes_data)
             node.second.directory_monitor->updatePath();
     }
+    renameInMemory(new_database_name, new_table_name);
 }
 
 

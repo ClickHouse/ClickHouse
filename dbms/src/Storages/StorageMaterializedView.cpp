@@ -100,8 +100,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext())
+    : IStorage({database_name_, table_name_}), global_context(local_context.getGlobalContext())
 {
     setColumns(columns_);
 
@@ -127,7 +126,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (!select_table_name.empty())
         global_context.addDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(database_name, table_name));
+            DatabaseAndTableName(database_name_, table_name_));   //FIXME
 
     // If the destination table is not set, use inner table
     if (!query.to_table.empty())
@@ -137,8 +136,8 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
-        target_database_name = database_name;
-        target_table_name = generateInnerTableName(table_name);
+        target_database_name = database_name_;
+        target_table_name = generateInnerTableName(table_name_);
         has_inner_table = true;
     }
 
@@ -169,7 +168,7 @@ StorageMaterializedView::StorageMaterializedView(
             if (!select_table_name.empty())
                 global_context.removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
-                    DatabaseAndTableName(database_name, table_name));
+                    DatabaseAndTableName(database_name_, table_name_)); //FIXME
 
             throw;
         }
@@ -238,9 +237,10 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 
 void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
+    auto table_id = getStorageID();
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name, table_name));
+        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
@@ -314,25 +314,26 @@ void StorageMaterializedView::rename(
     }
 
     auto lock = global_context.getLock();
+    auto table_id = getStorageID();
 
     global_context.removeDependencyUnsafe(
             DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(database_name, table_name));
+            DatabaseAndTableName(table_id.database_name, table_id.table_name));
 
-    table_name = new_table_name;
-    database_name = new_database_name;
+    IStorage::renameInMemory(new_database_name, new_table_name);
 
     global_context.addDependencyUnsafe(
             DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(database_name, table_name));
+            DatabaseAndTableName(new_database_name, new_table_name));
 }
 
 void StorageMaterializedView::shutdown()
 {
+    auto table_id = getStorageID();
     /// Make sure the dependency is removed after DETACH TABLE
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name, table_name));
+        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

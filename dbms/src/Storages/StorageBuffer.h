@@ -53,8 +53,6 @@ public:
     };
 
     std::string getName() const override { return "Buffer"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
@@ -72,12 +70,6 @@ public:
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
-
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
@@ -101,9 +93,6 @@ public:
     ~StorageBuffer() override;
 
 private:
-    String table_name;
-    String database_name;
-
     Context global_context;
 
     struct Buffer

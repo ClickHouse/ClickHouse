@@ -18,8 +18,6 @@ class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMe
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
-    String getTableName() const override { return part->storage.getTableName() + " (part " + part->name + ")"; }
-    String getDatabaseName() const override { return part->storage.getDatabaseName(); }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -51,7 +49,8 @@ public:
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(part_->storage.getVirtuals()), part(part_)
+        : IStorage({part_->storage.getDatabaseName(), part_->storage.getTableName() + " (part " + part_->name + ")"},
+                   part_->storage.getVirtuals()), part(part_)
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());

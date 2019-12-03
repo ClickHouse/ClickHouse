@@ -425,7 +425,7 @@ StorageLog::StorageLog(
     const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_,
     const Context & context_)
-    : base_path(context_.getPath()), path(base_path + relative_path_), table_name(table_name_), database_name(database_name_),
+    : IStorage({database_name_, table_name_}), base_path(context_.getPath()), path(base_path + relative_path_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + "sizes.json")
 {
@@ -522,14 +522,13 @@ void StorageLog::rename(const String & new_path_to_table_data, const String & ne
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
     file_checker.setPath(path + "sizes.json");
 
     for (auto & file : files)
         file.second.data_file = Poco::File(path + Poco::Path(file.second.data_file.path()).getFileName());
 
     marks_file = Poco::File(path + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)

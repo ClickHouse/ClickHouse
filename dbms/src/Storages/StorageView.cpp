@@ -31,7 +31,7 @@ StorageView::StorageView(
     const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : table_name(table_name_), database_name(database_name_)
+    : IStorage({database_name_, table_name_})
 {
     setColumns(columns_);
 

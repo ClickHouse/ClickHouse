@@ -94,7 +94,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_name(table_name_), database_name(database_name_)
+    : IStorage({database_name_, table_name_})
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -209,8 +209,7 @@ void StorageSetOrJoinBase::rename(
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
