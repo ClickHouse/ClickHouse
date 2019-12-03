@@ -19,6 +19,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -949,7 +950,8 @@ public:
         if (!which.isStringOrFixedString() &&
             !which.isDateOrDateTime() &&
             !which.isUInt() &&
-            !which.isFloat())
+            !which.isFloat() &&
+            !which.isDecimal())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1023,36 +1025,39 @@ public:
     }
 
     template <typename T>
+    void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
+    {
+        const size_t hex_length = type_size_in_bytes * 2 + 1; /// Including trailing zero byte.
+        auto col_str = ColumnString::create();
+
+        ColumnString::Chars & out_vec = col_str->getChars();
+        ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+        size_t size = in_vec.size();
+        out_offsets.resize(size);
+        out_vec.resize(size * hex_length);
+
+        size_t pos = 0;
+        char * out = reinterpret_cast<char *>(&out_vec[0]);
+        for (size_t i = 0; i < size; ++i)
+        {
+            const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+            executeOneString(in_pos, in_pos + type_size_in_bytes, out);
+
+            pos += hex_length;
+            out_offsets[i] = pos;
+        }
+        col_res = std::move(col_str);
+    }
+
+    template <typename T>
     bool tryExecuteFloat(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
-
-        static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
-
         if (col_vec)
         {
-            auto col_str = ColumnString::create();
-            ColumnString::Chars & out_vec = col_str->getChars();
-            ColumnString::Offsets & out_offsets = col_str->getOffsets();
-
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
-
-            size_t size = in_vec.size();
-            out_offsets.resize(size);
-            out_vec.resize(size * FLOAT_HEX_LENGTH);
-
-            size_t pos = 0;
-            char * out = reinterpret_cast<char *>(&out_vec[0]);
-            for (size_t i = 0; i < size; ++i)
-            {
-                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-                executeOneString(in_pos, in_pos + sizeof(T), out);
-
-                pos += FLOAT_HEX_LENGTH;
-                out_offsets[i] = pos;
-            }
-
-            col_res = std::move(col_str);
+            executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, sizeof(T));
             return true;
         }
         else
@@ -1060,6 +1065,23 @@ public:
             return false;
         }
     }
+
+    template <typename T>
+    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res)
+    {
+        const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
+        if (col_dec)
+        {
+            const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
+            executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, sizeof(T));
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
@@ -1177,7 +1199,10 @@ public:
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
-            tryExecuteFloat<Float64>(column, res_column))
+            tryExecuteFloat<Float64>(column, res_column) ||
+            tryExecuteDecimal<Decimal32>(column, res_column) ||
+            tryExecuteDecimal<Decimal64>(column, res_column) ||
+            tryExecuteDecimal<Decimal128>(column, res_column))
             return;
 
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

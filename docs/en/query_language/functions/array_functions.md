@@ -34,9 +34,12 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(N)
+## range(end), range(start, end [, step])
 
-Returns an array of numbers from 0 to N-1.
+Returns an array of numbers from start to end-1 by step.
+If the argument `start` is not specified, defaults to 0.
+If the argument `step` is not specified, defaults to 1.
+It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, ...), operator \[x1, ...\]
@@ -679,7 +682,7 @@ SELECT arrayDifference([0, 10000000000000000000])
 
 ## arrayDistinct(arr) {#array_functions-arraydistinct}
 
-Takes an array, returns an array containing the distinct elements. 
+Takes an array, returns an array containing the distinct elements.
 
 Example:
 
@@ -695,7 +698,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1])
 
 ## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
-Returns an array of the same size as the source array, indicating where each element first appears in the source array. 
+Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
 Example:
 
@@ -793,6 +796,15 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 Converts array of arrays to a flat array.
 
+Function:
+
+- Applies for any depth of nested arrays, but all the elements should lay at the same level.
+
+    For example, the `[[[1]], [[2], [3]]]` array can be flattened, but the `[[1], [[2], [3]]]` array can't be flattened.
+
+- Does not change arrays that are already flat.
+
+The flattened array contains all the elements from all source arrays.
 
 **Syntax** 
 
@@ -807,32 +819,51 @@ Alias: `arrayFlatten`.
 
 - `array_of_arrays` — [Array](../../data_types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
+**Examples**
+
+```sql
+SELECT flatten([[[1]], [[2], [3]]])
+```
+```text
+┌─flatten(array(array([1]), array([2], [3])))─┐
+│ [1,2,3]                                     │
+└─────────────────────────────────────────────┘
+```
+
+## arrayCompact {#arraycompact}
+
+Removes consecutive duplicate elements from an array. The order of result values is determined by the order in the source array.
+
+**Syntax**
+
+```sql
+arrayCompact(arr)
+```
+
+**Parameters**
+
+`arr` — The [array](../../data_types/array.md) to inspect.
+
+**Returned value**
+
+The array without duplicate.
+
+Type: `Array`.
 
 **Example**
 
-```sql
-SELECT flatten([[1, 2, 3], [4, 5]])
-```
-```text
-┌─flatten(array([1, 2, 3], [4, 5]))─┐
-│ [1,2,3,4,5]                       │
-└───────────────────────────────────┘
-```
-
-## arrayCompact(arr) {#array_functions-arraycompact}
-
-Takes an array, returns an array with consecutive duplicate elements removed.
-
-Example:
+Query:
 
 ```sql
-SELECT arrayCompact([1, 2, 2, 3, 2, 3, 3])
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 ```
 
+Result:
+
 ```text
-┌─arrayCompact([1, 2, 2, 3, 2, 3, 3])──┐
-│ [1,2,3,2,3]                          │
-└──────────────────────────────────────┘
+┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
+│ [1,nan,nan,2,3]                            │
+└────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
