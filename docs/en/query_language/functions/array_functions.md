@@ -34,9 +34,12 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(N)
+## range(end), range(start, end [, step])
 
-Returns an array of numbers from 0 to N-1.
+Returns an array of numbers from start to end-1 by step.
+If the argument `start` is not specified, defaults to 0.
+If the argument `step` is not specified, defaults to 1.
+It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, ...), operator \[x1, ...\]
@@ -767,6 +770,22 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
+```
+
+## arrayFlatten(arr) {#array_functions-arrayflatten}
+
+The `arrayFlatten` (or `flatten` alias) method will collapse the elements of an array to create a single array.
+
+Example:
+
+```sql
+SELECT arrayFlatten([[1, 2, 3], [4, 5]])
+```
+
+```text
+┌─arrayFlatten([[1, 2, 3], [4, 5]])─┐
+│                       [1,2,3,4,5] │
+└───────────────────────────────────┘
 ```
 
 ## arrayReverse(arr) {#array_functions-arrayreverse}

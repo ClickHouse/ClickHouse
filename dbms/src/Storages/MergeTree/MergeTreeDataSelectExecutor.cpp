@@ -388,18 +388,18 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
+        DataTypePtr sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
 
-        if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
         else
-            throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+            throw Exception("Invalid sampling column type in storage parameters: " + sampling_column_type->getName() + ". Must be unsigned integer type.",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
         if (settings.parallel_replicas_count > 1)
@@ -453,13 +453,25 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             std::shared_ptr<ASTFunction> lower_function;
             std::shared_ptr<ASTFunction> upper_function;
 
+            /// If sample and final are used together no need to calculate sampling expression twice.
+            /// The first time it was calculated for final, because sample key is a part of the PK.
+            /// So, assume that we already have calculated column.
+            ASTPtr sampling_key_ast = data.getSamplingKeyAST();
+            if (select.final())
+            {
+                sampling_key_ast = std::make_shared<ASTIdentifier>(data.sampling_expr_column_name);
+
+                /// We do spoil available_real_columns here, but it is not used later.
+                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(sampling_column_type));
+            }
+
             if (has_lower_limit)
             {
                 if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createLeftBounded(lower, true)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingKeyAST());
+                args->children.push_back(sampling_key_ast);
                 args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
@@ -476,7 +488,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingKeyAST());
+                args->children.push_back(sampling_key_ast);
                 args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();
@@ -503,11 +515,16 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, available_real_columns);
             filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
-            /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
-            std::vector<String> add_columns = filter_expression->getRequiredColumns();
-            column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-            std::sort(column_names_to_read.begin(), column_names_to_read.end());
-            column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+            if (!select.final())
+            {
+                /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
+                /// Skip this if final was used, because such columns were already added from PK.
+                std::vector<String> add_columns = filter_expression->getRequiredColumns();
+                column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+                std::sort(column_names_to_read.begin(), column_names_to_read.end());
+                column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()),
+                                           column_names_to_read.end());
+            }
         }
     }
 
@@ -546,7 +563,15 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (data.hasPrimaryKey())
             ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->getMarksCount()}};
+        {
+            size_t total_marks_count = part->getMarksCount();
+            if (total_marks_count)
+            {
+                if (part->index_granularity.hasFinalMark())
+                    --total_marks_count;
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+            }
+        }
 
         if (!ranges.ranges.empty())
         {
@@ -593,9 +618,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             settings,
             useful_indices);
     }
-    else if (settings.optimize_read_in_order && query_info.sorting_info)
+    else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
-        size_t prefix_size = query_info.sorting_info->prefix_order_descr.size();
+        size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -847,7 +872,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const IndicesAndConditions & indices_and_conditions) const
 {
     size_t sum_marks = 0;
-    SortingInfoPtr sorting_info = query_info.sorting_info;
+    const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
     const auto data_settings = data.getSettings();
@@ -998,9 +1023,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 parts.emplace_back(part);
             }
 
-            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, sorting_info->direction);
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_sorting_info->direction);
 
-            if (sorting_info->direction == 1)
+            if (input_sorting_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
@@ -1025,9 +1050,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < query_info.sorting_info->prefix_order_descr.size(); ++j)
+            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
                 sort_description.emplace_back(data.sorting_key_columns[j],
-                    sorting_info->direction, 1);
+                    input_sorting_info->direction, 1);
 
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));

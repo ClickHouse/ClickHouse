@@ -2,5 +2,7 @@ version: '2.2'
 services:
   mysql1:
     image: mysql:5.7
-    # rewriting default command, because starting server is unnecessary
-    command: sleep infinity
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: 1
+    command: --federated --socket /var/run/mysqld/mysqld.sock

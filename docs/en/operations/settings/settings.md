@@ -424,7 +424,7 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If a number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file from several threads.
 
 Possible values:
 
@@ -445,7 +445,7 @@ Default value: 0.
 
 ## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads range of file that contains both blocks, thus avoiding extra seek.
 
 Possible values:
 
@@ -466,9 +466,9 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks. 
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -479,9 +479,9 @@ Default value: 128 ✕ 8192.
 
 ## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn't use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -512,6 +512,16 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 **Example**:
 
     log_queries=1
+
+## log_query_threads {#settings-log-query-threads}
+
+Setting up query threads logging.
+
+Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+
+**Example**:
+
+    log_query_threads=1
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -594,6 +604,13 @@ Default value: 100,000 (checks for canceling and sends the progress ten times pe
 Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
+
+## cancel_http_readonly_queries_on_client_close
+
+Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+
+Default value: 0
+
 
 ## poll_interval
 
@@ -912,24 +929,31 @@ Default value: `uniqExact`.
 
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
-Enables or disables silent skipping of:
+Enables or disables silently skipping of unavailable shards.
 
-- Node, if its name cannot be resolved through DNS.
+Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
 
-    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+- ClickHouse can't connect to replica for any reason.
 
-    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
 
-- Shard, if there are no available replicas of the shard.
+- Replica can't be resolved through DNS.
 
-    When skipping is disabled, ClickHouse throws an exception.
+    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
 
-    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+
+    - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
 Possible values:
 
 - 1 — skipping enabled.
+
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
+
 - 0 — skipping disabled.
+
+    If a shard is unavailable, ClickHouse throws an exception.
 
 Default value: 0.
 
@@ -986,5 +1010,19 @@ Possible values:
 Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
 
 Default value: 0.
+
+## input_format_parallel_parsing
+
+- Type: bool
+- Default value: True
+
+Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
+
+## min_chunk_bytes_for_parallel_parsing
+
+- Type: unsigned int
+- Default value: 1 MiB
+
+The minimum chunk size in bytes, which each thread will parse in parallel.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
