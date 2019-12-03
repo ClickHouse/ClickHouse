@@ -89,12 +89,6 @@ $ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/
 $ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-К запросу можно добавить заголовок [Content-Type](https://tools.ietf.org/html/rfc7231#section-3.1.1.5) с помощью флага `-H`:
-
-```bash
-$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: text/plain;charset=UTF-8'
-```
-
 Данные можно отправить отдельно от запроса:
 
 ```bash
