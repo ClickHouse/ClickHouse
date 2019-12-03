@@ -501,7 +501,7 @@ void Join::initRightBlockStructure()
         JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
 }
 
-Block * Join::storeRightBlock(const Block & source_block)
+Block Join::structureRightBlock(const Block & source_block) const
 {
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
     Block block = materializeBlock(source_block);
@@ -515,14 +515,11 @@ Block * Join::storeRightBlock(const Block & source_block)
         structured_block.insert(column);
     }
 
-    blocks.push_back(structured_block);
-    return &blocks.back();
+    return structured_block;
 }
 
 bool Join::addJoinedBlock(const Block & block)
 {
-    std::unique_lock lock(rwlock);
-
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
@@ -534,11 +531,16 @@ bool Join::addJoinedBlock(const Block & block)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
+    Block structured_block = structureRightBlock(block);
+
+    std::unique_lock lock(rwlock);
+
+    blocks.emplace_back(std::move(structured_block));
+    Block * stored_block = &blocks.back();
+
     size_t rows = block.rows();
     if (rows)
         has_no_rows_in_maps = false;
-
-    Block * stored_block = storeRightBlock(block);
 
     if (kind != ASTTableJoin::Kind::Cross)
     {
