@@ -111,9 +111,9 @@ def run_query(instance, query, stdin=None, settings=None):
 
 # Test simple put.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("",True),
-    ("'minio','minio123',",True),
-    ("'wrongid','wrongkey',",False)
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
 ])
 def test_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -130,7 +130,8 @@ def test_put(cluster, maybe_auth, positive):
     try:
         run_query(instance, put_query)
     except helpers.client.QueryRuntimeException:
-        assert not positive
+        if positive:
+            raise
     else:
         assert positive
         assert values_csv == get_s3_file_content(cluster, bucket, filename)
@@ -138,9 +139,9 @@ def test_put(cluster, maybe_auth, positive):
 
 # Test put values in CSV format.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("",True),
-    ("'minio','minio123',",True),
-    ("'wrongid','wrongkey',",False)
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
 ])
 def test_put_csv(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -156,7 +157,8 @@ def test_put_csv(cluster, maybe_auth, positive):
     try:
         run_query(instance, put_query, stdin=csv_data)
     except helpers.client.QueryRuntimeException:
-        assert not positive
+        if positive:
+            raise
     else:
         assert positive
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
@@ -191,9 +193,9 @@ def test_put_get_with_redirect(cluster):
 
 # Test multipart put.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("",True),
-    ("'minio','minio123',",True),
-    ("'wrongid','wrongkey',",False)
+    ("", True),
+    # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
+    ("'wrongid','wrongkey',", False)
 ])
 def test_multipart_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -222,13 +224,14 @@ def test_multipart_put(cluster, maybe_auth, positive):
     try:
         run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
     except helpers.client.QueryRuntimeException:
-        assert not positive
+        if positive:
+            raise
     else:
         assert positive
 
         # Use Nginx access logs to count number of parts uploaded to Minio.
         nginx_logs = get_nginx_access_logs()
         uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
-        assert uploaded_parts > 1
+        assert len(uploaded_parts) > 1
 
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
