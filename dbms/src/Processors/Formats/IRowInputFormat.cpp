@@ -46,7 +46,6 @@ Chunk IRowInputFormat::generate()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
-    size_t prev_rows = total_rows;
 
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
 
@@ -151,7 +150,8 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    Chunk chunk(std::move(columns), total_rows - prev_rows);
+    auto num_rows = columns.front()->size();
+    Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
