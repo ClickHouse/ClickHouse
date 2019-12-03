@@ -209,7 +209,7 @@ SELECT javaHash('Hello, world!');
 
 ## javaHashUTF16LE {#javahashutf16le}
 
-Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки в кодировке `UTF-16LE`.
+Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки, при допущении, что строка представлена в кодировке `UTF-16LE`.
 
 **Синтаксис** 
 
@@ -243,38 +243,6 @@ SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
-```
-
-Если строка не в кодировке `utf-16le`, будет возвращен другой хэш.
-
-Запрос:
-
-```sql
-SELECT javaHashUTF16LE('test')
-```
-
-Ответ:
-
-```text
-┌─javaHashUTF16LE('test')─┐
-│                  834943 │
-└─────────────────────────┘
-```
-
-Без функции конвертации `convertCharset`, будет возвращен неожидаемый результат.
-
-Запрос:
-
-```sql
-SELECT javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')
-```
-
-Ответ:
-
-```text
-┌─javaHashUTF16LE('FJKLDSJFIOLD_389159837589429')─┐
-│                                     -1788019318 │
-└─────────────────────────────────────────────────┘
 ```
 
 ## hiveHash {#hash_functions-hivehash}
