@@ -84,6 +84,23 @@ struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
     }
 };
 
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<typename T::NativeType>(key);
+    }
+};
+
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) == 16>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<Int64>(key >> 64) ^ DefaultHash64<Int64>(key);
+    }
+};
 
 template <typename T> struct HashCRC32;
 
