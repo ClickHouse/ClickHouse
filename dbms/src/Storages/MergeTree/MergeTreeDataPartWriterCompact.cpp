@@ -104,11 +104,7 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         writeIntBinary(rows_to_write, stream->marks);
         for (const auto & it : columns_list)
-        {
-            writeIntBinary(stream->plain_hashing.count(), stream->marks);
-            writeIntBinary(stream->compressed.offset(), stream->marks);
             next_row = writeColumnSingleGranule(block.getByName(it.name), current_row, rows_to_write);
-        }
 
         ++from_mark;
         current_row = next_row;
@@ -125,6 +121,13 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     std::cerr << "(writeColumnSingleGranule) from_row: " << from_row << "\n";
     std::cerr << "(writeColumnSingleGranule) number_of_rows: " << number_of_rows << "\n";
 
+    /// FIXME compressed size does not work
+    size_t old_compressed_size = stream->compressed_buf.getCompressedBytes() + stream->plain_hashing.count();
+    size_t old_uncompressed_size = stream->compressed.count();
+
+    writeIntBinary(stream->plain_hashing.count(), stream->marks);
+    writeIntBinary(stream->compressed.offset(), stream->marks);
+
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
@@ -135,6 +138,12 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
     column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
+
+    /// FIXME compressed size does not work
+    size_t compressed_size = stream->compressed_buf.getCompressedBytes() + stream->plain_hashing.count();
+    size_t uncompressed_size = stream->compressed.count();
+
+    columns_sizes[column.name].add(ColumnSize{0, compressed_size - old_compressed_size, uncompressed_size - old_uncompressed_size}); 
 
     return from_row + number_of_rows;
 }
@@ -154,6 +163,10 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
             writeIntBinary(stream->compressed.offset(), stream->marks);
         }
     }
+
+    size_t marks_size = stream->marks.count();
+    for (auto it = columns_sizes.begin(); it != columns_sizes.end(); ++it)
+        it->second.marks = marks_size;
 
     stream->finalize();
     if (sync)

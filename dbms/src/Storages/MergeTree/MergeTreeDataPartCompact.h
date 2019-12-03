@@ -83,12 +83,7 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    void loadColumnSizes();
-
-
     void checkConsistency(bool require_part_metadata);
-
-    ColumnSizeByName columns_sizes;
 };
 
 

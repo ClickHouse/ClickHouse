@@ -366,6 +366,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
     loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
+    loadColumnSizes();
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
@@ -588,6 +589,28 @@ void IMergeTreeDataPart::loadColumns(bool require)
         sample_block.insert({it.type, it.name});
 }
 
+void IMergeTreeDataPart::loadColumnSizes()
+{
+    size_t columns_num = columns.size();
+
+    if (columns_num == 0)
+        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+    
+    auto column_sizes_path = getFullPath() + "columns_sizes.txt";
+    auto columns_sizes_file = Poco::File(column_sizes_path);
+    if (!columns_sizes_file.exists())
+    {
+        LOG_WARNING(storage.log, "No file column_sizes.txt in part " + name);
+        return;
+    }
+
+    ReadBufferFromFile buffer(column_sizes_path, columns_sizes_file.getSize());
+    auto it = columns.begin();
+    for (size_t i = 0; i < columns_num; ++i, ++it)
+        readPODBinary(columns_sizes[it->name], buffer);
+    assertEOF(buffer);
+}
+
 
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
 {
@@ -637,6 +660,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     from_file.renameTo(to);
     relative_path = new_relative_path;
 }
+
 
 void IMergeTreeDataPart::remove() const
 {

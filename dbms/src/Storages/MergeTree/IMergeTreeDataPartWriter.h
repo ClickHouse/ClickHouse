@@ -88,6 +88,11 @@ public:
         return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     }
 
+    const MergeTreeData::ColumnSizeByName & getColumnsSizes() const
+    {
+        return columns_sizes;
+    }
+
     void initSkipIndices();
     void initPrimaryIndex();
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
@@ -143,6 +148,8 @@ protected:
     bool data_written = false;
     bool primary_index_initialized = false;
     bool skip_indices_initialized = false;
+
+    MergeTreeData::ColumnSizeByName columns_sizes;
 };
 
 using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

@@ -186,28 +186,6 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();    
 }
 
-void MergeTreeDataPartCompact::loadColumnSizes()
-{
-    size_t columns_num = columns.size();
-
-    if (columns_num == 0)
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-    
-    auto column_sizes_path = getFullPath() + "columns_sizes.txt";
-    auto columns_sizes_file = Poco::File(column_sizes_path);
-    if (!columns_sizes_file.exists())
-    {
-        LOG_WARNING(storage.log, "No file column_sizes.txt in part " + name);
-        return;
-    }
-
-    ReadBufferFromFile buffer(column_sizes_path, columns_sizes_file.getSize());
-    auto it = columns.begin();
-    for (size_t i = 0; i < columns_num; ++i, ++it)
-        readPODBinary(columns_sizes[it->name], buffer);
-    assertEOF(buffer);
-}
-
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
 {
     UNUSED(require_part_metadata);
