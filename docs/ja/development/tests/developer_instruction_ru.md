@@ -1,1 +1,0 @@
-../../../en/development/tests/developer_instruction_ru.md
