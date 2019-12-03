@@ -797,7 +797,7 @@ Converts array of arrays to a flat array.
 **Syntax** 
 
 ```sql
-flatten (array_of_arrays)
+flatten(array_of_arrays)
 ```
 
 Alias: `arrayFlatten`.
