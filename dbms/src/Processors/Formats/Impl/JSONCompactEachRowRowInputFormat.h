@@ -12,7 +12,8 @@ namespace DB
 
 class ReadBuffer;
 
-
+/** A stream for reading data in JSONCompactEachRow and JSONCompactEachRowWithNamesAndTypes formats
+*/
 class JSONCompactEachRowRowInputFormat : public IRowInputFormat
 {
 public:
@@ -36,12 +37,17 @@ private:
 
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
+
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
+
     DataTypes data_types;
     std::vector<UInt8> read_columns;
 
-    bool have_always_default_columns;
+    /// This is for the correct exceptions in skipping unknown fields.
+    std::vector<StringRef> names_of_columns;
+
+    bool have_always_default_columns = false;
 
     bool with_names;
 };
