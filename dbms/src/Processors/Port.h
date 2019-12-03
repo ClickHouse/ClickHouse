@@ -202,7 +202,7 @@ protected:
     IProcessor * processor = nullptr;
 
     /// If update_info was set, will call update() for it in case port's state have changed.
-    UpdateInfo * update_info;
+    UpdateInfo * update_info = nullptr;
 
 public:
     using Data = State::Data;
