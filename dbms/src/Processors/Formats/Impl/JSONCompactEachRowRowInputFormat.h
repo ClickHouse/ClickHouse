@@ -41,6 +41,8 @@ private:
     DataTypes data_types;
     std::vector<UInt8> read_columns;
 
+    bool have_always_default_columns;
+
     bool with_names;
 };
 

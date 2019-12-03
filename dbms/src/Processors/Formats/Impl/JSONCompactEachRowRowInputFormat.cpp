@@ -54,7 +54,6 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
             String column_name;
             readJSONString(column_name, in);
             addInputColumn(column_name);
-            std::cerr << "\n\n" << column_name << "\n\n";
             skipWhitespaceIfAny(in);
         }
         while (checkChar(',', in));
@@ -75,7 +74,7 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
                 throw Exception(
                         "Type of '" + getPort().getHeader().getByPosition(*column_indexes_for_input_fields[i]).name
                         + "' must be " + data_types[*column_indexes_for_input_fields[i]]->getName() +
-                        " not " + data_type,
+                        ", not " + data_type,
                         ErrorCodes::INCORRECT_DATA
                 );
             }
@@ -95,6 +94,17 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
         for (size_t i = 0; i < num_columns; ++i)
         {
             column_indexes_for_input_fields[i] = i;
+        }
+    }
+
+    have_always_default_columns = false;
+
+    for (auto read_column : read_columns)
+    {
+        if (!read_column)
+        {
+            have_always_default_columns = true;
+            break;
         }
     }
 }
@@ -137,13 +147,18 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
     size_t num_columns = columns.size();
 
     read_columns.assign(num_columns, false);
+    bool have_default_columns = have_always_default_columns;
 
     assertChar('[', in);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & table_column = column_indexes_for_input_fields[file_column];
         if (table_column)
+        {
             readField(*table_column, columns);
+            if (!read_columns[*table_column])
+                have_default_columns = true;
+        }
 
         skipWhitespaceIfAny(in);
         if (in.eof())
@@ -155,6 +170,17 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
         }
     }
     assertChar(']', in);
+
+    if (have_default_columns)
+    {
+        for (size_t i = 0; i < read_columns.size(); i++)
+        {
+            if (!read_columns[i])
+            {
+                columns[i]->insertDefault();
+            }
+        }
+    }
 
     ext.read_columns = read_columns;
     return true;
