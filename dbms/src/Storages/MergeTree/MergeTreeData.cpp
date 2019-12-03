@@ -3473,6 +3473,11 @@ bool MergeTreeData::selectPartsAndMove()
     return moveParts(std::move(moving_tagger));
 }
 
+bool MergeTreeData::areBackgroundMovesNeeded() const
+{
+    return storage_policy->getVolumes().size() > 1;
+}
+
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space)
 {
     if (parts_mover.moves_blocker.isCancelled())

@@ -975,7 +975,7 @@ private:
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+            if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
                 return never;
 
             if (!error_count)
@@ -1195,6 +1195,12 @@ void ExternalLoader::reload(bool load_never_loading) const
 {
     loading_dispatcher->setConfiguration(config_files_reader->read());
     loading_dispatcher->reload(load_never_loading);
+}
+
+void ExternalLoader::reload(const FilterByNameFunction & filter_by_name, bool load_never_loading) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    loading_dispatcher->reload(filter_by_name, load_never_loading);
 }
 
 void ExternalLoader::addObjectAndLoad(

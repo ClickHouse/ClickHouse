@@ -15,4 +15,4 @@ ClickHouse is an open-source column-oriented database management system that all
 ## Upcoming Events
 
 * [ClickHouse Meetup in San Francisco](https://www.eventbrite.com/e/clickhouse-december-meetup-registration-78642047481) on December 3.
-
+* [ClickHouse Meetup in Moscow](https://yandex.ru/promo/clickhouse/moscow-december-2019) on December 11.
