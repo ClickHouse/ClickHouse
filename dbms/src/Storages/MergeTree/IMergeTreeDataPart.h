@@ -299,6 +299,8 @@ public:
         */
     mutable std::mutex alter_mutex;
 
+    ColumnSizeByName columns_sizes;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -317,6 +319,7 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
 protected:
+
     void removeIfNeeded();
     virtual void checkConsistency(bool require_part_metadata) const;
 
@@ -343,6 +346,8 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    void loadColumnSizes();
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 };
