@@ -14,7 +14,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ## Доступные варианты установки
 
-### Из DEB пакетов
+### Из DEB пакетов {#from-deb-packages}
 
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
 
@@ -37,7 +37,7 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 Также эти пакеты можно скачать и установить вручную отсюда: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
-### Из RPM пакетов
+### Из RPM пакетов {#from-rpm-packages}
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHad и всех остальных дистрибутивов Linux, основанных на rpm.
 
@@ -59,7 +59,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 Также есть возможность установить пакеты вручную, скачав отсюда: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
 
-### Из Docker образа
+### Из Docker образа {#from-docker-image}
 
 Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Внутри образов используются официальные `deb` пакеты.
 

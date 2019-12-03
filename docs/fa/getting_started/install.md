@@ -20,7 +20,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 ##ﺩﻮﺟﻮﻣ ﺐﺼﻧ ﯼﺎﻫ ﻪﻨﯾﺰﮔ
 
-### نصب از طریق پکیج های Debian/Ubuntu
+### نصب از طریق پکیج های Debian/Ubuntu {#from-deb-packages}
 
 در فایل `/etc/apt/sources.list` (یا در یک فایل جدا `/etc/apt/sources.list.d/clickhouse.list`)، Repo زیر را اضافه کنید:
 
@@ -51,7 +51,7 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. این تنظیمات در فایل 'users.xml' (کنار 'config.xml') می باشد. به صورت پیش فرض دسترسی برای کاربر 'default' از همه جا بدون نیاز به پسورد وجود دارد. 'user/default/networks' را مشاهده کنید. برای اطلاعات بیشتر قسمت "تنظیمات فایل ها" را مشاهده کنید.
 
-### RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ
+### RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ {#from-rpm-packages}
 
 .ﺪﻨﮐ ﯽﻣ ﻪﯿﺻﻮﺗ ﺲﮐﻮﻨﯿﻟ ﺮﺑ ﯽﻨﺘﺒﻣ rpm ﺮﺑ ﯽﻨﺘﺒﻣ ﯼﺎﻫ ﻊﯾﺯﻮﺗ ﺮﯾﺎﺳ ﻭ CentOS ، RedHat ﯼﺍ
 
@@ -78,7 +78,7 @@ sudo yum install clickhouse-server clickhouse-client
 .ﺪﻨﻨﮐ ﯽﻣ ﻩﺩﺎﻔﺘﺳﺍ ﻞﺧﺍﺩ ﺭﺩ "deb" ﯽﻤﺳﺭ ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ﺮﯾﻭﺎﺼﺗ ﻦﯾﺍ .ﺪﯿﻨﮐ ﻝﺎﺒﻧﺩ ﺍﺭ (/ht
 
 
-### نصب از طریق Source
+### نصب از طریق Source {#from-sources}
 
 برای Compile، دستورالعمل های فایل build.md را دنبال کنید:
 
@@ -108,7 +108,7 @@ Server: dbms/programs/clickhouse-server
 
 به مسیر لاگ ها در تنظیمات سرور توجه کنید (src/dbms/programs/config.xml).
 
-### روش های دیگر نصب
+### روش های دیگر نصب {#from-docker-image}
 
 Docker image: <https://hub.docker.com/r/yandex/clickhouse-server/>
 
