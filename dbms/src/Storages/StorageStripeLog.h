@@ -27,8 +27,6 @@ friend struct ext::shared_ptr_helper<StorageStripeLog>;
 
 public:
     std::string getName() const override { return "StripeLog"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -60,8 +58,6 @@ public:
 private:
     String base_path;
     String path;
-    String table_name;
-    String database_name;
 
     size_t max_compress_block_size;
 

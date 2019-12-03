@@ -401,9 +401,6 @@ public:
             || column_name == "_sample_factor";
     }
 
-    String getDatabaseName() const override { return database_name; }
-    String getTableName() const override { return table_name; }
-
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
@@ -790,8 +787,6 @@ protected:
 
     bool require_part_metadata;
 
-    String database_name;
-    String table_name;
     String relative_data_path;
 
 

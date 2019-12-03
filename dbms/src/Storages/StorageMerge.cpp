@@ -52,9 +52,7 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
-    , table_name(table_name_)
-    , database_name(database_name_)
+    : IStorage({database_name_, table_name_}, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -417,12 +415,13 @@ void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    auto table_id = getStorageID();
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});
     setColumns(new_columns);
 }
 

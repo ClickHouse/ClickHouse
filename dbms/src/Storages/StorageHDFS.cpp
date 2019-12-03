@@ -42,10 +42,9 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : uri(uri_)
+    : IStorage({database_name_, table_name_})
+    , uri(uri_)
     , format_name(format_name_)
-    , table_name(table_name_)
-    , database_name(database_name_)
     , context(context_)
     , compression_method(compression_method_)
 {
@@ -217,12 +216,6 @@ BlockInputStreams StorageHDFS::read(
     }
 
     return narrowBlockInputStreams(result, num_streams);
-}
-
-void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
 }
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)

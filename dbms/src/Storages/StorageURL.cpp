@@ -36,7 +36,7 @@ IStorageURLBase::IStorageURLBase(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
-    : uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
+    : IStorage({database_name_, table_name_}), uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
@@ -202,12 +202,6 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     if (column_defaults.empty())
         return {block_input};
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
-}
-
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
 }
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)

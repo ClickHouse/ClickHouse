@@ -34,15 +34,13 @@ void StorageNull::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
+    auto table_id = getStorageID();
 
     ColumnsDescription new_columns = getColumns();
     IndicesDescription new_indices = getIndices();
     ConstraintsDescription new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 

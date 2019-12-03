@@ -17,8 +17,6 @@ class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorag
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool isRemote() const override;
 
@@ -42,12 +40,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
-
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
     void alter(
@@ -56,8 +48,6 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
 private:
-    String table_name;
-    String database_name;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     Context global_context;

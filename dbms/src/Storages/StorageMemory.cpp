@@ -75,7 +75,7 @@ private:
 
 
 StorageMemory::StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-    : database_name(std::move(database_name_)), table_name(std::move(table_name_))
+    : IStorage({database_name_, table_name_})
 {
     setColumns(std::move(columns_description_));
     setConstraints(std::move(constraints_));

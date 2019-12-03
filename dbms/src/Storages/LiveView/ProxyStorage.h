@@ -9,11 +9,10 @@ class ProxyStorage : public IStorage
 {
 public:
     ProxyStorage(StoragePtr storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
-    : storage(std::move(storage_)), streams(std::move(streams_)), to_stage(to_stage_) {}
+    : IStorage({"", storage_->getTableName()}), storage(std::move(storage_)), streams(std::move(streams_)), to_stage(to_stage_) {}
 
 public:
     std::string getName() const override { return "ProxyStorage(" + storage->getName() + ")"; }
-    std::string getTableName() const override { return storage->getTableName(); }
 
     bool isRemote() const override { return storage->isRemote(); }
     bool supportsSampling() const override { return storage->supportsSampling(); }

@@ -14,8 +14,6 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
@@ -72,8 +70,6 @@ private:
     String select_table_name;
     String target_database_name;
     String target_table_name;
-    String table_name;
-    String database_name;
     ASTPtr inner_query;
     Context & global_context;
     bool has_inner_table = false;
