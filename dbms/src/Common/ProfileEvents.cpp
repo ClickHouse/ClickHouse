@@ -178,58 +178,58 @@
       "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.") \
     \
     M(ZooKeeperInit, \
-      "zoo_keeper_init", \
+      "zookeeper_init", \
       "") \
     M(ZooKeeperTransactions, \
-      "zoo_keeper_transactions", \
+      "zookeeper_transactions", \
       "") \
     M(ZooKeeperList, \
-      "zoo_keeper_list", \
+      "zookeeper_list", \
       "") \
     M(ZooKeeperCreate, \
-      "zoo_keeper_create", \
+      "zookeeper_create", \
       "") \
     M(ZooKeeperRemove, \
-      "zoo_keeper_remove", \
+      "zookeeper_remove", \
       "") \
     M(ZooKeeperExists, \
-      "zoo_keeper_exists", \
+      "zookeeper_exists", \
       "") \
     M(ZooKeeperGet, \
-      "zoo_keeper_get", \
+      "zookeeper_get", \
       "") \
     M(ZooKeeperSet, \
-      "zoo_keeper_set", \
+      "zookeeper_set", \
       "") \
     M(ZooKeeperMulti, \
-      "zoo_keeper_multi", \
+      "zookeeper_multi", \
       "") \
     M(ZooKeeperCheck, \
-      "zoo_keeper_check", \
+      "zookeeper_check", \
       "") \
     M(ZooKeeperClose, \
-      "zoo_keeper_close", \
+      "zookeeper_close", \
       "") \
     M(ZooKeeperWatchResponse, \
-      "zoo_keeper_watch_response", \
+      "zookeeper_watch_response", \
       "") \
     M(ZooKeeperUserExceptions, \
-      "zoo_keeper_user_exceptions", \
+      "zookeeper_user_exceptions", \
       "") \
     M(ZooKeeperHardwareExceptions, \
-      "zoo_keeper_hardware_exceptions", \
+      "zookeeper_hardware_exceptions", \
       "") \
     M(ZooKeeperOtherExceptions, \
-      "zoo_keeper_other_exceptions", \
+      "zookeeper_other_exceptions", \
       "") \
     M(ZooKeeperWaitMicroseconds, \
-      "zoo_keeper_wait_microseconds", \
+      "zookeeper_wait_microseconds", \
       "") \
     M(ZooKeeperBytesSent, \
-      "zoo_keeper_bytes_sent", \
+      "zookeeper_bytes_sent", \
       "") \
     M(ZooKeeperBytesReceived, \
-      "zoo_keeper_bytes_received", \
+      "zookeeper_bytes_received", \
       "") \
     \
     M(DistributedConnectionFailTry, \
