@@ -711,12 +711,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handlerFactory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
                 if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handlerFactory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handlerFactory,
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
@@ -835,7 +835,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
             });
 
-
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -843,10 +842,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handlerFactory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handlerFactory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handlerFactory,
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
