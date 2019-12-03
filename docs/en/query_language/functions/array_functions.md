@@ -682,7 +682,7 @@ SELECT arrayDifference([0, 10000000000000000000])
 
 ## arrayDistinct(arr) {#array_functions-arraydistinct}
 
-Takes an array, returns an array containing the distinct elements. 
+Takes an array, returns an array containing the distinct elements.
 
 Example:
 
@@ -698,7 +698,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1])
 
 ## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
-Returns an array of the same size as the source array, indicating where each element first appears in the source array. 
+Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
 Example:
 
@@ -808,22 +808,40 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
+## arrayCompact {#arraycompact}
 
-## arrayCompact(arr) {#array_functions-arraycompact}
+Removes consecutive duplicate elements from an array. The order of result values is determined by the order in the source array.
 
-Takes an array, returns an array with consecutive duplicate elements removed.
-
-Example:
+**Syntax**
 
 ```sql
-SELECT arrayCompact([1, 2, 2, 3, 2, 3, 3])
+arrayCompact(arr)
 ```
+
+**Parameters**
+
+`arr` — The [array](../../data_types/array.md) to inspect.
+
+**Returned value**
+
+The array without duplicate.
+
+Type: `Array`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
+```
+
+Result:
 
 ```text
-┌─arrayCompact([1, 2, 2, 3, 2, 3, 3])──┐
-│ [1,2,3,2,3]                          │
-└──────────────────────────────────────┘
+┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
+│ [1,nan,nan,2,3]                            │
+└────────────────────────────────────────────┘
 ```
 
-## 
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
