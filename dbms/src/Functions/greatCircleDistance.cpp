@@ -199,7 +199,9 @@ private:
         const IColumn & col_lat2 = *block.getByPosition(arguments[3]).column;
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            dst_data[row_num] = greatCircleDistance(col_lon1.getFloat32(), col_lat1.getFloat32(), col_lon2.getFloat32(), col_lat2.getFloat32());
+            dst_data[row_num] = greatCircleDistance(
+                col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
+                col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
 
         block.getByPosition(result).column = std::move(dst);
     }
