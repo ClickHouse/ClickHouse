@@ -8,8 +8,6 @@
 
 #include <Storages/IStorage.h>
 
-#include <iostream>
-
 namespace DB
 {
 
