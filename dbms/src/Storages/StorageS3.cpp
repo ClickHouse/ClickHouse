@@ -99,7 +99,7 @@ namespace
                 secret_access_key,
                 min_upload_part_size,
                 timeouts,
-		context.getRemoteHostFilter());
+                context.getRemoteHostFilter());
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
