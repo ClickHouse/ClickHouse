@@ -40,7 +40,7 @@ static String generateActiveNodeIdentifier()
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeRestartingThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
     , log(&Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {

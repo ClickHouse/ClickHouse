@@ -41,8 +41,6 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
     String getSelectDatabaseName() const { return select_database_name; }
     String getSelectTableName() const { return select_table_name; }
 
@@ -144,8 +142,6 @@ public:
 private:
     String select_database_name;
     String select_table_name;
-    String table_name;
-    String database_name;
     ASTPtr inner_query;
     Context & global_context;
     bool is_temporary = false;

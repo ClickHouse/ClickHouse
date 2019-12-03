@@ -52,8 +52,6 @@ public:
         const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -85,8 +83,7 @@ public:
     void rename(const String & /*new_path_to_table_data*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
     {
         //TODO do we need no move data on disk and update path?
-        table_name = new_table_name;
-        database_name = new_database_name;
+        renameInMemory(new_database_name, new_table_name);
     }
 
     /// in the sub-tables, you need to manually add and delete columns
@@ -120,8 +117,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    String table_name;
-    String database_name;
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;

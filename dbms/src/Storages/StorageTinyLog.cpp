@@ -331,7 +331,7 @@ StorageTinyLog::StorageTinyLog(
     bool attach,
     size_t max_compress_block_size_,
     const Context & context_)
-    : base_path(context_.getPath()), path(base_path + relative_path_), table_name(table_name_), database_name(database_name_),
+    : IStorage({database_name_, table_name_}), base_path(context_.getPath()), path(base_path + relative_path_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
@@ -421,7 +421,7 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 
 void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (table_name.empty())
+    if (getStorageID().table_name.empty()) //FIXME how can it be empty?
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);

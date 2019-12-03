@@ -198,8 +198,7 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext())
+    : IStorage({database_name_, table_name_}), global_context(local_context.getGlobalContext())
 {
     setColumns(columns_);
 
@@ -225,7 +224,7 @@ StorageLiveView::StorageLiveView(
 
     global_context.addDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name, table_name));
+        DatabaseAndTableName(database_name_, table_name_));   //FIXME
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -339,7 +338,8 @@ bool StorageLiveView::getNewBlocks()
 
 void StorageLiveView::checkTableCanBeDropped() const
 {
-    Dependencies dependencies = global_context.getDependencies(database_name, table_name);
+    auto table_id = getStorageID();
+    Dependencies dependencies = global_context.getDependencies(table_id.database_name, table_id.table_name); //FIXME
     if (!dependencies.empty())
     {
         DatabaseAndTableName database_and_table_name = dependencies.front();
@@ -354,6 +354,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
     if (storage->shutdown_called)
         return;
 
+    auto table_id = storage->getStorageID();
     {
         while (1)
         {
@@ -365,7 +366,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
                     return;
                 if (storage->hasUsers())
                     return;
-                if (!storage->global_context.getDependencies(storage->database_name, storage->table_name).empty())
+                if (!storage->global_context.getDependencies(table_id.database_name, table_id.table_name).empty())  //FIXME
                     continue;
                 drop_table = true;
             }
@@ -375,14 +376,14 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     if (drop_table)
     {
-        if (storage->global_context.tryGetTable(storage->database_name, storage->table_name))
+        if (storage->global_context.tryGetTable(table_id.database_name, table_id.table_name))  //FIXME
         {
             try
             {
                 /// We create and execute `drop` query for this table
                 auto drop_query = std::make_shared<ASTDropQuery>();
-                drop_query->database = storage->database_name;
-                drop_query->table = storage->table_name;
+                drop_query->database = table_id.database_name;
+                drop_query->table = table_id.table_name;
                 drop_query->kind = ASTDropQuery::Kind::Drop;
                 ASTPtr ast_drop_query = drop_query;
                 InterpreterDropQuery drop_interpreter(ast_drop_query, storage->global_context);
@@ -390,6 +391,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
             }
             catch (...)
             {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
     }
@@ -466,9 +468,10 @@ StorageLiveView::~StorageLiveView()
 
 void StorageLiveView::drop(TableStructureWriteLockHolder &)
 {
+    auto table_id = getStorageID();
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name, table_name));
+        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
 
     std::lock_guard lock(mutex);
     is_dropped = true;

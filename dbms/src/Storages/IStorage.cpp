@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID id_, ColumnsDescription virtuals_) : id(std::move(id_)), virtuals(std::move(virtuals_))
 {
 }
 
@@ -461,6 +461,28 @@ DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, cons
         return DB::CompressionMethod::None;
     else
         throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+StorageID IStorage::getStorageID(std::unique_lock<std::mutex> * id_lock) const
+{
+    std::unique_lock<std::mutex> lock;
+    if (!id_lock)
+        lock = std::unique_lock(id_mutex);
+    else if (!*id_lock)
+        *id_lock = std::unique_lock(id_mutex);
+    return id;
+}
+
+void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name,
+                              std::unique_lock<std::mutex> * id_lock)
+{
+    std::unique_lock<std::mutex> lock;
+    if (!id_lock)
+        lock = std::unique_lock(id_mutex);
+    else if (!*id_lock)
+        *id_lock = std::unique_lock(id_mutex);
+    id.database_name = new_database_name;
+    id.table_name = new_table_name;
 }
 
 }

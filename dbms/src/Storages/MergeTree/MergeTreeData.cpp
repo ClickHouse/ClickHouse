@@ -115,17 +115,16 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : global_context(context_)
+    : IStorage({database_, table_})
+    , global_context(context_)
     , merging_params(merging_params_)
     , partition_by_ast(partition_by_ast_)
     , sample_by_ast(sample_by_ast_)
     , ttl_table_ast(ttl_table_ast_)
     , require_part_metadata(require_part_metadata_)
-    , database_name(database_)
-    , table_name(table_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(database_name + "." + table_name)
+    , log_name(database_ + "." + table_)
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
@@ -1101,7 +1100,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = global_context.getPartLog(database_name))
+
+    auto table_id = getStorageID();
+    if (auto part_log = global_context.getPartLog(table_id.database_name))   //FIXME
     {
         PartLogElement part_log_elem;
 
@@ -1109,8 +1110,8 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         part_log_elem.event_time = time(nullptr);
         part_log_elem.duration_ms = 0;
 
-        part_log_elem.database_name = database_name;
-        part_log_elem.table_name = table_name;
+        part_log_elem.database_name = table_id.database_name;
+        part_log_elem.table_name = table_id.table_name;
 
         for (auto & part : parts)
         {
@@ -3222,7 +3223,8 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table.get());
     if (!src_data)
-        throw Exception("Table " + table_name + " supports attachPartitionFrom only for MergeTree family of table engines."
+        throw Exception("Table " + source_table->getStorageID().getNameForLogs() +
+                        " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + source_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
 
     if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
@@ -3390,7 +3392,8 @@ void MergeTreeData::writePartLog(
     const MergeListEntry * merge_entry)
 try
 {
-    auto part_log = global_context.getPartLog(database_name);
+    auto table_id = getStorageID();
+    auto part_log = global_context.getPartLog(table_id.database_name);
     if (!part_log)
         return;
 
@@ -3405,8 +3408,8 @@ try
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
     part_log_elem.duration_ms = elapsed_ns / 1000000;
 
-    part_log_elem.database_name = database_name;
-    part_log_elem.table_name = table_name;
+    part_log_elem.database_name = table_id.database_name;
+    part_log_elem.table_name = table_id.table_name;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 

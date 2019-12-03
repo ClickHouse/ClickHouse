@@ -61,13 +61,13 @@ StorageBuffer::StorageBuffer(const std::string & database_name_, const std::stri
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    :
-    table_name(table_name_), database_name(database_name_), global_context(context_),
+    : IStorage({database_name_, table_name_}),
+    global_context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name + ")"))
+    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name_ + ")"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
