@@ -568,45 +568,46 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+
+static const char digits100[201] =
+    "00010203040506070809"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
+
 /// in YYYY-MM-DD format
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
-    static const char digits[201] =
-        "00010203040506070809"
-        "10111213141516171819"
-        "20212223242526272829"
-        "30313233343536373839"
-        "40414243444546474849"
-        "50515253545556575859"
-        "60616263646566676869"
-        "70717273747576777879"
-        "80818283848586878889"
-        "90919293949596979899";
-
     if (buf.position() + 10 <= buf.buffer().end())
     {
-        memcpy(buf.position(), &digits[date.year() / 100 * 2], 2);
+        memcpy(buf.position(), &digits100[date.year() / 100 * 2], 2);
         buf.position() += 2;
-        memcpy(buf.position(), &digits[date.year() % 100 * 2], 2);
-        buf.position() += 2;
-        *buf.position() = delimiter;
-        ++buf.position();
-        memcpy(buf.position(), &digits[date.month() * 2], 2);
+        memcpy(buf.position(), &digits100[date.year() % 100 * 2], 2);
         buf.position() += 2;
         *buf.position() = delimiter;
         ++buf.position();
-        memcpy(buf.position(), &digits[date.day() * 2], 2);
+        memcpy(buf.position(), &digits100[date.month() * 2], 2);
+        buf.position() += 2;
+        *buf.position() = delimiter;
+        ++buf.position();
+        memcpy(buf.position(), &digits100[date.day() * 2], 2);
         buf.position() += 2;
     }
     else
     {
-        buf.write(&digits[date.year() / 100 * 2], 2);
-        buf.write(&digits[date.year() % 100 * 2], 2);
+        buf.write(&digits100[date.year() / 100 * 2], 2);
+        buf.write(&digits100[date.year() % 100 * 2], 2);
         buf.write(delimiter);
-        buf.write(&digits[date.month() * 2], 2);
+        buf.write(&digits100[date.month() * 2], 2);
         buf.write(delimiter);
-        buf.write(&digits[date.day() * 2], 2);
+        buf.write(&digits100[date.day() * 2], 2);
     }
 }
 
@@ -628,59 +629,47 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
-    static const char digits[201] =
-        "00010203040506070809"
-        "10111213141516171819"
-        "20212223242526272829"
-        "30313233343536373839"
-        "40414243444546474849"
-        "50515253545556575859"
-        "60616263646566676869"
-        "70717273747576777879"
-        "80818283848586878889"
-        "90919293949596979899";
-
     if (buf.position() + 19 <= buf.buffer().end())
     {
-        memcpy(buf.position(), &digits[datetime.year() / 100 * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.year() / 100 * 2], 2);
         buf.position() += 2;
-        memcpy(buf.position(), &digits[datetime.year() % 100 * 2], 2);
-        buf.position() += 2;
-        *buf.position() = date_delimeter;
-        ++buf.position();
-        memcpy(buf.position(), &digits[datetime.month() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.year() % 100 * 2], 2);
         buf.position() += 2;
         *buf.position() = date_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.day() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.month() * 2], 2);
+        buf.position() += 2;
+        *buf.position() = date_delimeter;
+        ++buf.position();
+        memcpy(buf.position(), &digits100[datetime.day() * 2], 2);
         buf.position() += 2;
         *buf.position() = between_date_time_delimiter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.hour() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.hour() * 2], 2);
         buf.position() += 2;
         *buf.position() = time_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.minute() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.minute() * 2], 2);
         buf.position() += 2;
         *buf.position() = time_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.second() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.second() * 2], 2);
         buf.position() += 2;
     }
     else
     {
-        buf.write(&digits[datetime.year() / 100 * 2], 2);
-        buf.write(&digits[datetime.year() % 100 * 2], 2);
+        buf.write(&digits100[datetime.year() / 100 * 2], 2);
+        buf.write(&digits100[datetime.year() % 100 * 2], 2);
         buf.write(date_delimeter);
-        buf.write(&digits[datetime.month() * 2], 2);
+        buf.write(&digits100[datetime.month() * 2], 2);
         buf.write(date_delimeter);
-        buf.write(&digits[datetime.day() * 2], 2);
+        buf.write(&digits100[datetime.day() * 2], 2);
         buf.write(between_date_time_delimiter);
-        buf.write(&digits[datetime.hour() * 2], 2);
+        buf.write(&digits100[datetime.hour() * 2], 2);
         buf.write(time_delimeter);
-        buf.write(&digits[datetime.minute() * 2], 2);
+        buf.write(&digits100[datetime.minute() * 2], 2);
         buf.write(time_delimeter);
-        buf.write(&digits[datetime.second() * 2], 2);
+        buf.write(&digits100[datetime.second() * 2], 2);
     }
 }
 
@@ -704,6 +693,33 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
             date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+}
+
+
+/// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
+/// This is needed for HTTP requests.
+inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut)
+{
+    const auto & values = date_lut.getValues(datetime);
+
+    static const char week_days[3 * 7 + 1] = "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
+    static const char months[3 * 12 + 1] = "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
+
+    buf.write(&week_days[values.day_of_week * 3], 3);
+    buf.write(", ", 2);
+    buf.write(&digits100[values.day_of_month * 2], 2);
+    buf.write(' ');
+    buf.write(&months[values.month * 3], 3);
+    buf.write(' ');
+    buf.write(&digits100[values.year / 100 * 2], 2);
+    buf.write(&digits100[values.year % 100 * 2], 2);
+    buf.write(' ');
+    buf.write(&digits100[date_lut.toHour(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[date_lut.toMinute(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[date_lut.toSecond(datetime) * 2], 2);
+    buf.write(" GMT", 4);
 }
 
 

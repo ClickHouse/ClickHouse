@@ -1,6 +1,7 @@
 #include <IO/S3Common.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
-#include <ctime>
 #include <iterator>
 #include <sstream>
 
@@ -13,7 +14,13 @@
 namespace DB
 {
 
-void S3Helper::authenticateRequest(Poco::Net::HTTPRequest & request,
+namespace ErrorCodes
+{
+    extern const int CANNOT_FORMAT_DATETIME;
+}
+
+void S3Helper::authenticateRequest(
+    Poco::Net::HTTPRequest & request,
     const String & access_key_id,
     const String & secret_access_key)
 {
@@ -28,11 +35,9 @@ void S3Helper::authenticateRequest(Poco::Net::HTTPRequest & request,
 
     if (!request.has("Date"))
     {
-        char buffer[1024];
-        time_t now = std::time(nullptr);
-        struct tm *my_tm = std::gmtime(&now);
-        std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", my_tm); /// See RFC 1123.
-        request.set("Date", buffer);
+        WriteBufferFromOwnString out;
+        writeDateTimeTextRFC1123(time(nullptr), out, DateLUT::instance("UTC"));
+        request.set("Date", out.str());
     }
 
     String string_to_sign = request.getMethod() + "\n"
