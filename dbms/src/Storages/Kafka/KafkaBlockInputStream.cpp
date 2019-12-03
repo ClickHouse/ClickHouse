@@ -141,8 +141,7 @@ Block KafkaBlockInputStream::readImpl()
             virtual_columns[1]->insert(_key);
             virtual_columns[2]->insert(_offset);
             virtual_columns[3]->insert(_partition);
-            if (_timestamp)
-                virtual_columns[4]->insert(_timestamp);
+            virtual_columns[4]->insert(_timestamp);
         }
 
         total_rows = total_rows + new_rows;
