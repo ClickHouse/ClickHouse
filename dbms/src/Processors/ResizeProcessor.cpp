@@ -238,11 +238,8 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
 
         if (input_with_data.port->isFinished())
         {
-            if (input_with_data.status != InputStatus::Finished)
-            {
-                input_with_data.status = InputStatus::Finished;
-                ++num_finished_inputs;
-            }
+            input_with_data.status = InputStatus::Finished;
+            ++num_finished_inputs;
         }
     }
 
