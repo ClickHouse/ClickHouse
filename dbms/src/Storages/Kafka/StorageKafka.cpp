@@ -88,14 +88,12 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(
+    : IStorage({database_name_, table_name_},
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
                             {"_offset", std::make_shared<DataTypeUInt64>()},
                             {"_partition", std::make_shared<DataTypeUInt64>()},
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
-    , table_name(table_name_)
-    , database_name(database_name_)
     , global_context(context_)
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
@@ -189,13 +187,6 @@ void StorageKafka::shutdown()
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 
     task->deactivate();
-}
-
-
-void StorageKafka::renameInMemory(const String & new_database_name, const String & new_table_name)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
 }
 
 
@@ -299,10 +290,10 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     }
 }
 
-bool StorageKafka::checkDependencies(const String & current_database_name, const String & current_table_name)
+bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(current_database_name, current_table_name);
+    auto dependencies = global_context.getDependencies(table_id.database_name, table_id.database_name); //FIXME replace with id
     if (dependencies.size() == 0)
         return true;
 
@@ -319,7 +310,7 @@ bool StorageKafka::checkDependencies(const String & current_database_name, const
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab.first, db_tab.second))
+        if (!checkDependencies(StorageID(db_tab.first, db_tab.second))) //FIXME replace with id
             return false;
     }
 
@@ -330,13 +321,14 @@ void StorageKafka::threadFunc()
 {
     try
     {
+        auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(database_name, table_name);
+        auto dependencies = global_context.getDependencies(table_id.database_name, table_id.database_name); //FIXME replace with id
 
         // Keep streaming as long as there are attached views and streaming is not cancelled
         while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
         {
-            if (!checkDependencies(database_name, table_name))
+            if (!checkDependencies(table_id))
                 break;
 
             LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
@@ -359,14 +351,16 @@ void StorageKafka::threadFunc()
 
 bool StorageKafka::streamToViews()
 {
-    auto table = global_context.getTable(database_name, table_name);
+    auto table_id = getStorageID();
+    auto table = global_context.getTable(table_id.database_name, table_id.table_name);
     if (!table)
-        throw Exception("Engine table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->database = database_name;
-    insert->table = table_name;
+    //FIXME use uid if not empty
+    insert->database = table_id.database_name;
+    insert->table = table_id.table_name;
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;

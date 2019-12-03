@@ -25,8 +25,6 @@ friend struct ext::shared_ptr_helper<StorageLog>;
 
 public:
     std::string getName() const override { return "Log"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -39,12 +37,6 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
-    void renameInMemory(const String & new_database_name, const String & new_table_name) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
@@ -71,8 +63,6 @@ protected:
 private:
     String base_path;
     String path;
-    String table_name;
-    String database_name;
 
     mutable std::shared_mutex rwlock;
 
@@ -121,7 +111,6 @@ private:
     void loadMarks();
 
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files

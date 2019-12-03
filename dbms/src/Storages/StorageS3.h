@@ -37,11 +37,6 @@ public:
         return getSampleBlock();
     }
 
-    String getTableName() const override
-    {
-        return table_name;
-    }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -52,15 +47,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void renameInMemory(const String & new_database_name, const String & new_table_name) override;
-
 private:
     Poco::URI uri;
     const Context & context_global;
 
     String format_name;
-    String database_name;
-    String table_name;
     UInt64 min_upload_part_size;
     String compression_method;
 };

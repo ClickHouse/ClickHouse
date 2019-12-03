@@ -94,7 +94,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_name(table_name_), database_name(database_name_)
+    : IStorage({database_name_, table_name_})
 {
     setColumns(columns_);
     setConstraints(constraints_);

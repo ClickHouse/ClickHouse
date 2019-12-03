@@ -132,12 +132,10 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(columns_)
+    : IStorage({database_name_, table_name_}, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
-    , database_name(database_name_)
-    , table_name(table_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
 {
@@ -168,12 +166,6 @@ BlockInputStreams StorageS3::read(
     if (column_defaults.empty())
         return {block_input};
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
-}
-
-void StorageS3::renameInMemory(const String & new_database_name, const String & new_table_name)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)

@@ -402,9 +402,6 @@ public:
             || column_name == "_sample_factor";
     }
 
-    String getDatabaseName() const override { return database_name; }
-    String getTableName() const override { return table_name; }
-
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
@@ -540,12 +537,6 @@ public:
     /// Must be called with locked lockStructureForAlter().
     void rename(const String & new_path_to_table_data, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
-
-    void renameInMemory(const String & new_database_name, const String & new_table_name) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -771,8 +762,6 @@ protected:
 
     bool require_part_metadata;
 
-    String database_name;
-    String table_name;
     String relative_data_path;
 
 

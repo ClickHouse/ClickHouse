@@ -159,7 +159,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name),
+    : IStorage({args.database_name, args.table_name}), format_name(args.format_name),
       context_global(args.context), compression_method(args.compression_method)
 {
     setColumns(args.columns);
@@ -280,7 +280,8 @@ public:
         else
         {
             if (storage.paths.size() != 1)
-                throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception("Table " + storage.getStorageID().getNameForLogs() +
+                                " is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
@@ -327,17 +328,17 @@ BlockOutputStreamPtr StorageFile::write(
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
-        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -346,8 +347,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 

@@ -47,8 +47,7 @@ StorageMySQL::StorageMySQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_name(table_name_)
-    , database_name(database_name_)
+    : IStorage({database_name_, table_name_})
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}

@@ -23,8 +23,6 @@ class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -39,12 +37,6 @@ public:
         const Context & context) override;
 
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
-    void renameInMemory(const String & new_database_name, const String & new_table_name) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
 
     Strings getDataPaths() const override;
 
@@ -75,8 +67,6 @@ protected:
 private:
     explicit StorageFile(CommonArguments args);
 
-    std::string table_name;
-    std::string database_name;
     std::string format_name;
     const Context & context_global;
 

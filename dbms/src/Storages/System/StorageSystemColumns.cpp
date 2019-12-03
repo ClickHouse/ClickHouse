@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription(
     {
