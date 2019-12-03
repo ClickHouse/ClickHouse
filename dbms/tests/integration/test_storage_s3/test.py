@@ -86,6 +86,7 @@ def get_nginx_access_logs():
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
+        cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"], with_minio=True)
         cluster.add_instance("dummy", with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -233,14 +234,14 @@ def test_multipart_put(cluster, maybe_auth, positive):
 
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
 
-def test_remote_host_filter(started_cluster):
-    instance = started_cluster.instances["dummy"]
+
+def test_remote_host_filter(cluster):
+    instance = cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
-    put_communication_data(started_cluster, "=== RemoteHostFilter test ===")
-    query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format("invalid_host", started_cluster.redirecting_to_http_port, format)
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format("invalid_host", cluster.minio_redirect_port, format)
     assert "not allowed in config.xml" in instance.query_and_get_error(query)
 
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format("invalid_host", started_cluster.redirecting_preserving_data_port, started_cluster.bucket, format, other_values)
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format("invalid_host", cluster.minio_port, cluster.minio_bucket, format, other_values)
     assert "not allowed in config.xml" in instance.query_and_get_error(query)
