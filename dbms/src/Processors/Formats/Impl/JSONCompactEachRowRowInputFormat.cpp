@@ -159,6 +159,11 @@ bool JSONCompactEachRowRowInputFormat::readRow(DB::MutableColumns &columns, DB::
             if (!read_columns[*table_column])
                 have_default_columns = true;
         }
+        else
+        {
+            String s;
+            readJSONString(s, in);
+        }
 
         skipWhitespaceIfAny(in);
         if (in.eof())
