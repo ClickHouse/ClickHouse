@@ -1173,17 +1173,15 @@ void MergeTreeData::rename(
 
     for (const auto & disk : disks)
     {
-        auto new_table_file = disk->file(new_table_path);
-
-        if (new_table_file->exists())
-            throw Exception{"Target path already exists: " + new_table_file->fullPath(), ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+        if (disk->exists(new_table_path))
+            throw Exception{"Target path already exists: " + fullPath(disk, new_table_path), ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
 
     for (const auto & disk : disks)
     {
-        disk->file(new_db_path)->createDirectory();
+        disk->createDirectory(new_db_path);
 
-        disk->file(old_table_path)->moveTo(new_table_path);
+        disk->moveFile(old_table_path, new_table_path);
     }
 
     global_context.dropCaches();
@@ -2733,7 +2731,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
-    if (!movePartsToSpace(parts, std::static_pointer_cast<const Space>(disk)))
+    if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(disk)))
         throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
 }
 
@@ -2785,7 +2783,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
-    if (!movePartsToSpace(parts, std::static_pointer_cast<const Space>(volume)))
+    if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(volume)))
         throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
 }
 
@@ -3520,7 +3518,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
         if (!reservation)
             throw Exception("Move is not possible. Not enough space on '" + space->getName() + "'", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        auto & reserved_disk = reservation->getDisk();
+        auto reserved_disk = reservation->getDisk();
         String path_to_clone = getFullPathOnDisk(reserved_disk);
 
         if (Poco::File(path_to_clone + part->name).exists())

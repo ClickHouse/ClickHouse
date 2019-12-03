@@ -10,14 +10,14 @@ namespace DB
 {
 std::mutex DiskLocal::mutex;
 
-ReservationPtr DiskLocal::reserve(UInt64 bytes) const
+ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
         return {};
-    return std::make_unique<DiskLocalReservation>(std::static_pointer_cast<const DiskLocal>(shared_from_this()), bytes);
+    return std::make_unique<DiskLocalReservation>(std::static_pointer_cast<DiskLocal>(shared_from_this()), bytes);
 }
 
-bool DiskLocal::tryReserve(UInt64 bytes) const
+bool DiskLocal::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(mutex);
     if (bytes == 0)
@@ -44,7 +44,7 @@ bool DiskLocal::tryReserve(UInt64 bytes) const
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(path);
+    auto fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -55,7 +55,7 @@ UInt64 DiskLocal::getAvailableSpace() const
 {
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    auto fs = getStatVFS(path);
+    auto fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -70,93 +70,63 @@ UInt64 DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-DiskFilePtr DiskLocal::file(const String & path_) const
+bool DiskLocal::exists(const String & path) const
 {
-    return std::make_shared<DiskLocalFile>(std::static_pointer_cast<const DiskLocal>(shared_from_this()), path_);
+    return Poco::File(disk_path + path).exists();
 }
 
-
-DiskLocalFile::DiskLocalFile(const DiskPtr & disk_ptr_, const String & rel_path_)
-    : IDiskFile(disk_ptr_, rel_path_), file(disk_ptr->getPath() + rel_path)
+bool DiskLocal::isFile(const String & path) const
 {
+    return Poco::File(disk_path + path).isFile();
 }
 
-bool DiskLocalFile::exists() const
+bool DiskLocal::isDirectory(const String & path) const
 {
-    return file.exists();
+    return Poco::File(disk_path + path).isDirectory();
 }
 
-bool DiskLocalFile::isDirectory() const
+void DiskLocal::createDirectory(const String & path)
 {
-    return file.isDirectory();
+    Poco::File(disk_path + path).createDirectory();
 }
 
-void DiskLocalFile::createDirectory()
+void DiskLocal::createDirectories(const String & path)
 {
-    file.createDirectory();
+    Poco::File(disk_path + path).createDirectories();
 }
 
-void DiskLocalFile::createDirectories()
+DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    file.createDirectories();
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path + path);
 }
 
-void DiskLocalFile::moveTo(const String & new_path)
+void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    file.renameTo(disk_ptr->getPath() + new_path);
+    Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
 }
 
-void DiskLocalFile::copyTo(const String & new_path)
+void DiskLocal::copyFile(const String & from_path, const String & to_path)
 {
-    file.copyTo(disk_ptr->getPath() + new_path);
+    Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocalFile::read() const
+std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path) const
 {
-    return std::make_unique<ReadBufferFromFile>(file.path());
+    return std::make_unique<ReadBufferFromFile>(disk_path + path);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocalFile::write()
+std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path)
 {
-    return std::make_unique<WriteBufferFromFile>(file.path());
-}
-
-
-DiskDirectoryIteratorImplPtr DiskLocalFile::iterateDirectory()
-{
-    return std::make_unique<DiskLocalDirectoryIterator>(shared_from_this());
-}
-
-
-DiskLocalDirectoryIterator::DiskLocalDirectoryIterator(const DiskFilePtr & parent_) : parent(parent_), iter(parent_->fullPath())
-{
-    updateCurrentFile();
-}
-
-void DiskLocalDirectoryIterator::next()
-{
-    ++iter;
-    updateCurrentFile();
-}
-
-void DiskLocalDirectoryIterator::updateCurrentFile()
-{
-    current_file.reset();
-    if (iter != Poco::DirectoryIterator())
-    {
-        String path = parent->path() + iter.name();
-        current_file = std::make_shared<DiskLocalFile>(parent->disk(), path);
-    }
+    return std::make_unique<WriteBufferFromFile>(disk_path + path);
 }
 
 
 void DiskLocalReservation::update(UInt64 new_size)
 {
     std::lock_guard lock(DiskLocal::mutex);
-    auto disk_local = std::static_pointer_cast<const DiskLocal>(disk_ptr);
-    disk_local->reserved_bytes -= size;
+    disk->reserved_bytes -= size;
     size = new_size;
-    disk_local->reserved_bytes += size;
+    disk->reserved_bytes += size;
 }
 
 DiskLocalReservation::~DiskLocalReservation()
@@ -164,21 +134,20 @@ DiskLocalReservation::~DiskLocalReservation()
     try
     {
         std::lock_guard lock(DiskLocal::mutex);
-        auto disk_local = std::static_pointer_cast<const DiskLocal>(disk_ptr);
-        if (disk_local->reserved_bytes < size)
+        if (disk->reserved_bytes < size)
         {
-            disk_local->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '" + disk_ptr->getName() + "'.");
+            disk->reserved_bytes = 0;
+            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '" + disk->getName() + "'.");
         }
         else
         {
-            disk_local->reserved_bytes -= size;
+            disk->reserved_bytes -= size;
         }
 
-        if (disk_local->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '" + disk_ptr->getName() + "'.");
+        if (disk->reservation_count == 0)
+            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '" + disk->getName() + "'.");
         else
-            --disk_local->reservation_count;
+            --disk->reservation_count;
     }
     catch (...)
     {
@@ -232,7 +201,7 @@ void registerDiskLocal(DiskFactory & factory)
             keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
         }
 
-        return std::make_shared<const DiskLocal>(name, path, keep_free_space_bytes);
+        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);
 }

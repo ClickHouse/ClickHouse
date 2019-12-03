@@ -29,8 +29,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #if !defined(__linux__)
 [[noreturn]]
 #endif
-String
-getFilesystemName([[maybe_unused]] const String & mount_point);
+String getFilesystemName([[maybe_unused]] const String & mount_point);
 
 inline struct statvfs getStatVFS(const String & path)
 {

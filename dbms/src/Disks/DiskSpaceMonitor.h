@@ -69,7 +69,7 @@ public:
 
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr reserve(UInt64 bytes) override;
 
     /// Return biggest unreserved space across all disks
     UInt64 getMaxUnreservedFreeSpace() const;
@@ -88,7 +88,7 @@ private:
     const String name;
 };
 
-using VolumePtr = std::shared_ptr<const Volume>;
+using VolumePtr = std::shared_ptr<Volume>;
 using Volumes = std::vector<VolumePtr>;
 
 
@@ -96,7 +96,7 @@ using Volumes = std::vector<VolumePtr>;
  * Contains all information about volumes configuration for Storage.
  * Can determine appropriate Volume and Disk for each reservation.
  */
-class StoragePolicy : public Space
+class StoragePolicy
 {
 public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks);
@@ -116,10 +116,10 @@ public:
     /// Get free space from most free disk
     UInt64 getMaxUnreservedFreeSpace() const;
 
-    const String & getName() const override { return name; }
+    const String & getName() const { return name; }
 
     /// Returns valid reservation or null
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtr reserve(UInt64 bytes) const;
 
     /// Reserve space on any volume with index > min_volume_index
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
