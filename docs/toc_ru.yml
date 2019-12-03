@@ -9,7 +9,7 @@ nav:
   - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':
-  - 'hidden': 'getting_started/index.html'
+  - 'hidden': 'getting_started/index.md'
   - 'Установка': 'getting_started/install.md'
   - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
@@ -216,7 +216,7 @@ nav:
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
-  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross.md'
+  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
   - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'

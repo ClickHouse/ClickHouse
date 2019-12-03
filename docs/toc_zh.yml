@@ -18,6 +18,7 @@ nav:
     - '维基访问数据': 'getting_started/example_datasets/wikistat.md'
     - 'Criteo TB级别点击日志': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema基准测试': 'getting_started/example_datasets/star_schema.md'
+    - 'Yandex.Metrica': 'getting_started/example_datasets/metrica.md'
 
 - '客户端':
   - '介绍': 'interfaces/index.md'
@@ -214,7 +215,7 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
-  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross.md'
+  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '开发者指南': 'development/developer_instruction.md'
