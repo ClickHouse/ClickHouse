@@ -3,6 +3,9 @@
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
 
+#include <chrono>
+#include <vector>
+
 
 namespace DB
 {
@@ -34,7 +37,8 @@ public:
     ConnectionPoolWithFailover(
             ConnectionPoolPtrs nested_pools_,
             LoadBalancing load_balancing,
-            time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD);
+            time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD,
+            size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
 
     using Entry = IConnectionPool::Entry;
 
@@ -63,6 +67,16 @@ public:
             const Settings * settings,
             PoolMode pool_mode,
             const QualifiedTableName & table_to_check);
+
+    struct NestedPoolStatus
+    {
+        const IConnectionPool * pool;
+        size_t error_count;
+        std::chrono::seconds estimated_recovery_time;
+    };
+
+    using Status = std::vector<NestedPoolStatus>;
+    Status getStatus() const;
 
 private:
     /// Get the values of relevant settings and call Base::getMany()

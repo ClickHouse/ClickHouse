@@ -70,6 +70,7 @@ CacheDictionary::CacheDictionary(
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
+    , log(&Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
@@ -575,6 +576,12 @@ BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_na
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
 }
 
+std::exception_ptr CacheDictionary::getLastException() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+    return last_exception;
+}
+
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
@@ -604,7 +611,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("cache", create_layout);
+    factory.registerLayout("cache", create_layout, false);
 }
 
 

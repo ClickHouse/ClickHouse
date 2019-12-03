@@ -8,7 +8,6 @@
 #include <queue>
 #include <list>
 #include <optional>
-#include <ext/singleton.h>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
@@ -37,18 +36,23 @@ public:
     ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
-    /// If an exception in some thread was thrown, method silently returns, and exception will be rethrown only on call to 'wait' function.
+    /// If any thread was throw an exception, first exception will be rethrown from this method,
+    ///  and exception will be cleared.
+    /// Also throws an exception if cannot create thread.
     /// Priority: greater is higher.
-    void schedule(Job job, int priority = 0);
+    /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
+    /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
+    /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
+    void scheduleOrThrowOnError(Job job, int priority = 0);
 
-    /// Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0);
+    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
+    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
-    /// Wait for specified amount of time and schedule a job or throw an exception.
+    /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
     /// Wait for all currently active jobs to be done.
-    /// You may call schedule and wait many times in arbitary order.
+    /// You may call schedule and wait many times in arbitrary order.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
     ///  and exception will be cleared.
     void wait();
@@ -121,10 +125,11 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   * - address sanitizer and thread sanitizer will not fail due to global limit on number of created threads.
   * - program will work faster in gdb;
   */
-class GlobalThreadPool : public FreeThreadPool, public ext::singleton<GlobalThreadPool>
+class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
 public:
     GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
+    static GlobalThreadPool & instance();
 };
 
 
@@ -140,7 +145,7 @@ public:
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
     {
-        /// NOTE: If this will throw an exception, the descructor won't be called.
+        /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),

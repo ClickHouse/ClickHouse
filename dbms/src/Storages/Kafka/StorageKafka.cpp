@@ -17,6 +17,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -44,6 +45,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -259,9 +262,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", VERSION_FULL);
-    conf.set("auto.offset.reset", "smallest"); // If no offset stored for this group, read all messages from the start
-    conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
-    conf.set("enable.partition.eof", "false"); // Ignore EOF messages
+    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
+    conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
+    conf.set("enable.partition.eof", "false");     // Ignore EOF messages
     updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
@@ -275,9 +279,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled),
-        row_delimiter);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
 }
 
 
@@ -365,7 +367,6 @@ bool StorageKafka::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->database = database_name;
     insert->table = table_name;
-    insert->no_destination = true; // Only insert into dependent views and expect that input blocks contain virtual columns
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -373,7 +374,8 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter(insert, global_context, false, true);
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, global_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -381,12 +383,13 @@ bool StorageKafka::streamToViews()
     streams.reserve(num_created_consumers);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size);
+        auto stream
+            = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
         IBlockInputStream::LocalLimits limits;
-        limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
     }
@@ -398,8 +401,10 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub;
+    std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+    for (auto & stream : streams)
+        stream->as<KafkaBlockInputStream>()->commit();
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
@@ -410,14 +415,12 @@ bool StorageKafka::streamToViews()
 }
 
 
-bool StorageKafka::hasSetting(const String & setting_name) const
+void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
 {
-    return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
-}
+    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
 
-IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
-{
-    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)

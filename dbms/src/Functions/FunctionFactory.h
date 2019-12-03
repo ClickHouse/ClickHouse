@@ -3,7 +3,6 @@
 #include <Functions/IFunction.h>
 #include <Common/IFactoryWithAliases.h>
 
-#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
@@ -21,9 +20,11 @@ class Context;
   * Function could use for initialization (take ownership of shared_ptr, for example)
   *  some dictionaries from Context.
   */
-class FunctionFactory : public ext::singleton<FunctionFactory>, public IFactoryWithAliases<std::function<FunctionBuilderPtr(const Context &)>>
+class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionBuilderPtr(const Context &)>>
 {
 public:
+
+    static FunctionFactory & instance();
 
     template <typename Function>
     void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive)

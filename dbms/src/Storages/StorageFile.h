@@ -40,7 +40,7 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
-    String getDataPath() const override { return path; }
+    Strings getDataPaths() const override;
 
 protected:
     friend class StorageFileBlockInputStream;
@@ -60,7 +60,8 @@ protected:
         const std::string & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        Context & context_);
+        Context & context_,
+        const String & compression_method_);
 
 private:
     std::string table_name;
@@ -68,11 +69,13 @@ private:
     std::string format_name;
     Context & context_global;
 
-    std::string path;
     int table_fd = -1;
+    String compression_method;
+
+    std::vector<std::string> paths;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd insted of path
+    bool use_table_fd = false;                    /// Use table_fd instead of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 

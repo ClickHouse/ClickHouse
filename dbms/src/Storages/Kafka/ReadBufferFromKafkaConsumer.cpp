@@ -1,5 +1,9 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
+#include <common/logger_useful.h>
+
+#include <cppkafka/cppkafka.h>
+
 namespace DB
 {
 
@@ -68,20 +72,7 @@ void ReadBufferFromKafkaConsumer::commit()
 
     PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
-    if (current != messages.end())
-    {
-        /// Since we can poll more messages than we already processed,
-        /// commit only processed messages.
-        consumer->async_commit(*std::prev(current));
-    }
-    else
-    {
-        /// Commit everything we polled so far because either:
-        /// - read all polled messages (current == messages.end()),
-        /// - read nothing at all (messages.empty()),
-        /// - stalled.
-        consumer->async_commit();
-    }
+    consumer->async_commit();
 
     PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
 
@@ -149,7 +140,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
     ///       If we failed to poll any message once - don't try again.
     ///       Otherwise, the |poll_timeout| expectations get flawn.
-    if (stalled || stopped)
+    if (stalled || stopped || !allowed)
         return false;
 
     if (current == messages.end())
@@ -183,6 +174,10 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     // XXX: very fishy place with const casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
+    allowed = false;
+
+    /// Since we can poll more messages than we already processed - commit only processed messages.
+    consumer->store_offset(*current);
 
     ++current;
 

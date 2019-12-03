@@ -1,5 +1,6 @@
 #include "PerformanceTestInfo.h"
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -97,7 +98,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         }
 
         extractSettings(config, "settings", config_settings, settings_to_apply);
-        settings.loadFromChanges(settings_to_apply);
+        settings.applyChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
             TestStats::avg_rows_speed_precision =

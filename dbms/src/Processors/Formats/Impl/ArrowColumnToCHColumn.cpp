@@ -1,7 +1,7 @@
 #include "config_formats.h"
 #include "ArrowColumnToCHColumn.h"
 
-#if USE_ORC or USE_PARQUET
+#if USE_ORC || USE_PARQUET
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,6 +13,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
+#include <algorithm>
+
 
 namespace DB
 {
@@ -27,34 +29,28 @@ namespace DB
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
     }
-    const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
-            //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal>()},
-            {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
-            {arrow::Type::INT8, std::make_shared<DataTypeInt8>()},
-            {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
-            {arrow::Type::INT16, std::make_shared<DataTypeInt16>()},
-            {arrow::Type::UINT32, std::make_shared<DataTypeUInt32>()},
-            {arrow::Type::INT32, std::make_shared<DataTypeInt32>()},
-            {arrow::Type::UINT64, std::make_shared<DataTypeUInt64>()},
-            {arrow::Type::INT64, std::make_shared<DataTypeInt64>()},
-            {arrow::Type::HALF_FLOAT, std::make_shared<DataTypeFloat32>()},
-            {arrow::Type::FLOAT, std::make_shared<DataTypeFloat32>()},
-            {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
 
-            {arrow::Type::BOOL, std::make_shared<DataTypeUInt8>()},
-            //{arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
-            {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
-            //{arrow::Type::DATE32, std::make_shared<DataTypeDateTime>()},
-            {arrow::Type::DATE64, std::make_shared<DataTypeDateTime>()},
-            {arrow::Type::TIMESTAMP, std::make_shared<DataTypeDateTime>()},
-            //{arrow::Type::TIME32, std::make_shared<DataTypeDateTime>()},
+    static const std::initializer_list<std::pair<arrow::Type::type, const char *>> arrow_type_to_internal_type =
+    {
+            {arrow::Type::UINT8, "UInt8"},
+            {arrow::Type::INT8, "Int8"},
+            {arrow::Type::UINT16, "UInt16"},
+            {arrow::Type::INT16, "Int16"},
+            {arrow::Type::UINT32, "UInt32"},
+            {arrow::Type::INT32, "Int32"},
+            {arrow::Type::UINT64, "UInt64"},
+            {arrow::Type::INT64, "Int64"},
+            {arrow::Type::HALF_FLOAT, "Float32"},
+            {arrow::Type::FLOAT, "Float32"},
+            {arrow::Type::DOUBLE, "Float64"},
 
+            {arrow::Type::BOOL, "UInt8"},
+            {arrow::Type::DATE32, "Date"},
+            {arrow::Type::DATE64, "DateTime"},
+            {arrow::Type::TIMESTAMP, "DateTime"},
 
-            {arrow::Type::STRING, std::make_shared<DataTypeString>()},
-            {arrow::Type::BINARY, std::make_shared<DataTypeString>()},
-            //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
-            //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
-
+            {arrow::Type::STRING, "String"},
+            {arrow::Type::BINARY, "String"},
 
             // TODO: add other types that are convertable to internal ones:
             // 0. ENUM?
@@ -253,7 +249,7 @@ namespace DB
     void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
                                                     arrow::Status &read_status, const Block &header,
                                                     int &row_group_current, const Context &context, std::string format_name)
-                                                    {
+    {
         Columns columns_list;
         UInt64 num_rows = 0;
 
@@ -308,15 +304,16 @@ namespace DB
                 const auto decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
                 internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(),
                                                                                      decimal_type->scale());
-            } else if (arrow_type_to_internal_type.find(arrow_type) != arrow_type_to_internal_type.end())
+            }
+            else if (auto internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
+                [=](auto && elem) { return elem.first == arrow_type; });
+                internal_type_it != arrow_type_to_internal_type.end())
             {
-                internal_nested_type = arrow_type_to_internal_type.at(arrow_type);
+                internal_nested_type = DataTypeFactory::instance().get(internal_type_it->second);
             }
             else
             {
-                throw Exception
-                {
-                        "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
                         + "\" is not supported for conversion from a " + format_name + " data format",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }

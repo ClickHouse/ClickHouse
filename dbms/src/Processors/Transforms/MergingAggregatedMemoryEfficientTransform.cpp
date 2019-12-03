@@ -507,6 +507,7 @@ Processors createMergingAggregatedMemoryEfficientPipe(
     for (size_t i = 0; i < num_merging_processors; ++i, ++in, ++out)
     {
         auto transform = std::make_shared<MergingAggregatedBucketTransform>(params);
+        transform->setStream(i);
         connect(*out, transform->getInputPort());
         connect(transform->getOutputPort(), *in);
         processors.emplace_back(std::move(transform));

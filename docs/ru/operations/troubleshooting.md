@@ -25,14 +25,14 @@
 
 Команда:
 
-```
-sudo service clickhouse-server status
+```bash
+$ sudo service clickhouse-server status
 ```
 
 Если сервер не запущен, запустите его с помощью команды:
 
-```
-sudo service clickhouse-server start
+```bash
+$ sudo service clickhouse-server start
 ```
 
 **Проверьте журналы**
@@ -46,19 +46,19 @@ sudo service clickhouse-server start
 
 Если `clickhouse-server` не запустился из-за ошибки конфигурации вы  увидите `<Error>` строку с описанием ошибки. Например:
 
-```
+```text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
 Если вы не видите ошибки в конце файла, просмотрите весь файл начиная со строки:
 
-```
+```text
 <Information> Application: starting up.
 ```
 
 При попытке запустить второй экземпляр `clickhouse-server` журнал выглядит следующим образом:
 
-```
+```text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -76,14 +76,14 @@ Revision: 54413
 
 Если из логов `clickhouse-server` вы не получили необходимой информации или логов нет, то вы можете посмотреть логи `system.d` командой:
 
-```
-sudo journalctl -u clickhouse-server
+```bash
+$ sudo journalctl -u clickhouse-server
 ```
 
 **Запустите clickhouse-server в интерактивном режиме**
 
-```
-sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
+```bash
+$ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Эта команда запускает сервер как интерактивное приложение со стандартными параметрами скрипта автозапуска. В этом режиме `clickhouse-server` выводит сообщения в консоль.
@@ -128,7 +128,7 @@ $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-Если вы запускаете `clickhouse-client` c параметром `stack-trace`, то ClickHouse возвращает описание ошибки и соответствущий стек вызовов функций на сервере.
+Если вы запускаете `clickhouse-client` c параметром `stack-trace`, то ClickHouse возвращает описание ошибки и соответствующий стек вызовов функций на сервере.
 
 Может появиться сообщение о разрыве соединения. В этом случае необходимо повторить запрос. Если соединение прерывается каждый раз при выполнении запроса, следует проверить журналы сервера на наличие ошибок.
 

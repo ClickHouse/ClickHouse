@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
+#include <Common/MemorySanitizer.h>
 #include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
 #include <errno.h>
@@ -68,6 +69,9 @@ int AIOContextPool::getCompletionEvents(io_event events[], const int max_events)
     while ((num_events = io_getevents(aio_context.ctx, 1, max_events, events, &timeout)) < 0)
         if (errno != EINTR)
             throwFromErrno("io_getevents: Failed to wait for asynchronous IO completion", ErrorCodes::CANNOT_IO_GETEVENTS, errno);
+
+    /// Unpoison the memory returned from a non-instrumented system call.
+    __msan_unpoison(events, sizeof(*events) * num_events);
 
     return num_events;
 }
@@ -156,6 +160,12 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     }
 
     return promises[request_id].get_future();
+}
+
+AIOContextPool & AIOContextPool::instance()
+{
+    static AIOContextPool instance;
+    return instance;
 }
 
 }

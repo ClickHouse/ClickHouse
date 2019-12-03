@@ -45,6 +45,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
+        {"disk_name",                                  std::make_shared<DataTypeString>()},
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"hash_of_all_files",                          std::make_shared<DataTypeString>()},
@@ -94,8 +95,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         columns_[i++]->insert(part->getMinDate());
         columns_[i++]->insert(part->getMaxDate());
-        columns_[i++]->insert(part->getMinTime());
-        columns_[i++]->insert(part->getMaxTime());
+        columns_[i++]->insert(static_cast<UInt32>(part->getMinTime()));
+        columns_[i++]->insert(static_cast<UInt32>(part->getMaxTime()));
         columns_[i++]->insert(part->info.partition_id);
         columns_[i++]->insert(part->info.min_block);
         columns_[i++]->insert(part->info.max_block);
@@ -108,6 +109,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
         columns_[i++]->insert(info.engine);
+        columns_[i++]->insert(part->disk->getName());
         columns_[i++]->insert(part->getFullPath());
 
         if (has_state_column)

@@ -1,11 +1,11 @@
 #pragma once
 
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <vector>
 #include <string>
-#include <ext/singleton.h>
 #include <Common/Elf.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -15,13 +15,14 @@ namespace DB
   * Used as a replacement for "dladdr" function which is extremely slow.
   * It works better than "dladdr" because it also allows to search private symbols, that are not participated in shared linking.
   */
-class SymbolIndex : public ext::singleton<SymbolIndex>
+class SymbolIndex : private boost::noncopyable
 {
 protected:
-    friend class ext::singleton<SymbolIndex>;
     SymbolIndex() { update(); }
 
 public:
+    static SymbolIndex & instance();
+
     struct Symbol
     {
         const void * address_begin;

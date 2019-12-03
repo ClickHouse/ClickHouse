@@ -35,7 +35,7 @@ from joinbug;
 select id, id2, val, val2, created
 from (
    SELECT toUInt64(arrayJoin(range(50))) AS id2
-)
+) js1
 ANY INNER JOIN joinbug_join using id2;
 
 DROP TABLE joinbug;

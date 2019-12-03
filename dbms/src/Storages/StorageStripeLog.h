@@ -53,7 +53,7 @@ public:
 
     std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
 
-    String getDataPath() const override { return full_path(); }
+    Strings getDataPaths() const override { return {full_path()}; }
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 

@@ -111,7 +111,7 @@ void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const FieldType & x = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const FieldType & x = assert_cast<const ColumnType &>(column).getElement(row_num);
     writeBinary(x, ostr);
 }
 

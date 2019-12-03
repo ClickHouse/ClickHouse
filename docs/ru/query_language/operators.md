@@ -67,7 +67,7 @@
 
 ## Оператор для работы с датами и временем {#operators-datetime}
 
-``` sql
+```sql
 EXTRACT(part FROM date);
 ```
 
@@ -88,7 +88,7 @@ EXTRACT(part FROM date);
 
 Примеры:
 
-``` sql
+```sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
@@ -96,7 +96,7 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 
 В следующем примере создадим таблицу и добавим в неё значение с типом `DateTime`.
 
-``` sql
+```sql
 CREATE TABLE test.Orders
 (
     OrderId UInt64,
@@ -106,10 +106,10 @@ CREATE TABLE test.Orders
 ENGINE = Log;
 ```
 
-``` sql
+```sql
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
-``` sql
+```sql
 SELECT
     toYear(OrderDate) AS OrderYear,
     toMonth(OrderDate) AS OrderMonth,
@@ -118,13 +118,15 @@ SELECT
     toMinute(OrderDate) AS OrderMinute,
     toSecond(OrderDate) AS OrderSecond
 FROM test.Orders;
+```
 
+```text
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-Больше примеров приведено в [тестах](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+Больше примеров приведено в [тестах](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
 ## Оператор логического отрицания
 
@@ -148,7 +150,7 @@ FROM test.Orders;
 
 ## Условное выражение {#operator_case}
 
-``` sql
+```sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -198,18 +200,13 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
     - `0` в обратном случае.
 - Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
-```bash
-:) SELECT x+100 FROM t_null WHERE y IS NULL
-
-SELECT x + 100
-FROM t_null
-WHERE isNull(y)
-
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+```text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 
@@ -220,18 +217,13 @@ WHERE isNull(y)
     - `1`, в обратном случае.
 - Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
-```bash
-:) SELECT * FROM t_null WHERE y IS NOT NULL
-
-SELECT *
-FROM t_null
-WHERE isNotNull(y)
-
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+```text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->

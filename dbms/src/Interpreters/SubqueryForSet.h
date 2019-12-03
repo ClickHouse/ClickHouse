@@ -1,15 +1,13 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
 {
-
-class Join;
-using JoinPtr = std::shared_ptr<Join>;
 
 class InterpreterSelectWithUnionQuery;
 
@@ -25,20 +23,24 @@ struct SubqueryForSet
     JoinPtr join;
     /// Apply this actions to joined block.
     ExpressionActionsPtr joined_block_actions;
+    Block sample_block; /// source->getHeader() + column renames
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
     StoragePtr table;
 
     void makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                    const std::unordered_map<String, String> & name_to_origin);
+                    NamesWithAliases && joined_block_aliases_);
 
-    Block renamedSampleBlock() const { return sample_block; }
-    void renameColumns(Block & block);
+    void setJoinActions(ExpressionActionsPtr actions);
+
+    bool insertJoinedBlock(Block & block);
+    void setTotals();
 
 private:
     NamesWithAliases joined_block_aliases; /// Rename column from joined block from this list.
-    Block sample_block; /// source->getHeader() + column renames
+
+    void renameColumns(Block & block);
 };
 
 /// ID of subquery -> what to do with it.

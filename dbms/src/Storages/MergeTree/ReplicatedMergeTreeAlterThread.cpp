@@ -85,8 +85,9 @@ void ReplicatedMergeTreeAlterThread::run()
         auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
         auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 
-        /// If you need to lock table structure, then suspend merges.
+        /// If you need to lock table structure, then suspend merges and moves.
         ActionLock merge_blocker = storage.merger_mutator.merges_blocker.cancel();
+        ActionLock moves_blocker = storage.parts_mover.moves_blocker.cancel();
 
         MergeTreeData::DataParts parts;
 

@@ -48,6 +48,18 @@ Features:
 - Table preview with filtering and sorting.
 - Read-only queries execution.
 
+### Redash
+
+[Redash](https://github.com/getredash/redash) is a platform for data visualization.
+
+Supports for multiple data sources including ClickHouse, Redash can join results of queries from different data sources into one final dataset.
+
+Features:
+
+- Powerful editor of queries.
+- Database explorer.
+- Visualization tools, that allow you to represent data in different forms.
+
 ### DBeaver
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
@@ -64,12 +76,29 @@ Features:
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command line client for ClickHouse, written in Python 3.
 
 Features:
+
 - Autocompletion.
 - Syntax highlighting for the queries and data output.
 - Pager support for the data output.
 - Custom PostgreSQL-like commands.
 
+### clickhouse-flamegraph
+
+[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
 ## Commercial
+
+### Holistics Software
+
+[Holistics](https://www.holistics.io/) was listed by Gartner's Frontrunners in 2019 as one of the top 2 highest ranked business intelligence tools globally for usability. Holistics is a full-stack data platform and business intelligence tool for setting up your analytics processes, built on SQL. 
+
+Features:
+
+- Automated email, Slack and Google Sheet schedules of reports.
+- Powerful SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
+- Embedded analytics of reports and dashboards via iframe.
+- Data preparation and ETL capabilities.
+- SQL data modeling support for relational mapping of data.
 
 ### DataGrip
 

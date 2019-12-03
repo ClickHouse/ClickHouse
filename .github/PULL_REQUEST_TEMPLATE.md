@@ -1,19 +1,21 @@
 I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla/?lang=en
 
-For changelog. Remove if this is non-significant change.
-
-Category (leave one):
+Changelog category (leave one):
 - New Feature
 - Bug Fix
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
+- Documentation
 - Other
+- Non-significant (changelog entry is not needed)
 
-Short description (up to few sentences):
+
+Changelog entry (up to few sentences, required except for Non-significant/Documentation categories):
 
 ...
+
 
 Detailed description (optional):
 

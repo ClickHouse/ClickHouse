@@ -216,7 +216,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
     std::vector<size_t> required_rows(outdated_keys.size());
     std::transform(
-        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
+        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getMapped().front(); });
 
     /// request new values
     update(
@@ -415,7 +415,7 @@ void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("complex_key_cache", create_layout);
+    factory.registerLayout("complex_key_cache", create_layout, true);
 }
 
 

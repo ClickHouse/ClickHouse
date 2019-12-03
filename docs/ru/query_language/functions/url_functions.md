@@ -13,7 +13,7 @@
 
 Извлекает имя хоста из URL.
 
-```
+```sql
 domain(url)
 ```
 
@@ -23,7 +23,7 @@ domain(url)
 
 URL может быть указан со схемой или без неё. Примеры:
 
-```
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
@@ -31,7 +31,7 @@ https://yandex.com/time/
 
 Для указанных примеров функция `domain` возвращает следующие результаты:
 
-```
+```text
 some.svn-hosting.com
 some.svn-hosting.com
 yandex.com
@@ -64,7 +64,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 
 Извлекает домен верхнего уровня из URL.
 
-```
+```sql
 topLevelDomain(url)
 ```
 
@@ -74,7 +74,7 @@ topLevelDomain(url)
 
 URL может быть указан со схемой или без неё. Примеры:
 
-```
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
@@ -138,7 +138,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 То же самое, но без протокола и хоста в результате. Элемент / (корень) не включается. Пример:
 Функция используется для реализации древовидных отчётов по URL в Яндекс.Метрике.
 
-```
+```text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -150,11 +150,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Возвращает декодированный URL.
 Пример:
 
-``` sql
+```sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```
+```text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘

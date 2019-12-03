@@ -44,9 +44,9 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
+    std::string fullPath() const { return path + escapeForFileName(table_name) + '/';}
 
-    String getDataPath() const override { return full_path(); }
+    Strings getDataPaths() const override { return {fullPath()}; }
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

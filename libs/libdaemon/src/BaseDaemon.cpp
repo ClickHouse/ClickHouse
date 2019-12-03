@@ -110,7 +110,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    if (sig != SIGPROF) /// This signal is used for debugging.
+    if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
         ::sleep(10);
@@ -597,10 +597,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        if (0 != setenv("TZ", config().getString("timezone").data(), 1))
+        const std::string timezone = config().getString("timezone");
+        if (0 != setenv("TZ", timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
+        DateLUT::setDefaultTimezone(timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -646,6 +648,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
+    // sensitive data masking rules are not used here
     buildLoggers(config(), logger());
 
     if (is_daemon)
@@ -716,9 +719,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    /// SIGPROF is added for debugging purposes. To output a stack trace of any running thread at anytime.
+    /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGPROF}, faultSignalHandler);
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
@@ -728,7 +731,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
-
 }
 
 void BaseDaemon::logRevision() const
@@ -888,4 +890,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-

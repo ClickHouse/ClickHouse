@@ -19,8 +19,8 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
@@ -74,6 +74,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
     {
+        // sensitive data rules are not used here
         buildLoggers(config(), logger());
     }
     else
@@ -220,14 +221,6 @@ catch (const Exception & e)
 }
 
 
-inline String getQuotedString(const String & s)
-{
-    WriteBufferFromOwnString buf;
-    writeQuotedString(s, buf);
-    return buf.str();
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure"))
@@ -240,7 +233,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
         table_file = "stdin";
     else /// Use regular file
-        table_file = getQuotedString(config().getString("table-file"));
+        table_file = quoteString(config().getString("table-file"));
 
     return
     "CREATE TABLE " + table_name +

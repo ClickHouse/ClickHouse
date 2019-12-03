@@ -20,6 +20,13 @@
     #define USE_PHDR_CACHE 1
 #endif
 
+#define __msan_unpoison(X, Y)
+#if defined(__has_feature)
+#   if __has_feature(memory_sanitizer)
+#       undef __msan_unpoison
+#       include <sanitizer/msan_interface.h>
+#   endif
+#endif
 
 /// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
 #ifdef USE_PHDR_CACHE
@@ -99,6 +106,10 @@ void updatePHDRCache()
     PHDRCache * new_phdr_cache = new PHDRCache;
     getOriginalDLIteratePHDR()([] (dl_phdr_info * info, size_t /*size*/, void * data)
     {
+        // `info` is created by dl_iterate_phdr, which is a non-instrumented
+        // libc function, so we have to unpoison it manually.
+        __msan_unpoison(info, sizeof(*info));
+
         reinterpret_cast<PHDRCache *>(data)->push_back(*info);
         return 0;
     }, new_phdr_cache);

@@ -155,7 +155,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_FUNCTION_ELEMENT_FOR_AGGREGATE = 147;
     extern const int NOT_FOUND_RELATION_ELEMENT_FOR_CONDITION = 148;
     extern const int NOT_FOUND_RHS_ELEMENT_FOR_CONDITION = 149;
-    extern const int NO_ATTRIBUTES_LISTED = 150;
+    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 150;
     extern const int INDEX_OF_COLUMN_IN_SORT_CLAUSE_IS_OUT_OF_RANGE = 151;
     extern const int UNKNOWN_DIRECTION_OF_SORTING = 152;
     extern const int ILLEGAL_DIVISION = 153;
@@ -361,7 +361,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED = 384;
     extern const int MULTIPLE_STREAMS_REQUIRED = 385;
     extern const int NO_COMMON_TYPE = 386;
-    extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS = 387;
+    extern const int DICTIONARY_ALREADY_EXISTS = 387;
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
@@ -446,13 +446,30 @@ namespace ErrorCodes
     extern const int VIOLATED_CONSTRAINT = 469;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 470;
     extern const int SETTINGS_ARE_NOT_SUPPORTED = 471;
-    extern const int IMMUTABLE_SETTING = 472;
+    extern const int READONLY_SETTING = 472;
+    extern const int DEADLOCK_AVOIDED = 473;
+    extern const int INVALID_TEMPLATE_FORMAT = 474;
+    extern const int INVALID_WITH_FILL_EXPRESSION = 475;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY = 476;
+    extern const int INVALID_USAGE_OF_INPUT = 477;
+    extern const int UNKNOWN_POLICY = 478;
+    extern const int UNKNOWN_DISK = 479;
+    extern const int UNKNOWN_PROTOCOL = 480;
+    extern const int PATH_ACCESS_DENIED = 481;
+    extern const int DICTIONARY_ACCESS_DENIED = 482;
+    extern const int TOO_MANY_REDIRECTS = 483;
+    extern const int INTERNAL_REDIS_ERROR = 484;
+    extern const int SCALAR_ALREADY_EXISTS = 485;
+    extern const int UNKNOWN_SCALAR = 486;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
+    extern const int UNKNOWN_DICTIONARY = 488;
+    extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int CANNOT_FORMAT_DATETIME = 490;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
-    extern const int METRIKA_OTHER_ERROR = 1003;
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;

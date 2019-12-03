@@ -103,7 +103,7 @@ void MetricLog::metricThreadFunction()
             for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
             {
                 const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-                UInt64 & old_value = prev_profile_events[i];
+                auto & old_value = prev_profile_events[i];
                 elem.profile_events[i] = new_value - old_value;
                 old_value = new_value;
             }

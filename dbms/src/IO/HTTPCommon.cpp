@@ -40,12 +40,13 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int TOO_MANY_REDIRECTS;
 }
 
 
 namespace
 {
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
 #if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
@@ -112,14 +113,12 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
         }
     };
 
-    class HTTPSessionPool : public ext::singleton<HTTPSessionPool>
+    class HTTPSessionPool : private boost::noncopyable
     {
     private:
         using Key = std::tuple<std::string, UInt16, bool>;
         using PoolPtr = std::shared_ptr<SingleEndpointHTTPSessionPool>;
         using Entry = SingleEndpointHTTPSessionPool::Entry;
-
-        friend class ext::singleton<HTTPSessionPool>;
 
         struct Hasher
         {
@@ -140,6 +139,12 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
         HTTPSessionPool() = default;
 
     public:
+        static auto & instance()
+        {
+            static HTTPSessionPool instance;
+            return instance;
+        }
+
         Entry getSession(
             const Poco::URI & uri,
             const ConnectionTimeouts & timeouts,
@@ -212,24 +217,30 @@ PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Connecti
     return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size);
 }
 
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
 
 std::istream * receiveResponse(
-    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
+    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
-    auto istr = &session.receiveResponse(response);
+    auto & istr = session.receiveResponse(response);
+    assertResponseIsOk(request, response, istr, allow_redirects);
+    return &istr;
+}
+
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
+{
     auto status = response.getStatus();
 
-    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
-                      << response.getReason() << ", body: " << istr->rdbuf();
+                      << response.getReason() << ", body: " << istr.rdbuf();
 
         throw Exception(error_message.str(),
             status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                                              : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-    return istr;
 }
 
 }

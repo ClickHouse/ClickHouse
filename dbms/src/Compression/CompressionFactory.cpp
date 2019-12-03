@@ -155,4 +155,10 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
 }
 
+CompressionCodecFactory & CompressionCodecFactory::instance()
+{
+    static CompressionCodecFactory ret;
+    return ret;
+}
+
 }

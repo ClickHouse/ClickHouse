@@ -5,8 +5,10 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <Common/ProfileEvents.h>
+#include <optional>
+#include <Core/Types.h>
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace Poco
@@ -24,7 +26,8 @@ class AsynchronousMetrics;
 
 
 /** Automatically sends
-  * - difference of ProfileEvents;
+  * - delta values of ProfileEvents;
+  * - cumulative values of ProfileEvents;
   * - values of CurrentMetrics;
   * - values of AsynchronousMetrics;
   *  to Graphite at beginning of every minute.
@@ -44,15 +47,17 @@ private:
     std::string config_name;
     UInt32 interval_seconds;
     bool send_events;
+    bool send_events_cumulative;
     bool send_metrics;
     bool send_asynchronous_metrics;
 
     bool quit = false;
     std::mutex mutex;
     std::condition_variable cond;
-    ThreadFromGlobalPool thread{&MetricsTransmitter::run, this};
+    std::optional<ThreadFromGlobalPool> thread;
 
     static inline constexpr auto profile_events_path_prefix = "ClickHouse.ProfileEvents.";
+    static inline constexpr auto profile_events_cumulative_path_prefix = "ClickHouse.ProfileEventsCumulative.";
     static inline constexpr auto current_metrics_path_prefix = "ClickHouse.Metrics.";
     static inline constexpr auto asynchronous_metrics_path_prefix = "ClickHouse.AsynchronousMetrics.";
 };

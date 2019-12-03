@@ -6,7 +6,7 @@
 
 Ключ партиционирования задается при [создании таблицы](mergetree.md#table_engine-mergetree-creating-a-table), в секции `PARTITION BY expr`. Ключ может представлять собой произвольное выражение из столбцов таблицы. Например, чтобы задать партиционирования по месяцам, можно использовать выражение `toYYYYMM(date_column)`:
 
-``` sql
+```sql
 CREATE TABLE visits
 (
     VisitDate Date, 
@@ -20,7 +20,7 @@ ORDER BY Hour
 
 Ключом партиционирования также может быть кортеж из выражений (аналогично [первичному ключу](mergetree.md#primary-keys-and-indexes-in-queries)). Например:
 
-``` sql
+```sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
 PARTITION BY (toMonday(StartDate), EventType)
 ORDER BY (CounterID, StartDate, intHash32(UserID));
@@ -44,7 +44,7 @@ FROM system.parts
 WHERE table = 'visits'
 ```
 
-```
+```text
 ┌─partition─┬─name───────────┬─active─┐
 │ 201901    │ 201901_1_3_1   │      0 │
 │ 201901    │ 201901_1_9_2   │      1 │
@@ -80,7 +80,7 @@ WHERE table = 'visits'
 OPTIMIZE TABLE visits PARTITION 201902;
 ```
 
-```
+```text
 ┌─partition─┬─name───────────┬─active─┐
 │ 201901    │ 201901_1_3_1   │      0 │
 │ 201901    │ 201901_1_9_2   │      1 │
@@ -98,7 +98,7 @@ OPTIMIZE TABLE visits PARTITION 201902;
 Другой способ посмотреть набор кусков и партиций – зайти в директорию с данными таблицы:  `/var/lib/clickhouse/data/<database>/<table>/`. Например:
 
 ```bash
-dev:/var/lib/clickhouse/data/default/visits$ ls -l
+/var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2

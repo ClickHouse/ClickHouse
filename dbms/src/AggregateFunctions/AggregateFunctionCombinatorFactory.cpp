@@ -26,4 +26,10 @@ AggregateFunctionCombinatorPtr AggregateFunctionCombinatorFactory::tryFindSuffix
     return {};
 }
 
+AggregateFunctionCombinatorFactory & AggregateFunctionCombinatorFactory::instance()
+{
+    static AggregateFunctionCombinatorFactory ret;
+    return ret;
+}
+
 }

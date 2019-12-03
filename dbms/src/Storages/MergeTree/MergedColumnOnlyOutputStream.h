@@ -28,7 +28,6 @@ public:
 private:
     Block header;
 
-    bool initialized = false;
     bool sync;
     bool skip_offsets;
 

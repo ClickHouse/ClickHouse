@@ -2,20 +2,21 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <ext/singleton.h>
 #include <Core/Types.h>
 #include <Core/Names.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
 {
 
 /// A singleton implementing DNS names resolving with optional DNS cache
-/// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater) 
+/// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater)
 /// or it could be updated manually via drop() method.
-class DNSResolver : public ext::singleton<DNSResolver>
+class DNSResolver : private boost::noncopyable
 {
 public:
+    static DNSResolver & instance();
 
     DNSResolver(const DNSResolver &) = delete;
 
@@ -45,8 +46,6 @@ public:
 private:
 
     DNSResolver();
-
-    friend class ext::singleton<DNSResolver>;
 
     struct Impl;
     std::unique_ptr<Impl> impl;

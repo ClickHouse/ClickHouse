@@ -26,7 +26,7 @@ SELECT [DISTINCT] expr_list
 如果查询中不包含`DISTINCT`，`GROUP BY`，`ORDER BY`子句以及`IN`和`JOIN`子查询，那么它将仅使用O(1)数量的内存来完全流式的处理查询
 否则，这个查询将消耗大量的内存，除非你指定了这些系统配置：`max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`。它们规定了可以使用外部排序（将临时表存储到磁盘中）以及外部聚合，`目前系统不存在关于Join的配置`，更多关于它们的信息，可以参见“配置”部分。
 
-### FROM 子句
+### FROM 子句 {#select-from}
 
 如果查询中不包含FROM子句，那么将读取`system.one`。
 `system.one`中仅包含一行数据（此表实现了与其他数据库管理系统中的DUAL相同的功能）。

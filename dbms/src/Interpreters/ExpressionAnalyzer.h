@@ -20,14 +20,13 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct ASTTableJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
-
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -61,15 +60,11 @@ private:
     struct ExtractedSettings
     {
         const bool use_index_for_in_with_subqueries;
-        const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
-        const SizeLimits size_limits_for_join;
 
         ExtractedSettings(const Settings & settings_)
         :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
-            join_use_nulls(settings_.join_use_nulls),
-            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
-            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode)
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
         {}
     };
 
@@ -121,9 +116,8 @@ protected:
     SyntaxAnalyzerResultPtr syntax;
 
     const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
+    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
-    const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
@@ -131,7 +125,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, JoinPtr join = {}) const;
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
@@ -195,6 +189,8 @@ public:
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
+    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
+    void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
@@ -223,9 +219,16 @@ private:
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    SubqueryForSet & getSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element);
-    ExpressionActionsPtr createJoinedBlockActions() const;
-    void makeHashJoin(const ASTTablesInSelectQueryElement & join_element, SubqueryForSet & subquery_for_set) const;
+    /**
+      * Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
+
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
+                             SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 };

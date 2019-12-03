@@ -11,6 +11,11 @@
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/Path.h>
 
+namespace DB
+{
+    class SensitiveDataMasker;
+}
+
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -168,6 +173,7 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");

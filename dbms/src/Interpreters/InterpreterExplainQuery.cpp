@@ -8,6 +8,7 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
+#include <Core/Field.h>
 
 #include <sstream>
 

@@ -155,3 +155,9 @@ const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) co
 
     return *it->second;
 }
+
+DateLUT & DateLUT::getInstance()
+{
+    static DateLUT ret;
+    return ret;
+}

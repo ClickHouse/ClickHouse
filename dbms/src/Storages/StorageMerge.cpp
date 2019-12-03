@@ -25,7 +25,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <Core/SettingsCommon.h>
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/ASTFunction.h>
@@ -143,7 +142,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseIteratorPtr iterator = getDatabaseIterator(context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
 
     size_t selected_table_size = 0;
 
@@ -353,7 +352,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabaseIteratorPtr iterator = getDatabaseIterator(global_context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
 
     auto virtual_column = ColumnString::create();
 
@@ -387,12 +386,12 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 }
 
 
-DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
     checkStackSize();
     auto database = context.getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getIterator(global_context, table_name_match);
+    return database->getTablesIterator(global_context, table_name_match);
 }
 
 

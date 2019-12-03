@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <type_traits>
@@ -26,10 +27,30 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+template <typename T>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+
 class Field;
-using Array = std::vector<Field>;
-using TupleBackend = std::vector<Field>;
-STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
+using FieldVector = std::vector<Field>;
+
+/// Array and Tuple use the same storage type -- FieldVector, but we declare
+/// distinct types for them, so that the caller can choose whether it wants to
+/// construct a Field of Array or a Tuple type. An alternative approach would be
+/// to construct both of these types from FieldVector, and have the caller
+/// specify the desired Field type explicitly.
+#define DEFINE_FIELD_VECTOR(X) \
+struct X : public FieldVector \
+{ \
+    using FieldVector::FieldVector; \
+}
+
+DEFINE_FIELD_VECTOR(Array);
+DEFINE_FIELD_VECTOR(Tuple);
+
+#undef DEFINE_FIELD_VECTOR
 
 struct AggregateFunctionStateData
 {
@@ -449,9 +470,16 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = std::decay_t<T>;
-        new (&storage) JustT(std::forward<T>(x));
-        which = TypeToEnum<JustT>::value;
+        using UnqualifiedType = std::decay_t<T>;
+
+        // In both Field and PODArray, small types may be stored as wider types,
+        // e.g. char is stored as UInt64. Field can return this extended value
+        // with get<StorageType>(). To avoid uninitialized results from get(),
+        // we must initialize the entire wide stored type, and not just the
+        // nominal type.
+        using StorageType = NearestFieldType<UnqualifiedType>;
+        new (&storage) StorageType(std::forward<T>(x));
+        which = TypeToEnum<UnqualifiedType>::value;
     }
 
     /// Assuming same types.
@@ -459,6 +487,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -623,12 +652,11 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 
-template <typename T> struct NearestFieldTypeImpl;
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
-template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<std::is_signed_v<char>, Int64, UInt64>; };
+template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
 
@@ -667,10 +695,7 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
-
-template <typename T>
-decltype(auto) nearestFieldType(T && x)
+decltype(auto) castToNearestFieldType(T && x)
 {
     using U = NearestFieldType<std::decay_t<T>>;
     if constexpr (std::is_same_v<std::decay_t<T>, U>)
@@ -689,7 +714,7 @@ decltype(auto) nearestFieldType(T && x)
 template <typename T>
 Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
@@ -697,7 +722,7 @@ template <typename T>
 std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
 Field::operator= (T && rhs)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
     if (which != TypeToEnum<std::decay_t<U>>::value)
     {
@@ -736,6 +761,8 @@ void readBinary(Tuple & x, ReadBuffer & buf);
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
+
+void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }

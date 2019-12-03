@@ -3,6 +3,10 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
+
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
@@ -120,8 +124,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = GOOGLE_NAMESPACE::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = GOOGLE_NAMESPACE::dense_hash_set<StringRef, StringRefHash>;
+    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -309,11 +313,10 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-bool IStorage::hasSetting(const String & /* setting_name */) const
+void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
 {
     if (!supportsSettings())
         throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
-    return false;
 }
 
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
@@ -381,16 +384,13 @@ IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new
             /// Make storage settings unique
             for (const auto & change : new_changes)
             {
-                if (hasSetting(change.name))
-                {
-                    auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
-                    if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
-                        it->value = change.value;
-                    else
-                        storage_changes.push_back(change);
-                }
+                checkSettingCanBeChanged(change.name);
+
+                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
+                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+                    it->value = change.value;
                 else
-                    throw Exception{"Storage '" + getName() + "' doesn't have setting '" + change.name + "'", ErrorCodes::UNKNOWN_SETTING};
+                    storage_changes.push_back(change);
             }
         }
     };
@@ -425,6 +425,42 @@ void IStorage::alter(
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
         setColumns(std::move(new_columns));
     }
+}
+
+BlockInputStreams IStorage::read(
+    const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    BlockInputStreams res;
+    res.reserve(pipes.size());
+
+    for (auto & pipe : pipes)
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+    return res;
+}
+
+DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
+{
+    if (compression_method == "auto" || compression_method == "")
+    {
+        if (endsWith(uri, ".gz"))
+            return DB::CompressionMethod::Gzip;
+        else
+            return DB::CompressionMethod::None;
+    }
+    else if (compression_method == "gzip")
+        return DB::CompressionMethod::Gzip;
+    else if (compression_method == "none")
+        return DB::CompressionMethod::None;
+    else
+        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

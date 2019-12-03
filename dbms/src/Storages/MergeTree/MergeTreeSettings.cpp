@@ -4,6 +4,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
+#include <Core/SettingsCollectionImpl.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromChanges(storage_def.settings->changes);
+            applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {

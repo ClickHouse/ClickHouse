@@ -121,13 +121,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::schedule(Job job, int priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
 {
     scheduleImpl<void>(std::move(job), priority, std::nullopt);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds)
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
@@ -287,3 +287,8 @@ ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler 
     };
 }
 
+GlobalThreadPool & GlobalThreadPool::instance()
+{
+    static GlobalThreadPool ret;
+    return ret;
+}

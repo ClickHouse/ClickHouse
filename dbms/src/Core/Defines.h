@@ -39,7 +39,9 @@
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
-#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD (2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 60
+/// replica error max cap, this is to prevent replica from accumulating too many errors and taking to long to recover.
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT 1000
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_INFO 54032
 #define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE 54058
@@ -57,8 +59,10 @@
 #define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
-
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
+
+/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+#define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -124,6 +128,8 @@
 #endif
 #endif
 
+/// TODO Strange enough, there is no way to detect UB sanitizer.
+
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
 /// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
 /// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
@@ -144,9 +150,9 @@
     #define OPTIMIZE(x)
 #endif
 
-/// This number is only used for distributed version compatible.
-/// It could be any magic number.
-#define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+/// Marks that extra information is sent to a shard. It could be any magic numbers.
+#define DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO 0xCAFEDACEull
+#define DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT 0xCAFECABEull
 
 #if !__has_include(<sanitizer/asan_interface.h>)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)

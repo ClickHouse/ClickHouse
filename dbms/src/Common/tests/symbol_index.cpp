@@ -12,11 +12,11 @@ NO_INLINE const void * getAddress()
     return __builtin_return_address(0);
 }
 
-using namespace DB;
-
 int main(int argc, char ** argv)
 {
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    using namespace DB;
+
     if (argc < 2)
     {
         std::cerr << "Usage: ./symbol_index address\n";

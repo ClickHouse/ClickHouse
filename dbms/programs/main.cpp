@@ -21,6 +21,7 @@
 #include <Common/StringUtils/StringUtils.h>
 
 #include <common/phdr_cache.h>
+#include <ext/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -130,8 +131,19 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 }
 
 
+/// This allows to implement assert to forbid initialization of a class in static constructors.
+/// Usage:
+///
+/// extern bool inside_main;
+/// class C { C() { assert(inside_main); } };
+bool inside_main = false;
+
+
 int main(int argc_, char ** argv_)
 {
+    inside_main = true;
+    SCOPE_EXIT({ inside_main = false; });
+
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);

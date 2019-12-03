@@ -97,13 +97,23 @@ private:
         size_t size_after_grow = 0;
 
         if (head->size() < linear_growth_threshold)
-            size_after_grow = head->size() * growth_factor;
+        {
+            size_after_grow = std::max(min_next_size, head->size() * growth_factor);
+        }
         else
-            size_after_grow = linear_growth_threshold;
+        {
+            // allocContinue() combined with linear growth results in quadratic
+            // behavior: we append the data by small amounts, and when it
+            // doesn't fit, we create a new chunk and copy all the previous data
+            // into it. The number of times we do this is directly proportional
+            // to the total size of data that is going to be serialized. To make
+            // the copying happen less often, round the next size up to the
+            // linear_growth_threshold.
+            size_after_grow = ((min_next_size + linear_growth_threshold - 1)
+                    / linear_growth_threshold) * linear_growth_threshold;
+        }
 
-        if (size_after_grow < min_next_size)
-            size_after_grow = min_next_size;
-
+        assert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow);
     }
 
@@ -170,72 +180,78 @@ public:
 
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
+	  * Return the resulting head pointer, so that the caller can assert that
+	  * the allocation it intended to roll back was indeed the last one.
       */
-    void rollback(size_t size)
+    void * rollback(size_t size)
     {
         head->pos -= size;
         ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
+        return head->pos;
     }
 
-    /** Begin or expand allocation of contiguous piece of memory without alignment.
-      * 'begin' - current begin of piece of memory, if it need to be expanded, or nullptr, if it need to be started.
-      * If there is no space in chunk to expand current piece of memory - then copy all piece to new chunk and change value of 'begin'.
-      * NOTE This method is usable only for latest allocation. For earlier allocations, see 'realloc' method.
+    /** Begin or expand a contiguous range of memory.
+      * 'range_start' is the start of range. If nullptr, a new range is
+      * allocated.
+      * If there is no space in the current chunk to expand the range,
+      * the entire range is copied to a new, bigger memory chunk, and the value
+      * of 'range_start' is updated.
+      * If the optional 'start_alignment' is specified, the start of range is
+      * kept aligned to this value.
+      *
+      * NOTE This method is usable only for the last allocation made on this
+      * Arena. For earlier allocations, see 'realloc' method.
       */
-    char * allocContinue(size_t size, char const *& begin)
+    char * allocContinue(size_t additional_bytes, char const *& range_start,
+                         size_t start_alignment = 0)
     {
-        while (unlikely(head->pos + size > head->end))
+        if (!range_start)
         {
-            char * prev_end = head->pos;
-            addChunk(size);
+            // Start a new memory range.
+            char * result = start_alignment
+                ? alignedAlloc(additional_bytes, start_alignment)
+                : alloc(additional_bytes);
 
-            if (begin)
-                begin = insert(begin, prev_end - begin);
-            else
-                break;
+            range_start = result;
+            return result;
         }
 
-        char * res = head->pos;
-        head->pos += size;
+        // Extend an existing memory range with 'additional_bytes'.
 
-        if (!begin)
-            begin = res;
+        // This method only works for extending the last allocation. For lack of
+        // original size, check a weaker condition: that 'begin' is at least in
+        // the current Chunk.
+        assert(range_start >= head->begin && range_start < head->end);
 
-        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
-        return res;
-    }
-
-    char * alignedAllocContinue(size_t size, char const *& begin, size_t alignment)
-    {
-        char * res;
-
-        do
+        if (head->pos + additional_bytes <= head->end)
         {
-            void * head_pos = head->pos;
-            size_t space = head->end - head->pos;
+            // The new size fits into the last chunk, so just alloc the
+            // additional size. We can alloc without alignment here, because it
+            // only applies to the start of the range, and we don't change it.
+            return alloc(additional_bytes);
+        }
 
-            res = static_cast<char *>(std::align(alignment, size, head_pos, space));
-            if (res)
-            {
-                head->pos = static_cast<char *>(head_pos);
-                head->pos += size;
-                break;
-            }
+        // New range doesn't fit into this chunk, will copy to a new one.
+        //
+        // Note: among other things, this method is used to provide a hack-ish
+        // implementation of realloc over Arenas in ArenaAllocators. It wastes a
+        // lot of memory -- quadratically so when we reach the linear allocation
+        // threshold. This deficiency is intentionally left as is, and should be
+        // solved not by complicating this method, but by rethinking the
+        // approach to memory management for aggregate function states, so that
+        // we can provide a proper realloc().
+        const size_t existing_bytes = head->pos - range_start;
+        const size_t new_bytes = existing_bytes + additional_bytes;
+        const char * old_range = range_start;
 
-            char * prev_end = head->pos;
-            addChunk(size + alignment);
+        char * new_range = start_alignment
+            ? alignedAlloc(new_bytes, start_alignment)
+            : alloc(new_bytes);
 
-            if (begin)
-                begin = alignedInsert(begin, prev_end - begin, alignment);
-            else
-                break;
-        } while (true);
+        memcpy(new_range, old_range, existing_bytes);
 
-        if (!begin)
-            begin = res;
-
-        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
-        return res;
+        range_start = new_range;
+        return new_range + existing_bytes;
     }
 
     /// NOTE Old memory region is wasted.

@@ -2,7 +2,7 @@
 
 Перечисляемый тип данных, содержащий именованные значения.
 
-Именованные значения задаются парами `'string' = integer`. ClickHouse хранить только числа, но допускает операции над ними с помощью заданных имён.
+Именованные значения задаются парами `'string' = integer`. ClickHouse хранит только числа, но допускает операции над ними с помощью заданных имён.
 
 ClickHouse поддерживает:
 
@@ -26,19 +26,15 @@ ENGINE = TinyLog
 В столбец `x` можно сохранять только значения, перечисленные при определении типа, т.е. `'hello'` или `'world'`. Если вы попытаетесь сохранить любое другое значение, ClickHouse сгенерирует исключение. ClickHouse автоматически выберет размерность 8-bit для этого `Enum`.
 
 ```sql
-:) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
-
-INSERT INTO t_enum VALUES
-
+INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
+```
+```text
 Ok.
-
-3 rows in set. Elapsed: 0.002 sec.
-
-:) insert into t_enum values('a')
-
-INSERT INTO t_enum VALUES
-
-
+```
+```sql
+insert into t_enum values('a')
+```
+```text
 Exception on client:
 Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
 ```
@@ -47,7 +43,8 @@ Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' 
 
 ```sql
 SELECT * FROM t_enum
-
+```
+```text
 ┌─x─────┐
 │ hello │
 │ world │
@@ -59,7 +56,8 @@ SELECT * FROM t_enum
 
 ```sql
 SELECT CAST(x AS Int8) FROM t_enum
-
+```
+```text
 ┌─CAST(x, 'Int8')─┐
 │               1 │
 │               2 │
@@ -71,7 +69,8 @@ SELECT CAST(x AS Int8) FROM t_enum
 
 ```sql
 SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
-
+```
+```text
 ┌─toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))─┐
 │ Enum8('a' = 1, 'b' = 2)                             │
 └─────────────────────────────────────────────────────┘
@@ -85,7 +84,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 
 `Enum` может быть передан в тип [Nullable](nullable.md). Таким образом, если создать таблицу запросом
 
-```
+```sql
 CREATE TABLE t_enum_nullable
 (
     x Nullable( Enum8('hello' = 1, 'world' = 2) )
@@ -95,7 +94,7 @@ ENGINE = TinyLog
 
 , то в ней можно будет хранить не только `'hello'` и `'world'`, но и `NULL`.
 
-```
+```sql
 INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
 ```
 

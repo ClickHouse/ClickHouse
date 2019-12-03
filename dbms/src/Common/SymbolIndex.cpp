@@ -1,4 +1,4 @@
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
 
@@ -359,6 +359,12 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 {
     return find(address, data.objects);
+}
+
+SymbolIndex & SymbolIndex::instance()
+{
+    static SymbolIndex instance;
+    return instance;
 }
 
 }

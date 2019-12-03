@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
@@ -42,14 +43,15 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         for (size_t i = 1; i < args.size(); ++i)
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
-            const TupleBackend & value_tuple = value_field.safeGet<Tuple>().toUnderType();
+            const DataTypes & value_types_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get())->getElements();
+            const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
                 throw Exception("Values size should match with number of columns", ErrorCodes::LOGICAL_ERROR);
 
             for (size_t j = 0; j < value_tuple.size(); ++j)
             {
-                Field value = convertFieldToType(value_tuple[j], *sample_block.getByPosition(j).type, value_type_ptr.get());
+                Field value = convertFieldToType(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
                 res_columns[j]->insert(value);
             }
         }

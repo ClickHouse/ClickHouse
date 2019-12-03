@@ -22,6 +22,8 @@ You can use `substitions`, `create`, `fill` and `drop` queries to prepare test. 
 
 Take into account, that these tests will run in CI which consists of 56-cores and 512 RAM machines. Queries will be executed much faster than on local laptop.
 
+If your test continued more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
+
 ### How to run performance test
 
 You have to run clickhouse-server and after you can start testing:

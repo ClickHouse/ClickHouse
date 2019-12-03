@@ -9,6 +9,8 @@
 
 #include <boost/lockfree/queue.hpp>
 #include <Common/Stopwatch.h>
+#include <Processors/ISource.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -155,9 +157,9 @@ void PipelineExecutor::addJob(ExecutionState * execution_state)
     {
         try
         {
-            Stopwatch watch;
+            // Stopwatch watch;
             executeJob(execution_state->processor);
-            execution_state->execution_time_ns += watch.elapsed();
+            // execution_state->execution_time_ns += watch.elapsed();
 
             ++execution_state->num_executed_jobs;
         }
@@ -287,12 +289,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
     switch (node.last_processor_status)
     {
         case IProcessor::Status::NeedData:
-        {
-            add_neighbours_to_prepare_queue();
-            try_release_ownership();
-
-            break;
-        }
         case IProcessor::Status::PortFull:
         {
             add_neighbours_to_prepare_queue();
@@ -394,7 +390,17 @@ void PipelineExecutor::finish()
         finished = true;
     }
 
-    task_queue_condvar.notify_all();
+    std::lock_guard guard(executor_contexts_mutex);
+
+    for (auto & context : executor_contexts)
+    {
+        {
+            std::lock_guard lock(context->mutex);
+            context->wake_flag = true;
+        }
+
+        context->condvar.notify_one();
+    }
 }
 
 void PipelineExecutor::execute(size_t num_threads)
@@ -467,38 +473,122 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         }
     };
 
+    auto wake_up_executor = [&](size_t executor)
+    {
+        std::lock_guard guard(executor_contexts[executor]->mutex);
+        executor_contexts[executor]->wake_flag = true;
+        executor_contexts[executor]->condvar.notify_one();
+    };
+
+    auto process_pinned_tasks = [&](Queue & queue)
+    {
+        Queue tmp_queue;
+
+        struct PinnedTask
+        {
+            ExecutionState * task;
+            size_t thread_num;
+        };
+
+        std::stack<PinnedTask> pinned_tasks;
+
+        while (!queue.empty())
+        {
+            auto task = queue.front();
+            queue.pop();
+
+            auto stream = task->processor->getStream();
+            if (stream != IProcessor::NO_STREAM)
+                pinned_tasks.push({.task = task, .thread_num = stream % num_threads});
+            else
+                tmp_queue.push(task);
+        }
+
+        if (!pinned_tasks.empty())
+        {
+            std::stack<size_t> threads_to_wake;
+
+            {
+                std::lock_guard lock(task_queue_mutex);
+
+                while (!pinned_tasks.empty())
+                {
+                    auto & pinned_task = pinned_tasks.top();
+                    auto thread = pinned_task.thread_num;
+
+                    executor_contexts[thread]->pinned_tasks.push(pinned_task.task);
+                    pinned_tasks.pop();
+
+                    if (threads_queue.has(thread))
+                    {
+                        threads_queue.pop(thread);
+                        threads_to_wake.push(thread);
+                    }
+                }
+            }
+
+            while (!threads_to_wake.empty())
+            {
+                wake_up_executor(threads_to_wake.top());
+                threads_to_wake.pop();
+            }
+        }
+
+        queue.swap(tmp_queue);
+    };
+
     while (!finished)
     {
-
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
-            std::unique_lock lock(task_queue_mutex);
-
-            if (!task_queue.empty())
             {
-                state = task_queue.front();
-                task_queue.pop();
-                break;
+                std::unique_lock lock(task_queue_mutex);
+
+                if (!executor_contexts[thread_num]->pinned_tasks.empty())
+                {
+                    state = executor_contexts[thread_num]->pinned_tasks.front();
+                    executor_contexts[thread_num]->pinned_tasks.pop();
+
+                    break;
+                }
+
+                if (!task_queue.empty())
+                {
+                    state = task_queue.front();
+                    task_queue.pop();
+
+                    if (!task_queue.empty() && !threads_queue.empty())
+                    {
+                        auto thread_to_wake = threads_queue.pop_any();
+                        lock.unlock();
+                        wake_up_executor(thread_to_wake);
+                    }
+
+                    break;
+                }
+
+                if (threads_queue.size() + 1 == num_threads)
+                {
+                    lock.unlock();
+                    finish();
+                    break;
+                }
+
+                threads_queue.push(thread_num);
             }
 
-            ++num_waiting_threads;
-
-            if (num_waiting_threads == num_threads)
             {
-                finished = true;
-                lock.unlock();
-                task_queue_condvar.notify_all();
-                break;
+                std::unique_lock lock(executor_contexts[thread_num]->mutex);
+
+                executor_contexts[thread_num]->condvar.wait(lock, [&]
+                {
+                    return finished || executor_contexts[thread_num]->wake_flag;
+                });
+
+                executor_contexts[thread_num]->wake_flag = false;
             }
-
-            task_queue_condvar.wait(lock, [&]()
-            {
-                return finished || !task_queue.empty();
-            });
-
-            --num_waiting_threads;
         }
 
         if (finished)
@@ -512,9 +602,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             addJob(state);
 
             {
-                Stopwatch execution_time_watch;
+                // Stopwatch execution_time_watch;
                 state->job();
-                execution_time_ns += execution_time_watch.elapsed();
+                // execution_time_ns += execution_time_watch.elapsed();
             }
 
             if (state->exception)
@@ -523,7 +613,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            Stopwatch processing_time_watch;
+            // Stopwatch processing_time_watch;
 
             /// Try to execute neighbour processor.
             {
@@ -541,7 +631,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
+                process_pinned_tasks(queue);
 
+                /// Take local task from queue if has one.
                 if (!state && !queue.empty())
                 {
                     state = queue.front();
@@ -549,10 +641,25 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 }
 
                 prepare_all_processors(queue, parents, parents, parents);
+                process_pinned_tasks(queue);
 
+                /// Take pinned task if has one.
+                {
+                    std::lock_guard guard(task_queue_mutex);
+                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
+                    {
+                        if (state)
+                        queue.push(state);
+
+                        state = executor_contexts[thread_num]->pinned_tasks.front();
+                        executor_contexts[thread_num]->pinned_tasks.pop();
+                    }
+                }
+
+                /// Push other tasks to global queue.
                 if (!queue.empty())
                 {
-                    std::lock_guard lock(task_queue_mutex);
+                    std::unique_lock lock(task_queue_mutex);
 
                     while (!queue.empty() && !finished)
                     {
@@ -560,7 +667,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    task_queue_condvar.notify_all();
+                    if (!threads_queue.empty())
+                    {
+                        auto thread_to_wake = threads_queue.pop_any();
+                        lock.unlock();
+                        wake_up_executor(thread_to_wake);
+                    }
                 }
 
                 --num_processing_executors;
@@ -568,7 +680,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     doExpandPipeline(task, false);
             }
 
-            processing_time_ns += processing_time_watch.elapsed();
+            // processing_time_ns += processing_time_watch.elapsed();
         }
     }
 
@@ -586,9 +698,15 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     Stack stack;
 
-    executor_contexts.reserve(num_threads);
-    for (size_t i = 0; i < num_threads; ++i)
-        executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+    threads_queue.init(num_threads);
+
+    {
+        std::lock_guard guard(executor_contexts_mutex);
+
+        executor_contexts.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i)
+            executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+    }
 
     auto thread_group = CurrentThread::getGroup();
 
@@ -604,7 +722,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 finish();
 
                 for (auto & thread : threads)
-                    thread.join();
+                    if (thread.joinable())
+                        thread.join();
             }
     );
 
@@ -632,6 +751,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         {
             /// ThreadStatus thread_status;
 
+            setThreadName("QueryPipelineEx");
+
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
 
@@ -645,7 +766,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     }
 
     for (auto & thread : threads)
-        thread.join();
+        if (thread.joinable())
+            thread.join();
 
     finished_flag = true;
 }

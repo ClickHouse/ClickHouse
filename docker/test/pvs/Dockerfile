@@ -20,7 +20,7 @@ RUN apt-get --allow-unauthenticated update -y \
 #        apt-get --allow-unauthenticated install --yes --no-install-recommends \
 #            pvs-studio
 
-ENV PKG_VERSION="pvs-studio-7.03.33446.1453-amd64.deb"
+ENV PKG_VERSION="pvs-studio-7.04.34029.84-amd64.deb"
 
 RUN wget -q http://files.viva64.com/beta/$PKG_VERSION
 RUN sudo dpkg -i $PKG_VERSION

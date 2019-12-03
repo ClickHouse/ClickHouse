@@ -51,36 +51,36 @@ Some functions on Decimal return result as Float64 (for example, var or stddev).
 
 During calculations on Decimal, integer overflows might happen. Excessive digits in fraction are discarded (not rounded). Excessive digits in integer part will lead to exception.
 
-```
+```sql
 SELECT toDecimal32(2, 4) AS x, x / 3
 ```
-```
+```text
 ┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
 │ 2.0000 │                       0.6666 │
 └────────┴──────────────────────────────┘
 ```
 
-```
+```sql
 SELECT toDecimal32(4.2, 8) AS x, x * x
 ```
-```
+```text
 DB::Exception: Scale is out of bounds.
 ```
 
-```
+```sql
 SELECT toDecimal32(4.2, 8) AS x, 6 * x
 ```
-```
+```text
 DB::Exception: Decimal math overflow.
 ```
 
 Overflow checks lead to operations slowdown. If it is known that overflows are not possible, it makes sense to disable checks using `decimal_check_overflow` setting. When checks are disabled and overflow happens, the result will be incorrect:
 
-```
+```sql
 SET decimal_check_overflow = 0;
 SELECT toDecimal32(4.2, 8) AS x, 6 * x
 ```
-```
+```text
 ┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
 │ 4.20000000 │                     -17.74967296 │
 └────────────┴──────────────────────────────────┘
@@ -88,10 +88,10 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 
 Overflow checks happen not only on arithmetic operations, but also on value comparison:
 
-```
+```sql
 SELECT toDecimal32(1, 8) < 100
 ```
-```
+```text
 DB::Exception: Can't compare.
 ```
 

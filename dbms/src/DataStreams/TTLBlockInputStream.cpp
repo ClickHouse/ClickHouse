@@ -34,7 +34,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
-        if (ttl_info.min <= current_time)
+        if (force || isTTLExpired(ttl_info.min))
         {
             new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
@@ -51,7 +51,7 @@ TTLBlockInputStream::TTLBlockInputStream(
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
     }
 
-    if (old_ttl_infos.table_ttl.min > current_time)
+    if (!force && !isTTLExpired(old_ttl_infos.table_ttl.min))
         new_ttl_infos.table_ttl = old_ttl_infos.table_ttl;
 
     if (!default_expr_list->children.empty())
@@ -203,8 +203,15 @@ UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t i
         return date_lut.fromDayNum(DayNum(column_date->getData()[ind]));
     else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
         return column_date_time->getData()[ind];
-    else
-        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    {
+        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
+            return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
+        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+            return column_const->getValue<UInt32>();
+    }
+
+    throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
 }
 
 }

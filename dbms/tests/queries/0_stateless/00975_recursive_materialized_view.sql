@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS test.src;
 DROP TABLE IF EXISTS test.dst1;
+DROP TABLE IF EXISTS test.src_to_dst1;
 DROP TABLE IF EXISTS test.dst2;
 
 USE test;

@@ -1,7 +1,10 @@
+#include <algorithm>
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -39,14 +42,20 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
-    format_settings.csv.null_as_default = settings.input_format_null_as_default;
+    format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
+    format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
+    format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
 
     return format_settings;
 }
@@ -63,6 +72,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
@@ -76,7 +88,6 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     if (name == "Native")
@@ -84,18 +95,48 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     if (!getCreators(name).input_processor_creator)
     {
-        const auto & input_getter = getCreators(name).inout_creator;
+        const auto & input_getter = getCreators(name).input_creator;
         if (!input_getter)
             throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
         const Settings & settings = context.getSettingsRef();
         FormatSettings format_settings = getInputFormatSetting(settings);
 
-        return input_getter(
-                buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
+        return input_getter(buf, sample, context, max_block_size, callback ? callback : ReadCallback(), format_settings);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
+    const Settings & settings = context.getSettingsRef();
+    const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
+
+    // Doesn't make sense to use parallel parsing with less than four threads
+    // (segmentator + two parsers + reader).
+    if (settings.input_format_parallel_parsing
+        && file_segmentation_engine
+        && settings.max_threads >= 4)
+    {
+        const auto & input_getter = getCreators(name).input_processor_creator;
+        if (!input_getter)
+            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+
+        FormatSettings format_settings = getInputFormatSetting(settings);
+
+        RowInputFormatParams row_input_format_params;
+        row_input_format_params.max_block_size = max_block_size;
+        row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
+        row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+        row_input_format_params.callback = std::move(callback);
+        row_input_format_params.max_execution_time = settings.max_execution_time;
+        row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+        auto input_creator_params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
+        ParallelParsingBlockInputStream::Params params{buf, input_getter,
+            input_creator_params, file_segmentation_engine,
+            static_cast<int>(settings.max_threads),
+            settings.min_chunk_bytes_for_parallel_parsing};
+        return std::make_shared<ParallelParsingBlockInputStream>(params);
+    }
+
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
 
@@ -143,7 +184,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).input_processor_creator;
@@ -157,7 +197,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.max_block_size = max_block_size;
     params.allow_errors_num = format_settings.input_allow_errors_num;
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    params.rows_portion_size = rows_portion_size;
     params.callback = std::move(callback);
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -185,7 +224,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
-    auto & target = dict[name].inout_creator;
+    auto & target = dict[name].input_creator;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
@@ -215,13 +254,18 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
     target = std::move(output_creator);
 }
 
+void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
+{
+    auto & target = dict[name].file_segmentation_engine;
+    if (target)
+        throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = file_segmentation_engine;
+}
 
 /// Formats for both input/output.
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatCSV(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -242,6 +286,14 @@ void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory &factory);
+
+/// File Segmentation Engines for parallel reading
+
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
+void registerFileSegmentationEngineCSV(FormatFactory & factory);
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -267,8 +319,6 @@ FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-    registerInputFormatTabSeparated(*this);
-    registerInputFormatCSV(*this);
 
     registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
@@ -292,7 +342,12 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
 
+    registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineJSONEachRow(*this);
 
     registerOutputFormatNull(*this);
 
@@ -307,6 +362,12 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWrite(*this);
+}
+
+FormatFactory & FormatFactory::instance()
+{
+    static FormatFactory ret;
+    return ret;
 }
 
 }
