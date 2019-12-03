@@ -151,7 +151,7 @@ clone
 
 ## demangle {#demangle}
 
-Converts a symbol that you can get by the [addressToSymbol](#addresstosymbol) function to the C++ function name.
+Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
 
 **Syntax**
