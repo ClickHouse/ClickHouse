@@ -91,13 +91,13 @@
       "ephemeral_nodes", \
       "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, \
-      "zoo_keeper_sessions", \
+      "zookeeper_sessions", \
       "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
     M(ZooKeeperWatch, \
-      "zoo_keeper_watches", \
+      "zookeeper_watches", \
       "Number of watches (event subscriptions) in ZooKeeper.") \
     M(ZooKeeperRequest, \
-      "zoo_keeper_requests", \
+      "zookeeper_requests", \
       "Number of requests to ZooKeeper in fly.") \
     M(DelayedInserts, \
       "delayed_inserts", \
