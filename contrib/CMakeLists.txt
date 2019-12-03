@@ -312,6 +312,10 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
+if (USE_INTERNAL_AWS_S3_LIBRARY)
+    add_subdirectory(aws-s3-cmake)
+endif ()
+
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()

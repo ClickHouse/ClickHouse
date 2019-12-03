@@ -3,12 +3,8 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <iterator>
-#include <sstream>
-
-#include <Poco/Base64Encoder.h>
-#include <Poco/HMACEngine.h>
-#include <Poco/SHA1Engine.h>
-#include <Poco/URI.h>
+#include <aws/core/Aws.h>
+#include <aws/core/auth/AWSCredentialsProvider.h>
 
 
 namespace DB
@@ -16,45 +12,59 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_FORMAT_DATETIME;
+    extern const int BAD_ARGUMENTS;
 }
 
-void S3Helper::authenticateRequest(
-    Poco::Net::HTTPRequest & request,
+
+static std::mutex aws_init_lock;
+static Aws::SDKOptions aws_options;
+static std::atomic<bool> aws_initialized(false);
+
+static const std::regex S3_URL_REGEX(R"((https?://.*)/(.*)/(.*))");
+
+
+static void initializeAwsAPI() {
+    std::lock_guard<std::mutex> lock(aws_init_lock);
+
+    if (!aws_initialized.load()) {
+        Aws::InitAPI(aws_options);
+        aws_initialized.store(true);
+    }
+}
+
+std::shared_ptr<Aws::S3::S3Client> S3Helper::createS3Client(const String & endpoint_url,
     const String & access_key_id,
     const String & secret_access_key)
 {
-    /// See https://docs.aws.amazon.com/AmazonS3/latest/dev/RESTAuthentication.html
+    initializeAwsAPI();
 
-    if (access_key_id.empty())
-        return;
+    Aws::Client::ClientConfiguration cfg;
+    cfg.endpointOverride = endpoint_url;
+    cfg.scheme = Aws::Http::Scheme::HTTP;
 
-    /// Limitations:
-    /// 1. Virtual hosted-style requests are not supported (e.g. `http://johnsmith.net.s3.amazonaws.com/homepage.html`).
-    /// 2. AMZ headers are not supported (TODO).
+    auto cred_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id, secret_access_key);
 
-    if (!request.has("Date"))
-    {
-        WriteBufferFromOwnString out;
-        writeDateTimeTextRFC1123(time(nullptr), out, DateLUT::instance("UTC"));
-        request.set("Date", out.str());
+    return std::make_shared<Aws::S3::S3Client>(
+            std::move(cred_provider),
+            std::move(cfg),
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            false
+    );
+}
+
+
+S3Endpoint S3Helper::parseS3EndpointFromUrl(const String & url) {
+    std::smatch match;
+    if (std::regex_search(url, match, S3_URL_REGEX) && match.size() > 1) {
+        S3Endpoint endpoint;
+        endpoint.endpoint_url = match.str(1);
+        endpoint.bucket = match.str(2);
+        endpoint.key = match.str(3);
+        return endpoint;
     }
-
-    String string_to_sign = request.getMethod() + "\n"
-        + request.get("Content-MD5", "") + "\n"
-        + request.get("Content-Type", "") + "\n"
-        + request.get("Date") + "\n"
-        + Poco::URI(request.getURI()).getPathAndQuery();
-
-    Poco::HMACEngine<Poco::SHA1Engine> engine(secret_access_key);
-    engine.update(string_to_sign);
-    auto digest = engine.digest();
-    std::ostringstream signature;
-    Poco::Base64Encoder encoder(signature);
-    std::copy(digest.begin(), digest.end(), std::ostream_iterator<char>(encoder));
-    encoder.close();
-
-    request.set("Authorization", "AWS " + access_key_id + ":" + signature.str());
+    else
+        throw Exception("Failed to parse S3 Storage URL. It should contain endpoint url, bucket and file. "
+                        "Regex is (https?://.*)/(.*)/(.*)", ErrorCodes::BAD_ARGUMENTS);
 }
 
 }

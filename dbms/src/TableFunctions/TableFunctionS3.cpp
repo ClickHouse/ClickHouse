@@ -1,10 +1,10 @@
+#include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Poco/URI.h>
+#include "parseColumnsListForTableFunction.h"
 
 namespace DB
 {
@@ -76,9 +76,9 @@ StoragePtr TableFunctionS3::getStorage(
     const std::string & table_name,
     const String & compression_method) const
 {
-    Poco::URI uri(source);
+    S3Endpoint endpoint = S3Helper::parseS3EndpointFromUrl(source);
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(uri, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageS3::create(endpoint, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
