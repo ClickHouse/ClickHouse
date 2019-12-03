@@ -88,13 +88,6 @@ Using the familiar INSERT query for data insertion:
 $ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-You can add [Content-Type](https://tools.ietf.org/html/rfc7231#section-3.1.1.5) header using the `-H` flag:
- 
-```bash
-$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: text/plain;charset=UTF-8'
-```
-
-
 Data can be sent separately from the query:
 
 ```bash
