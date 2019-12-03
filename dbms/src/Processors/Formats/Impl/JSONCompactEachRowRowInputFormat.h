@@ -45,7 +45,7 @@ private:
     std::vector<UInt8> read_columns;
 
     /// This is for the correct exceptions in skipping unknown fields.
-    std::vector<StringRef> names_of_columns;
+    std::vector<String> names_of_columns;
 
     bool have_always_default_columns = false;
 
