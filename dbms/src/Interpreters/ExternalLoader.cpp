@@ -569,7 +569,7 @@ public:
             {
                 const auto & info = name_and_info.second;
                 if ((now >= info.next_update_time) && !info.loading() && info.loaded())
-                    should_update_map.emplace(info.object, info.hasException());
+                    should_update_map.emplace(info.object, info.failedToReload());
             }
         }
 
@@ -613,7 +613,7 @@ public:
                             continue;
                         }
 
-                        /// Object was modified or it's loaded (possible outdated state) with exception, so it should be reloaded.
+                        /// Object was modified or it was failed to reload last time, so it should be reloaded.
                         startLoading(name, info);
                     }
                     else if (info.failed())
@@ -636,7 +636,7 @@ private:
         bool loading() const { return loading_id != 0; }
         bool wasLoading() const { return loaded() || failed() || loading(); }
         bool ready() const { return (loaded() || failed()) && !forced_to_reload; }
-        bool hasException() const { return exception != nullptr; }
+        bool failedToReload() const { return loaded() && exception != nullptr; }
 
         Status status() const
         {
