@@ -28,6 +28,7 @@ private:
     String buffer_string;
     std::unique_ptr<WriteBufferFromString> temporary_buffer;
     size_t last_part_size;
+    RemoteHostFilter remote_host_filter;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finish upload with listing all our parts.
@@ -39,7 +40,8 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         size_t minimum_upload_part_size_,
-        const ConnectionTimeouts & timeouts = {});
+        const ConnectionTimeouts & timeouts = {},
+        const RemoteHostFilter & remote_host_filter_ = {});
 
     void nextImpl() override;
 
