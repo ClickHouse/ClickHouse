@@ -916,12 +916,12 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 template <class TReadBuffer, class... Types>
 std::unique_ptr<ReadBuffer> getReadBuffer(const DB::CompressionMethod method, Types&&... args)
 {
-if (method == DB::CompressionMethod::Gzip)
-{
-    auto read_buf = std::make_unique<TReadBuffer>(std::forward<Types>(args)...);
-    return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
-}
-return std::make_unique<TReadBuffer>(args...);
+    if (method == DB::CompressionMethod::Gzip)
+    {
+        auto read_buf = std::make_unique<TReadBuffer>(std::forward<Types>(args)...);
+        return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
+    }
+    return std::make_unique<TReadBuffer>(args...);
 }
 
 /** This function just copies the data from buffer's internal position (in.position())
