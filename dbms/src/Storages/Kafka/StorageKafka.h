@@ -64,13 +64,18 @@ public:
 
 protected:
     StorageKafka(
-        const std::string & table_name_,
-        const std::string & database_name_,
+        const StorageID & table_id_,
         Context & context_,
         const ColumnsDescription & columns_,
-        const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
+        const String & brokers_,
+        const String & group_,
+        const Names & topics_,
+        const String & format_name_,
+        char row_delimiter_,
+        const String & schema_name_,
+        size_t num_consumers_,
+        UInt64 max_block_size_,
+        size_t skip_broken,
         bool intermediate_commit_);
 
 private:

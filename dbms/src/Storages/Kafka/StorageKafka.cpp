@@ -75,8 +75,7 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const std::string & table_name_,
-    const std::string & database_name_,
+    const StorageID & table_id_,
     Context & context_,
     const ColumnsDescription & columns_,
     const String & brokers_,
@@ -89,7 +88,7 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage({database_name_, table_name_},
+    : IStorage(table_id_,
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
                             {"_offset", std::make_shared<DataTypeUInt64>()},
@@ -105,7 +104,7 @@ StorageKafka::StorageKafka(
     , schema_name(global_context.getMacros()->expand(schema_name_))
     , num_consumers(num_consumers_)
     , max_block_size(max_block_size_)
-    , log(&Logger::get("StorageKafka (" + table_name_ + ")"))
+    , log(&Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers_)
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
@@ -645,7 +644,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         return StorageKafka::create(
-            args.table_name, args.database_name, args.context, args.columns,
+            args.table_id, args.context, args.columns,
             brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
     });
 }

@@ -193,12 +193,11 @@ void StorageLiveView::writeIntoLiveView(
 
 
 StorageLiveView::StorageLiveView(
-    const String & table_name_,
-    const String & database_name_,
+    const StorageID & table_id_,
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage({database_name_, table_name_}), global_context(local_context.getGlobalContext())
+    : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
     setColumns(columns_);
 
@@ -224,7 +223,7 @@ StorageLiveView::StorageLiveView(
 
     global_context.addDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name_, table_name_));   //FIXME
+        DatabaseAndTableName(table_id_.database_name, table_id_.table_name));   //FIXME
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -599,7 +598,7 @@ void registerStorageLiveView(StorageFactory & factory)
         if (!args.attach && !args.local_context.getSettingsRef().allow_experimental_live_view)
             throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_name, args.database_name, args.local_context, args.query, args.columns);
+        return StorageLiveView::create(args.table_id, args.local_context, args.query, args.columns);
     });
 }
 

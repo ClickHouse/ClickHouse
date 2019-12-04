@@ -49,8 +49,12 @@ public:
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage({part_->storage.getDatabaseName(), part_->storage.getTableName() + " (part " + part_->name + ")"},
-                   part_->storage.getVirtuals()), part(part_)
+        : IStorage({
+                      part_->storage.getDatabaseName(),
+                      part_->storage.getTableName() + " (part " + part_->name + ")"
+                   }
+        , part_->storage.getVirtuals())
+        , part(part_)
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());

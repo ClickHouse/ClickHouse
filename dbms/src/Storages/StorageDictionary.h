@@ -64,8 +64,7 @@ private:
 
 protected:
     StorageDictionary(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const Context & context,
         bool attach,

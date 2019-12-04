@@ -29,8 +29,7 @@ namespace ErrorCodes
 
 StorageJoin::StorageJoin(
     const String & relative_path_,
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
@@ -40,7 +39,7 @@ StorageJoin::StorageJoin(
     const ConstraintsDescription & constraints_,
     bool overwrite,
     const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_}
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -172,8 +171,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         return StorageJoin::create(
             args.relative_data_path,
-            args.database_name,
-            args.table_name,
+            args.table_id,
             key_names,
             join_use_nulls,
             SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},

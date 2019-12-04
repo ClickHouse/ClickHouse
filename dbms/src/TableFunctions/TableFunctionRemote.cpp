@@ -177,13 +177,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            table_name,
+            StorageID("", table_name),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            table_name,
+            StorageID("", table_name),
             structure_remote_table,
             remote_database,
             remote_table,

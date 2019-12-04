@@ -35,14 +35,13 @@ namespace ErrorCodes
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage({database_name_, table_name_})
+    : IStorage(table_id_)
     , uri(uri_)
     , format_name(format_name_)
     , context(context_)
@@ -252,7 +251,7 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context, compression_method);
+        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
     });
 }
 

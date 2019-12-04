@@ -94,13 +94,12 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
 
 
 StorageMaterializedView::StorageMaterializedView(
-    const String & table_name_,
-    const String & database_name_,
+    const StorageID & table_id_,
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage({database_name_, table_name_}), global_context(local_context.getGlobalContext())
+    : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
     setColumns(columns_);
 
@@ -126,7 +125,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (!select_table_name.empty())
         global_context.addDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(database_name_, table_name_));   //FIXME
+            DatabaseAndTableName(table_id_.database_name, table_id_.table_name));   //FIXME
 
     // If the destination table is not set, use inner table
     if (!query.to_table.empty())
@@ -136,8 +135,8 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
-        target_database_name = database_name_;
-        target_table_name = generateInnerTableName(table_name_);
+        target_database_name = table_id_.database_name;
+        target_table_name = generateInnerTableName(table_id_.table_name);
         has_inner_table = true;
     }
 
@@ -168,7 +167,7 @@ StorageMaterializedView::StorageMaterializedView(
             if (!select_table_name.empty())
                 global_context.removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
-                    DatabaseAndTableName(database_name_, table_name_)); //FIXME
+                    DatabaseAndTableName(table_id_.database_name, table_id_.table_name)); //FIXME
 
             throw;
         }
@@ -390,7 +389,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
     {
         /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
-            args.table_name, args.database_name, args.local_context, args.query,
+            args.table_id, args.local_context, args.query,
             args.columns, args.attach);
     });
 }

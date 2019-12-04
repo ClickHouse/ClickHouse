@@ -24,15 +24,14 @@ namespace ErrorCodes
 
 
 StorageDictionary::StorageDictionary(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const Context & context,
     bool attach,
     const String & dictionary_name_)
-    : IStorage({database_name_, table_name_}),
-    dictionary_name(dictionary_name_),
-    logger(&Poco::Logger::get("StorageDictionary"))
+    : IStorage(table_id_)
+    , dictionary_name(dictionary_name_)
+    , logger(&Poco::Logger::get("StorageDictionary"))
 {
     setColumns(columns_);
 
@@ -107,7 +106,7 @@ void registerStorageDictionary(StorageFactory & factory)
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
-            args.database_name, args.table_name, args.columns, args.context, args.attach, dictionary_name);
+            args.table_id, args.columns, args.context, args.attach, dictionary_name);
     });
 }
 

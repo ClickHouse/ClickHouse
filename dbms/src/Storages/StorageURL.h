@@ -30,8 +30,7 @@ protected:
     IStorageURLBase(
         const Poco::URI & uri_,
         const Context & context_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & id_,
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -70,14 +69,13 @@ class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURL
 public:
     StorageURL(
         const Poco::URI & uri_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_,
         const String & compression_method_)
-        : IStorageURLBase(uri_, context_, database_name_, table_name_, format_name_, columns_, constraints_, compression_method_)
+        : IStorageURLBase(uri_, context_, table_id_, format_name_, columns_, constraints_, compression_method_)
     {
     }
 
