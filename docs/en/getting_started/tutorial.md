@@ -497,7 +497,6 @@ ORDER BY AvgDuration DESC
 LIMIT 10
 ```
 
-
 ``` sql
 SELECT
     sum(Sign) AS visits,
@@ -512,13 +511,13 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartU
 ClickHouse cluster is a homogenous cluster. Steps to set up:
 
 1. Install ClickHouse server on all machines of the cluster
-2. Set up cluster configs in configuration file
+2. Set up cluster configs in configuration files
 3. Create local tables on each instance
 4. Create a [Distributed table](../operations/table_engines/distributed.md)
 
 [Distributed table](../operations/table_engines/distributed.md) is actually a kind of "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using resources of all cluster's shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
 
-<details markdown="1"><summary>Config for cluster with three shards, one replica each</summary>
+Example config for cluster with three shards, one replica each:
 ``` xml
 <remote_servers>
     <perftest_3shards_1replicas>
@@ -543,37 +542,36 @@ ClickHouse cluster is a homogenous cluster. Steps to set up:
     </perftest_3shards_1replicas>
 </remote_servers>
 ```
-</details>
 
-Creating a local table:
+For further demonstration let's create new local table with exactly the same `CREATE TABLE` query that we used for `hits_v1`, but different table name:
 ``` sql
-CREATE TABLE ontime_local (...) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
+CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
 ```
 
 Creating a distributed table providing a view into local tables of the cluster:
 ``` sql
-CREATE TABLE ontime_all AS ontime_local
-ENGINE = Distributed(perftest_3shards_1replicas, default, ontime_local, rand());
+CREATE TABLE tutorial.hits_all AS tutorial.hits_local
+ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on  any machine of the cluster. Besides distributed table you can also use [remote](../query_language/table_functions/remote.md) table function.
+Common practice is to create similar Distributed tables on all machines of the cluster. This would allow to run distributed queries on any machine of the cluster. Also there's an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
 
 Let's run [INSERT SELECT](../query_language/insert_into.md) into Distributed table to spread the table to multiple servers.
 
 ``` sql
-INSERT INTO ontime_all SELECT * FROM ontime;
+INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
 !!! warning "Notice"
-    The approach given above is not suitable for sharding of large tables.
+    This approach is not suitable for sharding of large tables. There's a separate tool [clickhouse-copier](../operations/utils/clickhouse-copier.md) that can re-shard arbitrary large tables.
 
-As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.<
+As you could expect computationally heavy queries are executed N times faster being launched on 3 servers instead of one.
 
 In this case we have used a cluster with 3 shards each contains a single replica.
 
-To provide for resilience in production environment we recommend that each shard should contain 2-3 replicas distributed between multiple data-centers. Note that ClickHouse supports unlimited number of replicas.
+To provide resilience in production environment we recommend that each shard should contain 2-3 replicas distributed between multiple data-centers. Note that ClickHouse supports unlimited number of replicas.
 
-<details markdown="1"><summary>Config for cluster of one shard containing three replicas</summary>
+Example config for cluster of one shard containing three replicas:
 ``` xml
 <remote_servers>
     ...
@@ -595,15 +593,14 @@ To provide for resilience in production environment we recommend that each shard
     </perftest_1shards_3replicas>
 </remote_servers>
 ```
-</details>
 
-To enable replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
+To enable native replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
         automatically. It's recommended to deploy ZooKeeper cluster to separate servers.
 
-ZooKeeper is not a requirement: in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is not recommended, in this case ClickHouse is not able to
+ZooKeeper is not a strict requirement: in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case ClickHouse won't be able to
         guarantee data consistency on all replicas. This remains the responsibility of your application.
 
-<details markdown="1"><summary>Specify ZooKeeper locations in configuration file</summary>
+ZooKeeper locations need to be specified in configuration file:
 ``` xml
 <zookeeper-servers>
     <node>
@@ -620,30 +617,29 @@ ZooKeeper is not a requirement: in some simple cases you can duplicate the data 
     </node>
 </zookeeper-servers>
 ```
-</details>
 
-Also we need to set macros for identifying shard and replica — it will be used on table creation:
+Also we need to set macros for identifying each shard and replica, it will be used on table creation:
 ``` xml
 <macros>
     <shard>01</shard>
     <replica>01</replica>
 </macros>
 ```
-If there are no replicas at the moment on replicated table creation — a new first replica will be instantiated. If there are already live replicas — new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
+
+If there are no replicas at the moment on replicated table creation, a new first replica will be instantiated. If there are already live replicas, new replica will clone the data from existing ones. You have an option to create all replicated tables first and that insert data to it. Another option is to create some replicas and add the others after or during data insertion.
 
 ``` sql
-CREATE TABLE ontime_replica (...)
+CREATE TABLE tutorial.hits_replica (...)
 ENGINE = ReplcatedMergeTree(
-    '/clickhouse_perftest/tables/{shard}/ontime',
-    '{replica}',
-    FlightDate,
-    (Year, FlightDate),
-    8192);
+    '/clickhouse_perftest/tables/{shard}/hits',
+    '{replica}'
+)
+...
 ```
 
 Here we use [ReplicatedMergeTree](../operations/table_engines/replication.md) table engine. In parameters we specify ZooKeeper path containing shard and replica identifiers.
 
 ``` sql
-INSERT INTO ontime_replica SELECT * FROM ontime;
+INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
-Replication operates in multi-master mode. Data can be loaded into any replica — it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such scheme allows for the possibility of just appended data loss.
+Replication operates in multi-master mode. Data can be loaded into any replica and it will be synced with other instances automatically. Replication is asynchronous so at a given moment of time not all replicas may contain recently inserted data. To allow data insertion at least one replica should be up. Others will sync up data and repair consistency once they will become active again. Please notice that such approach allows for the low possibility of loss of just appended data.
