@@ -32,6 +32,8 @@ $CLICKHOUSE_CLIENT --query "SELECT dictGetUInt8('dictdb.invalidate', 'two', toUI
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'"
 
+sleep 5
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE dictdb.dict_invalidate"
 
 function check_exception_detected()
