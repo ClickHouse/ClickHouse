@@ -953,8 +953,9 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
+        DB::Authentication user_auth_type = user->authentication.getType();
+        if (user_auth_type != DB::Authentication::DOUBLE_SHA1_PASSWORD && user_auth_type != DB::Authentication::PLAINTEXT_PASSWORD)
+            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1 or plaintext.", ErrorCodes::UNKNOWN_EXCEPTION);
 
         Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
