@@ -2528,7 +2528,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
