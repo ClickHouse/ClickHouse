@@ -294,6 +294,8 @@ void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 /// File Segmentation Engines for parallel reading
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
+void registerFileSegmentationEngineCSV(FormatFactory & factory);
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -348,6 +350,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTemplate(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineJSONEachRow(*this);
 
     registerOutputFormatNull(*this);
 

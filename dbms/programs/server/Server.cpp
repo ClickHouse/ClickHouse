@@ -243,6 +243,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 #endif
 
+    global_context->setRemoteHostFilter(config());
+
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
@@ -438,6 +440,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -468,13 +477,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 

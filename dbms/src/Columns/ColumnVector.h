@@ -205,6 +205,7 @@ public:
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
+    Float32 getFloat32(size_t n) const override;
 
     UInt64 getUInt(size_t n) const override
     {

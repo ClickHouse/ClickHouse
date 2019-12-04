@@ -57,6 +57,13 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
     }
 }
 
+void NativeBlockInputStream::resetParser()
+{
+    istr_concrete = nullptr;
+    use_index = false;
+    header.clear();
+    avg_value_size_hints.clear();
+}
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
@@ -159,7 +166,7 @@ Block NativeBlockInputStream::readImpl()
             auto & header_column = header.getByName(column.name);
             if (!header_column.type->equals(*column.type))
             {
-                column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+                column.column = recursiveTypeConversion(column.column, column.type, header.getByPosition(i).type);
                 column.type = header.getByPosition(i).type;
             }
         }

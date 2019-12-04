@@ -7,6 +7,6 @@ namespace DB
 {
 
 /// getLeastSupertype + related column changes
-ColumnWithTypeAndName getLeastSuperColumn(std::vector<const ColumnWithTypeAndName *> columns);
+ColumnWithTypeAndName getLeastSuperColumn(const std::vector<const ColumnWithTypeAndName *> & columns);
 
 }
