@@ -53,8 +53,7 @@ protected:
       */
     StorageLog(
         const std::string & relative_path_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         size_t max_compress_block_size_,

@@ -49,7 +49,7 @@ private:
     std::mutex mutex;
 
 protected:
-    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
+    StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
 };
 
 }

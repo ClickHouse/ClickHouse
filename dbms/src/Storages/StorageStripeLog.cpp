@@ -195,18 +195,18 @@ private:
 
 StorageStripeLog::StorageStripeLog(
     const std::string & relative_path_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_,
     const Context & context_)
-    : IStorage({database_name_, table_name_}),
-    base_path(context_.getPath()), path(base_path + relative_path_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(path + "sizes.json"),
-    log(&Logger::get("StorageStripeLog"))
+    : IStorage(table_id_)
+    , base_path(context_.getPath())
+    , path(base_path + relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(path + "sizes.json")
+    , log(&Logger::get("StorageStripeLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -315,7 +315,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageStripeLog::create(
-            args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size, args.context);
     });
 }

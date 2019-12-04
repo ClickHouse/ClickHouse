@@ -11,7 +11,7 @@ StoragePtr TableFunctionS3::getStorage(
 {
     Poco::URI uri(source);
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(uri, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageS3::create(uri, StorageID(getDatabaseName(), table_name), format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)

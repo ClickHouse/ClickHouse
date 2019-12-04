@@ -159,8 +159,10 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage({args.database_name, args.table_name}), format_name(args.format_name),
-      context_global(args.context), compression_method(args.compression_method)
+    : IStorage(args.table_id)
+    , format_name(args.format_name)
+    , context_global(args.context)
+    , compression_method(args.compression_method)
 {
     setColumns(args.columns);
     setConstraints(args.constraints);
@@ -366,7 +368,7 @@ void registerStorageFile(StorageFactory & factory)
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
-        StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name,
+        StorageFile::CommonArguments common_args{args.table_id, format_name,
                                                  args.columns, args.constraints, args.context, compression_method};
 
         if (engine_args.size() == 1)    /// Table in database
