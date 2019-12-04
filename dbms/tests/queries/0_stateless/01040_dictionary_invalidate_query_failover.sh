@@ -32,6 +32,8 @@ $CLICKHOUSE_CLIENT --query "SELECT dictGetUInt8('dictdb.invalidate', 'two', toUI
 
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb' AND name = 'invalidate'"
 
+# Bad solution, but it's quite complicated to detect, that invalidte_query stopped updates.
+# In worst case we don't check anything, but fortunately it doesn't lead to false negatives.
 sleep 5
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE dictdb.dict_invalidate"

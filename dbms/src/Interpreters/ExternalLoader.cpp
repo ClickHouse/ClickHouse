@@ -603,14 +603,16 @@ public:
                             continue; /// Object has been just loaded (it wasn't loaded while we were building the map `is_modified_map`), so we don't have to reload it right now.
 
                         bool is_modified_flag = it->second;
-                        if (!is_modified_flag)
+                        /// Object maybe successfully loaded in some old state, but have an exception from new loads.
+                        /// so even if it's not modified better to reload it.
+                        if (!is_modified_flag && !info.hasException())
                         {
                             /// Object wasn't modified so we only have to set `next_update_time`.
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
                             continue;
                         }
 
-                        /// Object was modified and should be reloaded.
+                        /// Object was modified or it's loaded (possible outdated state) with exception, so it should be reloaded.
                         startLoading(name, info);
                     }
                     else if (info.failed())
@@ -633,6 +635,7 @@ private:
         bool loading() const { return loading_id != 0; }
         bool wasLoading() const { return loaded() || failed() || loading(); }
         bool ready() const { return (loaded() || failed()) && !forced_to_reload; }
+        bool hasException() { return exception != nullptr; }
 
         Status status() const
         {
