@@ -33,7 +33,7 @@ template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness:
 /// Only SEMI LEFT and SEMI RIGHT are valid
 template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
 template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
-template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsAll; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsAllFlagged; };
 template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
 
 /// Only ANTI LEFT and ANTI RIGHT are valid
