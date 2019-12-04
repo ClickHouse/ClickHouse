@@ -89,10 +89,6 @@ namespace ProfileEvents
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);
 
-
-    /// Get name if event in snake case with suffix describing the unit.
-    const char * getNameSnake(Event event);
-
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
 
