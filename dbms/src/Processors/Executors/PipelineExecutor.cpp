@@ -248,8 +248,6 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stac
 
 bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async)
 {
-
-
     /// In this method we have ownership on node.
     auto & node = graph[pid];
 
