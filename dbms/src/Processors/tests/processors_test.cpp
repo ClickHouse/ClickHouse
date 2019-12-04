@@ -41,7 +41,7 @@ private:
     UInt64 current_number = 0;
     unsigned sleep_useconds;
 
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         usleep(sleep_useconds);
 

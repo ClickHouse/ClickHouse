@@ -97,7 +97,7 @@ void SourceFromInputStream::work()
     is_stream_finished = true;
 }
 
-Chunk SourceFromInputStream::generate()
+std::optional<Chunk> SourceFromInputStream::generate()
 {
     if (is_stream_finished)
         return {};

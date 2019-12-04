@@ -44,7 +44,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
     skipBOMIfExists(buf);
 }
 
-Chunk ValuesBlockInputFormat::generate()
+std::optional<Chunk> ValuesBlockInputFormat::generate()
 {
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();

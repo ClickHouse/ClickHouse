@@ -50,7 +50,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 }
 
 
-Chunk MergeTreeBaseSelectProcessor::generate()
+std::optional<Chunk> MergeTreeBaseSelectProcessor::generate()
 {
     while (!isCancelled())
     {

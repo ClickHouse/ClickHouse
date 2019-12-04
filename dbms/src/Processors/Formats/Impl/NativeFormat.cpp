@@ -29,7 +29,7 @@ protected:
     }
 
 
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         /// TODO: do something with totals and extremes.
 
@@ -48,7 +48,7 @@ protected:
                 read_suffix = true;
             }
 
-            return Chunk();
+            return {};
         }
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());

@@ -17,7 +17,7 @@ public:
     Status prepare() override;
     void work() override;
 
-    Chunk generate() override;
+    std::optional<Chunk> generate() override;
 
     IBlockInputStream & getStream() { return *stream; }
 

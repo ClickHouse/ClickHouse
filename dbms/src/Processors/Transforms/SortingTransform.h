@@ -52,7 +52,7 @@ public:
     String getName() const override { return "MergeSorterSource"; }
 
 protected:
-    Chunk generate() override { return merge_sorter.read(); }
+    std::optional<Chunk> generate() override;
 
 private:
     MergeSorter merge_sorter;

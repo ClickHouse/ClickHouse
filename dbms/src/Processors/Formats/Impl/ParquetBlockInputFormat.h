@@ -24,7 +24,7 @@ public:
     String getName() const override { return "ParquetBlockInputFormat"; }
 
 protected:
-    Chunk generate() override;
+    std::optional<Chunk> generate() override;
 
 private:
 

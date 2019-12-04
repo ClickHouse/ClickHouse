@@ -24,7 +24,7 @@ public:
     void resetParser() override;
 
 protected:
-    Chunk generate() override;
+    std::optional<Chunk> generate() override;
 
 private:
 

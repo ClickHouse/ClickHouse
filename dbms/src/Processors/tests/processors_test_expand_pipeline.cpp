@@ -74,7 +74,7 @@ private:
     UInt64 number;
     bool done = false;
 
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         if (done)
             return Chunk();

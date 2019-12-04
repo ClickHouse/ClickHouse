@@ -43,7 +43,7 @@ private:
     UInt64 block_size;
     unsigned sleep_useconds;
 
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         if (current_number == count)
             return {};

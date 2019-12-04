@@ -12,7 +12,12 @@ public:
     String getName() const override { return "SourceFromSingleChunk"; }
 
 protected:
-    Chunk generate() override { return std::move(chunk); }
+    std::optional<Chunk> generate() override
+    {
+        if (chunk)
+            return std::move(chunk);
+        return {};
+    }
 
 private:
     Chunk chunk;

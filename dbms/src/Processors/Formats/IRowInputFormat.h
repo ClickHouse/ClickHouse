@@ -51,7 +51,7 @@ public:
     {
     }
 
-    Chunk generate() override;
+    std::optional<Chunk> generate() override;
 
     void resetParser() override;
 

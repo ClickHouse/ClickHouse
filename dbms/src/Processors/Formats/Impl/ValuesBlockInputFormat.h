@@ -47,7 +47,7 @@ private:
 
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
-    Chunk generate() override;
+    std::optional<Chunk> generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
 

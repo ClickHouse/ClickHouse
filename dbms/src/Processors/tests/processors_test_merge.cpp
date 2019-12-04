@@ -172,7 +172,7 @@ private:
     UInt64 step;
     unsigned sleep_useconds;
 
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         usleep(sleep_useconds);
 

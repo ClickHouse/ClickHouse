@@ -117,6 +117,14 @@ Chunk MergeSorter::mergeImpl(std::priority_queue<TSortCursor> & queue)
 }
 
 
+std::optional<Chunk> MergeSorterSource::generate()
+{
+    if (auto chunk = merge_sorter.read())
+        return chunk;
+    return {};
+}
+
+
 SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,

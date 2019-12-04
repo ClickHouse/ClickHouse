@@ -34,7 +34,7 @@ bool isParseError(int code)
 }
 
 
-Chunk IRowInputFormat::generate()
+std::optional<Chunk> IRowInputFormat::generate()
 {
     if (total_rows == 0)
         readPrefix();
@@ -149,9 +149,8 @@ Chunk IRowInputFormat::generate()
     }
 
     auto num_rows = columns.front()->size();
-    Chunk chunk(std::move(columns), num_rows);
-    //chunk.setChunkInfo(std::move(chunk_missing_values));
-    return chunk;
+
+    return Chunk(std::move(columns), num_rows);
 }
 
 void IRowInputFormat::syncAfterError()

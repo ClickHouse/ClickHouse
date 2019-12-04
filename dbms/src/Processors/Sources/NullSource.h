@@ -12,7 +12,7 @@ public:
     String getName() const override { return "NullSource"; }
 
 protected:
-    Chunk generate() override { return Chunk(); }
+    std::optional<Chunk> generate() override { return {}; }
 };
 
 }

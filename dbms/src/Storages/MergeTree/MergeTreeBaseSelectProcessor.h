@@ -37,7 +37,7 @@ public:
     static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 
 protected:
-    Chunk generate() final;
+    std::optional<Chunk> generate() final;
 
     /// Creates new this->task, and initializes readers.
     virtual bool getNewTask() = 0;

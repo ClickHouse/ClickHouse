@@ -44,7 +44,7 @@ namespace
 
         String getName() const override { return "SourceFromNativeStream"; }
 
-        Chunk generate() override
+        std::optional<Chunk> generate() override
         {
             if (!block_in)
                 return {};
@@ -87,7 +87,7 @@ public:
     String getName() const override { return "ConvertingAggregatedToChunksSource"; }
 
 protected:
-    Chunk generate() override
+    std::optional<Chunk> generate() override
     {
         UInt32 bucket_num = next_bucket_to_merge->fetch_add(1);
 
@@ -95,6 +95,8 @@ protected:
             return {};
 
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num);
+        if (!block)
+            return {};
 
         return convertToChunk(block);
     }
