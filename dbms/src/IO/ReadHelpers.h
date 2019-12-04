@@ -309,13 +309,6 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-void completeReadIntTextImpl(T & x, ReadBuffer & buf)
-{
-    readIntTextImpl<T, void>(x, buf);
-    assertEOF(buf);
-}
-
-template <typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
     readIntTextImpl<T, void>(x, buf);
