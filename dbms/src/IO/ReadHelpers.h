@@ -309,6 +309,13 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
+void completeReadIntTextImpl(T & x, ReadBuffer & buf)
+{
+    readIntTextImpl<T, void>(x, buf);
+    assertEOF(buf);
+}
+
+template <typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
     readIntTextImpl<T, void>(x, buf);
@@ -875,6 +882,35 @@ inline T parse(const char * data, size_t size)
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     return res;
+}
+
+template <typename T>
+std::enable_if_t<is_integral_v<T>, T>
+inline completeParse(const char * data, size_t size)
+{
+    T res;
+    ReadBufferFromMemory buf(data, size);
+    completeReadIntTextImpl<T>(res, buf);
+    return res;
+}
+
+template <typename T>
+std::enable_if_t<!is_integral_v<T>, T>
+inline completeParse(const char * data, size_t size)
+{
+    return parse<T>(data, size);
+}
+
+template <typename T>
+inline T completeParse(const String & s)
+{
+    return completeParse<T>(s.data(), s.size());
+}
+
+template <typename T>
+inline T completeParse(const char * data)
+{
+    return completeParse<T>(data, strlen(data));
 }
 
 template <typename T>
