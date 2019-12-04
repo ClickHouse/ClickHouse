@@ -4,7 +4,7 @@
 
 ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64, AArch64 or PowerPC64LE CPU architecture.
 
-Though pre-built binaries are typically compiled for x86\_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here's the command to check if current CPU has support for SSE 4.2:
+Official pre-built binaries are typically compiled for x86\_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here's the command to check if current CPU has support for SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -16,7 +16,7 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 
 ### From DEB Packages
 
-Yandex ClickHouse team recommends using official pre-compiled `deb` packages for Debian or Ubuntu.
+It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
@@ -39,7 +39,7 @@ You can also download and install packages manually from here: <https://repo.yan
 
 ### From RPM Packages
 
-Yandex ClickHouse team recommends using official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
+It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
 
 First you need to add the official repository:
 

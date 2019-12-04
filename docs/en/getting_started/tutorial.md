@@ -600,7 +600,7 @@ To provide for resilience in production environment we recommend that each shard
 To enable replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required. ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
         automatically. It's recommended to deploy ZooKeeper cluster to separate servers.
 
-ZooKeeper is not a requirement — in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is not recommended — in this case ClickHouse is not able to
+ZooKeeper is not a requirement: in some simple cases you can duplicate the data by writing it into all the replicas from your application code. This approach is not recommended, in this case ClickHouse is not able to
         guarantee data consistency on all replicas. This remains the responsibility of your application.
 
 <details markdown="1"><summary>Specify ZooKeeper locations in configuration file</summary>
