@@ -15,6 +15,7 @@ void registerFunctionGeohashesInBox(FunctionFactory & factory);
 #if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
+void registerFunctionH3IsValid(FunctionFactory &);
 #endif
 
 void registerFunctionsGeo(FunctionFactory & factory)
@@ -29,6 +30,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
 #if USE_H3
     registerFunctionGeoToH3(factory);
 	registerFunctionH3GetResolution(factory);
+	registerFunctionH3IsValid(factory);
 #endif
 }
 
