@@ -156,8 +156,7 @@ protected:
       * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,

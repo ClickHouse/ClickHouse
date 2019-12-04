@@ -226,7 +226,7 @@ StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const Context & contex
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(database_name, table_name, ColumnsDescription{columns}, context, true, dict_name);
+        return StorageDictionary::create(StorageID(database_name, table_name), ColumnsDescription{columns}, context, true, dict_name);
     }
     return nullptr;
 }

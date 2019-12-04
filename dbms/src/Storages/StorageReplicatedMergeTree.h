@@ -541,7 +541,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & database_name_, const String & name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,

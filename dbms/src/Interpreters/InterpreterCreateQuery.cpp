@@ -631,13 +631,10 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     {
         res = StorageFactory::instance().get(create,
             database ? database->getTableDataPath(create) : "",
-            table_name,
-            create.database,
             context,
             context.getGlobalContext(),
             properties.columns,
             properties.constraints,
-            create.attach,
             false);
     }
 

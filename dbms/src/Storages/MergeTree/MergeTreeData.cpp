@@ -110,8 +110,7 @@ namespace
 
 
 MergeTreeData::MergeTreeData(
-    const String & database_,
-    const String & table_,
+    const StorageID & table_id_,
     const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
@@ -128,7 +127,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : IStorage({database_, table_})
+    : IStorage(table_id_)
     , global_context(context_)
     , merging_params(merging_params_)
     , partition_by_ast(partition_by_ast_)
@@ -136,7 +135,7 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(database_ + "." + table_)
+    , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))

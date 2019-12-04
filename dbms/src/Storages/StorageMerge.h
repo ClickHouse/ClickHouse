@@ -65,8 +65,7 @@ private:
 
 protected:
     StorageMerge(
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & source_database_,
         const String & table_name_regexp_,

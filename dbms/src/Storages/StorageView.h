@@ -35,8 +35,7 @@ private:
 
 protected:
     StorageView(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_);
 };

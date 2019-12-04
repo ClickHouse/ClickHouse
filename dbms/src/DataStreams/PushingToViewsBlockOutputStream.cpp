@@ -223,7 +223,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// InterpreterSelectQuery will do processing of alias columns.
             Context local_context = *views_context;
             local_context.addViewSource(
-                    StorageValues::create(storage->getDatabaseName(), storage->getTableName(), storage->getColumns(),
+                    StorageValues::create(StorageID(storage->getDatabaseName(), storage->getTableName()), storage->getColumns(),   //FIXME
                                           block));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);

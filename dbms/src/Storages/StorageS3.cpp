@@ -132,18 +132,18 @@ namespace
 }
 
 
-StorageS3::StorageS3(const S3::URI & uri_,
+StorageS3::StorageS3(
+    const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage({database_name_, table_name_}, columns_)
+    : IStorage({table_id_}, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
@@ -225,7 +225,7 @@ void registerStorageS3(StorageFactory & factory)
         else
             compression_method = "auto";
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 

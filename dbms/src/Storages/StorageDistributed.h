@@ -37,7 +37,7 @@ public:
     ~StorageDistributed() override;
 
     static StoragePtr createWithOwnCluster(
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & remote_database_,       /// database on remote servers.
         const String & remote_table_,          /// The name of the table on the remote servers.
@@ -45,7 +45,7 @@ public:
         const Context & context_);
 
     static StoragePtr createWithOwnCluster(
-        const std::string & table_name_,
+            const StorageID & table_id_,
         const ColumnsDescription & columns_,
         ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
         ClusterPtr & owned_cluster_,
@@ -155,8 +155,7 @@ public:
 
 protected:
     StorageDistributed(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & remote_database_,
@@ -168,8 +167,7 @@ protected:
         bool attach_);
 
     StorageDistributed(
-        const String & database_name,
-        const String & table_name_,
+        const StorageID & id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ASTPtr remote_table_function_ptr_,

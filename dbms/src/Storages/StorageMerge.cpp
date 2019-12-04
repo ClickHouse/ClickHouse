@@ -46,13 +46,12 @@ namespace ErrorCodes
 
 
 StorageMerge::StorageMerge(
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage({database_name_, table_name_}, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -512,7 +511,7 @@ void registerStorageMerge(StorageFactory & factory)
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
-            args.database_name, args.table_name, args.columns,
+            args.table_id, args.columns,
             source_database, table_name_regexp, args.context);
     });
 }

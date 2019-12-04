@@ -135,11 +135,17 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & database_name_, const std::string & table_name_,
-        const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
+    StorageBuffer(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_,
-        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_, bool allow_materialized_);
+        size_t num_shards_,
+        const Thresholds & min_thresholds_,
+        const Thresholds & max_thresholds_,
+        const String & destination_database_,
+        const String & destination_table_,
+        bool allow_materialized_);
 };
 
 }

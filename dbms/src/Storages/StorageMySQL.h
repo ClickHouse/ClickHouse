@@ -21,8 +21,7 @@ class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorag
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         mysqlxx::Pool && pool_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,

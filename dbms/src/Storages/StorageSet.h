@@ -28,8 +28,7 @@ public:
 protected:
     StorageSetOrJoinBase(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);
@@ -80,8 +79,7 @@ private:
 protected:
     StorageSet(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);

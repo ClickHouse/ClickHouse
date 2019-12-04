@@ -42,8 +42,7 @@ public:
 
     struct CommonArguments
     {
-        const std::string & database_name;
-        const std::string & table_name;
+        const StorageID & table_id;
         const std::string & format_name;
         const std::string & compression_method;
         const ColumnsDescription & columns;
