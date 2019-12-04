@@ -884,21 +884,16 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
+/// Read something from text format, but expect complete parse of given text
+/// For example: 723145 -- ok, 213MB -- not ok
 template <typename T>
-std::enable_if_t<is_integral_v<T>, T>
-inline completeParse(const char * data, size_t size)
+inline T completeParse(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    completeReadIntTextImpl<T>(res, buf);
+    readText(res, buf);
+    assertEOF(buf);
     return res;
-}
-
-template <typename T>
-std::enable_if_t<!is_integral_v<T>, T>
-inline completeParse(const char * data, size_t size)
-{
-    return parse<T>(data, size);
 }
 
 template <typename T>
