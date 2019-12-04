@@ -51,6 +51,18 @@ public:
 
     // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
+    ASTPtr getInnerSubQuery() const
+    {
+        if (inner_subquery)
+            return inner_subquery->clone();
+        return nullptr;
+    };
+    ASTPtr getInnerOuterQuery() const
+    {
+        if (inner_outer_query)
+            return inner_outer_query->clone();
+        return nullptr;
+    };
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -146,7 +158,9 @@ private:
     String select_table_name;
     String table_name;
     String database_name;
-    ASTPtr inner_query;
+    ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
+    ASTPtr inner_subquery; /// stored query's subquery if any : SLECT a FROM A
+    ASTPtr inner_outer_query; /// the query right before innermost subquery : ... SELECT * FROM ( subquery )
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
 
