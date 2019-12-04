@@ -76,6 +76,8 @@ Block KafkaBlockInputStream::readImpl()
         auto timestamp = buffer->currentTimestamp();
         if (timestamp)
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
+        else
+            virtual_columns[5]->insert(Field());
     };
 
     auto input_format = FormatFactory::instance().getInputFormat(
