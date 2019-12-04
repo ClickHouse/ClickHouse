@@ -1022,6 +1022,17 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
+## allow_introspection_functions {#settings-allow_introspection_functions}
+
+Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+
+Possible values:
+
+- 1 — Introspection functions enabled.
+- 0 — Introspection functions disabled.
+
+Default value: 0.
+
 ## input_format_parallel_parsing
 
 - Type: bool

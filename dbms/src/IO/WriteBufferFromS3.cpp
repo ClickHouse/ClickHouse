@@ -34,7 +34,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & access_key_id_,
     const String & secret_access_key_,
     size_t minimum_upload_part_size_,
-    const ConnectionTimeouts & timeouts_)
+    const ConnectionTimeouts & timeouts_,
+    const RemoteHostFilter & remote_host_filter_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
     , uri {uri_}
     , access_key_id {access_key_id_}
@@ -43,6 +44,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , timeouts {timeouts_}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
     , last_part_size {0}
+    , remote_host_filter(remote_host_filter_)
 {
     initiate();
 
@@ -134,6 +136,7 @@ void WriteBufferFromS3::initiate()
             break;
 
         initiate_uri = location_iterator->second;
+        remote_host_filter.checkURL(initiate_uri);
     }
     assertResponseIsOk(*request_ptr, response, *istr);
 

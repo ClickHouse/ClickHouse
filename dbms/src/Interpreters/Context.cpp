@@ -53,7 +53,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
-
+#include <Common/RemoteHostFilter.h>
 
 namespace ProfileEvents
 {
@@ -158,8 +158,9 @@ struct ContextShared
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
 
-    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
+    RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
+    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -1581,6 +1582,16 @@ void Context::setInterserverScheme(const String & scheme)
 String Context::getInterserverScheme() const
 {
     return shared->interserver_scheme;
+}
+
+void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->remote_host_filter.setValuesFromConfig(config);
+}
+
+const RemoteHostFilter & Context::getRemoteHostFilter() const
+{
+    return shared->remote_host_filter;
 }
 
 UInt16 Context::getTCPPort() const
