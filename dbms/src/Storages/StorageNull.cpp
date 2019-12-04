@@ -26,7 +26,7 @@ void registerStorageNull(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageNull::create(args.database_name, args.table_name, args.columns, args.constraints);
+        return StorageNull::create(args.table_id, args.columns, args.constraints);
     });
 }
 

@@ -672,13 +672,10 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     {
         res = StorageFactory::instance().get(create,
             data_path,
-            table_name,
-            database_name,
             context,
             context.getGlobalContext(),
             properties.columns,
             properties.constraints,
-            create.attach,
             false);
     }
 

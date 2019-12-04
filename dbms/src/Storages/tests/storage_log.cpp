@@ -29,7 +29,7 @@ try
     context.makeGlobalContext();
     context.setPath("./");
 
-    StoragePtr table = StorageLog::create("./", "test", "test", ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576, context);
+    StoragePtr table = StorageLog::create("./", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576, context);
     table->startup();
 
     /// write into it

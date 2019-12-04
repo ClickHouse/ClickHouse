@@ -291,13 +291,10 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
-            table_name,
-            database_name,
             system_context,
             system_context.getGlobalContext(),
             columns,
             constraints,
-            create.attach,
             false);
 
         database->createTable(system_context, table_name, table, create_ast);

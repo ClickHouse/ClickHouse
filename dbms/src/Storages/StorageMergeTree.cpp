@@ -53,8 +53,7 @@ namespace ActionLocks
 
 
 StorageMergeTree::StorageMergeTree(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
@@ -70,13 +69,25 @@ StorageMergeTree::StorageMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_, relative_data_path_,
-            columns_, indices_, constraints_,
-            context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-            sample_by_ast_, ttl_table_ast_, merging_params_,
-            std::move(storage_settings_), false, attach),
-        reader(*this), writer(*this),
-        merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+        : MergeTreeData(table_id_,
+                        relative_data_path_,
+                        columns_,
+                        indices_,
+                        constraints_,
+                        context_,
+                        date_column_name,
+                        partition_by_ast_,
+                        order_by_ast_,
+                        primary_key_ast_,
+                        sample_by_ast_,
+                        ttl_table_ast_,
+                        merging_params_,
+                        std::move(storage_settings_),
+                        false,      /// require_part_metadata
+                        attach)
+        , reader(*this)
+        , writer(*this)
+        , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
 {
     loadDataParts(has_force_restore_data_flag);
 

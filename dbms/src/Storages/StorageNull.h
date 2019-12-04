@@ -42,8 +42,8 @@ public:
 private:
 
 protected:
-    StorageNull(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
-        : IStorage({database_name_, table_name_})
+    StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
+        : IStorage(table_id_)
     {
         setColumns(std::move(columns_description_));
         setConstraints(std::move(constraints_));

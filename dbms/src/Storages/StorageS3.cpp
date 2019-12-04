@@ -124,15 +124,14 @@ namespace
 
 StorageS3::StorageS3(
     const Poco::URI & uri_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage({database_name_, table_name_}, columns_)
+    : IStorage({table_id_}, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
@@ -204,7 +203,7 @@ void registerStorageS3(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        return StorageS3::create(uri, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(uri, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 }
