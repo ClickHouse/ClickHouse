@@ -1012,7 +1012,7 @@ Possible values:
 
 Type: [UInt64](../../data_types/int_uint.md).
 
-Default value: 1000000000 nanoseconds.
+Default value: 1000000000 nanoseconds (once a second).
 
 **See Also**
 
