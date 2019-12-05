@@ -64,26 +64,6 @@ namespace
 {
 
 template <typename T>
-struct AnnotatedHelper
-{
-    const char * annotation;
-    const T & value;
-};
-
-template <typename T>
-std::ostream & operator << (std::ostream & ostr, const AnnotatedHelper<T> & helper)
-{
-    return ostr << helper.annotation << helper.value;
-}
-
-template <typename T>
-AnnotatedHelper<T> Annotate(const char * annotation, const T & value)
-{
-    return AnnotatedHelper<T>{annotation, value};
-}
-
-
-template <typename T>
 struct AsHexStringHelper
 {
     const T & container;
@@ -254,7 +234,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
     int mismatching_items = 0;
     size_t i = 0;
 
-    while(l && r)
+    while (l && r)
     {
         const auto left_value = *l;
         const auto right_value = *r;
@@ -430,13 +410,7 @@ CodecTestSequence makeSeq(Args && ... args)
 template <typename T, typename Generator, typename B = int, typename E = int>
 CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, E End = 10000)
 {
-    const auto direction = signbit(End - Begin) ? -1 : 1;
-
-//    if constexpr (debug_log_items)
-//    {
-//        std::cerr << "Generator: " << gen_name << std::endl;
-//    }
-
+    const auto direction = std::signbit(End - Begin) ? -1 : 1;
     std::vector<char> data(sizeof(T) * (End - Begin));
     char * write_pos = data.data();
 
@@ -606,8 +580,7 @@ TEST_P(CodecTest_Compatibility, Encoding)
 
     const UInt32 encoded_size = codec->compress(source_data.data(), source_data.size(), encoded.data());
     encoded.resize(encoded_size);
-    SCOPED_TRACE(Annotate("encoded:  ", AsHexString(encoded)));
-//    SCOPED_TRACE(Annotate("original: ", AsHexString(data_sequence.serialized_data)));
+    SCOPED_TRACE(::testing::Message("encoded:  ") << AsHexString(encoded));
 
     ASSERT_TRUE(EqualByteContainersAs<UInt8>(expected, encoded));
 }
@@ -895,7 +868,7 @@ INSTANTIATE_TEST_CASE_P(SmallSequences,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::ValuesIn(
-                  generatePyramidOfSequences<Int8  >(42, G(SequentialGenerator(1)))
+                  generatePyramidOfSequences<Int8 >(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<Int16 >(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<Int32 >(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<Int64 >(42, G(SequentialGenerator(1)))
@@ -929,7 +902,7 @@ INSTANTIATE_TEST_CASE_P(SameValueInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(SameValueGenerator(1000))),
+            generateSeq<Int8>(G(SameValueGenerator(1000))),
             generateSeq<Int16 >(G(SameValueGenerator(1000))),
             generateSeq<Int32 >(G(SameValueGenerator(1000))),
             generateSeq<Int64 >(G(SameValueGenerator(1000))),
@@ -946,7 +919,7 @@ INSTANTIATE_TEST_CASE_P(SameNegativeValueInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(SameValueGenerator(-1000))),
+            generateSeq<Int8>(G(SameValueGenerator(-1000))),
             generateSeq<Int16 >(G(SameValueGenerator(-1000))),
             generateSeq<Int32 >(G(SameValueGenerator(-1000))),
             generateSeq<Int64 >(G(SameValueGenerator(-1000))),
@@ -991,7 +964,7 @@ INSTANTIATE_TEST_CASE_P(SequentialInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(SequentialGenerator(1))),
+            generateSeq<Int8>(G(SequentialGenerator(1))),
             generateSeq<Int16 >(G(SequentialGenerator(1))),
             generateSeq<Int32 >(G(SequentialGenerator(1))),
             generateSeq<Int64 >(G(SequentialGenerator(1))),
@@ -1010,7 +983,7 @@ INSTANTIATE_TEST_CASE_P(SequentialReverseInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(SequentialGenerator(-1))),
+            generateSeq<Int8>(G(SequentialGenerator(-1))),
             generateSeq<Int16 >(G(SequentialGenerator(-1))),
             generateSeq<Int32 >(G(SequentialGenerator(-1))),
             generateSeq<Int64 >(G(SequentialGenerator(-1))),
@@ -1055,10 +1028,10 @@ INSTANTIATE_TEST_CASE_P(MonotonicInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(MonotonicGenerator(1, 5))),
-            generateSeq<Int16 >(G(MonotonicGenerator(1, 5))),
-            generateSeq<Int32 >(G(MonotonicGenerator(1, 5))),
-            generateSeq<Int64 >(G(MonotonicGenerator(1, 5))),
+            generateSeq<Int8>(G(MonotonicGenerator(1, 5))),
+            generateSeq<Int16>(G(MonotonicGenerator(1, 5))),
+            generateSeq<Int32>(G(MonotonicGenerator(1, 5))),
+            generateSeq<Int64>(G(MonotonicGenerator(1, 5))),
             generateSeq<UInt8 >(G(MonotonicGenerator(1, 5))),
             generateSeq<UInt16>(G(MonotonicGenerator(1, 5))),
             generateSeq<UInt32>(G(MonotonicGenerator(1, 5))),
@@ -1072,11 +1045,11 @@ INSTANTIATE_TEST_CASE_P(MonotonicReverseInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8  >(G(MonotonicGenerator(-1, 5))),
-            generateSeq<Int16 >(G(MonotonicGenerator(-1, 5))),
-            generateSeq<Int32 >(G(MonotonicGenerator(-1, 5))),
-            generateSeq<Int64 >(G(MonotonicGenerator(-1, 5))),
-            generateSeq<UInt8 >(G(MonotonicGenerator(-1, 5))),
+            generateSeq<Int8>(G(MonotonicGenerator(-1, 5))),
+            generateSeq<Int16>(G(MonotonicGenerator(-1, 5))),
+            generateSeq<Int32>(G(MonotonicGenerator(-1, 5))),
+            generateSeq<Int64>(G(MonotonicGenerator(-1, 5))),
+            generateSeq<UInt8>(G(MonotonicGenerator(-1, 5))),
             generateSeq<UInt16>(G(MonotonicGenerator(-1, 5))),
             generateSeq<UInt32>(G(MonotonicGenerator(-1, 5))),
             generateSeq<UInt64>(G(MonotonicGenerator(-1, 5)))
@@ -1211,26 +1184,6 @@ auto DDCompatibilityTestSequence()
         ret.append(generateSeq<ValueType>(G(ddGenerator), p - 4, p + 2));
     }
 
-//    auto s = AsSequenceOf<ValueType>(ret.serialized_data);
-//    ValueType prev = {};
-//    decltype(prev - prev) prev_delta = {};
-
-//    size_t i = 0;
-//    while(s)
-//    {
-//        const auto v = *s;
-//        const auto d = v - prev;
-//        const auto dd = d - prev_delta;
-
-//        std::cerr << "\n#" << i << " : " << v << " d: " << d << " dd: " << dd;
-//        ++s;
-
-//        prev_delta = d;
-//        prev = v;
-//        ++i;
-//    }
-//    std::cerr << std::endl;
-
     return ret;
 }
 
@@ -1291,7 +1244,7 @@ INSTANTIATE_TEST_CASE_P(DoubleDelta,
     ::testing::Combine(
         ::testing::Values(Codec("DoubleDelta")),
         ::testing::Values(
-            DDperformanceTestSequence<Int8  >(),
+            DDperformanceTestSequence<Int8 >(),
             DDperformanceTestSequence<UInt8 >(),
             DDperformanceTestSequence<Int16 >(),
             DDperformanceTestSequence<UInt16>(),
@@ -1306,15 +1259,15 @@ INSTANTIATE_TEST_CASE_P(DoubleDelta,
 // prime numbers in ascending order with some random repitions hit all the cases of Gorilla.
 auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
 {
-    static const int vals[] = {
-         2,   3,   5,   7,  11,  11,  13,  17,  19,  23,  29,  29,  31,  37,  41,  43,
-        47,  47,  53,  59,  61,  61,  67,  71,  73,  79,  83,  89,  89,  97, 101, 103,
-        107, 107, 109, 113, 113, 127, 127, 127
-    };
-    static const size_t count = sizeof(vals)/sizeof(vals[0]);
-
-    return [&,  multiplier](auto i)
+    return [multiplier](auto i)
     {
+        static const int vals[] = {
+             2, 3, 5, 7, 11, 11, 13, 17, 19, 23, 29, 29, 31, 37, 41, 43,
+            47, 47, 53, 59, 61, 61, 67, 71, 73, 79, 83, 89, 89, 97, 101, 103,
+            107, 107, 109, 113, 113, 127, 127, 127
+        };
+        static const size_t count = sizeof(vals)/sizeof(vals[0]);
+
         using T = decltype(i);
         return static_cast<T>(vals[i % count] * static_cast<T>(multiplier));
     };
@@ -1373,7 +1326,7 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
     ::testing::Combine(
         ::testing::Values(Codec("Gorilla")),
         ::testing::Values(
-            generatePyramidSequence<Int8  >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+            generatePyramidSequence<Int8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
             generatePyramidSequence<UInt8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
             generatePyramidSequence<Int16 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
             generatePyramidSequence<UInt16>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
