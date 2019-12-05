@@ -269,7 +269,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
         return;
 
     NumRows zero_tails;
-    auto total_zero_rows_in_tails = countZeroTails(filter->getData(), zero_tails);
+    auto total_zero_rows_in_tails = countZeroTails(filter->getData(), zero_tails, can_read_incomplete_granules);
 
     if (total_zero_rows_in_tails == filter->size())
     {
@@ -292,7 +292,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
 
         size_t rows_in_last_granule = rows_per_granule.back();
 
-        collapseZeroTails(filter->getData(), new_data, zero_tails, can_read_incomplete_granules);
+        collapseZeroTails(filter->getData(), new_data, zero_tails);
 
         total_rows_per_granule = new_filter->size();
         num_rows_to_skip_in_last_granule += rows_in_last_granule - rows_per_granule.back();
@@ -302,7 +302,7 @@ void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granule
     }
 }
 
-size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter_vec, NumRows & zero_tails) const
+size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter_vec, NumRows & zero_tails, bool can_read_incomplete_granules) const
 {
     zero_tails.resize(0);
     zero_tails.reserve(rows_per_granule.size());
@@ -314,7 +314,10 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
     for (auto rows_to_read : rows_per_granule)
     {
         /// Count the number of zeros at the end of filter for rows were read from current granule.
-        zero_tails.push_back(numZerosInTail(filter_data, filter_data + rows_to_read));
+        size_t zero_tail = numZerosInTail(filter_data, filter_data + rows_to_read);
+        if (!can_read_incomplete_granules && zero_tail != rows_to_read)
+            zero_tail = 0;
+        zero_tails.push_back(zero_tail);
         total_zero_rows_in_tails += zero_tails.back();
         filter_data += rows_to_read;
     }
@@ -323,7 +326,7 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
 }
 
 void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter_vec, IColumn::Filter & new_filter_vec,
-                                                         const NumRows & zero_tails, bool can_read_incomplete_granules)
+                                                         const NumRows & zero_tails)
 {
     auto filter_data = filter_vec.data();
     auto new_filter_data = new_filter_vec.data();
@@ -333,8 +336,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
         auto & rows_to_read = rows_per_granule[i];
         auto filtered_rows_num_at_granule_end = zero_tails[i];
 
-        if (can_read_incomplete_granules || filtered_rows_num_at_granule_end == rows_to_read)
-            rows_to_read -= filtered_rows_num_at_granule_end;
+        rows_to_read -= filtered_rows_num_at_granule_end;
 
         memcpySmallAllowReadWriteOverflow15(new_filter_data, filter_data, rows_to_read);
         filter_data += rows_to_read;
