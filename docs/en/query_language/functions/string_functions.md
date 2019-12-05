@@ -235,7 +235,7 @@ Alias: `ltrim`.
 
 **Returned value**
 
-A string without any heading whitespaces.
+A string without any leading whitespaces.
 
 Type: `String`.
 
