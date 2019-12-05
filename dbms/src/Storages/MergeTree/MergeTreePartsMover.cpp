@@ -133,7 +133,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 reservation = part->storage.tryReserveSpace(part->bytes_on_disk, ttl_entry_ptr->getDestination(policy));
         }
 
-        if (reservation)
+        if (reservation) /// Found reservation by TTL rule.
         {
             parts_to_move.emplace_back(part, std::move(reservation));
             /// If table TTL rule satisfies on this part, won't apply policy rules on it.
