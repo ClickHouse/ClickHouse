@@ -1239,23 +1239,6 @@ auto DDperformanceTestSequence()
         + generateSeq<ValueType>(G(SameValueGenerator(42)), 0, times); // best
 }
 
-INSTANTIATE_TEST_CASE_P(DoubleDelta,
-    CodecTest_Performance,
-    ::testing::Combine(
-        ::testing::Values(Codec("DoubleDelta")),
-        ::testing::Values(
-            DDperformanceTestSequence<Int8 >(),
-            DDperformanceTestSequence<UInt8 >(),
-            DDperformanceTestSequence<Int16 >(),
-            DDperformanceTestSequence<UInt16>(),
-            DDperformanceTestSequence<Int32 >(),
-            DDperformanceTestSequence<UInt32>(),
-            DDperformanceTestSequence<Int64 >(),
-            DDperformanceTestSequence<UInt64>()
-        )
-    ),
-);
-
 // prime numbers in ascending order with some random repitions hit all the cases of Gorilla.
 auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
 {
@@ -1321,21 +1304,42 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
     ),
 );
 
-INSTANTIATE_TEST_CASE_P(Gorilla,
-    CodecTest_Performance,
-    ::testing::Combine(
-        ::testing::Values(Codec("Gorilla")),
-        ::testing::Values(
-            generatePyramidSequence<Int8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<UInt8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<Int16 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<UInt16>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<Int32 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<UInt32>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<Int64 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-            generatePyramidSequence<UInt64>(42, G(PrimesWithMultiplierGenerator())) * 6'000
-        )
-    ),
-);
+// These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
+// also they require pretty big data to run agains and generating this data slows down startup of unit test process.
+// So un-comment only at your discretion.
+
+//INSTANTIATE_TEST_CASE_P(DoubleDelta,
+//    CodecTest_Performance,
+//    ::testing::Combine(
+//        ::testing::Values(Codec("DoubleDelta")),
+//        ::testing::Values(
+//            DDperformanceTestSequence<Int8 >(),
+//            DDperformanceTestSequence<UInt8 >(),
+//            DDperformanceTestSequence<Int16 >(),
+//            DDperformanceTestSequence<UInt16>(),
+//            DDperformanceTestSequence<Int32 >(),
+//            DDperformanceTestSequence<UInt32>(),
+//            DDperformanceTestSequence<Int64 >(),
+//            DDperformanceTestSequence<UInt64>()
+//        )
+//    ),
+//);
+
+//INSTANTIATE_TEST_CASE_P(Gorilla,
+//    CodecTest_Performance,
+//    ::testing::Combine(
+//        ::testing::Values(Codec("Gorilla")),
+//        ::testing::Values(
+//            generatePyramidSequence<Int8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<UInt8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<Int16 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<UInt16>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<Int32 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<UInt32>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<Int64 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
+//            generatePyramidSequence<UInt64>(42, G(PrimesWithMultiplierGenerator())) * 6'000
+//        )
+//    ),
+//);
 
 }
