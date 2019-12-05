@@ -1005,7 +1005,7 @@ Possible values:
 
     Recommended values:
         
-        - 10000000 (100 times a second) nanosecods and more for for single queries.
+        - 10000000 (100 times a second) nanoseconds and less for single queries.
         - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
