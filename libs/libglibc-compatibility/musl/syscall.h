@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/syscall.h>
+
 typedef long syscall_arg_t;
 
 __attribute__((visibility("hidden")))
