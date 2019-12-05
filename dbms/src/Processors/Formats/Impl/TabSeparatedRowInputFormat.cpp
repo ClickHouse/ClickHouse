@@ -341,12 +341,13 @@ void TabSeparatedRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
-void TabSeparatedRowInputFormat::resetParser()
+bool TabSeparatedRowInputFormat::reset()
 {
-    RowInputFormatWithDiagnosticInfo::resetParser();
     column_indexes_for_input_fields.clear();
     read_columns.clear();
     columns_to_fill_with_default_values.clear();
+
+    return RowInputFormatWithDiagnosticInfo::reset();
 }
 
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory)

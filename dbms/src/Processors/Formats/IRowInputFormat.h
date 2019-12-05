@@ -53,8 +53,6 @@ public:
 
     std::optional<Chunk> generate() override;
 
-    void resetParser() override;
-
 protected:
     /** Read next row and append it to the columns.
       * If no more rows - return false.
@@ -76,6 +74,8 @@ protected:
     virtual std::string getDiagnosticInfo() { return {}; }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
+    bool reset() override;
 
 private:
     Params params;

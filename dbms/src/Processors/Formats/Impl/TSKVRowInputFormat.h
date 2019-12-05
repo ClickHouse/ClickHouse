@@ -30,8 +30,6 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-    void resetParser() override;
-
 
 private:
     const FormatSettings format_settings;
@@ -49,6 +47,8 @@ private:
     std::vector<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like ..., non-nullable column name=\N, ...
+
+    bool reset() override;
 };
 
 }

@@ -26,8 +26,6 @@ public:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    void resetParser() override;
-
 private:
     bool with_names;
     bool with_types;
@@ -53,6 +51,8 @@ private:
     void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
                              ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+
+    bool reset() override;
 };
 
 }

@@ -496,10 +496,11 @@ void TemplateRowInputFormat::throwUnexpectedEof()
                     ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
-void TemplateRowInputFormat::resetParser()
+bool TemplateRowInputFormat::reset()
 {
-    RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
+
+    return RowInputFormatWithDiagnosticInfo::reset();
 }
 
 void registerInputFormatProcessorTemplate(FormatFactory & factory)

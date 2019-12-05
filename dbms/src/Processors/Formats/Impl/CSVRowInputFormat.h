@@ -28,7 +28,6 @@ public:
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-    void resetParser() override;
 
 private:
     bool with_names;
@@ -63,6 +62,8 @@ private:
     }
 
     bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+
+    bool reset() override;
 };
 
 }

@@ -27,7 +27,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-    void resetParser() override;
+    bool reset() override;
 
 private:
     const String & columnName(size_t i) const;

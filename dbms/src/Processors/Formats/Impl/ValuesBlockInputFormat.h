@@ -33,8 +33,6 @@ public:
 
     String getName() const override { return "ValuesBlockInputFormat"; }
 
-    void resetParser() override;
-
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:
@@ -63,6 +61,8 @@ private:
     void readSuffix();
 
     bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
+
+    bool reset() override;
 
 private:
     PeekableReadBuffer buf;

@@ -65,14 +65,14 @@ std::optional<Chunk> ORCBlockInputFormat::generate()
     return {};
 }
 
-void ORCBlockInputFormat::resetParser()
+bool ORCBlockInputFormat::reset()
 {
-    IInputFormat::resetParser();
-
     file_reader.reset();
     file_data.clear();
     row_group_total = 0;
     row_group_current = 0;
+
+    return IInputFormat::reset();
 }
 
 void registerInputFormatProcessorORC(FormatFactory & factory)

@@ -145,7 +145,8 @@ std::optional<Chunk> IRowInputFormat::generate()
         }
 
         readSuffix();
-        return {};
+
+        return Chunk(); /// Return empty chunk instead of unset optional to support resetting.
     }
 
     auto num_rows = columns.front()->size();
@@ -158,12 +159,13 @@ void IRowInputFormat::syncAfterError()
     throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IRowInputFormat::resetParser()
+bool IRowInputFormat::reset()
 {
-    IInputFormat::resetParser();
     total_rows = 0;
     num_errors = 0;
     block_missing_values.clear();
+
+    return IInputFormat::reset();
 }
 
 

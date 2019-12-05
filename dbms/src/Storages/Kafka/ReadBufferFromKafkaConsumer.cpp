@@ -7,22 +7,22 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+
+extern const int UNREAD_DATA_IN_BUFFER;
+
+}
+
 using namespace std::chrono_literals;
 
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
-    ConsumerPtr consumer_,
-    Poco::Logger * log_,
-    size_t max_batch_size,
-    size_t poll_timeout_,
-    bool intermediate_commit_,
-    const std::atomic<bool> & stopped_)
+    ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_)
     : ReadBuffer(nullptr, 0)
     , consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
-    , intermediate_commit(intermediate_commit_)
-    , stopped(stopped_)
     , current(messages.begin())
 {
 }
@@ -75,8 +75,6 @@ void ReadBufferFromKafkaConsumer::commit()
     consumer->async_commit();
 
     PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
-
-    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
@@ -95,37 +93,35 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         LOG_TRACE(log, message);
     }
 
-    // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
-    // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-    // But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state:
-    // see https://github.com/edenhill/librdkafka/issues/2455
-    while (consumer->get_subscription().empty())
+    if (consumer->get_subscription().empty())
     {
-        stalled = false;
-
         try
         {
             consumer->subscribe(topics);
-            if (nextImpl())
-                break;
-
-            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-            //        see https://github.com/edenhill/librdkafka/issues/2077
+            /// FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+            ///        see https://github.com/edenhill/librdkafka/issues/2077
         }
         catch (cppkafka::HandleException & e)
         {
-            if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
-                continue;
-            throw;
+            if (e.get_error() != RD_KAFKA_RESP_ERR__TIMED_OUT)
+                throw;
         }
     }
 
-    stalled = false;
+    /// While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
+    /// If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
+    /// But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state.
+    /// See https://github.com/edenhill/librdkafka/issues/2455
+    while (consumer->get_subscription().empty())
+    {
+        if (reset())
+            break;
+    }
 }
 
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
-    LOG_TRACE(log, "Re-joining claimed consumer after failure");
+    LOG_TRACE(log, "Unsubscribing (possibly after some failure)");
 
     messages.clear();
     current = messages.begin();
@@ -134,47 +130,59 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     consumer->unsubscribe();
 }
 
-/// Do commit messages implicitly after we processed the previous batch.
+bool ReadBufferFromKafkaConsumer::reset()
+{
+    if (!allow_polling)
+        return false;
+
+    if (current != messages.end())
+        throw Exception("Trying to reset Kafka buffer with remaining unread messages!", ErrorCodes::UNREAD_DATA_IN_BUFFER);
+
+    try
+    {
+        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
+    }
+    catch (cppkafka::HandleException & e)
+    {
+        if (e.get_error() != RD_KAFKA_RESP_ERR__TIMED_OUT)
+            throw;
+        messages.clear();
+    }
+    current = messages.begin();
+
+    if (messages.empty())
+    {
+        LOG_TRACE(log, "No new messages");
+        return false;
+    }
+
+    LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
+
+    return true;
+}
+
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
-    /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
-    ///       If we failed to poll any message once - don't try again.
-    ///       Otherwise, the |poll_timeout| expectations get flawn.
-    if (stalled || stopped || !allowed)
-        return false;
+    while (current != messages.end())
+    {
+        if (auto error = current->get_error())
+        {
+            /// FIXME: should throw exception instead
+            LOG_ERROR(log, "Consumer error: " << error);
+            ++current;
+            continue;
+        }
+
+        break;
+    }
 
     if (current == messages.end())
-    {
-        if (intermediate_commit)
-            commit();
-
-        /// Don't drop old messages immediately, since we may need them for virtual columns.
-        auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
-        if (new_messages.empty())
-        {
-            LOG_TRACE(log, "Stalled");
-            stalled = true;
-            return false;
-        }
-        messages = std::move(new_messages);
-        current = messages.begin();
-
-        LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
-    }
-
-    if (auto err = current->get_error())
-    {
-        ++current;
-
-        // TODO: should throw exception instead
-        LOG_ERROR(log, "Consumer error: " << err);
+        /// Nothing more to read without reset
         return false;
-    }
 
-    // XXX: very fishy place with const casting.
+    /// XXX: very fishy place with const-casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
-    allowed = false;
 
     /// Since we can poll more messages than we already processed - commit only processed messages.
     consumer->store_offset(*current);

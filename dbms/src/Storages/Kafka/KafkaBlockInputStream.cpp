@@ -66,7 +66,7 @@ Block KafkaBlockInputStream::readImpl()
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto read_callback = [&]
+    auto row_callback = [&]
     {
         virtual_columns[0]->insert(buffer->currentTopic());     // "topic"
         virtual_columns[1]->insert(buffer->currentKey());       // "key"
@@ -77,61 +77,38 @@ Block KafkaBlockInputStream::readImpl()
         if (timestamp)
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
         else
-            virtual_columns[5]->insert(Field());
+            virtual_columns[4]->insert(Field());
     };
 
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, row_callback);
+    auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-    InputPort port(input_format->getPort().getHeader(), input_format.get());
-    connect(input_format->getPort(), port);
-    port.setNeeded();
-
-    auto read_kafka_message = [&]
+    /// Reads all polled messages at once
+    auto read_kafka_messages = [&]
     {
-        size_t new_rows = 0;
+        size_t rows = 0;
 
-        while (true)
+        while (auto block = input_stream->read())
         {
-            auto status = input_format->prepare();
+            rows += block.rows();
 
-            switch (status)
-            {
-                case IProcessor::Status::Ready:
-                    input_format->work();
-                    break;
-
-                case IProcessor::Status::Finished:
-                    input_format->resetParser();
-                    return new_rows;
-
-                case IProcessor::Status::PortFull:
-                {
-                    auto chunk = port.pull();
-                    new_rows = new_rows + chunk.getNumRows();
-
-                    /// FIXME: materialize MATERIALIZED columns here.
-
-                    auto columns = chunk.detachColumns();
-                    for (size_t i = 0, s = columns.size(); i < s; ++i)
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-                    break;
-                }
-                case IProcessor::Status::NeedData:
-                case IProcessor::Status::Async:
-                case IProcessor::Status::Wait:
-                case IProcessor::Status::ExpandPipeline:
-                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
-            }
+            auto columns = block.mutateColumns();
+            for (size_t i = 0, s = columns.size(); i < s; ++i)
+                result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
         }
+
+        return rows;
     };
 
     size_t total_rows = 0;
     while (total_rows < max_block_size)
     {
-        auto new_rows = read_kafka_message();
+        auto new_rows = read_kafka_messages();
         total_rows = total_rows + new_rows;
-        buffer->allowNext();
+
+        buffer->allowPoll();
+
         if (!new_rows || !checkTimeLimit())
             break;
     }

@@ -21,13 +21,10 @@ public:
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
-    void resetParser() override;
-
 protected:
     std::optional<Chunk> generate() override;
 
 private:
-
     // TODO: check that this class implements every part of its parent
 
     const Context & context;
@@ -36,6 +33,8 @@ private:
     std::string file_data;
     int row_group_total = 0;
     int row_group_current = 0;
+
+    bool reset() override;
 };
 
 }

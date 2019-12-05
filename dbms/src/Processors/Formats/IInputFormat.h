@@ -25,9 +25,10 @@ protected:
 public:
     IInputFormat(Block header, ReadBuffer & in_) : ISource(std::move(header)), in(in_) {}
 
-    virtual void resetParser() {}
-
     virtual const BlockMissingValues & getMissingValues() const { return none; }
+
+protected:
+    bool reset() override;
 
 private:
     static const BlockMissingValues none;

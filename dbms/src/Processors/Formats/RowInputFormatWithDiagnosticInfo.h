@@ -16,8 +16,6 @@ public:
 
     String getDiagnosticInfo() override;
 
-    void resetParser() override;
-
 protected:
     void updateDiagnosticInfo();
     bool deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type, IColumn & column,
@@ -31,6 +29,8 @@ protected:
 
     /// For convenient diagnostics in case of an error.
     size_t row_num = 0;
+
+    bool reset() override;
 
 private:
     /// How many bytes were read, not counting those still in the buffer.

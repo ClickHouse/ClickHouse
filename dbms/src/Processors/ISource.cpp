@@ -41,8 +41,13 @@ void ISource::work()
         if (auto chunk = generate())
         {
             current_chunk.chunk = std::move(*chunk);
+
             if (current_chunk.chunk)
                 has_input = true;
+            else if (reset()) /// if returned chunk is empty, try to reset source and try again next time.
+                has_input = false;
+            else
+                finished = true;
         }
         else
             finished = true;

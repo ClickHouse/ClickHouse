@@ -19,21 +19,12 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
-    ReadBufferFromKafkaConsumer(
-        ConsumerPtr consumer_,
-        Poco::Logger * log_,
-        size_t max_batch_size,
-        size_t poll_timeout_,
-        bool intermediate_commit_,
-        const std::atomic<bool> & stopped_);
+    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_);
     ~ReadBufferFromKafkaConsumer() override;
 
-    void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
-
-    auto pollTimeout() const { return poll_timeout; }
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
@@ -42,6 +33,9 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
 
+    bool reset() override;
+    void allowPoll() { allow_polling = true; }
+
 private:
     using Messages = std::vector<cppkafka::Message>;
 
@@ -49,11 +43,7 @@ private:
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    bool stalled = false;
-    bool intermediate_commit = true;
-    bool allowed = true;
-
-    const std::atomic<bool> & stopped;
+    bool allow_polling = false;
 
     Messages messages;
     Messages::const_iterator current;

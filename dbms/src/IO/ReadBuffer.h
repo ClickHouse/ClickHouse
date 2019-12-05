@@ -59,6 +59,8 @@ public:
         return res;
     }
 
+    /// Required to support buffers from infinite streams.
+    virtual bool reset() { return false; }
 
     inline void nextIfAtEnd()
     {

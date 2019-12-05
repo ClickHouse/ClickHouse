@@ -20,15 +20,6 @@ public:
     String getName() const override { return "NativeInputFormatFromNativeBlockInputStream"; }
 
 protected:
-    void resetParser() override
-    {
-        IInputFormat::resetParser();
-        stream->resetParser();
-        read_prefix = false;
-        read_suffix = false;
-    }
-
-
     std::optional<Chunk> generate() override
     {
         /// TODO: do something with totals and extremes.
@@ -62,6 +53,15 @@ private:
     std::shared_ptr<NativeBlockInputStream> stream;
     bool read_prefix = false;
     bool read_suffix = false;
+
+    bool reset() override
+    {
+        stream->resetParser();
+        read_prefix = false;
+        read_suffix = false;
+
+        return IInputFormat::reset();
+    }
 };
 
 

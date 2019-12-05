@@ -18,16 +18,12 @@ class ParquetBlockInputFormat: public IInputFormat
 public:
     ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
 
-    void resetParser() override;
-
-
     String getName() const override { return "ParquetBlockInputFormat"; }
 
 protected:
     std::optional<Chunk> generate() override;
 
 private:
-
     // TODO: check that this class implements every part of its parent
 
     const Context & context;
@@ -37,6 +33,8 @@ private:
     std::unique_ptr<arrow::Buffer> buffer;
     int row_group_total = 0;
     int row_group_current = 0;
+
+    bool reset() override;
 };
 
 }

@@ -28,6 +28,8 @@ private:
     /// If chunk is not set, then we're finished.
     /// We allow to return empty chunks this way, which is required for streaming sources.
     virtual std::optional<Chunk> generate() = 0;
+
+    virtual bool reset() { return false; }
 };
 
 using SourcePtr = std::shared_ptr<ISource>;

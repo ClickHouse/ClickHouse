@@ -28,8 +28,6 @@ public:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
-    void resetParser() override;
-
 private:
     bool deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column);
     void skipField(ColumnFormat col_format);
@@ -47,6 +45,8 @@ private:
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
 
     void skipToNextDelimiterOrEof(const String & delimiter);
+
+    bool reset() override;
 
 private:
     PeekableReadBuffer buf;
