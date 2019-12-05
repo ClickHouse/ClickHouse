@@ -31,7 +31,7 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 };
 
 }

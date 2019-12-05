@@ -260,7 +260,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & /*context*/) const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 

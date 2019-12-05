@@ -52,7 +52,7 @@ public:
         const String & to_table_name,
         TableStructureWriteLockHolder & lock) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     void drop(const Context & context) override;
 

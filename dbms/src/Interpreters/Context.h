@@ -150,6 +150,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+    // TODO maybe replace with DatabaseMemory?
     TableAndCreateASTs external_tables;     /// Temporary tables.
     Scalars scalars;
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -372,10 +373,7 @@ public:
     std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
-    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
-    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
