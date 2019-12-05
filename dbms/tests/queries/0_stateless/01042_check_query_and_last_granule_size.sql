@@ -14,3 +14,17 @@ OPTIMIZE TABLE check_query_test;
 CHECK TABLE check_query_test;
 
 DROP TABLE IF EXISTS check_query_test;
+
+DROP TABLE IF EXISTS check_query_test_non_adaptive;
+
+CREATE TABLE check_query_test_non_adaptive (SomeKey UInt64, SomeValue String) ENGINE = MergeTree() ORDER BY SomeKey SETTINGS index_granularity_bytes = 0;
+
+INSERT INTO check_query_test_non_adaptive SELECT number, toString(number) FROM system.numbers LIMIT 81920;
+
+CHECK TABLE check_query_test_non_adaptive;
+
+OPTIMIZE TABLE check_query_test_non_adaptive;
+
+CHECK TABLE check_query_test_non_adaptive;
+
+DROP TABLE IF EXISTS check_query_test_non_adaptive;
