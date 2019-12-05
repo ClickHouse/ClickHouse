@@ -200,6 +200,10 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 
 void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns)
 {
+    /// We have nothing to aggregate. It means that it could be non-zero, because we have columns_not_to_aggregate.
+    if (columns_to_aggregate.empty())
+        current_row_is_zero = false;
+
     for (auto & desc : columns_to_aggregate)
     {
         // Do not insert if the aggregation state hasn't been created
@@ -329,11 +333,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             current_row_is_zero = true;
         }
         else
-        {
             key_differs = next_key != current_key;
-            /// If current_key is not empty - thats why current_row is not zero.
-            current_row_is_zero = false;
-        }
 
 
         if (key_differs)
