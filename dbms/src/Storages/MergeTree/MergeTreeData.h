@@ -682,12 +682,12 @@ public:
     DiskSpace::ReservationPtr tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
-    DiskSpace::ReservationPtr reserveSpacePreferringMoveDestination(UInt64 expected_size,
-                                                                    const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                    time_t time_of_move) const;
-    DiskSpace::ReservationPtr tryReserveSpacePreferringMoveDestination(UInt64 expected_size,
-                                                                    const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                    time_t time_of_move) const;
+    DiskSpace::ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
+                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                time_t time_of_move) const;
+    DiskSpace::ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
+                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                time_t time_of_move) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     DiskSpace::ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
@@ -745,7 +745,7 @@ public:
         bool isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
-    const TTLEntry * selectMoveDestination(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;

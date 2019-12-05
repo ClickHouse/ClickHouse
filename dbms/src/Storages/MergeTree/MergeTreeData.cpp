@@ -3136,18 +3136,18 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, D
     return space->reserve(expected_size);
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(UInt64 expected_size,
+DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringMoveDestination(expected_size, ttl_infos, time_of_move);
+    DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringMoveDestination(UInt64 expected_size,
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
@@ -3155,7 +3155,7 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringMoveDestinatio
 
     DiskSpace::ReservationPtr reservation;
 
-    auto ttl_entry = selectMoveDestination(ttl_infos, time_of_move);
+    auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
     if (ttl_entry != nullptr)
     {
         DiskSpace::SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
@@ -3206,7 +3206,7 @@ bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicy
     return false;
 }
 
-const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
+const MergeTreeData::TTLEntry * MergeTreeData::selectTTLEntryForTTLInfos(
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {

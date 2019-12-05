@@ -358,7 +358,7 @@ public:
             {
                 ttl_infos.update(part_ptr->ttl_infos);
             }
-            reserved_space = storage.tryReserveSpacePreferringMoveDestination(total_size, ttl_infos, time(nullptr));
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
         }
         if (!reserved_space)
         {
