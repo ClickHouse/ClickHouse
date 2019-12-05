@@ -3,6 +3,7 @@
 #include "IArraySink.h"
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -33,17 +34,18 @@ struct NullableValueSource;
 template <typename T>
 struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 {
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using CompatibleArraySource = NumericArraySource<T>;
     using CompatibleValueSource = NumericValueSource<T>;
 
-    typename ColumnVector<T>::Container & elements;
+    typename ColVecType::Container & elements;
     typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
     ColumnArray::Offset current_offset = 0;
 
     NumericArraySink(ColumnArray & arr, size_t column_size)
-            : elements(typeid_cast<ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
+            : elements(typeid_cast<ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
         offsets.resize(column_size);
     }

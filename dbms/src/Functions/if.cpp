@@ -175,9 +175,7 @@ public:
 
 private:
     template <typename T0, typename T1>
-    static constexpr bool allow_arrays =
-        !IsDecimalNumber<T0> && !IsDecimalNumber<T1> &&
-        !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
+    static constexpr bool allow_arrays = !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])

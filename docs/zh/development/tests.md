@@ -166,7 +166,7 @@ clickhouse benchmark --concurrency 16 < queries.tsv
 当我们扩展 ClickHouse 网络协议时，我们手动测试旧的 clickhouse-client 与新的 clickhouse-server 和新的clickhouse-client 一起使用旧的 clickhouse-server (只需从相应的包中运行二进制文件)
 
 
-## 来自编译器的帮助
+## 来自编译器的提示
 
 ClickHouse 主要的代码 (位于`dbms`目录中) 使用 `-Wall -Wextra -Werror` 构建，并带有一些其他已启用的警告。 虽然没有为第三方库启用这些选项。
 

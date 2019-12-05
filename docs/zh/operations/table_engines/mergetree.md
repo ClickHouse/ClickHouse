@@ -70,8 +70,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 - `SETTINGS` — 影响 `MergeTree` 性能的额外参数：
     - `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。默认值，8192 。该列表中所有可用的参数可以从这里查看 [MergeTreeSettings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h) 。
+    - `index_granularity_bytes` — 索引粒度，以字节为单位，默认值: 10Mb。如果仅按数据行数限制索引粒度, 请设置为0(不建议)。
+    - `enable_mixed_granularity_parts` — 启用或禁用通过 `index_granularity_bytes` 控制索引粒度的大小。在19.11版本之前, 只有 `index_granularity` 配置能够用于限制索引粒度的大小。当从大表(数十或数百兆)中查询数据时候，`index_granularity_bytes` 配置能够提升ClickHouse的性能。如果你的表内数据量很大，可以开启这项配置用以提升`SELECT` 查询的性能。
     - `use_minimalistic_part_header_in_zookeeper` — 数据片段头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
     - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
+    <a name="mergetree_setting-merge_with_ttl_timeout"></a>
+    - `merge_with_ttl_timeout` — TTL合并频率的最小间隔时间。默认值: 86400 (1 天)。
+    - `write_final_mark` — 启用或禁用在数据片段尾部写入最终索引标记。默认值: 1（不建议更改）。
+    - `storage_policy` — 存储策略。 参见 [使用多个区块装置进行数据存储](#table_engine-mergetree-multiple-volumes).
 
 **示例配置**
 
@@ -115,7 +121,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 对于主要的配置方法，这里 `MergeTree` 引擎跟前面的例子一样，可以以同样的方式配置。
 </details>
 
-## 数据存储
+## 数据存储 {#mergetree-data-storage}
 
 表由按主键排序的数据 *片段* 组成。
 
@@ -295,6 +301,100 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 应对表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，数据从当前查询到的一组片段中读取。没有冗长的的锁。插入不会阻碍读取。
 
 对表的读操作是自动并行的。
+
+
+## 列和表的TTL {#table_engine-mergetree-ttl}
+
+TTL可以设置值的生命周期，它既可以为整张表设置，也可以为每个列字段单独设置。如果`TTL`同时作用于表和字段，ClickHouse会使用先到期的那个。
+
+被设置TTL的表，必须拥有[Date](../../data_types/date.md) 或 [DateTime](../../data_types/datetime.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
+
+```sql
+TTL time_column
+TTL time_column + interval
+```
+
+要定义`interval`, 需要使用 [time interval](../../query_language/operators.md#operators-datetime) 操作符。
+
+```sql
+TTL date_time + INTERVAL 1 MONTH
+TTL date_time + INTERVAL 15 HOUR
+```
+
+**列字段 TTL**
+
+当列字段中的值过期时, ClickHouse会将它们替换成数据类型的默认值。如果分区内，某一列的所有值均已过期，则ClickHouse会从文件系统中删除这个分区目录下的列文件。
+
+`TTL`子句不能被用于主键字段。
+
+示例说明:
+
+创建一张包含 `TTL` 的表
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+```
+
+为表中已存在的列字段添加 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 DAY;
+```
+
+修改列字段的 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 MONTH;
+```
+
+**表 TTL**
+
+当表内的数据过期时, ClickHouse会删除所有对应的行。
+
+举例说明:
+
+创建一张包含 `TTL` 的表
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH;
+```
+
+修改表的 `TTL`
+
+```sql
+ALTER TABLE example_table
+    MODIFY TTL d + INTERVAL 1 DAY;
+```
+
+**删除数据**
+
+当ClickHouse合并数据分区时, 会删除TTL过期的数据。
+
+当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 你可以设置 [merge_with_ttl_timeout](#mergetree_setting-merge_with_ttl_timeout)。如果该值被设置的太低, 它将导致执行许多的计划外合并，这可能会消耗大量资源。
+
+如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
+
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 

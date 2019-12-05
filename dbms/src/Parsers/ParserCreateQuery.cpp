@@ -849,11 +849,11 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    if (s_if_not_exists.ignore(pos, expected))
-        if_not_exists = true;
-
     if (!s_dictionary.ignore(pos, expected))
         return false;
+
+    if (s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
 
     if (!name_p.parse(pos, name, expected))
         return false;
