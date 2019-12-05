@@ -526,9 +526,6 @@ public:
            const ASTPtr & new_settings,
            TableStructureWriteLockHolder & table_lock_holder);
 
-    /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -557,8 +554,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
-
+    FreezeResult freeze(const ASTPtr & partition_ast, const String & with_name, const Context & context) override;
 
 public:
     /// Moves partition to specified Disk
@@ -888,9 +884,10 @@ protected:
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
-    /// Common part for |freezePartition()| and |freezeAll()|.
+    /// Common part for |freeze()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+    MatcherFn freezePartitionMatcher(const ASTPtr & partition_ast, const Context & context);
+    FreezeResult freezePartitionsByMatcher(const MatcherFn & matcher, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & src_part) const;
 

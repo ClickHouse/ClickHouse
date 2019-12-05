@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/FreezeResult.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -1637,11 +1638,6 @@ void MergeTreeData::changeSettings(
     }
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
-{
-    freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
-}
-
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
 {
     old_and_new_names.push_back({old_name, new_name});
@@ -2449,40 +2445,10 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
+FreezeResult MergeTreeData::freeze(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
-    std::optional<String> prefix;
-    String partition_id;
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
-            prefix = partition_lit->value.getType() == Field::Types::UInt64
-                ? toString(partition_lit->value.get<UInt64>())
-                : partition_lit->value.safeGet<String>();
-        else
-            partition_id = getPartitionIDFromQuery(partition_ast, context);
-    }
-    else
-        partition_id = getPartitionIDFromQuery(partition_ast, context);
-
-    if (prefix)
-        LOG_DEBUG(log, "Freezing parts with prefix " + *prefix);
-    else
-        LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
-
-
-    freezePartitionsByMatcher(
-        [&prefix, &partition_id](const DataPartPtr & part)
-        {
-            if (prefix)
-                return startsWith(part->info.partition_id, *prefix);
-            else
-                return part->info.partition_id == partition_id;
-        },
-        with_name,
-        context);
+    auto lock = lockStructureForShare(false, context.getCurrentQueryId());
+    return freezePartitionsByMatcher(freezePartitionMatcher(partition_ast, context), with_name, context);
 }
 
 
@@ -3253,17 +3219,60 @@ MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() con
     return res;
 }
 
-void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
+
+MergeTreeData::MatcherFn MergeTreeData::freezePartitionMatcher(const ASTPtr & partition_ast, const Context & context)
 {
+    if (!partition_ast)
+        return [] (const DataPartPtr &){ return true; };
+
+    std::optional<String> prefix;
+    String partition_id;
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
+            prefix = partition_lit->value.getType() == Field::Types::UInt64
+                     ? toString(partition_lit->value.get<UInt64>())
+                     : partition_lit->value.safeGet<String>();
+        else
+            partition_id = getPartitionIDFromQuery(partition_ast, context);
+    }
+    else
+        partition_id = getPartitionIDFromQuery(partition_ast, context);
+
+    if (prefix)
+        return [prefix](const DataPartPtr & part)
+        {
+            return startsWith(part->info.partition_id, *prefix);
+        };
+    else
+        return [partition_id](const DataPartPtr & part)
+        {
+            return part->info.partition_id == partition_id;
+        };
+}
+
+
+FreezeResult MergeTreeData::freezePartitionsByMatcher(const MatcherFn & matcher, const String & with_name, const Context & context)
+{
+    // for serializing partition name
+    const FormatSettings format_settings{};
+
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
     Poco::File(default_shadow_path).createDirectories();
     auto increment = Increment(default_shadow_path + "increment.txt").get(true);
+    String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
 
     const String shadow_path = "shadow/";
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getDataParts();
+
+    FreezeResult freeze_result{
+        .backup_name = backup_name,
+    };
 
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
@@ -3273,11 +3282,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
         part->disk->createDirectories(shadow_path);
 
-        String backup_path = shadow_path
-            + (!with_name.empty()
-                ? escapeForFileName(with_name)
-                : toString(increment))
-            + "/";
+        String backup_path = shadow_path + backup_name + "/";
 
         LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
@@ -3285,12 +3290,22 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         localBackup(part->disk, part->getFullRelativePath(), backup_part_path);
         part->disk->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
+        WriteBufferFromOwnString partition_name;
+        part->partition.serializeText(*this, partition_name, format_settings);
+
+        String full_backup_part_path = part->disk->getPath() + backup_part_path;
+
+        freeze_result.frozen_parts.emplace_back(partition_name.str(), part->info.partition_id, part->name, full_backup_part_path);
+
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+
+    return freeze_result;
 }
+
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {

@@ -920,6 +920,7 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
+
 void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)
@@ -971,17 +972,10 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             }
             break;
 
-            case PartitionCommand::FREEZE_PARTITION:
-            {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, context, lock);
-            }
-            break;
-
+            case PartitionCommand::FREEZE_PARTITION: [[fallthrough]];
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezeAll(command.with_name, context, lock);
+                freeze(command.partition, command.with_name, context);
             }
             break;
 

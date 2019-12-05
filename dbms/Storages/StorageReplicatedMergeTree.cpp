@@ -3426,17 +3426,10 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 fetchPartition(command.partition, command.from_zookeeper_path, query_context);
                 break;
 
-            case PartitionCommand::FREEZE_PARTITION:
-            {
-                auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, query_context, lock);
-            }
-            break;
-
+            case PartitionCommand::FREEZE_PARTITION: [[fallthrough]];
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezeAll(command.with_name, query_context, lock);
+                freeze(command.partition, command.with_name, query_context);
             }
             break;
         }

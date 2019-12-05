@@ -15,6 +15,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/FreezeResult.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -360,6 +361,11 @@ public:
     virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual FreezeResult freeze(const ASTPtr & /*partition*/, const String & /* with_name */, const Context & /*context*/)
+    {
+        throw Exception("Method freeze is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Mutate the table contents
