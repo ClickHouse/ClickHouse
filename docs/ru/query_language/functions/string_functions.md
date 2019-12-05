@@ -203,7 +203,7 @@ trimLeft()
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -241,7 +241,7 @@ trimRight()
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -279,7 +279,7 @@ trimBoth()
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 

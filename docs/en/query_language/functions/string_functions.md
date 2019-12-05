@@ -231,7 +231,7 @@ Alias: `ltrim`.
 
 **Parameters** 
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -269,7 +269,7 @@ Alias: `rtrim`.
 
 **Parameters**
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -307,7 +307,7 @@ Alias: `trim`.
 
 **Parameters**
 
-- `string` — string to trim. [String](https://clickhouse.yandex/docs/en/data_types/string/).
+- `string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
