@@ -22,7 +22,6 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
     , num_parts{future_part.parts.size()}
     , thread_number{getThreadNumber()}
 {
-    // FIXME is_move
     for (const auto & source_part : future_part.parts)
     {
         source_part_names.emplace_back(source_part->name);
@@ -60,7 +59,6 @@ MergeInfo MergeListElement::getInfo() const
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;
     res.is_mutation = is_mutation;
-    res.is_move = is_move;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;
