@@ -13,9 +13,9 @@ class StorageBlocks : public IStorage
  */
 public:
     StorageBlocks(const std::string & database_name_, const std::string & table_name_,
-		const ColumnsDescription & columns_, BlockInputStreams streams_,
-		QueryProcessingStage::Enum to_stage_)
-	    : database_name(database_name_), table_name(table_name_), streams(streams_), to_stage(to_stage_)
+        const ColumnsDescription & columns_, BlockInputStreams streams_,
+        QueryProcessingStage::Enum to_stage_)
+        : database_name(database_name_), table_name(table_name_), streams(streams_), to_stage(to_stage_)
     {
         setColumns(columns_);
     }
@@ -37,7 +37,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/)
     {
-	return streams;
+        return streams;
     }
 
 private:
