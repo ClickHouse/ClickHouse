@@ -1,6 +1,7 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 
 #include <pdqsort.h>
@@ -14,15 +15,21 @@ namespace ErrorCodes
 }
 
 
-static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
+static inline const IColumn * needCollation(const IColumn * column, const SortColumnDescription & description)
 {
     if (!description.collator)
-        return false;
+        return nullptr;
 
-    if (!typeid_cast<const ColumnString *>(column))    /// TODO Nullable(String)
-        throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+    auto column_result = column;
+    if (auto const_column = typeid_cast<const ColumnConst *>(column))
+        column_result = &const_column->getDataColumn();
 
-    return true;
+    if (typeid_cast<const ColumnString *>(column_result))
+        return column_result;
+
+    /// TODO Nullable(String)
+
+    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
 }
 
 
@@ -77,9 +84,9 @@ struct PartialSortingLessWithCollation
         for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
         {
             int res;
-            if (needCollation(it->first, it->second))
+            if (auto column_string_ptr = needCollation(it->first, it->second))
             {
-                const ColumnString & column_string = typeid_cast<const ColumnString &>(*it->first);
+                const ColumnString & column_string = typeid_cast<const ColumnString &>(*column_string_ptr);
                 res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
             }
             else
@@ -110,9 +117,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             : block.safeGetByPosition(description[0].column_number).column.get();
 
         IColumn::Permutation perm;
-        if (needCollation(column, description[0]))
+        if (auto column_string_ptr = needCollation(column, description[0]))
         {
-            const ColumnString & column_string = typeid_cast<const ColumnString &>(*column);
+            const ColumnString & column_string = typeid_cast<const ColumnString &>(*column_string_ptr);
             column_string.getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
         }
         else
