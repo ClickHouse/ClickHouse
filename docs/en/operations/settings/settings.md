@@ -982,7 +982,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. In case of any errors grows exponentially.
+Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
 
 Possible values:
 
@@ -999,13 +999,13 @@ Possible values:
 
 - Positive integer number of milliseconds.
 
-Default value: 30000 milliseconds.
+Default value: 30000 milliseconds (30 seconds).
 
 ## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
-Enables/disables batch sending of inserted data.
+Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, the [Distributed](../table_engines/distributed.md) engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better local server and network resources utilization.
+When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
 
 Possible values:
 
