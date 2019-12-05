@@ -9,7 +9,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -96,7 +95,7 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
         else
             select_database_name = db_and_table->database;
 
-  	if (inner_subquery)
+    if (inner_subquery)
         {
             auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
             //String table_alias = getTableExpressionAlias(table_expression);
@@ -231,11 +230,11 @@ void StorageLiveView::writeIntoLiveView(
         {
             InterpreterSelectQuery outer_select(live_view.getInnerOuterQuery(), *block_context, SelectQueryOptions(QueryProcessingStage::Complete));
             data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
-	}
-	catch(...)
-	{
-            block_context->tryRemoveExternalTable(live_view.table_name + "_blocks");        
-	}
+        }
+        catch (...)
+        {
+            block_context->tryRemoveExternalTable(live_view.table_name + "_blocks");
+        }
     }
 
     /// Squashing is needed here because the view query can generate a lot of blocks
@@ -363,16 +362,16 @@ bool StorageLiveView::getNewBlocks()
         block_context->makeQueryContext();
 
         auto outer_blocks_storage = StorageBlocks::createStorage("_liveview", table_name + "_blocks", ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
-	block_context->addExternalTable(table_name + "_blocks", outer_blocks_storage);
-	try 
-	{
+        block_context->addExternalTable(table_name + "_blocks", outer_blocks_storage);
+        try
+        {
             InterpreterSelectQuery outer_select(inner_outer_query->clone(), *block_context, SelectQueryOptions(QueryProcessingStage::Complete));
             data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
-	}
+        }
         catch (...)
         {
-	    block_context->tryRemoveExternalTable(table_name + "_blocks");
-	}
+            block_context->tryRemoveExternalTable(table_name + "_blocks");
+        }
     }
 
     /// Squashing is needed here because the view query can generate a lot of blocks
