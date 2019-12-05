@@ -566,15 +566,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
-    auto create_ttl_entry = [this](ASTPtr ttl_ast) -> TTLEntry
+    auto create_ttl_entry = [this](ASTPtr ttl_ast)
     {
+        TTLEntry result;
+
         auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
-        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+        result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+        result.destination_type = PartDestinationType::DELETE;
+        result.result_column = ttl_ast->getColumnName();
 
-        String result_column = ttl_ast->getColumnName();
-        checkTTLExpression(expr, result_column);
-
-        return {expr, result_column, PartDestinationType::DELETE, {}, {}};
+        checkTTLExpression(result.expression, result.result_column);
+        return result;
     };
 
     if (!new_column_ttls.empty())
@@ -3098,7 +3100,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 namespace
 {
 
-inline DiskSpace::ReservationPtr returnReservationOrThrowError(UInt64 expected_size, DiskSpace::ReservationPtr reservation)
+inline DiskSpace::ReservationPtr checkAndReturnReservation(UInt64 expected_size, DiskSpace::ReservationPtr reservation)
 {
     if (reservation)
         return reservation;
@@ -3115,7 +3117,23 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) cons
 
     auto reservation = storage_policy->reserve(expected_size);
 
-    return returnReservationOrThrowError(expected_size, std::move(reservation));
+    return checkAndReturnReservation(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto reservation = tryReserveSpace(expected_size, space);
+
+    return checkAndReturnReservation(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    return space->reserve(expected_size);
 }
 
 DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(UInt64 expected_size,
@@ -3126,7 +3144,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(U
 
     DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringMoveDestination(expected_size, ttl_infos, time_of_move);
 
-    return returnReservationOrThrowError(expected_size, std::move(reservation));
+    return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
 DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringMoveDestination(UInt64 expected_size,
@@ -3163,22 +3181,6 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringMoveDestinatio
     reservation = storage_policy->reserve(expected_size);
 
     return reservation;
-}
-
-DiskSpace::ReservationPtr MergeTreeData::reserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
-{
-    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    auto reservation = tryReserveSpaceInSpecificSpace(expected_size, space);
-
-    return returnReservationOrThrowError(expected_size, std::move(reservation));
-}
-
-DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceInSpecificSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
-{
-    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    return space->reserve(expected_size);
 }
 
 DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & policy) const
@@ -3406,7 +3408,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpaceInSpecificSpace(src_part->bytes_on_disk, src_part->disk);
+    auto reservation = reserveSpace(src_part->bytes_on_disk, src_part->disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
