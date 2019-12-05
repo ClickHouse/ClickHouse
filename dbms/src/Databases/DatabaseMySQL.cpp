@@ -124,7 +124,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].modification_time);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context &) const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;

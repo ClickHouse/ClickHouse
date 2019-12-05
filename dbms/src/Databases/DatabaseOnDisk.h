@@ -48,7 +48,7 @@ public:
         IDatabase & to_database,
         const String & to_table_name) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     void drop(const Context & context) override;
 
