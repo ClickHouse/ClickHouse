@@ -681,7 +681,6 @@ public:
     DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
     DiskSpace::ReservationPtr tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
 
- 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     DiskSpace::ReservationPtr reserveSpacePreferringMoveDestination(UInt64 expected_size,
                                                                     const MergeTreeDataPart::TTLInfos & ttl_infos,
