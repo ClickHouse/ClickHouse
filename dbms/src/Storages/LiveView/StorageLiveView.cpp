@@ -1,4 +1,4 @@
-/* Copyright (c) 2018 BlackBerry Limited
+/* iopyright (c) 2018 BlackBerry Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ limitations under the License. */
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
@@ -79,16 +80,6 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
 
     if (!db_and_table && !subquery)
     {
-        if (inner_outer_query && inner_subquery)
-        {
-            auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
-            //String table_alias = getTableExpressionAlias(table_expression);
-            table_expression->subquery = nullptr;
-            table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
-
-            //if (!table_alias.empty())
-            //    table_expression->database_and_table_name->setAlias(table_alias);
-        }
         return;
     }
 
@@ -104,6 +95,17 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
         }
         else
             select_database_name = db_and_table->database;
+
+  	if (inner_subquery)
+        {
+            auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
+            //String table_alias = getTableExpressionAlias(table_expression);
+            table_expression->subquery = nullptr;
+            table_expression->database_and_table_name = createTableIdentifier("", table_name + "_blocks");
+            //if (!table_alias.empty())
+            //    table_expression->database_and_table_name->setAlias(table_alias);
+        }
+
     }
     else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
@@ -128,6 +130,8 @@ void StorageLiveView::writeIntoLiveView(
     const Context & context)
 {
     BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view);
+    auto block_context = std::make_unique<Context>(context.getGlobalContext());
+    block_context->makeQueryContext();
 
     /// Check if live view has any readers if not
     /// just reset blocks to empty and do nothing else
@@ -221,9 +225,17 @@ void StorageLiveView::writeIntoLiveView(
 
     if (live_view.getInnerSubQuery())
     {
-        auto outer_blocks_storage = StorageBlocks::createStorage(live_view.database_name, live_view.table_name, ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
-        InterpreterSelectQuery outer_select(live_view.getInnerOuterQuery(), context, outer_blocks_storage, SelectQueryOptions(QueryProcessingStage::Complete));
-        data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
+        auto outer_blocks_storage = StorageBlocks::createStorage("_liveview", live_view.table_name + "_blocks", ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
+        block_context->addExternalTable(live_view.table_name + "_blocks", outer_blocks_storage);
+        try
+        {
+            InterpreterSelectQuery outer_select(live_view.getInnerOuterQuery(), *block_context, SelectQueryOptions(QueryProcessingStage::Complete));
+            data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
+	}
+	catch(...)
+	{
+            block_context->tryRemoveExternalTable(live_view.table_name + "_blocks");        
+	}
     }
 
     /// Squashing is needed here because the view query can generate a lot of blocks
@@ -259,8 +271,10 @@ StorageLiveView::StorageLiveView(
         throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
     inner_query = query.select->list_of_selects->children.at(0);
+    inner_outer_query = inner_query->clone();
+    ASTPtr outer_query = inner_query->clone();
 
-    extractDependentTable(inner_query, select_database_name, select_table_name, database_name, table_name, inner_outer_query, inner_subquery);
+    extractDependentTable(inner_outer_query, select_database_name, select_table_name, database_name, table_name, outer_query, inner_subquery);
 
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
@@ -345,9 +359,20 @@ bool StorageLiveView::getNewBlocks()
 
     if (inner_subquery)
     {
-        auto outer_blocks_storage = StorageBlocks::createStorage(database_name, table_name,ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
-        InterpreterSelectQuery outer_select(inner_outer_query->clone(), *live_view_context, outer_blocks_storage, SelectQueryOptions(QueryProcessingStage::Complete));
-        data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
+        auto block_context = std::make_unique<Context>(global_context);
+        block_context->makeQueryContext();
+
+        auto outer_blocks_storage = StorageBlocks::createStorage("_liveview", table_name + "_blocks", ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
+	block_context->addExternalTable(table_name + "_blocks", outer_blocks_storage);
+	try 
+	{
+            InterpreterSelectQuery outer_select(inner_outer_query->clone(), *block_context, SelectQueryOptions(QueryProcessingStage::Complete));
+            data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
+	}
+        catch (...)
+        {
+	    block_context->tryRemoveExternalTable(table_name + "_blocks");
+	}
     }
 
     /// Squashing is needed here because the view query can generate a lot of blocks
