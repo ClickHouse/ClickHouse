@@ -136,12 +136,20 @@ Block KafkaBlockInputStream::readImpl()
         auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
                                                 : 0;
 
-        for (size_t i = 0; i < new_rows; ++i) {
+        for (size_t i = 0; i < new_rows; ++i)
+        {
             virtual_columns[0]->insert(_topic);
             virtual_columns[1]->insert(_key);
             virtual_columns[2]->insert(_offset);
             virtual_columns[3]->insert(_partition);
-            virtual_columns[4]->insert(_timestamp);
+            if (_timestamp_raw)
+            {
+                virtual_columns[4]->insert(_timestamp);
+            }
+            else
+            {
+                virtual_columns[4]->insertDefault();
+            }
         }
 
         total_rows = total_rows + new_rows;
