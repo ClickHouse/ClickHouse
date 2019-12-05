@@ -639,7 +639,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
+bool Context::hasUserProperty(const StorageID & table_id, const String & name) const
 {
     auto lock = getLock();
 
@@ -649,22 +649,22 @@ bool Context::hasUserProperty(const String & database, const String & table, con
 
     const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
 
-    auto db = props.find(database);
+    auto db = props.find(table_id.database_name);
     if (db == props.end())
         return false;
 
-    auto table_props = db->second.find(table);
+    auto table_props = db->second.find(table_id.table_name);
     if (table_props == db->second.end())
         return false;
 
     return !!table_props->second.count(name);
 }
 
-const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
+const String & Context::getUserProperty(const StorageID & table_id, const String & name) const
 {
     auto lock = getLock();
     const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(database).at(table).at(name);
+    return props.at(table_id.database_name).at(table_id.table_name).at(name);
 }
 
 void Context::calculateUserSettings()
@@ -758,49 +758,51 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+//FIXME use uuids if not empty
+
+void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
+    checkDatabaseAccessRightsImpl(from.database_name);
+    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from.database_name, from.table_name);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     addDependencyUnsafe(from, where);
 }
 
-void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
+    checkDatabaseAccessRightsImpl(from.database_name);
+    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from.database_name, from.table_name);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     removeDependencyUnsafe(from, where);
 }
 
-Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
+Dependencies Context::getDependencies(const StorageID & from) const
 {
     auto lock = getLock();
 
-    String db = resolveDatabase(database_name, current_database);
+    String db = resolveDatabase(from.database_name, current_database);
 
-    if (database_name.empty() && tryGetExternalTable(table_name))
+    if (from.database_name.empty() && tryGetExternalTable(from.table_name))
     {
         /// Table is temporary. Access granted.
     }
@@ -809,7 +811,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
         checkDatabaseAccessRightsImpl(db);
     }
 
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name));
     if (iter == shared->view_dependencies.end())
         return {};
 

@@ -222,8 +222,8 @@ StorageLiveView::StorageLiveView(
     }
 
     global_context.addDependency(
-        DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(table_id_.database_name, table_id_.table_name));   //FIXME
+        StorageID(select_database_name, select_table_name),
+        table_id_);   //FIXME
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -338,11 +338,11 @@ bool StorageLiveView::getNewBlocks()
 void StorageLiveView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = global_context.getDependencies(table_id.database_name, table_id.table_name); //FIXME
+    Dependencies dependencies = global_context.getDependencies(table_id);
     if (!dependencies.empty())
     {
-        DatabaseAndTableName database_and_table_name = dependencies.front();
-        throw Exception("Table has dependency " + database_and_table_name.first + "." + database_and_table_name.second, ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        StorageID dependent_table_id = dependencies.front();
+        throw Exception("Table has dependency " + dependent_table_id.getNameForLogs(), ErrorCodes::TABLE_WAS_NOT_DROPPED);
     }
 }
 
@@ -365,7 +365,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
                     return;
                 if (storage->hasUsers())
                     return;
-                if (!storage->global_context.getDependencies(table_id.database_name, table_id.table_name).empty())  //FIXME
+                if (!storage->global_context.getDependencies(table_id).empty())
                     continue;
                 drop_table = true;
             }
@@ -469,8 +469,8 @@ void StorageLiveView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
     global_context.removeDependency(
-        DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
+        StorageID(select_database_name, select_table_name),
+        table_id); //FIXME
 
     std::lock_guard lock(mutex);
     is_dropped = true;
