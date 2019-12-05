@@ -1,17 +1,11 @@
 #include <common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
-    extern const int UNSUPPORTED_METHOD;
-}
 
 DatabaseMemory::DatabaseMemory(const String & name_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
@@ -33,11 +27,13 @@ void DatabaseMemory::removeTable(
     detachTable(table_name);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery(
-    const Context &) const
+ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
-    //FIXME
-    throw Exception("There is no CREATE DATABASE query for DatabaseMemory", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+    auto create_query = std::make_shared<ASTCreateQuery>();
+    create_query->database = database_name;
+    create_query->set(create_query->storage, std::make_shared<ASTStorage>());
+    create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
+    return create_query;
 }
 
 }

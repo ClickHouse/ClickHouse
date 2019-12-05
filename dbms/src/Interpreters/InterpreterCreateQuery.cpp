@@ -511,7 +511,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
+        ASTPtr as_create_ptr = context.getDatabase(as_database_name)->getCreateTableQuery(context, as_table_name);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         if (as_create.is_view)
@@ -549,7 +549,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         // Table SQL definition is available even if the table is detached
-        auto query = context.getCreateTableQuery(create.database, create.table);
+        auto query = context.getDatabase(create.database)->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
@@ -708,7 +708,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto query = context.getCreateDictionaryQuery(database_name, dictionary_name);
+        auto query = context.getDatabase(database_name)->getCreateDictionaryQuery(context, dictionary_name);
         create = query->as<ASTCreateQuery &>();
         create.attach = true;
     }

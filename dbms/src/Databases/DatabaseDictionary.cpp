@@ -121,7 +121,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     return ast;
 }
 
-ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) const
+ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
 {
     String query;
     {
