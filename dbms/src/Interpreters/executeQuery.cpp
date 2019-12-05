@@ -143,7 +143,7 @@ static void logException(Context & context, QueryLogElement & elem)
     LOG_ERROR(&Logger::get("executeQuery"), elem.exception
         << " (from " << context.getClientInfo().current_address.toString() << ")"
         << " (in query: " << joinLines(elem.query) << ")"
-        << (!elem.stack_trace.empty() ? ", Stack trace:\n\n" + elem.stack_trace : ""));
+        << (!elem.stack_trace.empty() ? ", Stack trace (when copying this message, always include the lines below):\n\n" + elem.stack_trace : ""));
 }
 
 

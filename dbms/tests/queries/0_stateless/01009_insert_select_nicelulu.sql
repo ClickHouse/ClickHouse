@@ -1,4 +1,3 @@
-Set any_join_distinct_right_table_keys=1;
 DROP TABLE IF EXISTS test_insert_t1;
 DROP TABLE IF EXISTS test_insert_t2;
 DROP TABLE IF EXISTS test_insert_t3;
@@ -15,7 +14,7 @@ INSERT INTO test_insert_t2 SELECT '2019-09-01',toString(number) FROM system.numb
 INSERT INTO test_insert_t2 SELECT '2019-09-01',toString(number) FROM system.numbers WHERE number >=700000 limit 200;
 INSERT INTO test_insert_t2 SELECT '2019-09-01',toString(number) FROM system.numbers WHERE number >=900000 limit 200;
 
-INSERT INTO test_insert_t3 SELECT '2019-09-01', uid, name, city FROM ( SELECT dt, uid, name, city FROM test_insert_t1 WHERE dt = '2019-09-01') t1 GLOBAL ANY INNER JOIN (SELECT uid FROM test_insert_t2 WHERE dt = '2019-09-01') t2 ON t1.uid=t2.uid;
+INSERT INTO test_insert_t3 SELECT '2019-09-01', uid, name, city FROM ( SELECT dt, uid, name, city FROM test_insert_t1 WHERE dt = '2019-09-01') t1 GLOBAL SEMI LEFT JOIN (SELECT uid FROM test_insert_t2 WHERE dt = '2019-09-01') t2 ON t1.uid=t2.uid;
 
 SELECT count(*) FROM test_insert_t3;
 

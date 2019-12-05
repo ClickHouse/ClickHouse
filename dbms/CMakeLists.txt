@@ -376,6 +376,10 @@ if (USE_POCO_MONGODB)
     dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
+if (USE_POCO_REDIS)
+    dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
+endif()
+
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
@@ -428,6 +432,8 @@ if (USE_JEMALLOC)
 
     if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
         # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # Actually we link JEMALLOC to almost all libraries.
+        # This is just hotfix for some uninvestigated problem.
         target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
     endif()
 endif ()
