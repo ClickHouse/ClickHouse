@@ -11,6 +11,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserFreezeQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -34,6 +35,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserDropQuery drop_p;
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
+    ParserFreezeQuery freeze_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
@@ -65,6 +67,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
+        || freeze_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
         || show_quotas_p.parse(pos, query, expected);
 

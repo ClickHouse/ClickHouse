@@ -3145,6 +3145,21 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 }
 
 
+UInt64 StorageReplicatedMergeTree::freeze(const ASTPtr & partition, const String & with_name, const Context & query_context)
+{
+    auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
+
+    if (partition)
+    {
+        return freezePartition(partition, with_name, query_context, lock);
+    }
+    else
+    {
+        return freezeAll(with_name, query_context, lock);
+    }
+}
+
+
 void StorageReplicatedMergeTree::alter(
     const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -3499,9 +3514,9 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, query_context, lock);
+                freeze(command.partition, command.with_name, query_context);
             }
             break;
 
@@ -3520,13 +3535,6 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                 entry.type = LogEntry::CLEAR_INDEX;
                 entry.index_name = command.index_name.safeGet<String>();
                 clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
-            }
-            break;
-
-            case PartitionCommand::FREEZE_ALL_PARTITIONS:
-            {
-                auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezeAll(command.with_name, query_context, lock);
             }
             break;
         }

@@ -332,6 +332,11 @@ public:
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual UInt64 freeze(const ASTPtr & /*partition*/, const String & /* with_name */, const Context & /*context*/)
+    {
+        throw Exception("Method freeze is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, const Context &)
     {

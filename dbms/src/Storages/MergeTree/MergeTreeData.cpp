@@ -1751,9 +1751,9 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     empty_columns.clear();
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
+UInt64 MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
-    freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
+    return freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
 
@@ -2664,7 +2664,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
+UInt64 MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     std::optional<String> prefix;
     String partition_id;
@@ -2688,7 +2688,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
         LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
 
 
-    freezePartitionsByMatcher(
+    return freezePartitionsByMatcher(
         [&prefix, &partition_id](const DataPartPtr & part)
         {
             if (prefix)
@@ -3329,7 +3329,7 @@ MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
     return res;
 }
 
-void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
+UInt64 MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
@@ -3368,6 +3368,8 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+
+    return increment;
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const

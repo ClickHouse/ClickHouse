@@ -965,6 +965,22 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
+
+UInt64 StorageMergeTree::freeze(const ASTPtr & partition, const String & with_name, const Context & query_context)
+{
+    auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
+
+    if (partition)
+    {
+        return freezePartition(partition, with_name, query_context, lock);
+    }
+    else
+    {
+        return freezeAll(with_name, query_context, lock);
+    }
+}
+
+
 void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)
@@ -1010,9 +1026,9 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             break;
 
             case PartitionCommand::FREEZE_PARTITION:
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, context, lock);
+                freeze(command.partition, command.with_name, context);
             }
             break;
 
@@ -1031,13 +1047,6 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 alter_command.type = AlterCommand::DROP_INDEX;
                 alter_command.index_name = get<String>(command.index_name);
                 clearColumnOrIndexInPartition(command.partition, alter_command, context);
-            }
-            break;
-
-            case PartitionCommand::FREEZE_ALL_PARTITIONS:
-            {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezeAll(command.with_name, context, lock);
             }
             break;
 

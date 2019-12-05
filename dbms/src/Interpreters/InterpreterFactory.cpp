@@ -7,6 +7,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTFreezeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterFreezeQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
@@ -177,6 +179,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         throwIfNoAccess(context);
         return std::make_unique<InterpreterAlterQuery>(query, context);
+    }
+    else if (query->as<ASTFreezeQuery>())
+    {
+        throwIfNoAccess(context);
+        return std::make_unique<InterpreterFreezeQuery>(query, context);
     }
     else if (query->as<ASTCheckQuery>())
     {
