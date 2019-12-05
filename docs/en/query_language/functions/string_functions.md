@@ -257,7 +257,7 @@ Result:
 
 ## trimRight {#trimright}
 
-Removes whitespace from the end of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
@@ -273,7 +273,7 @@ Alias: `rtrim`.
 
 **Returned value**
 
-A string without any trailing whitespaces.
+A string without trailing common whitespaces.
 
 Type: `String`.
 
@@ -295,7 +295,7 @@ Result:
 
 ## trimBoth  {#trimboth}
 
-Removes whitespace from both ends of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
@@ -311,7 +311,7 @@ Alias: `trim`.
 
 **Returned value**
 
-A value without any leading and trailing whitespaces.
+A string without leading and trailing common whitespaces.
 
 Type: `String`.
 
