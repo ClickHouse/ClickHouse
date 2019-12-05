@@ -7,6 +7,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part)
 {
     if (Poco::File(path_to_part).exists())
@@ -42,7 +48,7 @@ void MergeTreeIndexGranularityInfo::initialize(const MergeTreeData & storage, Me
     if (!storage.canUseAdaptiveGranularity())
     {
         if (part_type != MergeTreeDataPartType::WIDE)
-            throw ""; /// FIXME normal exception
+            throw Exception("Only Wide parts can be used with non-adaptive granularity.", ErrorCodes::NOT_IMPLEMENTED);
         setNonAdaptive();
     }
     else
