@@ -1011,7 +1011,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     {
         ttl_infos.update(part_ptr->ttl_infos);
     }
-    DiskSpace::ReservationPtr reserved_space = reserveSpacePreferringMoveDestination(estimated_space_for_merge,
+    DiskSpace::ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
             ttl_infos, time(nullptr));
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);

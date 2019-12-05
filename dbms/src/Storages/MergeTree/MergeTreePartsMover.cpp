@@ -56,7 +56,7 @@ public:
     }
 
     /// Weaken requirements on size
-    void decreaseRequiredSize(UInt64 size_decrease)
+    void decreaseRequiredSizeAndRemoveRedundantParts(UInt64 size_decrease)
     {
         required_size_sum -= std::min(size_decrease, required_size_sum);
         removeRedundantElements();
@@ -123,7 +123,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectMoveDestination(part->ttl_infos, time_of_move);
+        const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->disk);
         DiskSpace::ReservationPtr reservation;
         if (ttl_entry_ptr)
@@ -141,7 +141,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             /// possibly to zero.
             if (to_insert != need_to_move.end())
             {
-                to_insert->second.decreaseRequiredSize(part->bytes_on_disk);
+                to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->bytes_on_disk);
             }
         }
         else
