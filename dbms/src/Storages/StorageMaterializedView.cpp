@@ -123,8 +123,8 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!select_table_name.empty())
         global_context.addDependency(
-            DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(table_id_.database_name, table_id_.table_name));   //FIXME
+            StorageID(select_database_name, select_table_name),
+            table_id_);   //FIXME
 
     // If the destination table is not set, use inner table
     if (!query.to_table.empty())
@@ -165,8 +165,8 @@ StorageMaterializedView::StorageMaterializedView(
             /// In case of any error we should remove dependency to the view.
             if (!select_table_name.empty())
                 global_context.removeDependency(
-                    DatabaseAndTableName(select_database_name, select_table_name),
-                    DatabaseAndTableName(table_id_.database_name, table_id_.table_name)); //FIXME
+                    StorageID(select_database_name, select_table_name),
+                    table_id_); //FIXME
 
             throw;
         }
@@ -234,8 +234,8 @@ void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
     global_context.removeDependency(
-        DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
+        StorageID(select_database_name, select_table_name),
+        table_id); //FIXME
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
@@ -314,14 +314,14 @@ void StorageMaterializedView::renameInMemory(const String & new_database_name, c
     auto table_id = getStorageID(&name_lock);
 
     global_context.removeDependencyUnsafe(
-            DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(table_id.database_name, table_id.table_name));
+            StorageID(select_database_name, select_table_name),
+            table_id);
 
     IStorage::renameInMemory(new_database_name, new_table_name, &name_lock);
 
     global_context.addDependencyUnsafe(
-            DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(new_database_name, new_table_name));
+            StorageID(select_database_name, select_table_name),
+            table_id);
 }
 
 void StorageMaterializedView::shutdown()
@@ -329,8 +329,8 @@ void StorageMaterializedView::shutdown()
     auto table_id = getStorageID();
     /// Make sure the dependency is removed after DETACH TABLE
     global_context.removeDependency(
-        DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(table_id.database_name, table_id.table_name)); //FIXME
+        StorageID(select_database_name, select_table_name),
+        table_id); //FIXME
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
