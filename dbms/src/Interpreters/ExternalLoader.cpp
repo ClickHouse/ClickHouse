@@ -473,8 +473,8 @@ public:
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
-        /// Iterate through all the objects and find loaded ones which should be checked if they were modified.
-        std::unordered_map<LoadablePtr, bool> is_modified_map;
+        /// Iterate through all the objects and find loaded ones which should be checked if they need update.
+        std::unordered_map<LoadablePtr, bool> should_update_map;
         {
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
@@ -482,22 +482,26 @@ public:
             {
                 const auto & info = name_and_info.second;
                 if ((now >= info.next_update_time) && !info.loading() && info.loaded())
-                    is_modified_map.emplace(info.object, true);
+                    should_update_map.emplace(info.object, info.failedToReload());
             }
         }
 
         /// Find out which of the loaded objects were modified.
-        /// We couldn't perform these checks while we were building `is_modified_map` because
+        /// We couldn't perform these checks while we were building `should_update_map` because
         /// the `mutex` should be unlocked while we're calling the function object->isModified()
-        for (auto & [object, is_modified_flag] : is_modified_map)
+        for (auto & [object, should_update_flag] : should_update_map)
         {
             try
             {
-                is_modified_flag = object->isModified();
+                /// Maybe alredy true, if we have an exception
+                if (!should_update_flag)
+                    should_update_flag = object->isModified();
             }
             catch (...)
             {
                 tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getName() + "' was modified");
+                /// Cannot check isModified, so update
+                should_update_flag = true;
             }
         }
 
@@ -511,19 +515,18 @@ public:
                 {
                     if (info.loaded())
                     {
-                        auto it = is_modified_map.find(info.object);
-                        if (it == is_modified_map.end())
-                            continue; /// Object has been just loaded (it wasn't loaded while we were building the map `is_modified_map`), so we don't have to reload it right now.
+                        auto it = should_update_map.find(info.object);
+                        if (it == should_update_map.end())
+                            continue; /// Object has been just loaded (it wasn't loaded while we were building the map `should_update_map`), so we don't have to reload it right now.
 
-                        bool is_modified_flag = it->second;
-                        if (!is_modified_flag)
+                        bool should_update_flag = it->second;
+                        if (!should_update_flag)
                         {
-                            /// Object wasn't modified so we only have to set `next_update_time`.
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
                             continue;
                         }
 
-                        /// Object was modified and should be reloaded.
+                        /// Object was modified or it was failed to reload last time, so it should be reloaded.
                         startLoading(name, info);
                     }
                     else if (info.failed())
@@ -546,6 +549,7 @@ private:
         bool loading() const { return loading_id != 0; }
         bool wasLoading() const { return loaded() || failed() || loading(); }
         bool ready() const { return (loaded() || failed()) && !forced_to_reload; }
+        bool failedToReload() const { return loaded() && exception != nullptr; }
 
         Status status() const
         {
