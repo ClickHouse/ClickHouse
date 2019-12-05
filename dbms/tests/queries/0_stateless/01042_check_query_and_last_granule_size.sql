@@ -27,4 +27,12 @@ OPTIMIZE TABLE check_query_test_non_adaptive;
 
 CHECK TABLE check_query_test_non_adaptive;
 
+INSERT INTO check_query_test_non_adaptive SELECT number, toString(number) FROM system.numbers LIMIT 77;
+
+CHECK TABLE check_query_test_non_adaptive;
+
+OPTIMIZE TABLE check_query_test_non_adaptive;
+
+CHECK TABLE check_query_test_non_adaptive;
+
 DROP TABLE IF EXISTS check_query_test_non_adaptive;
