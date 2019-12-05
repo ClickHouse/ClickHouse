@@ -1003,7 +1003,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 ## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
-Enables/disables batch sending of inserted data.
+Enables/disables sending of inserted data in batches.
 
 When batch sending is enabled, the [Distributed](../table_engines/distributed.md) engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better local server and network resources utilization.
 
