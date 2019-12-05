@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_PART_TYPE;
+}
+
 class MergeTreeData;
 
 /// Meta information about index granularity
@@ -67,7 +72,7 @@ inline std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
         case MergeTreeDataPartType::COMPACT:
             return ".mrk3";
         default:
-            throw "unknown part type"; /// FIXME normal exception
+            throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
     }
 }
 
@@ -80,7 +85,7 @@ inline size_t getAdaptiveMrkSize(MergeTreeDataPartType part_type, size_t columns
         case MergeTreeDataPartType::COMPACT:
             return sizeof(UInt64) * (columns_num * 2 + 1);
         default:
-            throw "unknown part type"; /// FIXME normal exception
+            throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
     }
 }
 
