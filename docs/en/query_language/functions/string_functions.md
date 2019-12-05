@@ -219,7 +219,7 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Removes whitespace from the beginning of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
