@@ -1141,6 +1141,11 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// Can throw an exception.
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
+    if (!reserved_space)
+    {
+        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(estimated_space_for_result) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -2873,7 +2878,8 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -2897,7 +2903,7 @@ void StorageReplicatedMergeTree::shutdown()
     queue_task_handle.reset();
 
     if (move_parts_task_handle)
-        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
+        global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)

@@ -6,12 +6,12 @@
 
 function do_make_links()
 {
-    langs=(en ru fa zh)
+    langs=(en ru zh ja fa)
     src_file="$1"
     for lang in "${langs[@]}"
     do
         # replacing "/./" with /
-        dst_file="../${lang}/${src_file}"
+        dst_file="../${lang}${src_file}"
         dst_file="${dst_file/\/\.\//\/}"
 
         mkdir -p $(dirname "${dst_file}")

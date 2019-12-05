@@ -113,8 +113,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     response.set("Content-Encoding", "gzip");
                     response_body_ostr = &(response.send());
 #endif
-                    out_raw.emplace(*response_body_ostr);
-                    deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
+                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*deflating_buf;
                 }
                 else if (compression_method == CompressionMethod::Zlib)
@@ -125,8 +125,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     response.set("Content-Encoding", "deflate");
                     response_body_ostr = &(response.send());
 #endif
-                    out_raw.emplace(*response_body_ostr);
-                    deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
+                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*deflating_buf;
                 }
 #if USE_BROTLI
@@ -138,7 +138,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     response.set("Content-Encoding", "br");
                     response_body_ostr = &(response.send());
 #endif
-                    out_raw.emplace(*response_body_ostr);
+                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
                     brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
                     out = &*brotli_buf;
                 }
@@ -155,7 +155,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                 response_body_ostr = &(response.send());
 #endif
 
-                out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
+                out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
                 out = &*out_raw;
             }
         }

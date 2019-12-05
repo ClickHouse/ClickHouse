@@ -101,6 +101,7 @@ namespace detail
         const Poco::Net::HTTPBasicCredentials & credentials;
         std::vector<Poco::Net::HTTPCookie> cookies;
         HTTPHeaderEntries http_header_entries;
+        RemoteHostFilter remote_host_filter;
 
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -157,7 +158,8 @@ namespace detail
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-            HTTPHeaderEntries http_header_entries_ = {})
+            HTTPHeaderEntries http_header_entries_ = {},
+            const RemoteHostFilter & remote_host_filter_ = {})
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -165,6 +167,7 @@ namespace detail
             , out_stream_callback {out_stream_callback_}
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
+            , remote_host_filter {remote_host_filter_}
         {
             Poco::Net::HTTPResponse response;
 
@@ -173,6 +176,7 @@ namespace detail
             while (isRedirect(response.getStatus()))
             {
                 Poco::URI uri_redirect(response.get("Location"));
+                remote_host_filter.checkURL(uri_redirect);
 
                 session->updateSession(uri_redirect);
 
@@ -243,8 +247,9 @@ public:
         const DB::SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const HTTPHeaderEntries & http_header_entries_ = {})
-        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_)
+        const HTTPHeaderEntries & http_header_entries_ = {},
+        const RemoteHostFilter & remote_host_filter_ = {})
+        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
     {
     }
 };
