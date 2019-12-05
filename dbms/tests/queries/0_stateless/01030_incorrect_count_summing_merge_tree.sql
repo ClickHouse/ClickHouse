@@ -18,10 +18,11 @@ select '-- 2 2';
 select count() from tst where val is not null;
 select count() from tst final where val is not null;
 
-select '-- 2 2 2';
+select '-- 2 2 2 2';
 select count() from tst final where timestamp>0;
 select count() from tst final prewhere timestamp > 0;
 select count() from tst final where timestamp > '2017-01-01 00:00:00';
+select count() from tst final prewhere timestamp > '2017-01-01 00:00:00';
 
 select '-- 2 2';
 select count() from tst final where val>0;
@@ -77,10 +78,11 @@ select '-- 2 2';
 select count() from tst where val is not null;
 select count() from tst final where val is not null;
 
-select '-- 2 2 2';
+select '-- 2 2 2 2';
 select count() from tst final where timestamp>0;
 select count() from tst final prewhere timestamp > 0;
 select count() from tst final where timestamp > '2017-01-01 00:00:00';
+select count() from tst final prewhere timestamp > '2017-01-01 00:00:00';
 
 select '-- 2 2';
 select count() from tst final where val>0;
@@ -108,7 +110,7 @@ select '-- 4 2';
 select count() from tst where val is not null;
 select count() from tst final where val is not null;
 
-select '-- 2 2 2';
+select '-- 2 2 2 2';
 select count() from tst final where timestamp>0;
 select count() from tst final prewhere timestamp > 0;
 select count() from tst final where timestamp > '2017-01-01 00:00:00';
