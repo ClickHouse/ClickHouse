@@ -1020,7 +1020,7 @@ Default value: 1000000000 nanoseconds (once a second).
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the query profiler. Real clock timer counts CPU time.
+Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
 
 Possible values:
 
