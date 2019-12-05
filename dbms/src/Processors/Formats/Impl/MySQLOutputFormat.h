@@ -37,6 +37,7 @@ private:
     const Context & context;
     MySQLProtocol::PacketSender packet_sender;
     FormatSettings format_settings;
+    DataTypes data_types;
 };
 
 }

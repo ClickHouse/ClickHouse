@@ -21,12 +21,14 @@ class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::URI uri;
+    String access_key_id;
+    String secret_access_key;
     size_t minimum_upload_part_size;
     ConnectionTimeouts timeouts;
-    Poco::Net::HTTPRequest auth_request;
     String buffer_string;
     std::unique_ptr<WriteBufferFromString> temporary_buffer;
     size_t last_part_size;
+    RemoteHostFilter remote_host_filter;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finish upload with listing all our parts.
@@ -35,15 +37,16 @@ private:
 
 public:
     explicit WriteBufferFromS3(const Poco::URI & uri,
+        const String & access_key_id,
+        const String & secret_access_key,
         size_t minimum_upload_part_size_,
         const ConnectionTimeouts & timeouts = {},
-        const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        const RemoteHostFilter & remote_host_filter_ = {});
 
     void nextImpl() override;
 
     /// Receives response from the server after sending all data.
-    void finalize();
+    void finalize() override;
 
     ~WriteBufferFromS3() override;
 

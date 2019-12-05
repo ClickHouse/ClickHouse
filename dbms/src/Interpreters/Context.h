@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/RemoteHostFilter.h>
 
 
 namespace Poco
@@ -77,6 +78,7 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
+class RemoteHostFilter;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -354,6 +356,10 @@ public:
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;
 
+    /// Storage of allowed hosts from config.xml
+    void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
+    const RemoteHostFilter & getRemoteHostFilter() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -450,6 +456,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
