@@ -219,7 +219,7 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Removes whitespace from the beginning of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
+Removes whitespace from the beginning of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
@@ -244,20 +244,20 @@ Type: `String`.
 Query:
 
 ```sql
-SELECT concat(trimLeft('     Hello,     '), ' world!')
+SELECT trimLeft('     Hello, world!     ')
 ```
 
 Result:
 
 ```text
-┌─concat(trimLeft('     Hello     '), ' World!')─┐
-│ Hello      World!                              │
-└────────────────────────────────────────────────┘
+┌─trimLeft('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
 ```
 
-## trimRight  {#trimright}
+## trimRight {#trimright}
 
-Removes whitespace from the end of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
+Removes whitespace from the end of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
@@ -282,20 +282,20 @@ Type: `String`.
 Query:
 
 ```sql
-SELECT concat(trimRight('     Hello,     '), ' world!')
+SELECT trimRight('     Hello, world!     ')
 ```
 
 Result:
 
 ```text
-┌─concat(trimRight('     Hello,     '), ' world!')─┐
-│      Hello, world!                               │
-└──────────────────────────────────────────────────┘
+┌─trimRight('     Hello, world!     ')─┐
+│      Hello, world!                   │
+└──────────────────────────────────────┘
 ```
 
 ## trimBoth  {#trimboth}
 
-Removes whitespace from both ends of a string. Whitespace in this context is all the whitespace characters (space, tab, no-break space, etc.).
+Removes whitespace from both ends of a string. Doesn't removes non-standard whitespace characters (tab, no-break space, etc.).
 
 **Syntax** 
 
@@ -311,7 +311,7 @@ Alias: `trim`.
 
 **Returned value**
 
-A value without any heading and trailing whitespaces.
+A value without any leading and trailing whitespaces.
 
 Type: `String`.
 
@@ -320,15 +320,15 @@ Type: `String`.
 Query:
 
 ```sql
-SELECT concat(trimBoth('     Hello,     '), ' world!')
+SELECT trimBoth('     Hello, world!     ')
 ```
 
 Result:
 
 ```text
-┌─concat(trimBoth('     Hello,     '), ' world!')─┐
-│ Hello, world!                                   │
-└─────────────────────────────────────────────────┘
+┌─trimBoth('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
 ```
 
 ## CRC32(s)
