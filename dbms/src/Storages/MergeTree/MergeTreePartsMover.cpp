@@ -130,7 +130,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             auto destination = ttl_entry_ptr->getDestination(policy);
             if (destination && !ttl_entry_ptr->isPartInDestination(policy, *part))
-                reservation = part->storage.tryReserveSpaceInSpecificSpace(part->bytes_on_disk, ttl_entry_ptr->getDestination(policy));
+                reservation = part->storage.tryReserveSpace(part->bytes_on_disk, ttl_entry_ptr->getDestination(policy));
         }
 
         if (reservation)
