@@ -609,9 +609,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
 ## indexHint {#indexhint}
 
-Outputs all data from the range that contains data where expression is true.
-The expression passed to the function will not be calculated. Range selection is based on the index.
-Dataset may contain some extra data due to sparse index.
+Outputs data in the range selected by the index without filtering by the expression specified as an argument. Dataset may contain some extra data due to sparse index.
 
 **Syntax** 
 
@@ -674,7 +672,7 @@ Query:
 SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
 
-By using the index, ClickHouse processed a significantly smaller number of rows (Processed 32.74 thousand rows).
+By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
 
 Result:
 
