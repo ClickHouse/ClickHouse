@@ -75,7 +75,7 @@ struct Hash
     }
 };
 
-// Sinhash String -> UInt64
+// Simhash String -> UInt64
 template <size_t N, typename CodePoint, bool UTF8, bool Ngram, bool CaseInsensitive>
 struct SimhashImpl
 {
