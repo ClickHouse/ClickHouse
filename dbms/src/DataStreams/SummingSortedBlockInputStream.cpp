@@ -335,7 +335,6 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         else
             key_differs = next_key != current_key;
 
-
         if (key_differs)
         {
             if (!current_key.empty())
