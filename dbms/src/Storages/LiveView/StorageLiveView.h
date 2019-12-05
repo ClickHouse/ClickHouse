@@ -56,13 +56,13 @@ public:
         if (inner_subquery)
             return inner_subquery->clone();
         return nullptr;
-    };
+    }
     ASTPtr getInnerOuterQuery() const
     {
         if (inner_outer_query)
             return inner_outer_query->clone();
         return nullptr;
-    };
+    }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
