@@ -382,16 +382,12 @@ add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 macro (add_executable target)
     # invoke built-in add_executable
-    _add_executable (${ARGV})
+    # explicitly acquire and interpose malloc symbols by clickhouse_malloc
+    _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        file (RELATIVE_PATH dir ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
-        if (${dir} MATCHES "^dbms")
-            # Only interpose operator::new/delete for dbms executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
-        else ()
-            target_link_libraries (${target} PRIVATE ${MALLOC_LIBRARIES})
-        endif ()
+        # operator::new/delete for executables (MemoryTracker stuff)
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
     endif()
 endmacro()
 
