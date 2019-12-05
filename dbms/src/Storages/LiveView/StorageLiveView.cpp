@@ -41,6 +41,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
+
 namespace DB
 {
 
@@ -73,7 +74,7 @@ static ASTTableExpression * getTableExpression(ASTSelectQuery & select, size_t t
 
 static void extractDependentTable(ASTPtr & query, String & select_database_name, String & select_table_name, const String & database_name, const String & table_name, ASTPtr & inner_outer_query, ASTPtr & inner_subquery)
 {
-    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);	
+    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);
     auto db_and_table = getDatabaseAndTable(select_query, 0);
     ASTPtr subquery = extractTableExpression(select_query, 0);
 
@@ -332,7 +333,7 @@ bool StorageLiveView::getNewBlocks()
 
     InterpreterSelectQuery interpreter(mergeable_query->clone(), *live_view_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
     auto mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
-    
+
     while (Block block = mergeable_stream->read())
         new_mergeable_blocks->push_back(block);
 
@@ -342,14 +343,14 @@ bool StorageLiveView::getNewBlocks()
     auto blocks_storage = StorageBlocks::createStorage(database_name, table_name, global_context.getTable(select_database_name, select_table_name)->getColumns(), {from}, QueryProcessingStage::WithMergeableState);
     InterpreterSelectQuery select(mergeable_query->clone(), *live_view_context, blocks_storage, SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-    
+
     if (inner_subquery)
     {
         auto outer_blocks_storage = StorageBlocks::createStorage(database_name, table_name,ColumnsDescription(data->getHeader().getNamesAndTypesList()), {data}, QueryProcessingStage::FetchColumns);
         InterpreterSelectQuery outer_select(inner_outer_query->clone(), *live_view_context, outer_blocks_storage, SelectQueryOptions(QueryProcessingStage::Complete));
         data = std::make_shared<MaterializingBlockInputStream>(outer_select.execute().in);
     }
-    
+
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).

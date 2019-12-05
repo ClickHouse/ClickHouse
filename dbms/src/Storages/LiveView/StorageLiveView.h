@@ -159,8 +159,8 @@ private:
     String table_name;
     String database_name;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
-    ASTPtr inner_subquery; /// stored query's subquery if any : SLECT a FROM A
-    ASTPtr inner_outer_query; /// the query right before innermost subquery : ... SELECT * FROM ( subquery )
+    ASTPtr inner_subquery; /// stored query's innermost subquery if any
+    ASTPtr inner_outer_query; /// query right before innermost subquery
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
 
