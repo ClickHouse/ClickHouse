@@ -13,7 +13,7 @@
 namespace DB
 {
 // used by FunctionsStringSimilarity and FunctionsStringHash
-// includes exacting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
+// includes extracting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
 template <size_t N, bool CaseInsensitive>
 struct ExtractStringImpl
 {
