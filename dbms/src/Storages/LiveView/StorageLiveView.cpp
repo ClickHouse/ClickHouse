@@ -32,7 +32,6 @@ limitations under the License. */
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
 #include <Storages/LiveView/LiveViewBlockOutputStream.h>
 #include <Storages/LiveView/LiveViewEventsBlockInputStream.h>
-#include <Storages/LiveView/ProxyStorage.h>
 #include <Storages/LiveView/StorageBlocks.h>
 
 #include <Storages/StorageFactory.h>
@@ -80,16 +79,16 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
 
     if (!db_and_table && !subquery)
     {
-	if (inner_outer_query && inner_subquery)
-	{
-	    auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
+        if (inner_outer_query && inner_subquery)
+        {
+            auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
             //String table_alias = getTableExpressionAlias(table_expression);
-	    table_expression->subquery = nullptr;
+            table_expression->subquery = nullptr;
             table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
 
             //if (!table_alias.empty())
             //    table_expression->database_and_table_name->setAlias(table_alias);
-	}
+        }
         return;
     }
 
@@ -111,7 +110,7 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
-	inner_outer_query = query;
+        inner_outer_query = query;
         inner_subquery = ast_select->list_of_selects->children.at(0);
 
         extractDependentTable(inner_subquery, select_database_name, select_table_name, database_name, table_name, inner_outer_query, inner_subquery);
@@ -181,12 +180,14 @@ void StorageLiveView::writeIntoLiveView(
         }
     }
 
+    auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
+
     if (!is_block_processed)
     {
-        auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
         BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
-        auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams), QueryProcessingStage::FetchColumns);
-        InterpreterSelectQuery select_block(mergeable_query, context, proxy_storage,
+        auto blocks_storage = StorageBlocks::createStorage(live_view.database_name, live_view.table_name,
+            parent_storage->getColumns(), std::move(streams), QueryProcessingStage::FetchColumns);
+        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage,
             QueryProcessingStage::WithMergeableState);
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
             select_block.execute().in);
@@ -213,8 +214,6 @@ void StorageLiveView::writeIntoLiveView(
             }
         }
     }
-
-    auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
 
     auto blocks_storage = StorageBlocks::createStorage(live_view.database_name, live_view.table_name, parent_storage->getColumns(), std::move(from), QueryProcessingStage::WithMergeableState);
     InterpreterSelectQuery select(mergeable_query->clone(), context, blocks_storage, SelectQueryOptions(QueryProcessingStage::Complete));
