@@ -295,14 +295,14 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(table_id.database_name, table_id.database_name); //FIXME replace with id
+    auto dependencies = global_context.getDependencies(table_id);
     if (dependencies.size() == 0)
         return true;
 
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = global_context.tryGetTable(db_tab.first, db_tab.second);
+        auto table = global_context.tryGetTable(db_tab.database_name, db_tab.table_name);   //FIXME
         if (!table)
             return false;
 
@@ -312,7 +312,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(StorageID(db_tab.first, db_tab.second))) //FIXME replace with id
+        if (!checkDependencies(StorageID(db_tab.database_name, db_tab.table_name)))
             return false;
     }
 
@@ -325,7 +325,7 @@ void StorageKafka::threadFunc()
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(table_id.database_name, table_id.database_name); //FIXME replace with id
+        auto dependencies = global_context.getDependencies(table_id);
 
         // Keep streaming as long as there are attached views and streaming is not cancelled
         while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)

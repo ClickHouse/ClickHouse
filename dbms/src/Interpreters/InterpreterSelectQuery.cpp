@@ -114,15 +114,12 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-namespace
-{
-
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & storage, const Context & context, const Names & prerequisite_columns = {})
+String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const Names & prerequisite_columns) const
 {
-    const auto & db_name = storage->getDatabaseName();
-    const auto & table_name = storage->getTableName();
-    const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+    const auto & db_name = table_id.value().database_name;
+    const auto & table_name = table_id.value().table_name;
+    const auto & filter_str = context->getUserProperty(table_id.value(), "filter");
 
     /// TODO: implement some AST builders for this kind of stuff
     ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
@@ -155,15 +152,13 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-    ExpressionActionsChain new_chain(context);
+    auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
+    ExpressionActionsChain new_chain(*context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
 
     return expr_list->children.at(0)->getColumnName();
-}
-
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -316,7 +311,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
+    {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_id = storage->getStorageID();
+    }
 
     auto analyze = [&] ()
     {
@@ -378,10 +376,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            if (context->hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+            if (context->hasUserProperty(table_id.value(), "filter"))
             {
                 filter_info = std::make_shared<FilterInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, storage, *context, required_columns);
+                filter_info->column_name = generateFilterActions(filter_info->actions, required_columns);
                 source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
             }
         }
@@ -502,7 +500,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     /// PREWHERE optimization.
     /// Turn off, if the table filter (row-level security) is applied.
-    if (storage && !context->hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+    if (storage && !context->hasUserProperty(table_id.value(), "filter"))
     {
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
@@ -1363,11 +1361,11 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage)
     {
         /// Append columns from the table filter to required
-        if (context->hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        if (context->hasUserProperty(table_id.value(), "filter"))
         {
             auto initial_required_columns = required_columns;
             ExpressionActionsPtr actions;
-            generateFilterActions(actions, storage, *context, initial_required_columns);
+            generateFilterActions(actions, initial_required_columns);
             auto required_columns_from_filter = actions->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
