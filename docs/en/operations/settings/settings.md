@@ -1001,7 +1001,7 @@ Sets the period for a real clock timer of the query profiler. Real clock timer c
 
 Possible values:
 
-- Positive integer number of nanoseconds.
+- Positive integer number, in nanoseconds.
 
     Recommended values:
         
