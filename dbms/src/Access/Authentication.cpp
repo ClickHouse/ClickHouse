@@ -168,12 +168,14 @@ bool Authentication::isCorrectPassword(const String & password_) const
             return true;
 
         case PLAINTEXT_PASSWORD:
+        {
             if (password_ == StringRef{reinterpret_cast<const char *>(password_hash.data()), password_hash.size()})
                 return true;
-            else
-                // For compatibility with MySQL clients which support only native authentication plugin, SHA1 can be passed instead of password.
-                return password_ == encodeSHA1(password_hash);
 
+            // For compatibility with MySQL clients which support only native authentication plugin, SHA1 can be passed instead of password.
+            auto password_sha1 = encodeSHA1(password_hash);
+            return password_ == StringRef{reinterpret_cast<const char *>(password_hash.data()), password_hash.size()};
+        }
         case SHA256_PASSWORD:
             return encodeSHA256(password_) == password_hash;
 
