@@ -152,7 +152,7 @@ public:
         /// Set filter or replace old one. Filter must have more zeroes than previous.
         void setFilter(const ColumnPtr & new_filter);
         /// For each granule calculate the number of filtered rows at the end. Remove them and update filter.
-        void optimize();
+        void optimize(bool can_read_incomplete_granules);
         /// Remove all rows from granules.
         void clear();
 
@@ -178,7 +178,7 @@ public:
         ColumnPtr filter_holder;
         const ColumnUInt8 * filter = nullptr;
 
-        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter, const NumRows & zero_tails);
+        void collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter, const NumRows & zero_tails, bool can_read_incomplete_granules);
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
     };
