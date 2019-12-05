@@ -7,6 +7,7 @@
 #include <Interpreters/CancellationCode.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/CheckResults.h>
@@ -62,35 +63,6 @@ struct ColumnSize
         marks += other.marks;
         data_compressed += other.data_compressed;
         data_uncompressed += other.data_uncompressed;
-    }
-};
-
-struct StorageID
-{
-    String database_name;
-    String table_name;
-    String uuid;
-
-    StorageID() = delete;
-    StorageID(const String & database, const String & table, const String & uuid_ = {})
-        : database_name(database), table_name(table), uuid(uuid_) {}
-
-    String getFullTableName() const
-    {
-        return (database_name.empty() ? "" : database_name + ".") + table_name;
-    }
-
-    String getNameForLogs() const
-    {
-        return "`" + getFullTableName() + "` (UUID = " + uuid +")";
-    }
-
-    String getId() const
-    {
-        //if (uuid.empty())
-            return getFullTableName();
-        //else
-        //    return uuid;
     }
 };
 

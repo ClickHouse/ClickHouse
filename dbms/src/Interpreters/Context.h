@@ -77,6 +77,7 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
+struct StorageID;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -89,11 +90,11 @@ class CompiledExpressionCache;
 
 /// (database name, table name)
 //FIXME replace with StorageID
-using DatabaseAndTableName = std::pair<String, String>;
+//using DatabaseAndTableName = std::pair<String, String>;
 
 /// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
-using Dependencies = std::vector<DatabaseAndTableName>;
+using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
+using Dependencies = std::vector<StorageID>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
@@ -208,8 +209,8 @@ public:
     ConfigurationPtr getUsersConfig();
 
     // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
-    bool hasUserProperty(const String & database, const String & table, const String & name) const;
-    const String & getUserProperty(const String & database, const String & table, const String & name) const;
+    bool hasUserProperty(const StorageID & table_id, const String & name) const;
+    const String & getUserProperty(const StorageID & table_id, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -242,13 +243,13 @@ public:
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
 
-    void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    Dependencies getDependencies(const String & database_name, const String & table_name) const;
+    void addDependency(const StorageID & from, const StorageID & where);
+    void removeDependency(const StorageID & from, const StorageID & where);
+    Dependencies getDependencies(const StorageID & from) const;
 
     /// Functions where we can lock the context manually
-    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void addDependencyUnsafe(const StorageID & from, const StorageID & where);
+    void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
@@ -361,6 +362,7 @@ public:
     std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
+    // TODO do we really need it here?
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
     ASTPtr getCreateDatabaseQuery(const String & database_name) const;

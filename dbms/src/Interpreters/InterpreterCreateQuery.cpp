@@ -562,10 +562,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
-    String current_database = context.getCurrentDatabase();
-
-    String database_name = create.database.empty() ? current_database : create.database;
-    String table_name = create.table;
+    auto & database_name = create.database;
+    auto & table_name = create.table;
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
@@ -576,6 +574,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
     }
 
+    String current_database = context.getCurrentDatabase();
+    if (create.database.empty())
+        create.database = current_database;
     if (create.to_database.empty())
         create.to_database = current_database;
 
@@ -589,7 +590,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = setProperties(create);
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, database_name);
+    bool created = doCreateTable(create, properties);
     if (!created)
         return {};
 
@@ -597,14 +598,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 }
 
 bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
-                                           const InterpreterCreateQuery::TableProperties & properties,
-                                           const String & database_name)
+                                           const InterpreterCreateQuery::TableProperties & properties)
 {
     std::unique_ptr<DDLGuard> guard;
 
     String data_path;
     DatabasePtr database;
 
+    const String & database_name = create.database;
     const String & table_name = create.table;
     bool need_add_to_database = !create.temporary || create.is_live_view;
     if (need_add_to_database)
