@@ -1,5 +1,7 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Functions/array/FunctionArrayMapped.h>
 #include <Functions/FunctionFactory.h>
 
@@ -27,16 +29,23 @@ struct ArrayCompactImpl
     template <typename T>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        const ColumnVector<T> * src_values_column = checkAndGetColumn<ColumnVector<T>>(mapped.get());
+        using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+
+        const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(mapped.get());
 
         if (!src_values_column)
             return false;
 
         const IColumn::Offsets & src_offsets = array.getOffsets();
-        const typename ColumnVector<T>::Container & src_values = src_values_column->getData();
+        const typename ColVecType::Container & src_values = src_values_column->getData();
 
-        auto res_values_column = ColumnVector<T>::create(src_values.size());
-        typename ColumnVector<T>::Container & res_values = res_values_column->getData();
+        typename ColVecType::MutablePtr res_values_column;
+        if constexpr (IsDecimalNumber<T>)
+            res_values_column = ColVecType::create(src_values.size(), src_values.getScale());
+        else
+            res_values_column = ColVecType::create(src_values.size());
+
+        typename ColVecType::Container & res_values = res_values_column->getData();
         size_t src_offsets_size = src_offsets.size();
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
         IColumn::Offsets & res_offsets = res_offsets_column->getData();
@@ -129,7 +138,10 @@ struct ArrayCompactImpl
             executeType< Int32 >(mapped, array, res) ||
             executeType< Int64 >(mapped, array, res) ||
             executeType<Float32>(mapped, array, res) ||
-            executeType<Float64>(mapped, array, res)))
+            executeType<Float64>(mapped, array, res)) ||
+            executeType<Decimal32>(mapped, array, res) ||
+            executeType<Decimal64>(mapped, array, res) ||
+            executeType<Decimal128>(mapped, array, res))
         {
             executeGeneric(mapped, array, res);
         }

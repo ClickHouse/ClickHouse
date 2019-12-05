@@ -341,6 +341,13 @@ void TabSeparatedRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+void TabSeparatedRowInputFormat::resetParser()
+{
+    RowInputFormatWithDiagnosticInfo::resetParser();
+    column_indexes_for_input_fields.clear();
+    read_columns.clear();
+    columns_to_fill_with_default_values.clear();
+}
 
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 {
@@ -381,6 +388,46 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         {
             return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, true, true, settings);
         });
+    }
+}
+
+bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+{
+    bool need_more_data = true;
+    char * pos = in.position();
+
+    while (loadAtPosition(in, memory, pos) && need_more_data)
+    {
+        pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
+
+        if (pos == in.buffer().end())
+            continue;
+
+        if (*pos == '\\')
+        {
+            ++pos;
+            if (loadAtPosition(in, memory, pos))
+                ++pos;
+        }
+        else if (*pos == '\n' || *pos == '\r')
+        {
+            if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+                need_more_data = false;
+            ++pos;
+        }
+    }
+
+    saveUpToPosition(in, memory, pos);
+
+    return loadAtPosition(in, memory, pos);
+}
+
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
+{
+    // We can use the same segmentation engine for TSKV.
+    for (auto name : {"TabSeparated", "TSV", "TSKV"})
+    {
+        factory.registerFileSegmentationEngine(name, &fileSegmentationEngineTabSeparatedImpl);
     }
 }
 

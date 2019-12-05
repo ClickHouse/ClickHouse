@@ -595,8 +595,13 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeVarUInt(ClickHouseRevision::get(), extra_info);
             context.getSettingsRef().serialize(extra_info);
 
+            writePODBinary(CityHash_v1_0_2::CityHash128(query_string.data(), query_string.size()), extra_info);
+
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, extra_info);
+
+            const auto &extra_info_ref = extra_info.stringRef();
+            writePODBinary(CityHash_v1_0_2::CityHash128(extra_info_ref.data, extra_info_ref.size), extra_info);
 
             writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO, out);
             writeStringBinary(extra_info.str(), out);

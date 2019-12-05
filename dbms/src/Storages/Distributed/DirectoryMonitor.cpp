@@ -7,6 +7,8 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/hex.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -34,10 +36,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -58,6 +63,19 @@ namespace
 
         return pools;
     }
+
+    void assertChecksum(CityHash_v1_0_2::uint128 expected, CityHash_v1_0_2::uint128 calculated)
+    {
+        if (expected != calculated)
+        {
+            String message = "Checksum of extra info doesn't match: corrupted data."
+                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
+                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
+                + ".";
+            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        }
+    }
+
 }
 
 
@@ -275,13 +293,21 @@ void StorageDistributedDirectoryMonitor::readQueryAndSettings(
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
     {
+        UInt64 initiator_revision;
+        CityHash_v1_0_2::uint128 expected;
+        CityHash_v1_0_2::uint128 calculated;
+
         /// Read extra information.
         String extra_info_as_string;
         readStringBinary(extra_info_as_string, in);
-        readVarUInt(query_size, in);
-        ReadBufferFromString extra_info(extra_info_as_string);
+        /// To avoid out-of-bound, other cases will be checked in read*() helpers.
+        if (extra_info_as_string.size() < sizeof(expected))
+            throw Exception("Not enough data", ErrorCodes::CORRUPTED_DATA);
 
-        UInt64 initiator_revision;
+        StringRef extra_info_ref(extra_info_as_string.data(), extra_info_as_string.size() - sizeof(expected));
+        ReadBufferFromMemory extra_info(extra_info_ref.data, extra_info_ref.size);
+        ReadBuffer checksum(extra_info_as_string.data(), sizeof(expected), extra_info_ref.size);
+
         readVarUInt(initiator_revision, extra_info);
         if (ClickHouseRevision::get() < initiator_revision)
         {
@@ -291,13 +317,29 @@ void StorageDistributedDirectoryMonitor::readQueryAndSettings(
                     << "It may lack support for new features.");
         }
 
+        /// Extra checksum (all data except itself -- this checksum)
+        readPODBinary(expected, checksum);
+        calculated = CityHash_v1_0_2::CityHash128(extra_info_ref.data, extra_info_ref.size);
+        assertChecksum(expected, calculated);
+
         insert_settings.deserialize(extra_info);
+
+        /// Read query
+        readStringBinary(insert_query, in);
+
+        /// Query checksum
+        readPODBinary(expected, extra_info);
+        calculated = CityHash_v1_0_2::CityHash128(insert_query.data(), insert_query.size());
+        assertChecksum(expected, calculated);
 
         /// Add handling new data here, for example:
         /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
         ///    readVarUInt(my_new_data, extra_info);
+
+        return;
     }
-    else if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
     {
         insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
         readVarUInt(query_size, in);
@@ -577,6 +619,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 
