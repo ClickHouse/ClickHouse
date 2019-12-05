@@ -235,7 +235,7 @@ Alias: `ltrim`.
 
 **Returned value**
 
-A string without any leading whitespaces.
+A string without leading common whitespaces.
 
 Type: `String`.
 
