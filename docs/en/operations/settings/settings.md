@@ -999,7 +999,7 @@ Possible values:
 
 - Positive integer number of milliseconds.
 
-Default value: 30000 milliseconds.
+Default value: 30000 milliseconds (30 seconds).
 
 ## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
