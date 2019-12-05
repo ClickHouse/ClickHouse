@@ -263,7 +263,7 @@ void MergeTreeRangeReader::ReadResult::clear()
     filter = nullptr;
 }
 
-void MergeTreeRangeReader::ReadResult::optimize()
+void MergeTreeRangeReader::ReadResult::optimize(bool can_read_incomplete_granules)
 {
     if (total_rows_per_granule == 0 || filter == nullptr)
         return;
@@ -292,7 +292,7 @@ void MergeTreeRangeReader::ReadResult::optimize()
 
         size_t rows_in_last_granule = rows_per_granule.back();
 
-        collapseZeroTails(filter->getData(), new_data, zero_tails);
+        collapseZeroTails(filter->getData(), new_data, zero_tails, can_read_incomplete_granules);
 
         total_rows_per_granule = new_filter->size();
         num_rows_to_skip_in_last_granule += rows_in_last_granule - rows_per_granule.back();
@@ -323,7 +323,7 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
 }
 
 void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter_vec, IColumn::Filter & new_filter_vec,
-                                                         const NumRows & zero_tails)
+                                                         const NumRows & zero_tails, bool can_read_incomplete_granules)
 {
     auto filter_data = filter_vec.data();
     auto new_filter_data = new_filter_vec.data();
@@ -333,7 +333,8 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
         auto & rows_to_read = rows_per_granule[i];
         auto filtered_rows_num_at_granule_end = zero_tails[i];
 
-        rows_to_read -= filtered_rows_num_at_granule_end;
+        if (can_read_incomplete_granules || filtered_rows_num_at_granule_end == rows_to_read)
+            rows_to_read -= filtered_rows_num_at_granule_end;
 
         memcpySmallAllowReadWriteOverflow15(new_filter_data, filter_data, rows_to_read);
         filter_data += rows_to_read;
@@ -598,6 +599,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
     {
         size_t space_left = max_rows;
+        size_t started_mark = 0;
         while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
@@ -606,6 +608,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
                 result.addRange(ranges.back());
                 ranges.pop_back();
+                started_mark = stream.currentMark();
             }
 
             size_t current_space = space_left;
@@ -616,6 +619,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 current_space = stream.ceilRowsToCompleteGranules(space_left);
 
             auto rows_to_read = std::min(current_space, stream.numPendingRowsInCurrentGranule());
+
+            std::cerr << "(startReadingChain) rows_to_read: " << rows_to_read << "\n";
+            std::cerr << "(startReadingChain) current_space: " << current_space << "\n";
 
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
@@ -701,7 +707,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     result.setFilter(filter);
     if (!last_reader_in_chain)
-        result.optimize();
+        result.optimize(merge_tree_reader->canReadIncompleteGranules());
 
     bool filter_always_true = !result.getFilter() && result.totalRowsPerGranule() == filter->size();
 
