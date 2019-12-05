@@ -982,7 +982,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. In case of any errors grows exponentially.
+Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
 
 Possible values:
 
