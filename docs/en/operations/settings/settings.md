@@ -1005,7 +1005,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, the [Distributed](../table_engines/distributed.md) engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better local server and network resources utilization.
+When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
 
 Possible values:
 
