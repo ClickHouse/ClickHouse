@@ -47,8 +47,23 @@ public:
     using TaskHandle = std::shared_ptr<TaskInfo>;
 
 
+    struct PoolSettings
+    {
+        double thread_sleep_seconds = 10;
+        double thread_sleep_seconds_random_part = 1.0;
+        double thread_sleep_seconds_if_nothing_to_do = 0.1;
+
+        /// For exponential backoff.
+        double task_sleep_seconds_when_no_work_min = 10;
+        double task_sleep_seconds_when_no_work_max = 600;
+        double task_sleep_seconds_when_no_work_multiplier = 1.1;
+        double task_sleep_seconds_when_no_work_random_part = 1.0;
+
+        PoolSettings() noexcept {}
+    };
+
     BackgroundProcessingPool(int size_,
-        const Poco::Util::AbstractConfiguration & config,
+        const PoolSettings & pool_settings = {},
         const char * log_name = "BackgroundProcessingPool",
         const char * thread_name_ = "BackgrProcPool");
 
@@ -88,15 +103,7 @@ protected:
     void threadFunction();
 
 private:
-    double thread_sleep_seconds;
-    double thread_sleep_seconds_random_part;
-    double thread_sleep_seconds_if_nothing_to_do;
-
-    /// For exponential backoff.
-    double task_sleep_seconds_when_no_work_min;
-    double task_sleep_seconds_when_no_work_max;
-    double task_sleep_seconds_when_no_work_multiplier;
-    double task_sleep_seconds_when_no_work_random_part;
+    PoolSettings settings;
 };
 
 
