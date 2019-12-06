@@ -122,8 +122,8 @@ Also supported for:
 
 The queries that use `FINAL` are executed slower than similar queries that don't, because:
 
-- Queries with `FINAL` read primary key columns additionally to the columns specified in the query.
 - Query is executed in a single thread, and data is merged during query execution.
+- Queries with `FINAL` read primary key columns additionally to the columns specified in the query.
 
 In the most cases, avoid using `FINAL`.
 
