@@ -99,12 +99,13 @@ void WriteBufferFromS3::initiate()
 
     auto outcome = client_ptr->CreateMultipartUpload(req);
 
-    if (outcome.IsSuccess()) {
+    if (outcome.IsSuccess())
+    {
         upload_id = outcome.GetResult().GetUploadId();
         LOG_DEBUG(log, "Multipart upload initiated. Upload id = " + upload_id);
-    } else {
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 
@@ -127,13 +128,14 @@ void WriteBufferFromS3::writePart(const String & data)
 
     auto outcome = client_ptr->UploadPart(req);
 
-    if (outcome.IsSuccess()) {
+    if (outcome.IsSuccess())
+    {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
         LOG_DEBUG(log, "Write part " + std::to_string(part_tags.size()) + " finished. Upload id = " + upload_id + ". Etag = " + etag);
-    } else {
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 
@@ -154,11 +156,10 @@ void WriteBufferFromS3::complete()
 
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
-    if (outcome.IsSuccess()) {
+    if (outcome.IsSuccess())
         LOG_DEBUG(log, "Multipart upload completed. Upload_id = " + upload_id);
-    } else {
+    else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
-    }
 }
 
 }

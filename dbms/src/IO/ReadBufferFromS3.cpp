@@ -29,13 +29,13 @@ ReadBufferFromS3::ReadBufferFromS3(const std::shared_ptr<Aws::S3::S3Client> & cl
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
-    if (outcome.IsSuccess()) {
+    if (outcome.IsSuccess())
+    {
         read_result = outcome.GetResultWithOwnership();
         impl = std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size_);
     }
-    else {
+    else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
-    }
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -46,6 +46,7 @@ bool ReadBufferFromS3::nextImpl()
     working_buffer = internal_buffer;
     return true;
 }
+
 }
 
 #endif

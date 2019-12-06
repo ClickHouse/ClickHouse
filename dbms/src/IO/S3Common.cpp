@@ -20,25 +20,27 @@ namespace ErrorCodes {
 namespace S3 {
     Aws::SDKOptions ClientFactory::aws_options;
 
-    ClientFactory::ClientFactory() {
+    ClientFactory::ClientFactory()
+    {
         Aws::InitAPI(aws_options);
     }
 
-    ClientFactory::~ClientFactory() {
+    ClientFactory::~ClientFactory()
+    {
         Aws::ShutdownAPI(aws_options);
     }
 
-    ClientFactory &ClientFactory::instance() {
+    ClientFactory &ClientFactory::instance()
+    {
         static ClientFactory ret;
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client>
-    ClientFactory::create(
-            const String & endpoint,
-            const String & access_key_id,
-            const String & secret_access_key
-    ) {
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+        const String & endpoint,
+        const String & access_key_id,
+        const String & secret_access_key)
+    {
         Aws::Client::ClientConfiguration cfg;
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
@@ -55,18 +57,22 @@ namespace S3 {
     }
 
 
-    URI::URI(Poco::URI & uri) {
+    URI::URI(Poco::URI & uri)
+    {
         static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
 
         // s3://*
-        if (uri.getScheme() == "s3" || uri.getScheme() == "S3") {
+        if (uri.getScheme() == "s3" || uri.getScheme() == "S3")
+        {
             bucket = uri.getAuthority();
             if (bucket.empty())
                 throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
             const auto & path = uri.getPath();
             // s3://bucket or s3://bucket/
             if (path.length() <= 1)
                 throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
             key = path.substr(1);
             return;
         }
@@ -79,10 +85,12 @@ namespace S3 {
         // Parse bucket and key from path.
         std::smatch match;
         std::regex_search(uri.getPath(), match, BUCKET_KEY_PATTERN);
-        if (!match.empty()) {
+        if (!match.empty())
+        {
             bucket = match.str(1);
             if (bucket.empty())
                 throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
             key = match.str(2);
             if (key.empty())
                 throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
