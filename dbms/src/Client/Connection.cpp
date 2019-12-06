@@ -439,6 +439,9 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
