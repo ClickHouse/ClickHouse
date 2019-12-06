@@ -906,6 +906,7 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
             {
                 assertEOF(buf);
             }
+            break;
         }
         case 'M':
         {
@@ -923,6 +924,7 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
             {
                 assertEOF(buf);
             }
+            break;
         }
         case 'G':
         {
@@ -939,6 +941,7 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
             {
                 assertEOF(buf);
             }
+            break;
         }
         case 'T':
         {
@@ -955,6 +958,11 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
             {
                 assertEOF(buf);
             }
+            break;
+        }
+        default:
+        {
+            assertEOF(buf);
         }
     }
     return;
