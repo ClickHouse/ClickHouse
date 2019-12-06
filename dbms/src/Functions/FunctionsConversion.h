@@ -735,7 +735,7 @@ struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
     struct NameToInterval ## INTERVAL_KIND \
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
-        static constexpr int kind = DataTypeInterval::INTERVAL_KIND; \
+        static constexpr auto kind = IntervalKind::INTERVAL_KIND; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Second)
@@ -786,7 +786,7 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
-            return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
+            return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)
         {

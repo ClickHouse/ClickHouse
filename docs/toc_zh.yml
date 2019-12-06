@@ -148,6 +148,7 @@ nav:
     - 'GEO函数': 'query_language/functions/geo.md'
     - 'Nullable处理函数': 'query_language/functions/functions_for_nulls.md'
     - '机器学习函数': 'query_language/functions/machine_learning_functions.md'
+    - 'Introspection': 'query_language/functions/introspection.md'
     - '其他函数': 'query_language/functions/other_functions.md'
   - '聚合函数':
     - '介绍': 'query_language/agg_functions/index.md'
