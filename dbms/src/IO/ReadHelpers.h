@@ -878,7 +878,8 @@ inline T parse(const char * data, size_t size)
 }
 
 template <typename T>
-inline void readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+inline std::enable_if_t<!is_integral_v<T>, void>
+readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
