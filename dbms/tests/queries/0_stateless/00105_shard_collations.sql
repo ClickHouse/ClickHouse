@@ -36,6 +36,11 @@ SELECT x, n FROM (SELECT ['а', 'я', 'ё', 'А', 'Я', 'Ё'] AS arr) ARRAY JOIN
 --- Const expression
 SELECT 'ζ' as x ORDER BY x COLLATE 'el';
 
+-- check order by const with collation
+SELECT number FROM numbers(2) ORDER BY 'x' COLLATE 'el';
+
+-- check const and non const columns in order
+SELECT number FROM numbers(2) ORDER BY 'x', toString(number), 'y' COLLATE 'el';
 
 --- Trash locales
 SELECT '' as x ORDER BY x COLLATE 'qq'; --{serverError 186}
