@@ -891,80 +891,73 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
     switch (*buf.position())
     {
         case 'k':
-        {
             ++buf.position();
             if (buf.eof())
             {
                 x *= 1000;
+                return;
             }
             else if (*buf.position() == 'i')
             {
                 x = (x << 10);
-                ++buf.position();
             }
             else
             {
-                assertEOF(buf);
+                return;
             }
             break;
-        }
         case 'M':
-        {
             ++buf.position();
             if (buf.eof())
             {
-                x *= 1000000;
+                x *= 1000000; /// 1e+6
+                return;
             }
             else if (*buf.position() == 'i')
             {
                 x = (x << 20);
-                ++buf.position();
             }
             else
             {
-                assertEOF(buf);
+                return;
             }
             break;
-        }
         case 'G':
-        {
+            ++buf.position();
             if (buf.eof())
             {
-                x *= 1000000000;
+                x *= 1000000000; /// 1e+9
+                return;
             }
             else if (*buf.position() == 'i')
             {
                 x = (x << 30);
-                ++buf.position();
             }
             else
             {
-                assertEOF(buf);
+                return;
             }
             break;
-        }
         case 'T':
-        {
+            ++buf.position();
             if (buf.eof())
             {
-                x *= 1000000000000;
+                x *= 1000000000000; /// 1e+12
+                return;
             }
             else if (*buf.position() == 'i')
             {
                 x = (x << 40);
-                ++buf.position();
             }
             else
             {
-                assertEOF(buf);
+                return;
             }
             break;
-        }
         default:
-        {
-            assertEOF(buf);
-        }
+            return;
     }
+    ++buf.position();
     return;
 }
 
