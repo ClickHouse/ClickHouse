@@ -878,6 +878,9 @@ inline T parse(const char * data, size_t size)
 }
 
 template <typename T>
+inline void readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+
+template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
 readTextWithSuffix(T & x, ReadBuffer & buf)
 {
@@ -955,9 +958,6 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
     }
     return;
 }
-
-template <typename T>
-inline void readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 /// Read something from text format, but expect complete parse of given text
 /// For example: 723145 -- ok, 213MB -- not ok
