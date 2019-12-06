@@ -119,8 +119,6 @@ Block KafkaBlockInputStream::readImpl()
 
     while (true)
     {
-        buffer->allowNext();
-
         // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
         // throw an exception from readPrefix when buffer in empty
         if (buffer->eof())
@@ -135,7 +133,6 @@ Block KafkaBlockInputStream::readImpl()
         auto _timestamp_raw = buffer->currentTimestamp();
         auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
                                                 : 0;
-
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(_topic);
@@ -153,6 +150,7 @@ Block KafkaBlockInputStream::readImpl()
         }
 
         total_rows = total_rows + new_rows;
+        buffer->allowNext();
         if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
             break;
     }
