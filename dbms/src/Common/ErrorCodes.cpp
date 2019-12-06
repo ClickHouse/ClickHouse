@@ -459,6 +459,20 @@ namespace ErrorCodes
     extern const int DICTIONARY_ACCESS_DENIED = 482;
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
+    extern const int SCALAR_ALREADY_EXISTS = 485;
+    extern const int UNKNOWN_SCALAR = 486;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
+    extern const int UNKNOWN_DICTIONARY = 488;
+    extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int CANNOT_FORMAT_DATETIME = 490;
+    extern const int UNACCEPTABLE_URL = 491;
+    extern const int ACCESS_ENTITY_NOT_FOUND = 492;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
+    extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
+    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
+    extern const int NOT_ENOUGH_PRIVILEGES = 497;
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
