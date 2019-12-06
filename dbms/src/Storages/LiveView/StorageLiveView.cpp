@@ -70,6 +70,17 @@ static ASTTableExpression * getTableExpression(ASTSelectQuery & select, size_t t
     return tables_element.table_expression->as<ASTTableExpression>();
 }
 
+static String getTableExpressionAlias(const ASTTableExpression * table_expression)
+{
+    if (table_expression->subquery)
+        return table_expression->subquery->tryGetAlias();
+    else if (table_expression->table_function)
+        return table_expression->table_function->tryGetAlias();
+    else if (table_expression->database_and_table_name)
+        return table_expression->database_and_table_name->tryGetAlias();
+
+    return String();
+}
 
 static void extractDependentTable(ASTPtr & query, String & select_database_name, String & select_table_name, const String & database_name, const String & table_name, ASTPtr & inner_outer_query, ASTPtr & inner_subquery)
 {
@@ -95,14 +106,14 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
         else
             select_database_name = db_and_table->database;
 
-    if (inner_subquery)
+        if (inner_subquery)
         {
             auto table_expression = getTableExpression(inner_outer_query->as<ASTSelectQuery &>(), 0);
-            //String table_alias = getTableExpressionAlias(table_expression);
+            String table_alias = getTableExpressionAlias(table_expression);
             table_expression->subquery = nullptr;
             table_expression->database_and_table_name = createTableIdentifier("", table_name + "_blocks");
-            //if (!table_alias.empty())
-            //    table_expression->database_and_table_name->setAlias(table_alias);
+            if (!table_alias.empty())
+                table_expression->database_and_table_name->setAlias(table_alias);
         }
 
     }
