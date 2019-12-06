@@ -1,5 +1,8 @@
-#include <IO/WriteBufferFromS3.h>
+#include <Common/config.h>
 
+#if USE_AWS_S3
+
+#include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
 #include <common/logger_useful.h>
@@ -159,3 +162,5 @@ void WriteBufferFromS3::complete()
 }
 
 }
+
+#endif

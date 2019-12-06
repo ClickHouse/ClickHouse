@@ -1,5 +1,8 @@
-#include <IO/ReadBufferFromS3.h>
+#include <Common/config.h>
 
+#if USE_AWS_S3
+
+#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromIStream.h>
 
 #include <common/logger_useful.h>
@@ -43,5 +46,6 @@ bool ReadBufferFromS3::nextImpl()
     working_buffer = internal_buffer;
     return true;
 }
-
 }
+
+#endif

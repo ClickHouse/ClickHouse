@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <memory>
 
 #include <IO/ConnectionTimeouts.h>
@@ -32,3 +36,5 @@ public:
 };
 
 }
+
+#endif

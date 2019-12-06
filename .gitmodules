@@ -119,3 +119,6 @@
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums.git
+[submodule "contrib/curl"]
+	path = contrib/curl
+	url = https://github.com/curl/curl.git

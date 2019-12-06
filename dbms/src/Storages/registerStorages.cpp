@@ -19,13 +19,16 @@ void registerStorageDistributed(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
-void registerStorageS3(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
+
+#if USE_AWS_S3
+void registerStorageS3(StorageFactory & factory);
+#endif
 
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
@@ -61,13 +64,16 @@ void registerStorages()
     registerStorageMemory(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);
-    registerStorageS3(factory);
     registerStorageDictionary(factory);
     registerStorageSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
+
+    #if USE_AWS_S3
+    registerStorageS3(factory);
+    #endif
 
     #if USE_HDFS
     registerStorageHDFS(factory);
