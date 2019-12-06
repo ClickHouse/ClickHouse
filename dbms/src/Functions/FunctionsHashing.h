@@ -858,11 +858,8 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else if (which.isDecimal()) executeGeneric<first>(icolumn, vec_to);
-        else if (which.isUUID()) executeGeneric<first>(icolumn, vec_to);
         else
-            throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
