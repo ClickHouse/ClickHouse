@@ -1,7 +1,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -604,12 +604,9 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
         return false;
 
-
-    ParserInterval interval_parser;
-    if (!interval_parser.ignore(pos, expected))
+    IntervalKind interval_kind;
+    if (!parseIntervalKind(pos, expected, interval_kind))
         return false;
-
-    const char * function_name = interval_parser.getToIntervalKindFunctionName();
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
@@ -618,7 +615,7 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto exp_list = std::make_shared<ASTExpressionList>();
 
     /// the first argument of the function is the previous element, the second is the next one
-    function->name = function_name;
+    function->name = interval_kind.toNameOfFunctionToIntervalDataType();
     function->arguments = exp_list;
     function->children.push_back(exp_list);
 

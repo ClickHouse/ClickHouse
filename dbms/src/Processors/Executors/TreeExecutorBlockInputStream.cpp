@@ -198,7 +198,7 @@ void TreeExecutorBlockInputStream::setLimits(const IBlockInputStream::LocalLimit
         source->setLimits(limits_);
 }
 
-void TreeExecutorBlockInputStream::setQuota(QuotaForIntervals & quota_)
+void TreeExecutorBlockInputStream::setQuota(const std::shared_ptr<QuotaContext> & quota_)
 {
     for (auto & source : sources_with_progress)
         source->setQuota(quota_);
