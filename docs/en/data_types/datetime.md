@@ -1,6 +1,6 @@
 # DateTime {#data_type-datetime}
 
-Data structure for storing [Unix time](https://en.wikipedia.org/wiki/Unix_time). It can also store a time zone.
+Data structure for storing timestamp in the [Unix time](https://en.wikipedia.org/wiki/Unix_time) format. Additionally it can store a time zone.
 
 Syntax:
 
@@ -14,7 +14,7 @@ Resolution: 1 second.
 
 ## Usage remarks
 
-ClickHouse stores date and time values as Unix time, independently of time zones and daylight savings. The time zone value affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
+ClickHouse stores date and time values in Unix time format, independently of time zones and daylight savings. The time zone value affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn't set, ClickHouse uses the value of the [timezone](../operations/server_settings/settings.md#server_settings-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
