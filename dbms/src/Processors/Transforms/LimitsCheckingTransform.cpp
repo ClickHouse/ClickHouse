@@ -1,5 +1,5 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 
 namespace DB
 {
@@ -73,7 +73,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
             !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             stopReading();
 
-        if (quota != nullptr)
+        if (quota)
             checkQuota(chunk);
     }
 }
@@ -100,12 +100,8 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
 
         case LimitsMode::LIMITS_CURRENT:
         {
-            time_t current_time = time(nullptr);
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
-            quota->checkAndAddResultRowsBytes(current_time, chunk.getNumRows(), chunk.bytes());
-            quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
-
+            UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
+            quota->used({Quota::RESULT_ROWS, chunk.getNumRows()}, {Quota::RESULT_BYTES, chunk.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }
