@@ -11,13 +11,16 @@
 #include <aws/core/auth/AWSCredentialsProvider.h>
 
 
-namespace DB {
+namespace DB
+{
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
     extern const int BAD_ARGUMENTS;
 }
 
-namespace S3 {
+namespace S3
+{
     Aws::SDKOptions ClientFactory::aws_options;
 
     ClientFactory::ClientFactory()
