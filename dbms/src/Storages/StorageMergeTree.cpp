@@ -355,9 +355,8 @@ public:
         {
             MergeTreeDataPart::TTLInfos ttl_infos;
             for (auto & part_ptr : future_part_.parts)
-            {
                 ttl_infos.update(part_ptr->ttl_infos);
-            }
+            
             reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
         }
         if (!reserved_space)
