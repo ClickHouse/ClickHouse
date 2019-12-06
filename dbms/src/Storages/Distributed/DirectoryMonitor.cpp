@@ -7,6 +7,8 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/hex.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -34,10 +36,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -58,6 +63,19 @@ namespace
 
         return pools;
     }
+
+    void assertChecksum(CityHash_v1_0_2::uint128 expected, CityHash_v1_0_2::uint128 calculated)
+    {
+        if (expected != calculated)
+        {
+            String message = "Checksum of extra info doesn't match: corrupted data."
+                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
+                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
+                + ".";
+            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        }
+    }
+
 }
 
 
@@ -248,7 +266,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         Settings insert_settings;
         std::string insert_query;
-        readQueryAndSettings(in, insert_settings, insert_query);
+        readHeader(in, insert_settings, insert_query);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
 
@@ -267,22 +285,28 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
-void StorageDistributedDirectoryMonitor::readQueryAndSettings(
+void StorageDistributedDirectoryMonitor::readHeader(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
     {
-        /// Read extra information.
-        String extra_info_as_string;
-        readStringBinary(extra_info_as_string, in);
-        readVarUInt(query_size, in);
-        ReadBufferFromString extra_info(extra_info_as_string);
+        /// Read the header as a string.
+        String header;
+        readStringBinary(header, in);
+
+        /// Check the checksum of the header.
+        CityHash_v1_0_2::uint128 checksum;
+        readPODBinary(checksum, in);
+        assertChecksum(checksum, CityHash_v1_0_2::CityHash128(header.data(), header.size()));
+
+        /// Read the parts of the header.
+        ReadBufferFromString header_buf(header);
 
         UInt64 initiator_revision;
-        readVarUInt(initiator_revision, extra_info);
+        readVarUInt(initiator_revision, header_buf);
         if (ClickHouseRevision::get() < initiator_revision)
         {
             LOG_WARNING(
@@ -291,16 +315,21 @@ void StorageDistributedDirectoryMonitor::readQueryAndSettings(
                     << "It may lack support for new features.");
         }
 
-        insert_settings.deserialize(extra_info);
+        readStringBinary(insert_query, header_buf);
+        insert_settings.deserialize(header_buf);
 
         /// Add handling new data here, for example:
         /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
-        ///    readVarUInt(my_new_data, extra_info);
+        ///    readVarUInt(my_new_data, header_buf);
+
+        return;
     }
-    else if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
     {
         insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
-        readVarUInt(query_size, in);
+        readStringBinary(insert_query, in);
+        return;
     }
 
     insert_query.resize(query_size);
@@ -417,7 +446,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                parent.readQueryAndSettings(in, insert_settings, insert_query);
+                parent.readHeader(in, insert_settings, insert_query);
 
                 if (first)
                 {
@@ -525,7 +554,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readQueryAndSettings(in, insert_settings, insert_query);
+            readHeader(in, insert_settings, insert_query);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -577,6 +606,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 

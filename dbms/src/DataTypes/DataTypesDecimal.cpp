@@ -58,7 +58,7 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
 {
     UInt32 unread_scale = scale;
     bool done = tryReadDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
+    x *= T::getScaleMultiplier(unread_scale);
     return done;
 }
 
@@ -70,7 +70,7 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
         readCSVDecimalText(istr, x, precision, unread_scale);
     else
         readDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
+    x *= T::getScaleMultiplier(unread_scale);
 }
 
 template <typename T>
@@ -96,7 +96,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     T x;
     UInt32 unread_scale = scale;
     readDecimalText(buf, x, precision, unread_scale, true);
-    x *= getScaleMultiplier(unread_scale);
+    x *= T::getScaleMultiplier(unread_scale);
     return x;
 }
 
@@ -268,25 +268,6 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
-}
-
-
-template <>
-Decimal32 DataTypeDecimal<Decimal32>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int32>(scale_);
-}
-
-template <>
-Decimal64 DataTypeDecimal<Decimal64>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int64>(scale_);
-}
-
-template <>
-Decimal128 DataTypeDecimal<Decimal128>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int128>(scale_);
 }
 
 

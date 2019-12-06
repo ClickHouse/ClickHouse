@@ -40,7 +40,35 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8|16|32|64)OrZero
 
+Принимает аргумент типа String и пытается его распарсить в Int(8|16|32|64). Если не удалось - возвращает 0.
+
+**Пример**
+
+```sql
+select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
+```
+```text
+┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
+│                  123123 │                         0 │
+└─────────────────────────┴───────────────────────────┘
+```
+
+
 ## toInt(8|16|32|64)OrNull
+
+Принимает аргумент типа String и пытается его распарсить в Int(8|16|32|64). Если не удалось - возвращает NULL.
+
+**Пример**
+
+```sql
+select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
+```
+```text
+┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
+│                  123123 │                      ᴺᵁᴸᴸ │
+└─────────────────────────┴───────────────────────────┘
+```
+
 
 ## toUInt(8|16|32|64)
 
@@ -320,5 +348,49 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
+
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
+
+Приводит аргумент из числового типа данных к типу данных [IntervalType](../../data_types/special_data_types/interval.md).
+
+**Синтксис**
+
+```sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
+```
+
+**Параметры**
+
+- `number` — длительность интервала. Положительное целое число.
+
+**Возвращаемые значения**
+
+- Значение с типом данных `Interval`.
+
+**Пример**
+
+```sql
+WITH
+    toDate('2019-01-01') AS date,
+    INTERVAL 1 WEEK AS interval_week,
+    toIntervalWeek(1) AS interval_to_week
+SELECT
+    date + interval_week,
+    date + interval_to_week
+```
+
+```text
+┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
+│                2019-01-08 │                   2019-01-08 │
+└───────────────────────────┴──────────────────────────────┘
+```
+
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
