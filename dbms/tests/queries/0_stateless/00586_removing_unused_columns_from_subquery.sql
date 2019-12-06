@@ -20,7 +20,7 @@ FROM
             learnerHash,
             passed - eventTime AS diff
         FROM statements
-        GLOBAL ANY INNER JOIN
+        GLOBAL SEMI LEFT JOIN
         (
             SELECT
                 learnerHash,

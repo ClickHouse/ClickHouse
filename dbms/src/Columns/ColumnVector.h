@@ -144,6 +144,11 @@ public:
         data.push_back(T());
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        data.resize_fill(data.size() + length, T());
+    }
+
     void popBack(size_t n) override
     {
         data.resize_assume_reserved(data.size() - n);
