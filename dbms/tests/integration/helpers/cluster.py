@@ -435,9 +435,6 @@ class ClickHouseCluster:
             logging.info("Trying to connect to Minio...")
             self.wait_minio_to_start()
 
-        # TODO: Remove after image update by separate commit.
-        subprocess.check_output(['docker', 'build', '-t', 'yandex/clickhouse-integration-test', '/ClickHouse/docker/test/integration/'], stderr=subprocess.STDOUT)
-
         clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
         logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
         subprocess_check_call(clickhouse_start_cmd)
