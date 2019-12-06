@@ -380,7 +380,7 @@ arrayPushFront(array, single_value)
 **Example**
 
 ```sql
-SELECT arrayPushBack(['b'], 'a') AS res
+SELECT arrayPushFront(['b'], 'a') AS res
 ```
 ```text
 ┌─res───────┐
