@@ -744,32 +744,16 @@ private:
     template<bool first>
     void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (isColumnConst(*column))
+        for (size_t i = 0; i < column->size(); ++i)
         {
-            const ToType h = Impl::apply(column->getDataAt(0).data, column->getDataAt(0).size);
+            StringRef bytes = column->getDataAt(i);
+            const ToType h = Impl::apply(bytes.data, bytes.size);
             if (first)
-            {
-                vec_to.assign(column->size(), h);
-            }
+                vec_to[i] = h;
             else
-            {
-                for (size_t i = 0; i < column->size(); ++i)
-                {
-                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
-                }
-            }
+                vec_to[i] = Impl::combineHashes(vec_to[i], h);
         }
-        else
-        {
-            for (size_t i = 0; i < column->size(); ++i)
-            {
-                const ToType h = Impl::apply(column->getDataAt(i).data, column->getDataAt(i).size);
-                if (first)
-                    vec_to[i] = h;
-                else
-                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
-            }
-        }
+
     }
 
     template <bool first>
