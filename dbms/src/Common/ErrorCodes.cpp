@@ -451,6 +451,7 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT = 474;
     extern const int INVALID_WITH_FILL_EXPRESSION = 475;
     extern const int WITH_TIES_WITHOUT_ORDER_BY = 476;
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
