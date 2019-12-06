@@ -714,17 +714,11 @@ private:
     {
         if (const ColumnUInt128 * col_from = checkAndGetColumn<ColumnUInt128>(column))
         {
-            const ColumnUInt128::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                std::string hash_string = toString(UUID(vec_from[i]));
-                const ToType h = Impl::apply(hash_string.c_str(), hash_string.size());
-                if (first)
-                    vec_to[i] = h;
-                else
-                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
-            }
+            executeGeneric<first>(col_from, vec_to);
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnUInt128>(column))
+        {
+            executeGeneric<first>(col_from_const, vec_to);
         }
         else
         {
@@ -739,25 +733,48 @@ private:
     {
         if (const ColumnDecimal<T> * col_from = checkAndGetColumn<ColumnDecimal<T>>(column))
         {
-            const typename ColumnDecimal<T>::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                WriteBufferFromOwnString buf;
-                writeText(vec_from[i], vec_from.getScale(), buf);
-                std::string hash_string = buf.str();
-                const ToType h = Impl::apply(hash_string.c_str(), hash_string.size());
-                if (first)
-                    vec_to[i] = h;
-                else
-                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
-            }
+            executeGeneric<first>(col_from, vec_to);
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnDecimal<T>>(column))
+        {
+            executeGeneric<first>(col_from_const, vec_to);
         }
         else
         {
             throw Exception("Illegal column " + column->getName()
                   + " of first argument of function " + getName(),
                   ErrorCodes::ILLEGAL_COLUMN);
+        }
+    }
+
+    template<bool first>
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if (isColumnConst(*column))
+        {
+            const ToType h = Impl::apply(column->getDataAt(0).data, column->getDataAt(0).size);
+            if (first)
+            {
+                vec_to.assign(column->size(), h);
+            }
+            else
+            {
+                for (size_t i = 0; i < column->size(); ++i)
+                {
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < column->size(); ++i)
+            {
+                const ToType h = Impl::aply(column->getDataAt(i).data, column->getDataAt(i).size);
+                if (first)
+                    vec_to[i] = h;
+                else
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
+            }
         }
     }
 
