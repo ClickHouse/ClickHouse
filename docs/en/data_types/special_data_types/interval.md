@@ -47,7 +47,7 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 
 Intervals with different types can't be combined. You can't use intervals like `4 DAY 1 HOUR`. Express intervals in units that are smaller or equal to the smallest unit of the interval, for example, the interval `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
 
-You can't perform arithmetical operations with `Interval`-type values, but you can add different types of intervals to a values in `Date` or `DateTime`. For example:
+You can't perform arithmetical operations with `Interval`-type values, but you can add intervals of different types consequently to values in `Date` or `DateTime` data types. For example:
 
 ```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
