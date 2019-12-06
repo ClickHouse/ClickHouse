@@ -51,7 +51,7 @@ def mysql_server(mysql_client):
             break
         time.sleep(1)
     else:
-        raise Exception('Mysql server is not started in %d seconds.' % retries)
+        raise Exception('Mysql server has not started in %d seconds.' % retries)
 
     return mysql_client
 
