@@ -154,6 +154,7 @@ StorageS3::StorageS3(const S3::URI & uri_,
     , compression_method(compression_method_)
     , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
 {
+    context_global.getRemoteHostFilter().checkURL(uri_.endpoint);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -236,6 +237,5 @@ void registerStorageS3(StorageFactory & factory)
         return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
-
 }
 #endif
