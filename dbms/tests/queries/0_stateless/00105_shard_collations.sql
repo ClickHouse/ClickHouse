@@ -40,7 +40,7 @@ SELECT 'ζ' as x ORDER BY x COLLATE 'el';
 SELECT number FROM numbers(2) ORDER BY 'x' COLLATE 'el';
 
 -- check const and non const columns in order
-SELECT number FROM numbers(2) ORDER BY 'x', toString(number), 'y' COLLATE 'el';
+SELECT number FROM numbers(11) ORDER BY 'x', toString(number), 'y' COLLATE 'el';
 
 --- Trash locales
 SELECT '' as x ORDER BY x COLLATE 'qq'; --{serverError 186}
