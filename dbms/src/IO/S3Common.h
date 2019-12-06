@@ -17,14 +17,19 @@
 namespace DB::S3
 {
 
-class ClientFactory {
+class ClientFactory
+{
 public:
     ClientFactory();
+
     ~ClientFactory();
+
     static ClientFactory & instance();
+
     std::shared_ptr<Aws::S3::S3Client> create(const String & endpoint,
                                               const String & access_key_id,
                                               const String & secret_access_key);
+
 private:
     static Aws::SDKOptions aws_options;
 };
@@ -34,7 +39,8 @@ private:
  * s3://bucket/key
  * http(s)://endpoint/bucket/key
  */
-struct URI {
+struct URI
+{
     // Custom endpoint if URI scheme is not S3.
     String endpoint;
     String bucket;
