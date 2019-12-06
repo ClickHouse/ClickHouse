@@ -877,6 +877,88 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
+template <typename T>
+inline std::enable_if_t<is_integral_v<T>, void>
+readTextWithSuffix(T & x, ReadBuffer & buf)
+{
+    readIntText(x, buf);
+    if (buf.eof())
+        return;
+    switch (*buf.position())
+    {
+        case 'k':
+        {
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 10);
+                ++buf.position();
+            }
+            else
+            {
+                assertEOF(buf);
+            }
+        }
+        case 'M':
+        {
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000000;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 20);
+                ++buf.position();
+            }
+            else
+            {
+                assertEOF(buf);
+            }
+        }
+        case 'G':
+        {
+            if (buf.eof())
+            {
+                x *= 1000000000;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 30);
+                ++buf.position();
+            }
+            else
+            {
+                assertEOF(buf);
+            }
+        }
+        case 'T':
+        {
+            if (buf.eof())
+            {
+                x *= 1000000000000;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 40);
+                ++buf.position();
+            }
+            else
+            {
+                assertEOF(buf);
+            }
+        }
+    }
+    return;
+}
+
+template <typename T>
+inline void readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+
 /// Read something from text format, but expect complete parse of given text
 /// For example: 723145 -- ok, 213MB -- not ok
 template <typename T>
@@ -884,7 +966,7 @@ inline T completeParse(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readText(res, buf);
+    readTextWithSuffix(res, buf);
     assertEOF(buf);
     return res;
 }
