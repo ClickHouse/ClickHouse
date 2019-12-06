@@ -753,7 +753,6 @@ private:
             else
                 vec_to[i] = Impl::combineHashes(vec_to[i], h);
         }
-
     }
 
     template <bool first>
