@@ -250,13 +250,12 @@ def test_php_client(server_address, php_container):
 
 
 def test_mysqljs_client(server_address, nodejs_container):
-    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} default 123'.format(host=server_address, port=server_port), demux=True)
+    code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} user_with_sha256 abacaba'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
     assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
 
     code, (_, stderr) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password ""'.format(host=server_address, port=server_port), demux=True)
-    assert code == 1
-    assert 'MySQL is requesting the sha256_password authentication method, which is not supported.' in stderr
+    assert code == 0
 
     code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_double_sha1 abacaba'.format(host=server_address, port=server_port), demux=True)
     assert code == 0

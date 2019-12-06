@@ -953,11 +953,7 @@ public:
 
         auto user = context.getUser(user_name);
 
-        const DB::Authentication::Type user_auth_type = user->authentication.getType();
-        if (user_auth_type != DB::Authentication::DOUBLE_SHA1_PASSWORD && user_auth_type != DB::Authentication::PLAINTEXT_PASSWORD && user_auth_type != DB::Authentication::NO_PASSWORD)
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1 or plaintext.", ErrorCodes::UNKNOWN_EXCEPTION);
-
-        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
