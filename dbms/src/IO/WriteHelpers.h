@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
-#include <Common/intExp.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -764,12 +763,6 @@ inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTim
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
 
-template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
-template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
-
-
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
@@ -781,7 +774,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 
     T whole_part = value;
     if (scale)
-        whole_part = value / decimalScaleMultiplier<T>(scale);
+        whole_part = value / Decimal<T>::getScaleMultiplier(scale);
 
     writeIntText(whole_part, ostr);
     if (scale)

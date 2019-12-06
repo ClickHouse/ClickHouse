@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 
@@ -70,7 +70,7 @@ Block IBlockInputStream::read()
         if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
-        if (quota != nullptr)
+        if (quota)
             checkQuota(res);
     }
     else
@@ -240,12 +240,8 @@ void IBlockInputStream::checkQuota(Block & block)
 
         case LIMITS_CURRENT:
         {
-            time_t current_time = time(nullptr);
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
-            quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
-            quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
-
+            UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
+            quota->used({Quota::RESULT_ROWS, block.rows()}, {Quota::RESULT_BYTES, block.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }
@@ -291,10 +287,8 @@ void IBlockInputStream::progressImpl(const Progress & value)
 
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota != nullptr && limits.mode == LIMITS_TOTAL)
-        {
-            quota->checkAndAddReadRowsBytes(time(nullptr), value.read_rows, value.read_bytes);
-        }
+        if (quota && limits.mode == LIMITS_TOTAL)
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 }
 
