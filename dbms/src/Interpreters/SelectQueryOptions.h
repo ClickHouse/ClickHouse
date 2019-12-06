@@ -24,19 +24,16 @@ struct SelectQueryOptions
 {
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
-    bool only_analyze;
-    bool modify_inplace;
-    bool remove_duplicates;
-    bool ignore_limits;
+    bool only_analyze = false;
+    bool modify_inplace = false;
+    bool remove_duplicates = false;
+    bool ignore_quota = false;
+    bool ignore_limits = false;
 
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
-        : to_stage(stage)
-        , subquery_depth(depth)
-        , only_analyze(false)
-        , modify_inplace(false)
-        , remove_duplicates(false)
-        , ignore_limits(false)
-    {}
+        : to_stage(stage), subquery_depth(depth)
+    {
+    }
 
     SelectQueryOptions copy() const { return *this; }
 

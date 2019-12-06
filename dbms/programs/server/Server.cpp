@@ -243,6 +243,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 #endif
 
+    global_context->setRemoteHostFilter(config());
+
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
