@@ -439,6 +439,7 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
     if (!out)
         return;
 
