@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <memory>
-#include <mutex>
+#include <unordered_map>
+
 
 struct UCollator;
 
@@ -15,24 +15,25 @@ public:
 
     struct LocaleAndLanguage
     {
-        std::string locale_name; /// in ISO format
-        std::string language; /// in English
+        std::string locale_name; /// ISO locale code
+        std::optional<std::string> language; /// full language name in English
     };
 
-    static AvailableCollationLocales & instance();
+    using AvailableLocalesMap = std::unordered_map<std::string, LocaleAndLanguage>;
+    using LocalesVector = std::vector<LocaleAndLanguage>;
 
-    /// Get all collations with names
-    const std::vector<LocaleAndLanguage> & getAvailableCollations() const;
+    static const AvailableCollationLocales & instance();
+
+    /// Get all collations with names in sorted order
+    LocalesVector getAvailableCollations() const;
 
     /// Check that collation is supported
-    bool isCollationSupported(const std::string & s) const;
+    bool isCollationSupported(const std::string & locale_name) const;
 
 private:
-    static std::once_flag init_flag;
-    static std::unique_ptr<AvailableCollationLocales> instance_impl;
-    static void init();
+    AvailableCollationLocales();
 private:
-    std::vector<LocaleAndLanguage> available_collation_locales;
+    AvailableLocalesMap locales_map;
 };
 
 class Collator : private boost::noncopyable

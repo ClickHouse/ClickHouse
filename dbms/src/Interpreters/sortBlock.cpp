@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <pdqsort.h>
 
@@ -14,22 +15,9 @@ namespace ErrorCodes
     extern const int BAD_COLLATION;
 }
 
-
-static inline const IColumn * needCollation(const IColumn * column, const SortColumnDescription & description)
+static bool isCollationRequired(const SortColumnDescription & description)
 {
-    if (!description.collator)
-        return nullptr;
-
-    auto column_result = column;
-    if (auto const_column = typeid_cast<const ColumnConst *>(column))
-        column_result = &const_column->getDataColumn();
-
-    if (typeid_cast<const ColumnString *>(column_result))
-        return column_result;
-
-    /// TODO Nullable(String)
-
-    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+    return description.collator != nullptr;
 }
 
 
@@ -45,7 +33,7 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
             ? block.getByName(description[i].column_name).column.get()
             : block.safeGetByPosition(description[i].column_number).column.get();
 
-        res.emplace_back(column, description[i]);
+        res.emplace_back(ColumnWithSortDescription{column, description[i], isColumnConst(*column)});
     }
 
     return res;
@@ -62,7 +50,11 @@ struct PartialSortingLess
     {
         for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
         {
-            int res = it->second.direction * it->first->compareAt(a, b, *it->first, it->second.nulls_direction);
+            int res;
+            if (it->column_const)
+                res = 0;
+            else
+                res = it->description.direction * it->column->compareAt(a, b, *it->column, it->description.nulls_direction);
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -77,22 +69,28 @@ struct PartialSortingLessWithCollation
 {
     const ColumnsWithSortDescriptions & columns;
 
-    explicit PartialSortingLessWithCollation(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
+    explicit PartialSortingLessWithCollation(const ColumnsWithSortDescriptions & columns_)
+        : columns(columns_)
+    {
+    }
 
     bool operator() (size_t a, size_t b) const
     {
         for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
         {
             int res;
-            if (auto column_string_ptr = needCollation(it->first, it->second))
+
+            if (it->column_const)
+                res = 0;
+            else if (isCollationRequired(it->description))
             {
-                const ColumnString & column_string = typeid_cast<const ColumnString &>(*column_string_ptr);
-                res = column_string.compareAtWithCollation(a, b, *it->first, *it->second.collator);
+                const ColumnString & column_string = assert_cast<const ColumnString &>(*it->column);
+                res = column_string.compareAtWithCollation(a, b, *it->column, *it->description.collator);
+
             }
             else
-                res = it->first->compareAt(a, b, *it->first, it->second.nulls_direction);
-
-            res *= it->second.direction;
+                res = it->column->compareAt(a, b, *it->column, it->description.nulls_direction);
+            res *= it->description.direction;
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -107,6 +105,14 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (!block)
         return;
 
+    size_t size = block.rows();
+    IColumn::Permutation perm(size);
+    for (size_t i = 0; i < size; ++i)
+        perm[i] = i;
+
+    if (limit >= size)
+        limit = 0;
+
     /// If only one column to sort by
     if (description.size() == 1)
     {
@@ -116,14 +122,18 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             ? block.getByName(description[0].column_name).column.get()
             : block.safeGetByPosition(description[0].column_number).column.get();
 
-        IColumn::Permutation perm;
-        if (auto column_string_ptr = needCollation(column, description[0]))
+        if (isCollationRequired(description[0]))
         {
-            const ColumnString & column_string = typeid_cast<const ColumnString &>(*column_string_ptr);
-            column_string.getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
+            /// it it's real string column, than we need sort
+            if (const ColumnString * column_string = checkAndGetColumn<ColumnString>(column))
+                column_string->getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
+            else if (!checkAndGetColumnConstData<ColumnString>(column))
+                throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+
         }
-        else
+        else if (!isColumnConst(*column))
             column->getPermutation(reverse, limit, description[0].nulls_direction, perm);
+        /// we don't need to do anything with const column
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
@@ -131,23 +141,18 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     }
     else
     {
-        size_t size = block.rows();
-        IColumn::Permutation perm(size);
-        for (size_t i = 0; i < size; ++i)
-            perm[i] = i;
-
-        if (limit >= size)
-            limit = 0;
-
         bool need_collation = false;
         ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
         for (size_t i = 0, num_sort_columns = description.size(); i < num_sort_columns; ++i)
         {
-            if (needCollation(columns_with_sort_desc[i].first, description[i]))
+            const IColumn * column = columns_with_sort_desc[i].column;
+            if (isCollationRequired(description[i]))
             {
+                if (!checkAndGetColumn<ColumnString>(column) && !checkAndGetColumnConstData<ColumnString>(column))
+                    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+
                 need_collation = true;
-                break;
             }
         }
 
@@ -172,7 +177,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
+        {
             block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+        }
     }
 }
 
