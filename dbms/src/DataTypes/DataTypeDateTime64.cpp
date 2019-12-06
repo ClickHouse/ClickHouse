@@ -20,35 +20,17 @@
 #include <optional>
 #include <string>
 
-namespace
-{
-using namespace DB;
-
-static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
-{
-    switch (settings.date_time_input_format)
-    {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTime64Text(x, scale, istr, time_zone);
-            return;
-        case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
-            return;
-    }
-}
-}
-
 namespace DB
 {
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>() - scale_, scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>() - scale_, scale_),
       TimezoneMixin(time_zone_name)
 {
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
-    : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>() - scale_, scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>() - scale_, scale_),
       TimezoneMixin(time_zone_info)
 {}
 
@@ -84,10 +66,23 @@ void DataTypeDateTime64::serializeTextEscaped(const IColumn & column, size_t row
     serializeText(column, row_num, ostr, settings);
 }
 
+static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+{
+    switch (settings.date_time_input_format)
+    {
+        case FormatSettings::DateTimeInputFormat::Basic:
+            readDateTime64Text(x, scale, istr, time_zone);
+            return;
+        case FormatSettings::DateTimeInputFormat::BestEffort:
+            parseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
+            return;
+    }
+}
+
 void DataTypeDateTime64::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DateTime64 x = 0;
-    ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
+    readText(x, scale, istr, settings, time_zone, utc_time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -103,7 +98,7 @@ void DataTypeDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & is
     DateTime64 x = 0;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
-        ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
+        readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
     else /// Just 1504193808 or 01504193808
@@ -125,7 +120,7 @@ void DataTypeDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     DateTime64 x = 0;
     if (checkChar('"', istr))
     {
-        ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
+        readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
     else
@@ -154,7 +149,7 @@ void DataTypeDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++istr.position();
 
-    ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
+    readText(x, scale, istr, settings, time_zone, utc_time_zone);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);

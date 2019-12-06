@@ -256,8 +256,14 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
     }
 }
 
+enum ReadIntTextCheckOverflow
+{
+    READ_INT_DO_NOT_CHECK_OVERFLOW,
+    READ_INT_CHECK_OVERFLOW,
+};
+
 template <typename T, typename ReturnType = void>
-ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
+ReturnType readIntTextImpl(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -271,6 +277,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             return ReturnType(false);
     }
 
+    size_t initial = buf.count();
     while (!buf.eof())
     {
         switch (*buf.position())
@@ -302,32 +309,40 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 res += *buf.position() - '0';
                 break;
             default:
-                x = negative ? -res : res;
-                return ReturnType(true);
+                goto end;
+//                x = negative ? -res : res;
+//                return ReturnType(true);
         }
         ++buf.position();
     }
 
+end:
     x = negative ? -res : res;
+    if (check_overflow && buf.count() - initial > std::numeric_limits<T>::digits10)
+    {
+        // the int literal is too big and x overflowed
+        return ReturnType(false);
+    }
+
     return ReturnType(true);
 }
 
 template <typename T>
-void readIntText(T & x, ReadBuffer & buf)
+void readIntText(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
 {
-    readIntTextImpl<T, void>(x, buf);
+    readIntTextImpl<T, void>(x, buf, check_overflow);
 }
 
 template <typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)
+bool tryReadIntText(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
 {
-    return readIntTextImpl<T, bool>(x, buf);
+    return readIntTextImpl<T, bool>(x, buf, check_overflow);
 }
 
 template <typename T>
-void readIntText(Decimal<T> & x, ReadBuffer & buf)
+void readIntText(Decimal<T> & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
 {
-    readIntText(x.value, buf);
+    readIntText(x.value, buf, check_overflow);
 }
 
 /** More efficient variant (about 1.5 times on real dataset).
@@ -627,7 +642,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<time_t, ReturnType>(datetime, buf);
+            return readIntTextImpl<time_t, ReturnType>(datetime, buf, READ_INT_CHECK_OVERFLOW);
     }
     else
         return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
@@ -637,28 +652,29 @@ template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     time_t whole;
-    readDateTimeTextImpl<void>(whole, buf, date_lut);
-    DB::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
-
-    char separator;
-    if (buf.read(separator))
+    if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
     {
-        if (separator != '.')
+        return ReturnType(false);
+    }
+
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
+
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        buf.ignore(1); // skip separator
+        const auto count1 = buf.count();
+        if (!tryReadIntText(c.fractional, buf, READ_INT_CHECK_OVERFLOW))
         {
             return ReturnType(false);
         }
-    }
 
-    auto remainder1 = buf.available();
-    if (tryReadIntText(c.fractional, buf))
-    {
         // Adjust fractional part to the scale, since decimalFromComponents knows nothing
         // about convention of ommiting trailing zero on fractional part
         // and assumes that fractional part value is less than 10^scale.
 
         // If scale is 3, but we read '12', promote fractional part to '120'.
         // And vice versa: if we read '1234', denote it to '123'.
-        const auto fractional_length = static_cast<Int32>(remainder1 - buf.available());
+        const auto fractional_length = static_cast<Int32>(buf.count() - count1);
         if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
         {
             c.fractional *= common::exp10_i64(adjust_scale);
@@ -668,7 +684,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             c.fractional /= common::exp10_i64(-1 * adjust_scale);
         }
     }
-    datetime64 = decimalFromComponents<DateTime64>(c, scale);
+
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
 
     return ReturnType(true);
 }

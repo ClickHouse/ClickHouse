@@ -165,7 +165,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    UInt64 precision = maxDecimalPrecision<T>();
+    UInt64 precision = DecimalUtils::maxPrecision<T>();
     UInt64 scale = scale_arg->value.get<UInt64>();
 
     return createDecimal<DataTypeDecimal>(precision, scale);

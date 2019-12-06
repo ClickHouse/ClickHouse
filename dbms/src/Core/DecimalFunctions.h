@@ -11,17 +11,24 @@ class DateLUTImpl;
 namespace DB
 {
 
-static constexpr size_t minDecimalPrecision() { return 1; }
-template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
-template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
+namespace DecimalUtils
+{
 
-template <typename T> T decimalScaleMultiplier(UInt32 scale);
-template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+static constexpr size_t minPrecision() { return 1; }
+template <typename T> static constexpr size_t maxPrecision() { return 0; }
+template <> constexpr size_t maxPrecision<Decimal32>() { return 9; }
+template <> constexpr size_t maxPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxPrecision<Decimal128>() { return 38; }
 
+template <typename T> T scaleMultiplier(UInt32 scale);
+template <> inline Int32 scaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 scaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 scaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+
+/** Components of DecimalX value:
+ * whole - represents whole part of decimal, can be negatve or positive.
+ * fractional - for fractional part of decimal, always positive.
+ */
 template <typename T>
 struct DecimalComponents
 {
@@ -29,32 +36,52 @@ struct DecimalComponents
     T fractional;
 };
 
+/** Make a decimal value from whole and fractional components with given scale multiplier.
+ * where scale_multiplier = scaleMultiplier<T>(scale)
+ * this is to reduce number of calls to scaleMultiplier when scale is known.
+ *
+ * Sign of `whole` controls sign of result: negative whole => negative result, positive whole => positive result.
+ * Sign of `fractional` is expected to be positive, otherwise result is undefined.
+ * If `scale` is to big (scale > maxPrecision<DecimalType::NativeType>), result is undefined.
+ */
 template <typename DecimalType>
 DecimalType decimalFromComponentsWithMultiplier(const typename DecimalType::NativeType & whole,
                                                  const typename DecimalType::NativeType & fractional,
                                                  typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-    const T value = whole * scale_multiplier + fractional % scale_multiplier;
+    const auto fractional_sign = whole < 0 ? -1 : 1;
+
+    const T value = whole * scale_multiplier + fractional_sign * (fractional % scale_multiplier);
     return DecimalType(value);
 }
 
+/** Make a decimal value from whole and fractional components with given scale.
+ *
+ * @see `decimalFromComponentsWithMultiplier` for details.
+ */
 template <typename DecimalType>
 DecimalType decimalFromComponents(const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale)
 {
     using T = typename DecimalType::NativeType;
 
-    return decimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, decimalScaleMultiplier<T>(scale));
+    return decimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, scaleMultiplier<T>(scale));
 }
 
+/** Make a decimal value from whole and fractional components with given scale.
+ * @see `decimalFromComponentsWithMultiplier` for details.
+ */
 template <typename DecimalType>
 DecimalType decimalFromComponents(const DecimalComponents<typename DecimalType::NativeType> & components, UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
 }
 
+/** Split decimal into whole and fractional parts with given scale_multiplier.
+ * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
+ */
 template <typename DecimalType>
-DecimalComponents<typename DecimalType::NativeType> decimalSplitWithScaleMultiplier(const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
+DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
@@ -65,27 +92,38 @@ DecimalComponents<typename DecimalType::NativeType> decimalSplitWithScaleMultipl
     return {whole, fractional};
 }
 
+/// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
-DecimalComponents<typename DecimalType::NativeType> decimalSplit(const DecimalType & decimal, UInt32 scale)
+DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
         return {decimal.value, 0};
     }
-    return decimalSplitWithScaleMultiplier(decimal, decimalScaleMultiplier<typename DecimalType::NativeType>(scale));
+    return splitWithScaleMultiplier(decimal, scaleMultiplier<typename DecimalType::NativeType>(scale));
 }
 
+/** Get whole part from decimal.
+ *
+ * Sign of result follows sign of `decimal` value.
+ * If scale is to big, result is undefined.
+ */
 template <typename DecimalType>
-typename DecimalType::NativeType decimalWholePart(const DecimalType & decimal, size_t scale)
+typename DecimalType::NativeType getWholePart(const DecimalType & decimal, size_t scale)
 {
     if (scale == 0)
         return decimal.value;
 
-    return decimal.value / decimalScaleMultiplier<typename DecimalType::NativeType>(scale);
+    return decimal.value / scaleMultiplier<typename DecimalType::NativeType>(scale);
 }
 
+/** Get fractional part from decimal
+ *
+ * Result is always positive.
+ * If scale is to big, result is undefined.
+ */
 template <typename DecimalType>
-typename DecimalType::NativeType decimalFractionalPart(const DecimalType & decimal, size_t scale)
+typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, size_t scale)
 {
     using T = typename DecimalType::NativeType;
 
@@ -96,40 +134,9 @@ typename DecimalType::NativeType decimalFractionalPart(const DecimalType & decim
     if (result < T(0))
         result *= T(-1);
 
-    return result % decimalScaleMultiplier<T>(scale);
+    return result % scaleMultiplier<T>(scale);
 }
 
-/** Basic wrapper for Tansform-types for DateTime64.
- *
- * Allows reusing existing Transform (that takes DateTime-values as UInt32) with DateTime64-values,
- * by discarding fractional part and producing SAME return type as original Transform.
- *
- * Such Transfotm-types are commonly used in Date/DateTime manipulation functions,
- * and implement static execute fucntion with following signature:
- *      R execute(UInt32, T, const DateLUTImpl &)
- *
- * Wehere R and T could be arbitrary types.
-*/
-template <typename Transform>
-class DateTime64BasicTransformWrapper : public Transform
-{
-public:
-    using Transform::execute;
-
-    explicit DateTime64BasicTransformWrapper(UInt32 scale_)
-        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_))
-    {}
-
-    template <typename T>
-    auto execute(DateTime64 t, T v, const DateLUTImpl & time_zone) const
-    {
-        const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
-        return static_cast<const Transform *>(this)->execute(
-            static_cast<UInt32>(components.whole), v, time_zone);
-    }
-
-private:
-    UInt32 scale_multiplier = 1;
-};
+}
 
 }

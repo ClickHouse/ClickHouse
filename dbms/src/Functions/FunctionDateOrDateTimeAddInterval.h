@@ -32,16 +32,16 @@ template <typename T>
 struct AddOnDateTime64DefaultImpl
 {
     /*explicit*/ AddOnDateTime64DefaultImpl(UInt32 scale_ = 0)
-        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_))
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
     // Default implementation for add/sub on DateTime64: do math on whole part (the same way as for DateTime), leave fractional as it is.
     inline DateTime64 execute(const DateTime64 & t, Int64 delta, const DateLUTImpl & time_zone) const
     {
-        const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
+        const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
 
         const auto whole = static_cast<const T*>(this)->execute(static_cast<UInt32>(components.whole), delta, time_zone);
-        return decimalFromComponentsWithMultiplier<DateTime64>(static_cast<DateTime64::NativeType>(whole), components.fractional, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<DateTime64::NativeType>(whole), components.fractional, scale_multiplier);
     }
 
     UInt32 scale_multiplier = 1;

@@ -8,6 +8,10 @@ class DateLUTImpl;
 namespace DB
 {
 
+/** Mixin-class that manages timezone info for timezone-aware DateTime implementations
+ *
+ * Must be used as a (second) base for class implementing IDateType-interface.
+ */
 class TimezoneMixin
 {
 public:
