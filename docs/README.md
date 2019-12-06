@@ -9,6 +9,7 @@ The master branch is then asynchronously published to the ClickHouse official we
 * In English: https://clickhouse.yandex/docs/en/
 * In Russian: https://clickhouse.yandex/docs/ru/
 * In Chinese: https://clickhouse.yandex/docs/zh/
+* In Japanese: https://clickhouse.yandex/docs/ja/
 * In Farsi: https://clickhouse.yandex/docs/fa/
 
 The infrastructure to build Markdown for publishing on the documentation website resides in the [tools](tools) folder. It has its own [README.md](tools/README.md) file with more details.
