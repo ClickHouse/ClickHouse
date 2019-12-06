@@ -1,6 +1,6 @@
 # DateTime {#data_type-datetime}
 
-Data structure for storing timestamp in the [Unix time](https://en.wikipedia.org/wiki/Unix_time) format. Additionally it can store a time zone.
+Allows to store an instant in time, that can be expressed as a calendar date and a time of a day. `DateTime` allows to take into account time zones for stored values.
 
 Syntax:
 
@@ -12,9 +12,10 @@ Range of values: [1970-01-01 00:00:00, 2105-12-31 23:59:59].
 
 Resolution: 1 second.
 
+
 ## Usage remarks
 
-ClickHouse stores date and time values in Unix time format, independently of time zones and daylight savings. The time zone value affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
+A moment of time is stored as Unix timestamp, independently of time zones and daylight savings. Additionally `DateTime` can store time zone, that affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn't set, ClickHouse uses the value of the [timezone](../operations/server_settings/settings.md#server_settings-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
@@ -26,10 +27,22 @@ When inserting data into ClickHouse, you can use different formats of date and t
 
 ## Examples
 
-**1.** Creating a table with a `DateTime`-type column:
+**1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
 ```sql
 CREATE TABLE dt( timestamp DateTime('Europe/Moscow') ) ENGINE TinyLog
+```
+```sql
+INSERT INTO dt Values (1546300800), ('2019-01-01 00:00:00')
+```
+```sql
+SELECT * FROM dt
+```
+```text
+┌───────────timestamp─┐
+│ 2019-01-01 03:00:00 │
+│ 2019-01-01 00:00:00 │
+└─────────────────────┘
 ```
 
 **2.** Getting a time zone for a `DateTime`-type value:
