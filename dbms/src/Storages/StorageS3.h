@@ -18,8 +18,10 @@ class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 public:
     StorageS3(
         const Poco::URI & uri_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const String & access_key_id,
+        const String & secret_access_key,
+        const String & database_name_,
+        const String & table_name_,
         const String & format_name_,
         UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
@@ -56,6 +58,8 @@ public:
 
 private:
     Poco::URI uri;
+    String access_key_id;
+    String secret_access_key;
     const Context & context_global;
 
     String format_name;

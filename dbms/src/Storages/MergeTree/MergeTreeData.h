@@ -939,6 +939,8 @@ protected:
     /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
 
+    bool areBackgroundMovesNeeded() const;
+
 private:
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acuire them in constructor and remove them in destructor

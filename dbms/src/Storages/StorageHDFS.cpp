@@ -17,6 +17,8 @@
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -47,6 +49,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
     , context(context_)
     , compression_method(compression_method_)
 {
+    context.getRemoteHostFilter().checkURL(Poco::URI(uri));
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -196,7 +199,7 @@ BlockInputStreams StorageHDFS::read(
     const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     const String path_from_uri = uri.substr(begin_of_path);
@@ -213,7 +216,7 @@ BlockInputStreams StorageHDFS::read(
                                                                max_block_size, IStorage::chooseCompressionMethod(res_path, compression_method)));
     }
 
-    return result;
+    return narrowBlockInputStreams(result, num_streams);
 }
 
 void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
