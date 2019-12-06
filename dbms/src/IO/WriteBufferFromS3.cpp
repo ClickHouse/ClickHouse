@@ -147,7 +147,8 @@ void WriteBufferFromS3::complete()
     req.SetUploadId(upload_id);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
-    for (size_t i = 0; i < part_tags.size(); i++) {
+    for (size_t i = 0; i < part_tags.size(); i++) 
+    {
         Aws::S3::Model::CompletedPart part;
         multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
     }
