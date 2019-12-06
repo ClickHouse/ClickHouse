@@ -712,13 +712,10 @@ private:
     template <bool first>
     void executeUUID(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnUInt128 * col_from = checkAndGetColumn<ColumnUInt128>(column))
+        if (checkColumn<ColumnUInt128>(column) ||
+            checkColumnConst<ColumnUInt128>(column))
         {
-            executeGeneric<first>(col_from, vec_to);
-        }
-        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnUInt128>(column))
-        {
-            executeGeneric<first>(col_from_const, vec_to);
+            executeGeneric<first>(column, vec_to);
         }
         else
         {
@@ -731,13 +728,10 @@ private:
     template <typename T, bool first>
     void executeDecimal(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        if (const ColumnDecimal<T> * col_from = checkAndGetColumn<ColumnDecimal<T>>(column))
+        if (checkColumn<ColumnDecimal<T>>(column) ||
+            checkColumnConst<ColumnDecimal<T>>(column))
         {
-            executeGeneric<first>(col_from, vec_to);
-        }
-        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnDecimal<T>>(column))
-        {
-            executeGeneric<first>(col_from_const, vec_to);
+            executeGeneric<first>(column, vec_to);
         }
         else
         {
@@ -769,7 +763,7 @@ private:
         {
             for (size_t i = 0; i < column->size(); ++i)
             {
-                const ToType h = Impl::aply(column->getDataAt(i).data, column->getDataAt(i).size);
+                const ToType h = Impl::apply(column->getDataAt(i).data, column->getDataAt(i).size);
                 if (first)
                     vec_to[i] = h;
                 else
