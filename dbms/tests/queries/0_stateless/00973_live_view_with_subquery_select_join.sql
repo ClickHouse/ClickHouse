@@ -14,15 +14,14 @@ SELECT * FROM test.lv;
 INSERT INTO test.A VALUES (1);
 INSERT INTO test.B VALUES (1, 'hello');
 
-SELECT *,_version FROM test.lv;
-SELECT *,_version FROM test.lv;
+SELECT *,_version FROM test.lv ORDER BY id;
+SELECT *,_version FROM test.lv ORDER BY id;
 
 INSERT INTO test.A VALUES (2)
 INSERT INTO test.B VALUES (2, 'hello')
-INSERT INTO test.B VALUES (2, 'hello2')
 
-SELECT *,_version FROM test.lv;
-SELECT *,_version FROM test.lv;
+SELECT *,_version FROM test.lv ORDER BY id;
+SELECT *,_version FROM test.lv ORDER BY id;
 
 DROP TABLE test.lv;
 DROP TABLE test.A;
