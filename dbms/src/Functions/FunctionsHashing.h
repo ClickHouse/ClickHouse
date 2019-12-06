@@ -710,7 +710,7 @@ private:
     template <bool first>
     void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
-        for (size_t i = 0; i < column->size(); ++i)
+        for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             StringRef bytes = column->getDataAt(i);
             const ToType h = Impl::apply(bytes.data, bytes.size);
