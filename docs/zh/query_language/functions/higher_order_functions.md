@@ -12,7 +12,7 @@
 
 除了'arrayMap'和'arrayFilter'以外的所有其他函数，都可以省略第一个参数（lambda函数）。在这种情况下，默认返回数组元素本身。
 
-### arrayMap(func, arr1, ...)
+### arrayMap(func, arr1, ...) {#higher_order_functions-array-map}
 
 将arr
 将从'func'函数的原始应用程序获得的数组返回到'arr'数组中的每个元素。
