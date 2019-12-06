@@ -107,7 +107,7 @@ def get_stacktraces(server_pid):
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    cmd = "lsof -i tcp:{port} | fgrep 'TCP *:{port} (LISTEN)'".format(port=server_tcp_port)
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:

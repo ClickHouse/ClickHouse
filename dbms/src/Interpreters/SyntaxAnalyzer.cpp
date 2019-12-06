@@ -540,7 +540,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
-void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, ASTTableJoin & out_table_join)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, ASTTableJoin & out_table_join)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -559,6 +559,9 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
+
+    if (old_any && table_join.strictness == ASTTableJoin::Strictness::Any)
+        table_join.strictness = ASTTableJoin::Strictness::RightAny;
 
     out_table_join = table_join;
 }
@@ -628,13 +631,8 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
     const auto & table_join = join->table_join->as<ASTTableJoin &>();
 
     if (table_join.strictness == ASTTableJoin::Strictness::Any)
-        if (table_join.kind != ASTTableJoin::Kind::Left)
-            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed. "
-                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys. "
-                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN. "
-                            "It would be equal to apply distinct for keys to right, left and both tables respectively. "
-                            "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        if (table_join.kind == ASTTableJoin::Kind::Full)
+            throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
@@ -958,7 +956,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-        setJoinStrictness(*select_query, settings.join_default_strictness, result.analyzed_join->table_join);
+        setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
+                          result.analyzed_join->table_join);
         collectJoinedColumns(*result.analyzed_join, *select_query, source_columns_set, result.aliases);
     }
 
