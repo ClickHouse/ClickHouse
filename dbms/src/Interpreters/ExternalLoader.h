@@ -175,7 +175,7 @@ protected:
 private:
     struct ObjectConfig;
 
-    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
     class LoadablesConfigReader;
     std::unique_ptr<LoadablesConfigReader> config_files_reader;
