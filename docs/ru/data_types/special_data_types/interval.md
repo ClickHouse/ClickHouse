@@ -1,6 +1,6 @@
 # Interval {#data-type-interval}
 
-Семейство типов данных представляющих интервалы дат и времени. Оператор [INTERVAL](../../query_language/operators.md#operator-interval) возвращает значения этих типов.
+Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../query_language/operators.md#operator-interval) возвращает значения этих типов.
 
 !!! warning "Внимание"
     Нельзя использовать типы данных `Interval` для хранения данных в таблице.
