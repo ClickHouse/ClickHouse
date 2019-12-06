@@ -30,7 +30,7 @@ struct WithDateTime64Converter : public Transform
     inline auto execute(DataTypeDateTime64::FieldType t, const DateLUTImpl & time_zone) const
     {
         auto x = DateTime64(t);
-        auto res = transform.execute(static_cast<UInt32>(decimalWholePart(x, scale)), time_zone);
+        auto res = transform.execute(static_cast<UInt32>(DecimalUtils::getWholePart(x, scale)), time_zone);
         return res;
     }
 };

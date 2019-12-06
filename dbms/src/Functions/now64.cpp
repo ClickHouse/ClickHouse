@@ -24,7 +24,7 @@ DateTime64::NativeType nowSubsecond(UInt32 scale)
     timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
-    DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
+    DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
 
     // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
     // Andjust fractional to scale, e.g. for 123456789 nanoseconds:
@@ -36,7 +36,7 @@ DateTime64::NativeType nowSubsecond(UInt32 scale)
     else if (adjust_scale > 0)
         components.fractional /= intExp10(adjust_scale);
 
-    return decimalFromComponents<DateTime64>(components, scale).value;
+    return DecimalUtils::decimalFromComponents<DateTime64>(components, scale).value;
 }
 
 class FunctionNow64 : public IFunction

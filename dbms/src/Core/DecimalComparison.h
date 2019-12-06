@@ -83,15 +83,15 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = maxDecimalPrecision<Decimal128>();
+        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
+            shift.a = DataTypeDecimal<B>(DecimalUtils::maxPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
         if (scale_a > scale_b)
-            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
+            shift.b = DataTypeDecimal<A>(DecimalUtils::maxPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
 
         return applyWithScale(a, b, shift);
     }

@@ -97,7 +97,7 @@ void DataTypeDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
 template <typename T>
 T DataTypeDecimalBase<T>::getScaleMultiplier(UInt32 scale_)
 {
-    return decimalScaleMultiplier<typename T::NativeType>(scale_);
+    return DecimalUtils::scaleMultiplier<typename T::NativeType>(scale_);
 }
 
 

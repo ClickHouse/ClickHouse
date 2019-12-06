@@ -67,7 +67,7 @@ public:
 
     static constexpr bool is_parametric = true;
 
-    static constexpr size_t maxPrecision() { return maxDecimalPrecision<T>(); }
+    static constexpr size_t maxPrecision() { return DecimalUtils::maxPrecision<T>(); }
 
     DataTypeDecimalBase(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
@@ -114,12 +114,12 @@ public:
 
     T wholePart(T x) const
     {
-        return decimalWholePart(x, scale);
+        return DecimalUtils::getWholePart(x, scale);
     }
 
     T fractionalPart(T x) const
     {
-        return decimalFractionalPart(x, scale);
+        return DecimalUtils::getFractionalPart(x, scale);
     }
 
     T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
@@ -137,7 +137,7 @@ public:
     T scaleFactorFor(const DataTypeDecimalBase<U> & x, bool) const
     {
         if (getScale() < x.getScale())
-            throw Exception("Decimal result's scale is less than argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         UInt32 scale_delta = getScale() - x.getScale(); /// scale_delta >= 0
         return getScaleMultiplier(scale_delta);
     }
@@ -167,7 +167,7 @@ decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_
         scale = tx.getScale() + ty.getScale();
     else if (is_divide)
         scale = tx.getScale();
-    return DecimalType<T>(maxDecimalPrecision<T>(), scale);
+    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), scale);
 }
 
 template <typename T, typename U, template <typename> typename DecimalType>
@@ -179,33 +179,33 @@ decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty, bool is_
         scale = tx.getScale() * ty.getScale();
     else if (is_divide)
         scale = tx.getScale();
-    return DecimalType<U>(maxDecimalPrecision<U>(), scale);
+    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), scale);
 }
 
 template <typename T, typename U, template <typename> typename DecimalType>
 const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> &, bool, bool)
 {
-    return DecimalType<T>(maxDecimalPrecision<T>(), tx.getScale());
+    return DecimalType<T>(DecimalUtils::maxPrecision<T>(), tx.getScale());
 }
 
 template <typename T, typename U, template <typename> typename DecimalType>
 const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalType<U> & ty, bool, bool)
 {
-    return DecimalType<U>(maxDecimalPrecision<U>(), ty.getScale());
+    return DecimalType<U>(DecimalUtils::maxPrecision<U>(), ty.getScale());
 }
 
 template <template <typename> typename DecimalType>
 DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Decimal128>())
+    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal128>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
         throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (precision_value <= maxDecimalPrecision<Decimal32>())
+    if (precision_value <= DecimalUtils::maxPrecision<Decimal32>())
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= maxDecimalPrecision<Decimal64>())
+    else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
     return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
 }

@@ -710,7 +710,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
 inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    static constexpr UInt32 MaxScale = maxDecimalPrecision<DateTime64>();
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
     if (unlikely(!datetime64))
     {
@@ -726,13 +726,13 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
         buf.write(s, sizeof(s) - (MaxScale - scale));
         return;
     }
-    auto c = decimalSplit(datetime64, scale);
+    auto c = DecimalUtils::split(datetime64, scale);
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
             date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
-    if (scale > 0)
+    if (scale > 0 && c.fractional)
     {
         buf.write(fractional_time_delimiter);
 
@@ -799,7 +799,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 
     T whole_part = value;
     if (scale)
-        whole_part = value / decimalScaleMultiplier<T>(scale);
+        whole_part = value / DecimalUtils::scaleMultiplier<T>(scale);
 
     writeIntText(whole_part, ostr);
     if (scale)

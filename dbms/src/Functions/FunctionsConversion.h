@@ -229,7 +229,7 @@ struct ToDateTime64Transform
     const DateTime64::NativeType scale_multiplier = 1;
 
     ToDateTime64Transform(UInt32 scale = 0)
-        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale))
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
     inline DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
@@ -240,7 +240,7 @@ struct ToDateTime64Transform
 
     inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
-        return decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 };
 
@@ -259,12 +259,12 @@ struct FromDateTime64Transform
     const DateTime64::NativeType scale_multiplier = 1;
 
     FromDateTime64Transform(UInt32 scale)
-        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale))
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
     inline auto execute(DateTime64::NativeType dt, const DateLUTImpl & time_zone) const
     {
-        const auto c = decimalSplitWithScaleMultiplier(DateTime64(dt), scale_multiplier);
+        const auto c = DecimalUtils::splitWithScaleMultiplier(DateTime64(dt), scale_multiplier);
         return Transform::execute(static_cast<UInt32>(c.whole), time_zone);
     }
 };
