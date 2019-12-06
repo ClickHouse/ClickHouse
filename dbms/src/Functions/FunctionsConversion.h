@@ -735,7 +735,7 @@ struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
     struct NameToInterval ## INTERVAL_KIND \
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
-        static constexpr int kind = DataTypeInterval::INTERVAL_KIND; \
+        static constexpr auto kind = IntervalKind::INTERVAL_KIND; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Second)
@@ -786,7 +786,7 @@ public:
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
-            return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
+            return std::make_shared<DataTypeInterval>(Name::kind);
         }
         else if constexpr (to_decimal)
         {
@@ -971,8 +971,16 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            if (this->getName().find("OrZero") != std::string::npos ||
+                this->getName().find("OrNull") != std::string::npos)
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
+                        ". Conversion functions with postfix 'OrZero' or 'OrNull'  should take String argument",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else
+                throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         if (arguments.size() == 2)
         {

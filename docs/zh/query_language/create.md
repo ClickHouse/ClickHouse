@@ -248,3 +248,19 @@ SELECT a, b, c FROM (SELECT ...)
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```

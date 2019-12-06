@@ -74,6 +74,7 @@ def build_for_lang(lang, args):
             'en': 'ClickHouse %s Documentation',
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
+            'ja': 'ClickHouseドキュメント %s',
             'fa': 'مستندات  %sClickHouse'
         }
 
@@ -92,8 +93,8 @@ def build_for_lang(lang, args):
             theme=theme_cfg,
             copyright='©2016–2019 Yandex LLC',
             use_directory_urls=True,
-            repo_name='yandex/ClickHouse',
-            repo_url='https://github.com/yandex/ClickHouse/',
+            repo_name='ClickHouse/ClickHouse',
+            repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[
@@ -241,7 +242,7 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,ru,zh,fa')
+    arg_parser.add_argument('--lang', default='en,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--website-dir', default=os.path.join('..', 'website'))

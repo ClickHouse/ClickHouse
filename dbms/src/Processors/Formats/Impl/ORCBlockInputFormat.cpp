@@ -62,6 +62,16 @@ namespace DB
         return res;
     }
 
+    void ORCBlockInputFormat::resetParser()
+    {
+        IInputFormat::resetParser();
+
+        file_reader.reset();
+        file_data.clear();
+        row_group_total = 0;
+        row_group_current = 0;
+    }
+
     void registerInputFormatProcessorORC(FormatFactory &factory)
     {
         factory.registerInputFormatProcessor(

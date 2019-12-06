@@ -7,9 +7,12 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/hex.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
@@ -33,10 +36,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -57,6 +63,19 @@ namespace
 
         return pools;
     }
+
+    void assertChecksum(CityHash_v1_0_2::uint128 expected, CityHash_v1_0_2::uint128 calculated)
+    {
+        if (expected != calculated)
+        {
+            String message = "Checksum of extra info doesn't match: corrupted data."
+                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
+                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
+                + ".";
+            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        }
+    }
+
 }
 
 
@@ -269,17 +288,65 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 void StorageDistributedDirectoryMonitor::readQueryAndSettings(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
-    UInt64 magic_number_or_query_size;
+    UInt64 query_size;
+    readVarUInt(query_size, in);
 
-    readVarUInt(magic_number_or_query_size, in);
-
-    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
     {
-        insert_settings.deserialize(in);
-        readVarUInt(magic_number_or_query_size, in);
+        UInt64 initiator_revision;
+        CityHash_v1_0_2::uint128 expected;
+        CityHash_v1_0_2::uint128 calculated;
+
+        /// Read extra information.
+        String extra_info_as_string;
+        readStringBinary(extra_info_as_string, in);
+        /// To avoid out-of-bound, other cases will be checked in read*() helpers.
+        if (extra_info_as_string.size() < sizeof(expected))
+            throw Exception("Not enough data", ErrorCodes::CORRUPTED_DATA);
+
+        StringRef extra_info_ref(extra_info_as_string.data(), extra_info_as_string.size() - sizeof(expected));
+        ReadBufferFromMemory extra_info(extra_info_ref.data, extra_info_ref.size);
+        ReadBuffer checksum(extra_info_as_string.data(), sizeof(expected), extra_info_ref.size);
+
+        readVarUInt(initiator_revision, extra_info);
+        if (ClickHouseRevision::get() < initiator_revision)
+        {
+            LOG_WARNING(
+                log,
+                "ClickHouse shard version is older than ClickHouse initiator version. "
+                    << "It may lack support for new features.");
+        }
+
+        /// Extra checksum (all data except itself -- this checksum)
+        readPODBinary(expected, checksum);
+        calculated = CityHash_v1_0_2::CityHash128(extra_info_ref.data, extra_info_ref.size);
+        assertChecksum(expected, calculated);
+
+        insert_settings.deserialize(extra_info);
+
+        /// Read query
+        readStringBinary(insert_query, in);
+
+        /// Query checksum
+        readPODBinary(expected, extra_info);
+        calculated = CityHash_v1_0_2::CityHash128(insert_query.data(), insert_query.size());
+        assertChecksum(expected, calculated);
+
+        /// Add handling new data here, for example:
+        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
+        ///    readVarUInt(my_new_data, extra_info);
+
+        return;
     }
-    insert_query.resize(magic_number_or_query_size);
-    in.readStrict(insert_query.data(), magic_number_or_query_size);
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+    {
+        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
+        readVarUInt(query_size, in);
+    }
+
+    insert_query.resize(query_size);
+    in.readStrict(insert_query.data(), query_size);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -552,6 +619,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 

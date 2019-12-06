@@ -1,17 +1,23 @@
 # Клиент командной строки
 
-Для работы из командной строки вы можете использовать `clickhouse-client`:
+ClickHouse предоставляет собственный клиент командной строки: `clickhouse-client`. Клиент поддерживает запуск с аргументами командной строки и с конфигурационными файлами. Подробнее читайте в разделе [Конфигурирование](#interfaces_cli_configuration).
+
+Клиент [устанавливается](../getting_started/index.md) пакетом `clickhouse-client` и запускается командой `clickhouse-client`.
 
 ```bash
 $ clickhouse-client
-ClickHouse client version 0.0.26176.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.
+ClickHouse client version 19.17.1.1579 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 19.17.1 revision 54428.
 
 :)
 ```
 
-Клиент поддерживает параметры командной строки и конфигурационные файлы. Подробнее читайте в разделе "[Конфигурирование](#interfaces_cli_configuration)". 
+Клиенты и серверы различных версий совместимы, однако если клиент старее сервера, то некоторые новые фукнции могут быть недоступны. Мы рекомендуем использовать одинаковые версии клиента и сервера. При подключении клиента к более новому серверу `clickhouse-client` выводит сообщение:
+
+```
+ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+```
 
 ## Использование {#cli_usage}
 
