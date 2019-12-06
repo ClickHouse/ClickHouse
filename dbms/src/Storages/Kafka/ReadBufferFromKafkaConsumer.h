@@ -27,14 +27,13 @@ public:
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
     // Return values for the message that's being read.
-    String currentTopic() const { return current[-1].get_topic(); }
-    String currentKey() const { return current[-1].get_key(); }
-    auto currentOffset() const { return current[-1].get_offset(); }
-    auto currentPartition() const { return current[-1].get_partition(); }
-    auto currentTimestamp() const { return current[-1].get_timestamp(); }
+    String currentTopic() const { return current->get_topic(); }
+    String currentKey() const { return current->get_key(); }
+    auto currentOffset() const { return current->get_offset(); }
+    auto currentPartition() const { return current->get_partition(); }
+    auto currentTimestamp() const { return current->get_timestamp(); }
 
     bool reset() override;
-    void allowPoll() { allow_polling = true; }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -43,12 +42,12 @@ private:
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
-    bool allow_polling = false;
 
     Messages messages;
     Messages::const_iterator current;
 
     bool nextImpl() override;
+    bool poll(size_t timeout);
 };
 
 }

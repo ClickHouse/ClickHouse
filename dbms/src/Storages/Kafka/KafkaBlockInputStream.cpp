@@ -85,7 +85,7 @@ Block KafkaBlockInputStream::readImpl()
     auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
     /// Reads all polled messages at once
-    auto read_kafka_messages = [&]
+    auto read_kafka_message = [&]
     {
         size_t rows = 0;
 
@@ -104,11 +104,8 @@ Block KafkaBlockInputStream::readImpl()
     size_t total_rows = 0;
     while (total_rows < max_block_size)
     {
-        auto new_rows = read_kafka_messages();
+        auto new_rows = read_kafka_message();
         total_rows = total_rows + new_rows;
-
-        buffer->allowPoll();
-
         if (!new_rows || !checkTimeLimit())
             break;
     }

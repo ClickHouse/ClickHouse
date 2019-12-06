@@ -10,7 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 
-extern const int UNREAD_DATA_IN_BUFFER;
+extern const int LOGICAL_ERROR;
 
 }
 
@@ -108,13 +108,16 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         }
     }
 
+    if (poll(poll_timeout))
+        return;
+
     /// While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     /// If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     /// But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state.
     /// See https://github.com/edenhill/librdkafka/issues/2455
     while (consumer->get_subscription().empty())
     {
-        if (reset())
+        if (poll(poll_timeout))
             break;
     }
 }
@@ -132,33 +135,13 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 
 bool ReadBufferFromKafkaConsumer::reset()
 {
-    if (!allow_polling)
-        return false;
-
     if (current != messages.end())
-        throw Exception("Trying to reset Kafka buffer with remaining unread messages!", ErrorCodes::UNREAD_DATA_IN_BUFFER);
-
-    try
     {
-        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
-    }
-    catch (cppkafka::HandleException & e)
-    {
-        if (e.get_error() != RD_KAFKA_RESP_ERR__TIMED_OUT)
-            throw;
-        messages.clear();
-    }
-    current = messages.begin();
-
-    if (messages.empty())
-    {
-        LOG_TRACE(log, "No new messages");
-        return false;
+        ++current;
+        return true;
     }
 
-    LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
-
-    return true;
+    return poll(0);
 }
 
 bool ReadBufferFromKafkaConsumer::nextImpl()
@@ -177,17 +160,45 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     }
 
     if (current == messages.end())
-        /// Nothing more to read without reset
         return false;
 
     /// XXX: very fishy place with const-casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
+    if (buffer().begin() == new_position)
+        return false;
+
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
 
     /// Since we can poll more messages than we already processed - commit only processed messages.
     consumer->store_offset(*current);
 
-    ++current;
+    return true;
+}
+
+bool ReadBufferFromKafkaConsumer::poll(size_t timeout)
+{
+    if (current != messages.end())
+        throw Exception("Trying to poll new batch, while buffer still has pending messages!", ErrorCodes::LOGICAL_ERROR);
+
+    try
+    {
+        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(timeout));
+    }
+    catch (cppkafka::HandleException & e)
+    {
+        if (e.get_error() != RD_KAFKA_RESP_ERR__TIMED_OUT)
+            throw;
+        messages.clear();
+    }
+    current = messages.begin();
+
+    if (messages.empty())
+    {
+        LOG_TRACE(log, "No new messages");
+        return false;
+    }
+
+    LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
 
     return true;
 }
