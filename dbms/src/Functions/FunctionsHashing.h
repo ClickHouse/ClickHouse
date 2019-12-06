@@ -710,38 +710,6 @@ private:
     }
 
     template <bool first>
-    void executeUUID(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
-    {
-        if (checkColumn<ColumnUInt128>(column) ||
-            checkColumnConst<ColumnUInt128>(column))
-        {
-            executeGeneric<first>(column, vec_to);
-        }
-        else
-        {
-            throw Exception("Illegal column " + column->getName()
-                    + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-        }
-    }
-
-    template <typename T, bool first>
-    void executeDecimal(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
-    {
-        if (checkColumn<ColumnDecimal<T>>(column) ||
-            checkColumnConst<ColumnDecimal<T>>(column))
-        {
-            executeGeneric<first>(column, vec_to);
-        }
-        else
-        {
-            throw Exception("Illegal column " + column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-        }
-    }
-
-    template<bool first>
     void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
         for (size_t i = 0; i < column->size(); ++i)
@@ -890,10 +858,8 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else if (which.isDecimal32()) executeDecimal<Decimal32, first>(icolumn, vec_to);
-        else if (which.isDecimal64()) executeDecimal<Decimal64, first>(icolumn, vec_to);
-        else if (which.isDecimal128()) executeDecimal<Decimal128, first>(icolumn, vec_to);
-        else if (which.isUUID()) executeUUID<first>(icolumn, vec_to);
+        else if (which.isDecimal()) executeGeneric<first>(icolumn, vec_to);
+        else if (which.isUUID()) executeGeneric<first>(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
