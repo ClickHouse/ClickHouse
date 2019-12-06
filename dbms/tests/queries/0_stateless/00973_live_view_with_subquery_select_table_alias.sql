@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS test.lv;
 DROP TABLE IF EXISTS test.mt;
 
 CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple();
-CREATE LIVE VIEW test.lv AS SELECT foo.a FROM (SELECT a FROM test.mt) AS foo;
+CREATE LIVE VIEW test.lv AS SELECT foo.x FROM (SELECT a AS x FROM test.mt) AS foo;
 
 INSERT INTO test.mt VALUES (1),(2),(3);
 
