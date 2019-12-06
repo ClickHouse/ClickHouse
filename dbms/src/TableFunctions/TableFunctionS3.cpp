@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -76,9 +80,11 @@ StoragePtr TableFunctionS3::getStorage(
     const std::string & table_name,
     const String & compression_method) const
 {
-    S3Endpoint endpoint = S3Helper::parseS3EndpointFromUrl(source);
+    Poco::URI uri (source);
+    S3::URI s3_uri (uri);
+
     UInt64 min_upload_part_size = global_context.getSettingsRef().s3_min_upload_part_size;
-    return StorageS3::create(endpoint, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
+    return StorageS3::create(s3_uri, access_key_id, secret_access_key, getDatabaseName(), table_name, format, min_upload_part_size, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
@@ -87,3 +93,5 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 }
 
 }
+
+#endif

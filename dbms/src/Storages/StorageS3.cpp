@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <IO/S3Common.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -129,7 +133,7 @@ namespace
 }
 
 
-StorageS3::StorageS3(const S3Endpoint & endpoint_,
+StorageS3::StorageS3(const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
     const std::string & database_name_,
@@ -141,14 +145,14 @@ StorageS3::StorageS3(const S3Endpoint & endpoint_,
     Context & context_,
     const String & compression_method_ = "")
     : IStorage(columns_)
-    , endpoint(endpoint_)
+    , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
     , database_name(database_name_)
     , table_name(table_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3Helper::createS3Client(endpoint_.endpoint_url, access_key_id_, secret_access_key_))
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -169,10 +173,10 @@ BlockInputStreams StorageS3::read(
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        IStorage::chooseCompressionMethod(endpoint.endpoint_url, compression_method),
+        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
         client,
-        endpoint.bucket,
-        endpoint.key);
+        uri.bucket,
+        uri.key);
 
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
@@ -190,8 +194,8 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & 
 {
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name, min_upload_part_size, getSampleBlock(), context_global,
-        IStorage::chooseCompressionMethod(endpoint.endpoint_url, compression_method),
-        client, endpoint.bucket, endpoint.key);
+        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
+        client, uri.bucket, uri.key);
 }
 
 void registerStorageS3(StorageFactory & factory)
@@ -208,7 +212,8 @@ void registerStorageS3(StorageFactory & factory)
             engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        S3Endpoint endpoint = S3Helper::parseS3EndpointFromUrl(url);
+        Poco::URI uri (url);
+        S3::URI s3_uri (uri);
 
         String format_name = engine_args[engine_args.size() - 1]->as<ASTLiteral &>().value.safeGet<String>();
 
@@ -228,8 +233,9 @@ void registerStorageS3(StorageFactory & factory)
         else
             compression_method = "auto";
 
-        return StorageS3::create(endpoint, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 
 }
+#endif

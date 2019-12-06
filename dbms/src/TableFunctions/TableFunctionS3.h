@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <TableFunctions/ITableFunction.h>
 
 
@@ -37,3 +41,5 @@ private:
 };
 
 }
+
+#endif
