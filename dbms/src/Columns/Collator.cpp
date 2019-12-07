@@ -30,11 +30,11 @@ namespace DB
     }
 }
 
-static constexpr size_t MAX_LANG_LENGTH = 128;
 
 AvailableCollationLocales::AvailableCollationLocales()
 {
 #if USE_ICU
+    static const size_t MAX_LANG_LENGTH = 128;
     size_t available_locales_count = ucol_countAvailable();
     for (size_t i = 0; i < available_locales_count; ++i)
     {
