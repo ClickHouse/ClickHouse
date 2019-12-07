@@ -107,8 +107,9 @@ def test_mutation_simple(started_cluster, replicated):
         clickhouse_path = "/var/lib/clickhouse"
         name = "test_mutation_simple"
         nodes = [node1, node2] if replicated else [node1]
-        engine = "ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')" if replicated else "MergeTree()"
+        engine = "ReplicatedMergeTree('/clickhouse/test_mutation_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
+        starting_block = 0 if replicated else 1
 
         for node in nodes:
             node.query("""
@@ -121,6 +122,8 @@ def test_mutation_simple(started_cluster, replicated):
             """.format(engine=engine, name=name))
 
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
+        part = "all_{}_{}_0".format(starting_block, starting_block)
+        result_part = "all_{}_{}_0_{}".format(starting_block, starting_block, starting_block+1)
 
         def alter():
             node1.query("ALTER TABLE {name} UPDATE a = 42 WHERE sleep(2) OR 1".format(name=name))
@@ -138,10 +141,10 @@ def test_mutation_simple(started_cluster, replicated):
                 "default",
                 name,
                 "1",
-                "['all_1_1_0']",
-                "['/var/lib/clickhouse/data/default/test_mutation_simple/all_1_1_0/']",
-                "all_1_1_0_2",
-                "/var/lib/clickhouse/data/default/test_mutation_simple/all_1_1_0_2/",
+                "['{}']".format(part),
+                "['{clickhouse}/data/default/{name}/{}/']".format(part, clickhouse=clickhouse_path, name=name),
+                result_part,
+                "{clickhouse}/data/default/{name}/{}/".format(result_part, clickhouse=clickhouse_path, name=name),
                 "all",
                 "1"
             ],
