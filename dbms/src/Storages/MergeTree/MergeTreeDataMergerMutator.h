@@ -30,6 +30,7 @@ struct FutureMergedMutatedPart
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
+    void updatePath(const MergeTreeData & storage, const DiskSpace::ReservationPtr & reservation);
 };
 
 
