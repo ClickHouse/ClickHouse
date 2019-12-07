@@ -201,6 +201,8 @@ void TCPHandler::runImpl()
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+
+                state.temporary_tables_read = true;
             });
 
             /// Send structure of columns to client for function input()
@@ -339,6 +341,18 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        try
+        {
+            if (exception && !state.temporary_tables_read)
+                query_context->initializeExternalTablesIfSet();
+        }
+        catch (...)
+        {
+            network_error = true;
+            LOG_WARNING(log, "Can't read external tables after query failure.");
+        }
+
 
         try
         {
