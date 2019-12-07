@@ -276,17 +276,137 @@ ORDER BY level
 
 Simply, the level value could only be 0, 1, 2, 3, it means the maxium event action stage that one user could reach.
 
-## retention(cond1, cond2, ...)
+## retention {#retention}
 
-Retention refers to the ability of a company or product to retain its customers over some specified periods.
+Analytical function that shows how much 
+certain conditions, for example, retention of dynamics/level [site traffic statistics](https://yandex.ru/support/partner2/statistics/metrika-visitors-statistics.html?lang=en).
 
-`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event
+The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
+Any condition can be specified as an argument (as in [WHERE](../select.md#select-where)).
 
-Example:
+The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and fird are true, etc.
 
-Consider you are doing a website analytics, intend to calculate the retention of customers
+**Syntax** 
 
-This could be easily calculate by `retention`
+```sql
+retention(cond1, cond2, ..., cond32);
+```
+
+**Parameters**
+
+- `cond` — an expression that returns a `UInt8` result (1 or 0).
+
+**Returned value**
+
+The array of 1 or 0.
+
+- 1 — condition was met for the event.
+- 0 — condition wasn't met for the event.
+
+Type: `UInt8`.
+
+**Example**
+
+Let's consider an example of calculating the `retention` function to determine site traffic.
+
+**1.** Сreate a table to illustrate an example.
+
+```sql
+CREATE TABLE retention_test(date Date, uid Int32)ENGINE = Memory;
+
+INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
+INSERT INTO retention_test SELECT '2020-01-02', number FROM numbers(10);
+INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
+```
+
+Input table:
+
+Query:
+
+```sql
+SELECT * FROM retention_test
+```
+
+Result:
+
+```text
+┌───────date─┬─uid─┐
+│ 2020-01-01 │   0 │
+│ 2020-01-01 │   1 │
+│ 2020-01-01 │   2 │
+│ 2020-01-01 │   3 │
+│ 2020-01-01 │   4 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-02 │   0 │
+│ 2020-01-02 │   1 │
+│ 2020-01-02 │   2 │
+│ 2020-01-02 │   3 │
+│ 2020-01-02 │   4 │
+│ 2020-01-02 │   5 │
+│ 2020-01-02 │   6 │
+│ 2020-01-02 │   7 │
+│ 2020-01-02 │   8 │
+│ 2020-01-02 │   9 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-03 │   0 │
+│ 2020-01-03 │   1 │
+│ 2020-01-03 │   2 │
+│ 2020-01-03 │   3 │
+│ 2020-01-03 │   4 │
+│ 2020-01-03 │   5 │
+│ 2020-01-03 │   6 │
+│ 2020-01-03 │   7 │
+│ 2020-01-03 │   8 │
+│ 2020-01-03 │   9 │
+│ 2020-01-03 │  10 │
+│ 2020-01-03 │  11 │
+│ 2020-01-03 │  12 │
+│ 2020-01-03 │  13 │
+│ 2020-01-03 │  14 │
+└────────────┴─────┘
+```
+
+**2.** Group users by unique ID `uid` using the `retention` function.
+
+Query:
+
+```sql
+SELECT
+    uid,
+    retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+FROM retention_test
+WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
+GROUP BY uid
+ORDER BY uid ASC
+```
+
+Result:
+
+```text
+┌─uid─┬─r───────┐
+│   0 │ [1,1,1] │
+│   1 │ [1,1,1] │
+│   2 │ [1,1,1] │
+│   3 │ [1,1,1] │
+│   4 │ [1,1,1] │
+│   5 │ [0,0,0] │
+│   6 │ [0,0,0] │
+│   7 │ [0,0,0] │
+│   8 │ [0,0,0] │
+│   9 │ [0,0,0] │
+│  10 │ [0,0,0] │
+│  11 │ [0,0,0] │
+│  12 │ [0,0,0] │
+│  13 │ [0,0,0] │
+│  14 │ [0,0,0] │
+└─────┴─────────┘
+```
+
+**3.**  Calculate the total number of site visits per day.
+
+Query:
 
 ```sql
 SELECT
@@ -297,15 +417,26 @@ FROM
 (
     SELECT
         uid,
-        retention(date = '2018-08-10', date = '2018-08-11', date = '2018-08-12') AS r
-    FROM events
-    WHERE date IN ('2018-08-10', '2018-08-11', '2018-08-12')
+        retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+    FROM retention_test
+    WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
     GROUP BY uid
 )
 ```
 
-Simply, `r1` means the number of unique visitors who met the `cond1` condition, `r2` means the number of unique visitors who met `cond1` and `cond2` conditions, `r3` means the number of unique visitors who met `cond1` and `cond3` conditions.
+Result:
 
+```text
+┌─r1─┬─r2─┬─r3─┐
+│  5 │  5 │  5 │
+└────┴────┴────┘
+```
+
+Where:
+
+- `r1`- the number of unique visitors who visited the site during 2020-01-01 (the `cond1` condition).
+- `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
+- `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
 ## uniqUpTo(N)(x)
 
