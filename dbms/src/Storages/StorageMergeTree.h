@@ -55,8 +55,6 @@ public:
       */
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    UInt64 freeze(const ASTPtr & partition, const String & with_name, const Context & query_context) override;
-
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;

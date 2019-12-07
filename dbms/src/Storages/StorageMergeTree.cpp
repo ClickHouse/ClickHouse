@@ -966,21 +966,6 @@ bool StorageMergeTree::optimize(
 }
 
 
-UInt64 StorageMergeTree::freeze(const ASTPtr & partition, const String & with_name, const Context & query_context)
-{
-    auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-
-    if (partition)
-    {
-        return freezePartition(partition, with_name, query_context, lock);
-    }
-    else
-    {
-        return freezeAll(with_name, query_context, lock);
-    }
-}
-
-
 void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)

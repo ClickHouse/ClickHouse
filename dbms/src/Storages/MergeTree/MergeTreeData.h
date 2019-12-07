@@ -568,9 +568,6 @@ public:
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
-    /// Freezes all parts.
-    UInt64 freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -597,8 +594,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    UInt64 freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
-
+    UInt64 freeze(const ASTPtr & partition_ast, const String & with_name, const Context & context) override;
 
 public:
     /// Moves partition to specified Disk
@@ -913,9 +909,10 @@ protected:
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
-    /// Common part for |freezePartition()| and |freezeAll()|.
+    /// Common part for |freeze()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    UInt64 freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+    MatcherFn freezePartitionMatcher(const ASTPtr & partition_ast, const Context & context);
+    UInt64 freezePartitionsByMatcher(const MatcherFn& matcher, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & data_part) const;
 

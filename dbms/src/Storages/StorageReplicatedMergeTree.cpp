@@ -3145,21 +3145,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 }
 
 
-UInt64 StorageReplicatedMergeTree::freeze(const ASTPtr & partition, const String & with_name, const Context & query_context)
-{
-    auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-
-    if (partition)
-    {
-        return freezePartition(partition, with_name, query_context, lock);
-    }
-    else
-    {
-        return freezeAll(with_name, query_context, lock);
-    }
-}
-
-
 void StorageReplicatedMergeTree::alter(
     const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {

@@ -1751,11 +1751,6 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     empty_columns.clear();
 }
 
-UInt64 MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
-{
-    return freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
-}
-
 
 bool MergeTreeData::AlterDataPartTransaction::isValid() const
 {
@@ -2664,40 +2659,10 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-UInt64 MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
+UInt64 MergeTreeData::freeze(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
-    std::optional<String> prefix;
-    String partition_id;
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
-            prefix = partition_lit->value.getType() == Field::Types::UInt64
-                ? toString(partition_lit->value.get<UInt64>())
-                : partition_lit->value.safeGet<String>();
-        else
-            partition_id = getPartitionIDFromQuery(partition_ast, context);
-    }
-    else
-        partition_id = getPartitionIDFromQuery(partition_ast, context);
-
-    if (prefix)
-        LOG_DEBUG(log, "Freezing parts with prefix " + *prefix);
-    else
-        LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
-
-
-    return freezePartitionsByMatcher(
-        [&prefix, &partition_id](const DataPartPtr & part)
-        {
-            if (prefix)
-                return startsWith(part->info.partition_id, *prefix);
-            else
-                return part->info.partition_id == partition_id;
-        },
-        with_name,
-        context);
+    auto lock = lockStructureForShare(false, context.getCurrentQueryId());
+    return freezePartitionsByMatcher(freezePartitionMatcher(partition_ast, context), with_name, context);
 }
 
 
@@ -3329,7 +3294,42 @@ MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
     return res;
 }
 
-UInt64 MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
+
+MergeTreeData::MatcherFn MergeTreeData::freezePartitionMatcher(const ASTPtr & partition_ast, const Context & context)
+{
+    if (!partition_ast)
+        return [] (const DataPartPtr &){ return true; };
+
+    std::optional<String> prefix;
+    String partition_id;
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
+            prefix = partition_lit->value.getType() == Field::Types::UInt64
+                     ? toString(partition_lit->value.get<UInt64>())
+                     : partition_lit->value.safeGet<String>();
+        else
+            partition_id = getPartitionIDFromQuery(partition_ast, context);
+    }
+    else
+        partition_id = getPartitionIDFromQuery(partition_ast, context);
+
+    if (prefix)
+        return [&prefix](const DataPartPtr & part)
+        {
+            return startsWith(part->info.partition_id, *prefix);
+        };
+    else
+        return [&partition_id](const DataPartPtr & part)
+        {
+            return part->info.partition_id == partition_id;
+        };
+}
+
+
+UInt64 MergeTreeData::freezePartitionsByMatcher(const MatcherFn & matcher, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
@@ -3371,6 +3371,7 @@ UInt64 MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String 
 
     return increment;
 }
+
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {
