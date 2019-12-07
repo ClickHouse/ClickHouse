@@ -43,6 +43,7 @@ def test_merge_simple(started_cluster, replicated):
         nodes = [node1, node2] if replicated else [node1]
         engine = "ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
+        starting_block = 0 if replicated else 1
 
         for node in nodes:
             node.query("""
@@ -57,6 +58,9 @@ def test_merge_simple(started_cluster, replicated):
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (3)".format(name=name))
+
+        parts = ["all_{}_{}_0".format(x, x) for x in range(starting_block, starting_block+3)]
+        result_part = "all_{}_{}_1".format(starting_block, starting_block+2)
 
         def optimize():
             node1.query("OPTIMIZE TABLE {name}".format(name=name))
@@ -76,10 +80,10 @@ def test_merge_simple(started_cluster, replicated):
                 "default",
                 name,
                 "3",
-                "['all_1_1_0','all_2_2_0','all_3_3_0']",
-                "['{clickhouse}/data/default/{name}/all_1_1_0/','{clickhouse}/data/default/{name}/all_2_2_0/','{clickhouse}/data/default/{name}/all_3_3_0/']".format(clickhouse=clickhouse_path, name=name),
-                "all_1_3_1",
-                "{clickhouse}/data/default/{name}/all_1_3_1/".format(clickhouse=clickhouse_path, name=name),
+                "['{}','{}','{}']".format(*parts),
+                "['{clickhouse}/data/default/{name}/{}/','{clickhouse}/data/default/{name}/{}/','{clickhouse}/data/default/{name}/{}/']".format(*parts, clickhouse=clickhouse_path, name=name),
+                result_part,
+                "{clickhouse}/data/default/{name}/{}/".format(result_part, clickhouse=clickhouse_path, name=name),
                 "all",
                 "0"
             ]
