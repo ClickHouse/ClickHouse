@@ -135,6 +135,8 @@ Please fix this and reinstall this package." >&2
         defaultpassword="$RET"
         if [ -n "$defaultpassword" ]; then
             echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
         fi
 
         # everything went well, so now let's reset the password
