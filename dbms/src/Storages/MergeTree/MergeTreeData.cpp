@@ -3317,12 +3317,12 @@ MergeTreeData::MatcherFn MergeTreeData::freezePartitionMatcher(const ASTPtr & pa
         partition_id = getPartitionIDFromQuery(partition_ast, context);
 
     if (prefix)
-        return [&prefix](const DataPartPtr & part)
+        return [prefix](const DataPartPtr & part)
         {
             return startsWith(part->info.partition_id, *prefix);
         };
     else
-        return [&partition_id](const DataPartPtr & part)
+        return [partition_id](const DataPartPtr & part)
         {
             return part->info.partition_id == partition_id;
         };

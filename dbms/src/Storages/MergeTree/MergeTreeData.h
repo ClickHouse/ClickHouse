@@ -912,7 +912,7 @@ protected:
     /// Common part for |freeze()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     MatcherFn freezePartitionMatcher(const ASTPtr & partition_ast, const Context & context);
-    UInt64 freezePartitionsByMatcher(const MatcherFn& matcher, const String & with_name, const Context & context);
+    UInt64 freezePartitionsByMatcher(const MatcherFn & matcher, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & data_part) const;
 
