@@ -23,7 +23,7 @@ namespace DB
 
 struct ColumnSize;
 class MergeTreeData;
-class FutureMergedMutatedPart;
+struct FutureMergedMutatedPart;
 
 
 /// Description of the data part.
