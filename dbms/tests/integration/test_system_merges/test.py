@@ -41,10 +41,10 @@ def test_merge_simple(started_cluster, replicated):
         clickhouse_path = "/var/lib/clickhouse"
         name = "test_merge_simple"
         nodes = [node1, node2] if replicated else [node1]
-        engines = ["ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')"] if replicated else ["MergeTree()"]
+        engine = "ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
 
-        for node, engine in zip(nodes, engines):
+        for node in nodes:
             node.query("""
                 CREATE TABLE {name}
                 (
@@ -61,6 +61,8 @@ def test_merge_simple(started_cluster, replicated):
         def optimize():
             node1.query("OPTIMIZE TABLE {name}".format(name=name))
 
+        wait = threading.Thread(target=time.sleep, args=(5,))
+        wait.start()
         t = threading.Thread(target=optimize)
         t.start()
 
@@ -83,6 +85,7 @@ def test_merge_simple(started_cluster, replicated):
             ]
         ]
         t.join()
+        wait.join()
 
         assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
 
@@ -100,10 +103,10 @@ def test_mutation_simple(started_cluster, replicated):
         clickhouse_path = "/var/lib/clickhouse"
         name = "test_mutation_simple"
         nodes = [node1, node2] if replicated else [node1]
-        engines = ["ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')"] if replicated else ["MergeTree()"]
+        engine = "ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')" if replicated else "MergeTree()"
         node_check = nodes[-1]
 
-        for node, engine in zip(nodes, engines):
+        for node in nodes:
             node.query("""
                 CREATE TABLE {name}
                 (
