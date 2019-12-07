@@ -105,42 +105,55 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (!block)
         return;
 
-    size_t size = block.rows();
-    IColumn::Permutation perm(size);
-    for (size_t i = 0; i < size; ++i)
-        perm[i] = i;
-
-    if (limit >= size)
-        limit = 0;
 
     /// If only one column to sort by
     if (description.size() == 1)
     {
+
+        IColumn::Permutation perm;
         bool reverse = description[0].direction == -1;
 
         const IColumn * column = !description[0].column_name.empty()
             ? block.getByName(description[0].column_name).column.get()
             : block.safeGetByPosition(description[0].column_number).column.get();
 
+        bool is_column_const = false;
         if (isCollationRequired(description[0]))
         {
             /// it it's real string column, than we need sort
             if (const ColumnString * column_string = checkAndGetColumn<ColumnString>(column))
                 column_string->getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
-            else if (!checkAndGetColumnConstData<ColumnString>(column))
+            else if (checkAndGetColumnConstData<ColumnString>(column))
+                is_column_const = true;
+            else
                 throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
 
         }
         else if (!isColumnConst(*column))
             column->getPermutation(reverse, limit, description[0].nulls_direction, perm);
-        /// we don't need to do anything with const column
+        else
+            /// we don't need to do anything with const column
+            is_column_const = true;
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
-            block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+        {
+            if (!is_column_const)
+                block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
+            else if (limit != 0) // LIMIT exists
+                block.getByPosition(i).column = block.getByPosition(i).column->cut(0, limit);
+        }
     }
     else
     {
+        size_t size = block.rows();
+        IColumn::Permutation perm(size);
+        for (size_t i = 0; i < size; ++i)
+            perm[i] = i;
+
+        if (limit >= size)
+            limit = 0;
+
         bool need_collation = false;
         ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
