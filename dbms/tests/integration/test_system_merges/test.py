@@ -32,19 +32,28 @@ def split_tsv(data):
     return [ x.split("\t") for x in data.splitlines() ]
 
 
-def test_merge_simple(started_cluster):
+@pytest.mark.parametrize("replicated", [
+    "",
+    "replicated"
+])
+def test_merge_simple(started_cluster, replicated):
     try:
         clickhouse_path = "/var/lib/clickhouse"
         name = "test_merge_simple"
+        nodes = [node1, node2] if replicated else [node1]
+        engines = ["ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')"] if replicated else ["MergeTree()"]
+        node_check = nodes[-1]
 
-        node1.query("""
-            CREATE TABLE {name}
-            (
-                `a` Int64
-            )
-            ENGINE = MergeTree()
-            ORDER BY sleep(2)
-        """.format(name=name))
+        for node, engine in zip(nodes, engines):
+            node.query("""
+                CREATE TABLE {name}
+                (
+                    `a` Int64
+                )
+                ENGINE = {engine}
+                ORDER BY sleep(2)
+            """.format(engine=engine, name=name))
+
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
         node1.query("INSERT INTO {name} VALUES (3)".format(name=name))
@@ -56,7 +65,7 @@ def test_merge_simple(started_cluster):
         t.start()
 
         time.sleep(1)
-        assert split_tsv(node1.query("""
+        assert split_tsv(node_check.query("""
             SELECT database, table, num_parts, source_part_names, source_part_paths, result_part_name, result_part_path, partition_id, is_mutation
                 FROM system.merges
                 WHERE table = '{name}'
@@ -75,25 +84,35 @@ def test_merge_simple(started_cluster):
         ]
         t.join()
 
-        assert node1.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
+        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
 
     finally:
-        node1.query("DROP TABLE {name}".format(name=name))
+        for node in nodes:
+            node.query("DROP TABLE {name}".format(name=name))
 
 
-def test_mutation_simple(started_cluster):
+@pytest.mark.parametrize("replicated", [
+    "",
+    "replicated"
+])
+def test_mutation_simple(started_cluster, replicated):
     try:
         clickhouse_path = "/var/lib/clickhouse"
         name = "test_mutation_simple"
+        nodes = [node1, node2] if replicated else [node1]
+        engines = ["ReplicatedMergeTree('/clickhouse/test_merge_simple', '{replica}')"] if replicated else ["MergeTree()"]
+        node_check = nodes[-1]
 
-        node1.query("""
-            CREATE TABLE {name}
-            (
-                `a` Int64
-            )
-            ENGINE = MergeTree()
-            ORDER BY tuple()
-        """.format(name=name))
+        for node, engine in zip(nodes, engines):
+            node.query("""
+                CREATE TABLE {name}
+                (
+                    `a` Int64
+                )
+                ENGINE = {engine}
+                ORDER BY tuple()
+            """.format(engine=engine, name=name))
+
         node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
 
         def alter():
@@ -103,7 +122,7 @@ def test_mutation_simple(started_cluster):
         t.start()
 
         time.sleep(1)
-        assert split_tsv(node1.query("""
+        assert split_tsv(node_check.query("""
             SELECT database, table, num_parts, source_part_names, source_part_paths, result_part_name, result_part_path, partition_id, is_mutation
                 FROM system.merges
                 WHERE table = '{name}'
@@ -124,10 +143,8 @@ def test_mutation_simple(started_cluster):
 
         time.sleep(1.5)
 
-        assert node1.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
+        assert node_check.query("SELECT * FROM system.merges WHERE table = '{name}'".format(name=name)) == ""
 
     finally:
-        node1.query("DROP TABLE {name}".format(name=name))
-
-#def test_replicated(started_cluster):
-
+        for node in nodes:
+            node.query("DROP TABLE {name}".format(name=name))
