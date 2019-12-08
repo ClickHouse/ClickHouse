@@ -1117,8 +1117,7 @@ public:
             } while (JSONParser::nextArrayElement(it2));
         }
 
-        auto back = col_res.getOffsets().back();
-        col_res.getOffsets().push_back(back + size);
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + size);
         return true;
     }
 
