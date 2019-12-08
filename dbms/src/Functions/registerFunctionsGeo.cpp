@@ -5,7 +5,7 @@ namespace DB
 
 class FunctionFactory;
 
-void registerFunctionGreatCircleDistance(FunctionFactory & factory);
+void registerFunctionGeoDistance(FunctionFactory & factory);
 void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
 void registerFunctionGeohashEncode(FunctionFactory & factory);
@@ -18,7 +18,7 @@ void registerFunctionGeoToH3(FunctionFactory &);
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
-    registerFunctionGreatCircleDistance(factory);
+    registerFunctionGeoDistance(factory);
     registerFunctionPointInEllipses(factory);
     registerFunctionPointInPolygon(factory);
     registerFunctionGeohashEncode(factory);
