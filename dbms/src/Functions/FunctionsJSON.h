@@ -1101,14 +1101,17 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator & it)
     {
-        if (!JSONParser::isArray(it)) {
+        if (!JSONParser::isArray(it))
+        {
             return false;
         }
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
         Iterator it2 = it;
         size_t size = 0;
-        if  (JSONParser::firstArrayElement(it2)) {
-            do {
+        if (JSONParser::firstArrayElement(it2))
+        {
+            do
+            {
                 JSONExtractRawImpl<JSONParser>::addValueToColumn(col_res.getData(), it2);
                 size++;
             } while (JSONParser::nextArrayElement(it2));
@@ -1122,5 +1125,4 @@ public:
     static constexpr size_t num_extra_arguments = 0;
     static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
-
 }
