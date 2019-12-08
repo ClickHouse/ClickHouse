@@ -433,6 +433,8 @@ if (USE_JEMALLOC)
 
     if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
         # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # Actually we link JEMALLOC to almost all libraries.
+        # This is just hotfix for some uninvestigated problem.
         target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
     endif()
 endif ()

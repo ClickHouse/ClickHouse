@@ -43,6 +43,9 @@ public:
     /// Total rows
     size_t getTotalRows() const;
 
+    /// Total number marks without final mark if it exists
+    size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
+
     /// Rows after mark to next mark
     inline size_t getMarkRows(size_t mark_index) const
     {

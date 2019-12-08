@@ -349,4 +349,48 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
+
+Приводит аргумент из числового типа данных к типу данных [IntervalType](../../data_types/special_data_types/interval.md).
+
+**Синтксис**
+
+```sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
+```
+
+**Параметры**
+
+- `number` — длительность интервала. Положительное целое число.
+
+**Возвращаемые значения**
+
+- Значение с типом данных `Interval`.
+
+**Пример**
+
+```sql
+WITH
+    toDate('2019-01-01') AS date,
+    INTERVAL 1 WEEK AS interval_week,
+    toIntervalWeek(1) AS interval_to_week
+SELECT
+    date + interval_week,
+    date + interval_to_week
+```
+
+```text
+┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
+│                2019-01-08 │                   2019-01-08 │
+└───────────────────────────┴──────────────────────────────┘
+```
+
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

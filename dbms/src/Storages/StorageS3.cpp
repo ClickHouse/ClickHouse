@@ -43,7 +43,7 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadBufferFromS3>(compression_method, uri, access_key_id, secret_access_key, timeouts);
+            read_buf = getReadBuffer<ReadBufferFromS3>(compression_method, uri, access_key_id, secret_access_key, timeouts, context.getRemoteHostFilter());
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -98,7 +98,8 @@ namespace
                 access_key_id,
                 secret_access_key,
                 min_upload_part_size,
-                timeouts);
+                timeouts,
+                context.getRemoteHostFilter());
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -155,6 +156,7 @@ StorageS3::StorageS3(
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
 {
+    context_global.getRemoteHostFilter().checkURL(uri_);
     setColumns(columns_);
     setConstraints(constraints_);
 }

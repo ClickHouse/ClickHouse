@@ -5,10 +5,12 @@ nav:
   - 'Distinctive Features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica Task': 'introduction/ya_metrika_task.md'
+  - 'History': 'introduction/history.md'
 
 - 'Getting Started':
-  - 'Deploying and Running': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - 'Installation': 'getting_started/install.md'
+  - 'Tutorial': 'getting_started/tutorial.md'
   - 'Example Datasets':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'
@@ -119,6 +121,7 @@ nav:
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
     - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
+    - 'Introspection': 'query_language/functions/introspection.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -215,8 +218,9 @@ nav:
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
-  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross.md'
-  - 'How to Write C++ code': 'development/style.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross_osx.md'
+  - 'How to Build ClickHouse on Linux for AARCH64 (ARM64)': 'development/build_cross_arm.md'
+  - 'How to Write C++ Code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
   - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
