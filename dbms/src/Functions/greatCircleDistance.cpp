@@ -44,7 +44,7 @@ float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
 float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
 
 float sphere_metric_lut[METRIC_LUT_SIZE + 1];    /// sphere metric: the distance for one degree across longitude depending on latitude
-float wgs84_metric_lut[METRIC_LUT_SIZE + 1][2];  /// ellipsoid metric: the distance across one degree latitude/longitude depending on latitude
+float wgs84_metric_lut[2 * (METRIC_LUT_SIZE + 1)];  /// ellipsoid metric: the distance across one degree latitude/longitude depending on latitude
 
 
 inline double sqr(double v)
@@ -73,8 +73,8 @@ void geodistInit()
         /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
         /// depending on the latitude (in radians).
 
-        wgs84_metric_lut[i][0] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
-        wgs84_metric_lut[i][1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
+        wgs84_metric_lut[i * 2] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
+        wgs84_metric_lut[i * 2 + 1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
 
         sphere_metric_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
     }
@@ -163,11 +163,11 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         }
         else if constexpr (method == Method::WGS84)
         {
-            k_lat = wgs84_metric_lut[latitude_midpoint_index][0]
-                + (wgs84_metric_lut[latitude_midpoint_index + 1][0] - wgs84_metric_lut[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lat = wgs84_metric_lut[latitude_midpoint_index * 2]
+                + (wgs84_metric_lut[(latitude_midpoint_index + 1) * 2] - wgs84_metric_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
 
-            k_lon = wgs84_metric_lut[latitude_midpoint_index][1]
-                + (wgs84_metric_lut[latitude_midpoint_index + 1][1] - wgs84_metric_lut[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lon = wgs84_metric_lut[latitude_midpoint_index * 2 + 1]
+                + (wgs84_metric_lut[(latitude_midpoint_index + 1) * 2 + 1] - wgs84_metric_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
