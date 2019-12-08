@@ -291,6 +291,7 @@ struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; 
 struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
 struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
+struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 
 
 template <typename JSONParser>
@@ -1086,6 +1087,40 @@ private:
         }();
         return the_instance;
     }
+};
+
+template <typename JSONParser>
+class JSONExtractArrayRawImpl
+{
+public:
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        if (!JSONParser::isArray(it)) {
+            return false;
+        }
+        ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
+        Iterator it2 = it;
+        size_t size = 0;
+        if  (JSONParser::firstArrayElement(it2)) {
+            do {
+                JSONExtractRawImpl<JSONParser>::addValueToColumn(col_res.getData(), it2);
+                size++;
+            } while (JSONParser::nextArrayElement(it2));
+        }
+
+        auto back = col_res.getOffsets().back();
+        col_res.getOffsets().push_back(back + size);
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 }
