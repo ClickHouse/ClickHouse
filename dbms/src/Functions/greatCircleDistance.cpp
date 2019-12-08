@@ -7,7 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/range.h>
-#include <cmath>
+#include <math.h>
 #include <array>
 
 
@@ -53,7 +53,7 @@ inline double sqr(double v)
     return v * v;
 }
 
-inline float fsqr(float v)
+inline float sqrf(float v)
 {
     return v * v;
 }
@@ -69,7 +69,7 @@ void geodistInit()
 
     for (size_t i = 0; i <= GEODIST_TABLE_K; ++i)
     {
-        double x = PI * i / GEODIST_TABLE_K - PI * 0.5; // [-pi / 2, pi / 2] -> [0, KTABLE]
+        double x = i * (PI / GEODIST_TABLE_K) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, KTABLE]
         g_GeoFlatK[i][0] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * x) + 1.20 * cos(4 * x)));
         g_GeoFlatK[i][1] = static_cast<float>(sqr(111415.13 * cos(x) - 94.55 * cos(3 * x) + 0.12 * cos(5 * x)));
     }
@@ -77,7 +77,7 @@ void geodistInit()
 
 inline float geodistDegDiff(float f)
 {
-    f = static_cast<float>(fabs(f));
+    f = fabsf(f);
     while (f > 360)
         f -= 360;
     if (f > 180)
@@ -87,7 +87,7 @@ inline float geodistDegDiff(float f)
 
 inline float geodistFastCos(float x)
 {
-    float y = static_cast<float>(fabs(x) * GEODIST_TABLE_COS / PI / 2);
+    float y = fabsf(x) * (GEODIST_TABLE_COS / PI / 2);
     int i = static_cast<int>(y);
     y -= i;
     i &= (GEODIST_TABLE_COS - 1);
@@ -96,7 +96,7 @@ inline float geodistFastCos(float x)
 
 inline float geodistFastSin(float x)
 {
-    float y = static_cast<float>(fabs(x) * GEODIST_TABLE_COS / PI / 2);
+    float y = fabsf(x) * (GEODIST_TABLE_COS / PI / 2);
     int i = static_cast<int>(y);
     y -= i;
     i = (i - GEODIST_TABLE_COS / 4) & (GEODIST_TABLE_COS - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
@@ -107,20 +107,20 @@ inline float geodistFastSin(float x)
 /// max error in floats 0.00369%, in doubles 0.00072%
 inline float geodistFastAsinSqrt(float x)
 {
-    if (x < 0.122)
+    if (x < 0.122f)
     {
         // distance under 4546km, Taylor error under 0.00072%
-        float y = static_cast<float>(sqrt(x));
+        float y = sqrtf(x);
         return y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f;
     }
-    if (x < 0.948)
+    if (x < 0.948f)
     {
         // distance under 17083km, 512-entry LUT error under 0.00072%
         x *= GEODIST_TABLE_ASIN;
         int i = static_cast<int>(x);
         return g_GeoAsin[i] + (g_GeoAsin[i + 1] - g_GeoAsin[i]) * (x - i);
     }
-    return static_cast<float>(asin(sqrt(x))); // distance over 17083km, just compute honestly
+    return asinf(sqrtf(x)); // distance over 17083km, just compute honestly
 }
 
 }
@@ -154,15 +154,6 @@ private:
 
     Float32 greatCircleDistance(Float32 lon1deg, Float32 lat1deg, Float32 lon2deg, Float32 lat2deg)
     {
-        if (lon1deg < -180 || lon1deg > 180 ||
-            lon2deg < -180 || lon2deg > 180 ||
-            lat1deg < -90 || lat1deg > 90 ||
-            lat2deg < -90 || lat2deg > 90)
-        {
-            throw Exception("Arguments values out of bounds for function " + getName(),
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        }
-
         float lat_diff = geodistDegDiff(lat1deg - lat2deg);
         float lon_diff = geodistDegDiff(lon1deg - lon2deg);
 
@@ -174,16 +165,16 @@ private:
             size_t i = static_cast<size_t>(m) & (GEODIST_TABLE_K - 1);
             float kk1 = g_GeoFlatK[i][0] + (g_GeoFlatK[i + 1][0] - g_GeoFlatK[i][0]) * (m - i);
             float kk2 = g_GeoFlatK[i][1] + (g_GeoFlatK[i + 1][1] - g_GeoFlatK[i][1]) * (m - i);
-            return static_cast<float>(sqrt(kk1 * lat_diff * lat_diff + kk2 * lon_diff * lon_diff));
+            return sqrtf(kk1 * lat_diff * lat_diff + kk2 * lon_diff * lon_diff);
         }
         else
         {
             // points too far away; use haversine
             static const float d = 2 * 6371000;
-            float a = fsqr(geodistFastSin(lat_diff * TO_RADF2)) +
+            float a = sqrf(geodistFastSin(lat_diff * TO_RADF2)) +
                 geodistFastCos(lat1deg * TO_RADF) * geodistFastCos(lat2deg * TO_RADF) *
-                fsqr(geodistFastSin(lon_diff * TO_RADF2));
-            return static_cast<float>(d * geodistFastAsinSqrt(a));
+                sqrf(geodistFastSin(lon_diff * TO_RADF2));
+            return d * geodistFastAsinSqrt(a);
         }
     }
 
