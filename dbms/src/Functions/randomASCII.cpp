@@ -1,15 +1,22 @@
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Core/Field.h>
+#include <IO/WriteBufferFromVector.h>
+#include <IO/WriteHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
+#include <type_traits>
 
 #include <random>
 #include <iostream>
+
+
+
 
 namespace DB
 {
@@ -21,10 +28,9 @@ namespace ErrorCodes
 
 class FunctionRandomASCII : public IFunction
 {
-
 public:
     static constexpr auto name = "randomASCII";
-    static FunctionPtr create(const Context &){ return std::make_shared<FunctionRandomASCII>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomASCII>(); }
 
     String getName() const override
     {
@@ -33,8 +39,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        const IDataType & type = *arguments[0];
+
+        if (!isNativeNumber(type))
+            throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -49,9 +60,7 @@ public:
             || executeType<Int8>(block, arguments, result)
             || executeType<Int16>(block, arguments, result)
             || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
+            || executeType<Int64>(block, arguments, result))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -61,84 +70,69 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+
+        std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
+        std::cout<<"!!!!!!Number of input rows: "<<input_rows_count<<std::endl;
+
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
+            
             auto col_to = ColumnString::create();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t size = vec_from.size();
-            data_to.resize(size * 2);
-            offsets_to.resize(size);
+            size_t num_of_rows = vec_from.size();
+            data_to.resize(num_of_rows * 2);
+            offsets_to.resize(num_of_rows);
+
+            std::cout<<"!!!!!!Size of vector from: "<<num_of_rows<<std::endl;
 
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
 
-            char character;
-            size_t ch_num = 0;
-
             std::default_random_engine generator;
             std::uniform_int_distribution<int> distribution(32, 127);
             std::random_device rd;
+            char character;
+            size_t str_length;
 
-            std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
-            std::cout<<"size = "<<size<<std::endl;
-
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < num_of_rows; ++i)
             {
-                generator.seed( rd() );
+                str_length = static_cast<size_t>(vec_from[i]);
 
-                while( ch_num < static_cast<size_t>(vec_from[i])){
-                    character = distribution(generator);
-                    std::cout<<"==================="<<character<<std::endl;
-                    writeChar(character, buf_to);
-                    ch_num++;
+                if (str_length <= 0)
+                {
+                    writeChar(0, buf_to);
+                    offsets_to[i] = buf_to.count();    
+                    break;
                 }
 
+                std::cout<<"!!!!!! Argument of a function: "<< str_length << std::endl;
 
-        //		for (size_t ch_num = 32; ch_num < 45 ; ++ch_num)
-        //		{
-        //		    writeChar(ch_num, buf_to);
-        //		}
+
+                generator.seed( rd() );
+
+                
+                for (size_t j = 0; j < str_length; ++j)
+                {
+                    character = distribution(generator);
+                    writeChar(character, buf_to);
+//                    std::cout<<"==================="<<character<<std::endl;
+                }
+
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
 
             buf_to.finish();
             block.getByPosition(result).column = std::move(col_to);
-
-//          block.getByPosition(result).column = DataTypeString().createColumnConst(col_from->size(), "randomASCII");
             return true;
         }
 
         return false;
     }
-
-
-
-    // explicit FunctionRandomASCII()
-    // {
-    // }
-
-    // size_t getNumberOfArguments() const override
-    // {
-    //     return 0;
-    // }
-
-    // DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    // {
-    //     return std::make_shared<DataTypeString>();
-    // }
-
-    // bool isDeterministic() const override { return false; }
-
-    // void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
-    // {
-    //     block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, "randomASCII");
-    // }
 };
-
 
 void registerFunctionRandomASCII(FunctionFactory & factory)
 {
