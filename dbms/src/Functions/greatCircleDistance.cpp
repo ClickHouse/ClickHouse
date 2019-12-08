@@ -65,7 +65,7 @@ void geodistInit()
 
     for (size_t i = 0; i <= GEODIST_TABLE_ASIN; ++i)
         g_GeoAsin[i] = static_cast<float>(asin(
-                sqrt(static_cast<double>(i) / GEODIST_TABLE_ASIN))); // [0, 1] -> [0, ASINTABLE]
+            sqrt(static_cast<double>(i) / GEODIST_TABLE_ASIN))); // [0, 1] -> [0, ASINTABLE]
 
     for (size_t i = 0; i <= GEODIST_TABLE_K; ++i)
     {
@@ -143,9 +143,9 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!WhichDataType(arg).isFloat())
+            if (!isNumber(WhichDataType(arg)))
                 throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
+                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be numeric",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
