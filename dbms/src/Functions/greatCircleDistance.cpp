@@ -160,21 +160,34 @@ private:
         if (lon_diff < 13)
         {
             // points are close enough; use flat ellipsoid model
-            // interpolate sqr(k1), sqr(k2) coefficients using latitudes midpoint
-            float m = (lat1deg + lat2deg + 180) * GEODIST_TABLE_K / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
-            size_t i = static_cast<size_t>(m) & (GEODIST_TABLE_K - 1);
-            float kk1 = g_GeoFlatK[i][0] + (g_GeoFlatK[i + 1][0] - g_GeoFlatK[i][0]) * (m - i);
-            float kk2 = g_GeoFlatK[i][1] + (g_GeoFlatK[i + 1][1] - g_GeoFlatK[i][1]) * (m - i);
-            return sqrtf(kk1 * lat_diff * lat_diff + kk2 * lon_diff * lon_diff);
+            // interpolate metric coefficients using latitudes midpoint
+
+            float latitude_midpoint = (lat1deg + lat2deg + 180) * GEODIST_TABLE_K / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
+            size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (GEODIST_TABLE_K - 1);
+
+            /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
+
+            float k_lat = g_GeoFlatK[latitude_midpoint_index][0]
+                + (g_GeoFlatK[latitude_midpoint_index + 1][0] - g_GeoFlatK[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
+
+            float k_lon = g_GeoFlatK[latitude_midpoint_index][1]
+                + (g_GeoFlatK[latitude_midpoint_index + 1][1] - g_GeoFlatK[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
+
+            /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
+
+            return sqrtf(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
         }
         else
         {
             // points too far away; use haversine
-            static const float d = 2 * 6371000;
-            float a = sqrf(geodistFastSin(lat_diff * TO_RADF2)) +
-                geodistFastCos(lat1deg * TO_RADF) * geodistFastCos(lat2deg * TO_RADF) *
-                sqrf(geodistFastSin(lon_diff * TO_RADF2));
-            return d * geodistFastAsinSqrt(a);
+
+            /// Earth mean diameter in meters, https://en.wikipedia.org/wiki/Earth
+            static constexpr float diameter = 2 * 6371000;
+
+            float a = sqrf(geodistFastSin(lat_diff * TO_RADF2))
+                + geodistFastCos(lat1deg * TO_RADF) * geodistFastCos(lat2deg * TO_RADF) * sqrf(geodistFastSin(lon_diff * TO_RADF2));
+
+            return diameter * geodistFastAsinSqrt(a);
         }
     }
 
