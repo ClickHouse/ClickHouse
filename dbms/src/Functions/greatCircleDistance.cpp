@@ -157,7 +157,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
         if constexpr (method == Method::SPHERE)
         {
-            k_lat = 1;
+            k_lat = sqr(EARTH_DIAMETER * PI / 360);
+
             k_lon = sphere_metric_lut[latitude_midpoint_index]
                 + (sphere_metric_lut[latitude_midpoint_index + 1] - sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
         }
