@@ -37,16 +37,16 @@ namespace
 {
 
 constexpr double PI = 3.14159265358979323846;
-constexpr float TO_RADF = static_cast<float>(PI / 180.0);
-constexpr float TO_RADF2 = static_cast<float>(PI / 360.0);
+constexpr float DEG_IN_RAD = static_cast<float>(PI / 180.0);
+constexpr float DEG_IN_RAD_HALF = static_cast<float>(PI / 360.0);
 
-constexpr size_t GEODIST_TABLE_COS = 1024; // maxerr 0.00063%
-constexpr size_t GEODIST_TABLE_ASIN = 512;
-constexpr size_t GEODIST_TABLE_K = 1024;
+constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
+constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
+constexpr size_t METRIC_LUT_SIZE = 1024;
 
-float g_GeoCos[GEODIST_TABLE_COS + 1];        /// cos(x) table
-float g_GeoAsin[GEODIST_TABLE_ASIN + 1];    /// asin(sqrt(x)) table
-float g_GeoFlatK[GEODIST_TABLE_K + 1][2];    /// geodistAdaptive() flat ellipsoid method k1, k2 coeffs table
+float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
+float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) table
+float metric_lut[METRIC_LUT_SIZE + 1][2];    /// geodistAdaptive() flat ellipsoid method k1, k2 coeffs table
 
 inline double sqr(double v)
 {
@@ -60,18 +60,19 @@ inline float sqrf(float v)
 
 void geodistInit()
 {
-    for (size_t i = 0; i <= GEODIST_TABLE_COS; ++i)
-        g_GeoCos[i] = static_cast<float>(cos(2 * PI * i / GEODIST_TABLE_COS)); // [0, 2 * pi] -> [0, COSTABLE]
+    for (size_t i = 0; i <= COS_LUT_SIZE; ++i)
+        cos_lut[i] = static_cast<float>(cos(2 * PI * i / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
 
-    for (size_t i = 0; i <= GEODIST_TABLE_ASIN; ++i)
-        g_GeoAsin[i] = static_cast<float>(asin(
-            sqrt(static_cast<double>(i) / GEODIST_TABLE_ASIN))); // [0, 1] -> [0, ASINTABLE]
+    for (size_t i = 0; i <= ASIN_SQRT_LUT_SIZE; ++i)
+        asin_sqrt_lut[i] = static_cast<float>(asin(
+            sqrt(static_cast<double>(i) / ASIN_SQRT_LUT_SIZE))); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
 
-    for (size_t i = 0; i <= GEODIST_TABLE_K; ++i)
+    for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
     {
-        double x = i * (PI / GEODIST_TABLE_K) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, KTABLE]
-        g_GeoFlatK[i][0] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * x) + 1.20 * cos(4 * x)));
-        g_GeoFlatK[i][1] = static_cast<float>(sqr(111415.13 * cos(x) - 94.55 * cos(3 * x) + 0.12 * cos(5 * x)));
+        double x = i * (PI / METRIC_LUT_SIZE) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
+
+        metric_lut[i][0] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * x) + 1.20 * cos(4 * x)));
+        metric_lut[i][1] = static_cast<float>(sqr(111415.13 * cos(x) - 94.55 * cos(3 * x) + 0.12 * cos(5 * x)));
     }
 }
 
@@ -87,20 +88,20 @@ inline float geodistDegDiff(float f)
 
 inline float geodistFastCos(float x)
 {
-    float y = fabsf(x) * (GEODIST_TABLE_COS / PI / 2);
+    float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
     int i = static_cast<int>(y);
     y -= i;
-    i &= (GEODIST_TABLE_COS - 1);
-    return g_GeoCos[i] + (g_GeoCos[i + 1] - g_GeoCos[i]) * y;
+    i &= (COS_LUT_SIZE - 1);
+    return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
 }
 
 inline float geodistFastSin(float x)
 {
-    float y = fabsf(x) * (GEODIST_TABLE_COS / PI / 2);
+    float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
     int i = static_cast<int>(y);
     y -= i;
-    i = (i - GEODIST_TABLE_COS / 4) & (GEODIST_TABLE_COS - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
-    return g_GeoCos[i] + (g_GeoCos[i + 1] - g_GeoCos[i]) * y;
+    i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
+    return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
 }
 
 /// fast implementation of asin(sqrt(x))
@@ -116,9 +117,9 @@ inline float geodistFastAsinSqrt(float x)
     if (x < 0.948f)
     {
         // distance under 17083km, 512-entry LUT error under 0.00072%
-        x *= GEODIST_TABLE_ASIN;
+        x *= ASIN_SQRT_LUT_SIZE;
         int i = static_cast<int>(x);
-        return g_GeoAsin[i] + (g_GeoAsin[i + 1] - g_GeoAsin[i]) * (x - i);
+        return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
     return asinf(sqrtf(x)); // distance over 17083km, just compute honestly
 }
@@ -162,16 +163,16 @@ private:
             // points are close enough; use flat ellipsoid model
             // interpolate metric coefficients using latitudes midpoint
 
-            float latitude_midpoint = (lat1deg + lat2deg + 180) * GEODIST_TABLE_K / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
-            size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (GEODIST_TABLE_K - 1);
+            float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
+            size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
             /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-            float k_lat = g_GeoFlatK[latitude_midpoint_index][0]
-                + (g_GeoFlatK[latitude_midpoint_index + 1][0] - g_GeoFlatK[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
+            float k_lat = metric_lut[latitude_midpoint_index][0]
+                + (metric_lut[latitude_midpoint_index + 1][0] - metric_lut[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
 
-            float k_lon = g_GeoFlatK[latitude_midpoint_index][1]
-                + (g_GeoFlatK[latitude_midpoint_index + 1][1] - g_GeoFlatK[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
+            float k_lon = metric_lut[latitude_midpoint_index][1]
+                + (metric_lut[latitude_midpoint_index + 1][1] - metric_lut[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
 
             /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
 
@@ -184,8 +185,8 @@ private:
             /// Earth mean diameter in meters, https://en.wikipedia.org/wiki/Earth
             static constexpr float diameter = 2 * 6371000;
 
-            float a = sqrf(geodistFastSin(lat_diff * TO_RADF2))
-                + geodistFastCos(lat1deg * TO_RADF) * geodistFastCos(lat2deg * TO_RADF) * sqrf(geodistFastSin(lon_diff * TO_RADF2));
+            float a = sqrf(geodistFastSin(lat_diff * DEG_IN_RAD_HALF))
+                + geodistFastCos(lat1deg * DEG_IN_RAD) * geodistFastCos(lat2deg * DEG_IN_RAD) * sqrf(geodistFastSin(lon_diff * DEG_IN_RAD_HALF));
 
             return diameter * geodistFastAsinSqrt(a);
         }
