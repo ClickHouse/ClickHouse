@@ -37,8 +37,11 @@ constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
+/// Earth mean diameter in meters, https://en.wikipedia.org/wiki/Earth
+constexpr float EARTH_DIAMETER = 2 * 6371000;
+
 float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
-float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) table
+float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
 float metric_lut[METRIC_LUT_SIZE + 1][2];    /// geodistAdaptive() flat ellipsoid method k1, k2 coeffs table
 
 inline double sqr(double v)
@@ -57,7 +60,7 @@ void geodistInit()
         cos_lut[i] = static_cast<float>(cos(2 * PI * i / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
 
     for (size_t i = 0; i <= ASIN_SQRT_LUT_SIZE; ++i)
-        asin_sqrt_lut[i] = static_cast<float>(asin(
+        asin_sqrt_lut[i] = static_cast<float>(EARTH_DIAMETER * asin(
             sqrt(static_cast<double>(i) / ASIN_SQRT_LUT_SIZE))); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
 
     for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
@@ -105,7 +108,7 @@ inline float geodistFastAsinSqrt(float x)
     {
         // distance under 4546km, Taylor error under 0.00072%
         float y = sqrtf(x);
-        return y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f;
+        return EARTH_DIAMETER * (y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f);
     }
     if (x < 0.948f)
     {
@@ -115,6 +118,42 @@ inline float geodistFastAsinSqrt(float x)
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
     return asinf(sqrtf(x)); // distance over 17083km, just compute honestly
+}
+
+float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
+{
+    float lat_diff = geodistDegDiff(lat1deg - lat2deg);
+    float lon_diff = geodistDegDiff(lon1deg - lon2deg);
+
+    if (lon_diff < 13)
+    {
+        // points are close enough; use flat ellipsoid model
+        // interpolate metric coefficients using latitudes midpoint
+
+        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
+        size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+
+        /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
+
+        float k_lat = metric_lut[latitude_midpoint_index][0]
+            + (metric_lut[latitude_midpoint_index + 1][0] - metric_lut[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
+
+        float k_lon = metric_lut[latitude_midpoint_index][1]
+            + (metric_lut[latitude_midpoint_index + 1][1] - metric_lut[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
+
+        /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
+
+        return sqrtf(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
+    }
+    else
+    {
+        // points too far away; use haversine
+
+        float a = sqrf(geodistFastSin(lat_diff * DEG_IN_RAD_HALF))
+            + geodistFastCos(lat1deg * DEG_IN_RAD) * geodistFastCos(lat2deg * DEG_IN_RAD) * sqrf(geodistFastSin(lon_diff * DEG_IN_RAD_HALF));
+
+        return geodistFastAsinSqrt(a);
+    }
 }
 
 }
@@ -146,45 +185,6 @@ private:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    Float32 greatCircleDistance(Float32 lon1deg, Float32 lat1deg, Float32 lon2deg, Float32 lat2deg)
-    {
-        float lat_diff = geodistDegDiff(lat1deg - lat2deg);
-        float lon_diff = geodistDegDiff(lon1deg - lon2deg);
-
-        if (lon_diff < 13)
-        {
-            // points are close enough; use flat ellipsoid model
-            // interpolate metric coefficients using latitudes midpoint
-
-            float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, KTABLE] indexes
-            size_t latitude_midpoint_index = static_cast<size_t>(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
-
-            /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
-
-            float k_lat = metric_lut[latitude_midpoint_index][0]
-                + (metric_lut[latitude_midpoint_index + 1][0] - metric_lut[latitude_midpoint_index][0]) * (latitude_midpoint - latitude_midpoint_index);
-
-            float k_lon = metric_lut[latitude_midpoint_index][1]
-                + (metric_lut[latitude_midpoint_index + 1][1] - metric_lut[latitude_midpoint_index][1]) * (latitude_midpoint - latitude_midpoint_index);
-
-            /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
-
-            return sqrtf(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
-        }
-        else
-        {
-            // points too far away; use haversine
-
-            /// Earth mean diameter in meters, https://en.wikipedia.org/wiki/Earth
-            static constexpr float diameter = 2 * 6371000;
-
-            float a = sqrf(geodistFastSin(lat_diff * DEG_IN_RAD_HALF))
-                + geodistFastCos(lat1deg * DEG_IN_RAD) * geodistFastCos(lat2deg * DEG_IN_RAD) * sqrf(geodistFastSin(lon_diff * DEG_IN_RAD_HALF));
-
-            return diameter * geodistFastAsinSqrt(a);
-        }
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto dst = ColumnVector<Float32>::create();
@@ -197,7 +197,7 @@ private:
         const IColumn & col_lat2 = *block.getByPosition(arguments[3]).column;
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            dst_data[row_num] = greatCircleDistance(
+            dst_data[row_num] = distance(
                 col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
                 col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
 
