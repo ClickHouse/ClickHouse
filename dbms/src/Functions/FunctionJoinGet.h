@@ -46,7 +46,7 @@ class FunctionBuilderJoinGet final : public FunctionBuilderImpl
 {
 public:
     static constexpr auto name = "joinGet";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderJoinGet>(context); }
+    static FunctionOverloadResolverPtr create(const Context & context) { return std::make_shared<FunctionBuilderJoinGet>(context); }
 
     FunctionBuilderJoinGet(const Context & context_) : context(context_) {}
 

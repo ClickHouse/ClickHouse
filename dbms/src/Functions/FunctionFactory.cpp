@@ -39,7 +39,7 @@ void FunctionFactory::registerFunction(const
 }
 
 
-FunctionBuilderPtr FunctionFactory::get(
+FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
     const Context & context) const
 {
@@ -56,7 +56,7 @@ FunctionBuilderPtr FunctionFactory::get(
 }
 
 
-FunctionBuilderPtr FunctionFactory::tryGet(
+FunctionOverloadResolverPtr FunctionFactory::tryGet(
     const std::string & name_param,
     const Context & context) const
 {

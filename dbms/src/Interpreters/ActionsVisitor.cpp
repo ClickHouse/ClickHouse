@@ -366,7 +366,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ? data.context.getQueryContext()
         : data.context;
 
-    FunctionBuilderPtr function_builder;
+    FunctionOverloadResolverPtr function_builder;
     try
     {
         function_builder = FunctionFactory::instance().get(node.name, function_context);

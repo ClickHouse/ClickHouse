@@ -44,7 +44,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_shared<PreparedFunctionToTypeName>();
     }
@@ -65,7 +65,7 @@ class FunctionToTypeNameBuilder : public FunctionBuilderImpl
 public:
     static constexpr auto name = "toTypeName";
     String getName() const override { return name; }
-    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionToTypeNameBuilder>(); }
+    static FunctionOverloadResolverPtr create(const Context &) { return std::make_shared<FunctionToTypeNameBuilder>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 

@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression : public IFunctionBase, public IPreparedFunction,
+class FunctionExpression : public IFunctionBase, public IExecutableFunction,
                            public std::enable_shared_from_this<FunctionExpression>
 {
 public:
@@ -32,7 +32,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionExpression>(shared_from_this());
     }
@@ -64,7 +64,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class FunctionCapture : public IFunctionBase, public IPreparedFunction, public FunctionBuilderImpl,
+class FunctionCapture : public IFunctionBase, public IExecutableFunction, public FunctionBuilderImpl,
                         public std::enable_shared_from_this<FunctionCapture>
 {
 public:
@@ -119,7 +119,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionCapture>(shared_from_this());
     }
