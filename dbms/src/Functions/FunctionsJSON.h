@@ -1106,15 +1106,15 @@ public:
             return false;
         }
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
-        Iterator it2 = it;
+        Iterator array_it = it;
         size_t size = 0;
-        if (JSONParser::firstArrayElement(it2))
+        if (JSONParser::firstArrayElement(array_it))
         {
             do
             {
-                JSONExtractRawImpl<JSONParser>::addValueToColumn(col_res.getData(), it2);
-                size++;
-            } while (JSONParser::nextArrayElement(it2));
+                JSONExtractRawImpl<JSONParser>::addValueToColumn(col_res.getData(), array_it);
+                ++size;
+            } while (JSONParser::nextArrayElement(array_it));
         }
 
         col_res.getOffsets().push_back(col_res.getOffsets().back() + size);
