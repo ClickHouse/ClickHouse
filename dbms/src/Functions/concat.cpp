@@ -188,7 +188,7 @@ class FunctionBuilderConcat : public FunctionBuilderImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
+    static FunctionOverloadResolverPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
 
     FunctionBuilderConcat(const Context & context_) : context(context_) {}
 

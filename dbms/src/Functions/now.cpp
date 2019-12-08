@@ -47,7 +47,7 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_shared<PreparedFunctionNow>(time_value);
     }
@@ -70,7 +70,7 @@ public:
     bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderNow>(); }
+    static FunctionOverloadResolverPtr create(const Context &) { return std::make_shared<FunctionBuilderNow>(); }
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }

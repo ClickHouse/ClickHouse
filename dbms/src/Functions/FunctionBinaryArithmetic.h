@@ -472,7 +472,7 @@ class FunctionBinaryArithmetic : public IFunction
         return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
     }
 
-    FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    FunctionOverloadResolverPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
@@ -638,7 +638,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     void executeDateTimeIntervalPlusMinus(Block & block, const ColumnNumbers & arguments,
-        size_t result, size_t input_rows_count, const FunctionBuilderPtr & function_builder) const
+        size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
         ColumnNumbers new_arguments = arguments;
 

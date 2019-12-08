@@ -62,7 +62,7 @@ Names ExpressionAction::getNeededColumns() const
 
 
 ExpressionAction ExpressionAction::applyFunction(
-    const FunctionBuilderPtr & function_,
+    const FunctionOverloadResolverPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {

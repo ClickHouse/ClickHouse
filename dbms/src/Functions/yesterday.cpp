@@ -46,7 +46,7 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_shared<PreparedFunctionYesterday>(day_value);
     }
@@ -70,7 +70,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderYesterday>(); }
+    static FunctionOverloadResolverPtr create(const Context &) { return std::make_shared<FunctionBuilderYesterday>(); }
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }

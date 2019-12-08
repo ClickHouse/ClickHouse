@@ -44,7 +44,7 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::make_shared<PreparedFunctionRandomConstant<ToType, Name>>(value);
     }
@@ -78,7 +78,7 @@ public:
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    static FunctionBuilderPtr create(const Context &)
+    static FunctionOverloadResolverPtr create(const Context &)
     {
         return std::make_shared<FunctionBuilderRandomConstant<ToType, Name>>();
     }

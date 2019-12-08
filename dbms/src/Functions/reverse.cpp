@@ -116,7 +116,7 @@ class FunctionBuilderReverse : public FunctionBuilderImpl
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
+    static FunctionOverloadResolverPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
 
     FunctionBuilderReverse(const Context & context_) : context(context_) {}
 
