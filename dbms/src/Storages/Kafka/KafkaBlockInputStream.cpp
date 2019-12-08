@@ -163,7 +163,7 @@ Block KafkaBlockInputStream::readImpl()
     // and it's misleading to use them here,
     // as columns 'materialized' that way stays 'ephemeral'
     // i.e. will not be stored anythere
-    // IF needed any extra columns can be added using DEFAULT  they can be added at MV level if needed,
+    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
     auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
