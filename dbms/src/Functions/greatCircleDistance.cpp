@@ -14,13 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
-}
-
 /** https://en.wikipedia.org/wiki/Great-circle_distance
  *
  *  The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
@@ -89,7 +82,7 @@ inline float geodistDegDiff(float f)
 inline float geodistFastCos(float x)
 {
     float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
-    int i = static_cast<int>(y);
+    size_t i = static_cast<size_t>(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -98,7 +91,7 @@ inline float geodistFastCos(float x)
 inline float geodistFastSin(float x)
 {
     float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
-    int i = static_cast<int>(y);
+    size_t i = static_cast<size_t>(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -118,7 +111,7 @@ inline float geodistFastAsinSqrt(float x)
     {
         // distance under 17083km, 512-entry LUT error under 0.00072%
         x *= ASIN_SQRT_LUT_SIZE;
-        int i = static_cast<int>(x);
+        size_t i = static_cast<size_t>(x);
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
     return asinf(sqrtf(x)); // distance over 17083km, just compute honestly
