@@ -206,7 +206,7 @@ Columns:
 
 ## system.graphite_retentions
 
-Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
 Columns:
 
@@ -418,8 +418,8 @@ Columns:
     - `'QueryFinish' = 2` — Successful end of query execution.
     - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
     - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
-- `event_date` (Date) — Event date.
-- `event_time` (DateTime) — Event time.
+- `event_date` (Date) — Query starting date.
+- `event_time` (DateTime) — Query starting time.
 - `query_start_time` (DateTime) — Start time of query execution.
 - `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
@@ -437,36 +437,32 @@ Columns:
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
 - `query_id` (String) — ID of the query.
-- `address` (FixedString(16)) — IP address the query was initiated from.
-- `port` (UInt16) — The server port that was used to receive the query.
-- `initial_user` (String) —  Name of the user who ran the parent query (for distributed query execution).
-- `initial_query_id` (String) — ID of the parent query.
-- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
-- `initial_port` (UInt16) — The server port that was used to receive the parent query from the client.
+- `address` (IPv6) — IP address that was used to make the query.
+- `port` (UInt16) — The client port that was used to make the query.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
 - `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — User's OS.
-- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) is connected to.
-- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) name.
-- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` (String) — The quota key specified in the [quotas](quotas.md) setting.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
 - `revision` (UInt32) — ClickHouse revision.
 - `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
-- `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
-    - Time spent on reading and writing over the network.
-    - Time spent on reading and writing to a disk.
-    - Number of network errors.
-    - Time spent on waiting when the network bandwidth is limited.
-- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
 - `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 - `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
@@ -485,12 +481,77 @@ When the table is deleted manually, it will be automatically created on the fly.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
 
+## system.query_thread_log {#system_tables-query-thread-log}
+
+The table contains information about each query execution thread.
+
+ClickHouse creates this table only if the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+
+To enable query logging, set the [log_query_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+
+Columns:
+
+- `event_date` (Date) — the date when the thread has finished execution of the query.
+- `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
+- `query_start_time` (DateTime) — Start time of query execution.
+- `query_duration_ms` (UInt64) — Duration of query execution.
+- `read_rows` (UInt64) — Number of read rows.
+- `read_bytes` (UInt64) — Number of read bytes.
+- `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+- `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
+- `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
+- `thread_name` (String) — Name of the thread.
+- `thread_number` (UInt32) — Internal thread ID.
+- `os_thread_id` (Int32) — OS thread ID.
+- `master_thread_number` (UInt32) — Internal ID of initial thread.
+- `master_os_thread_id` (Int32) — OS initial ID of initial thread.
+- `query` (String) — Query string.
+- `is_initial_query` (UInt8) — Query type. Possible values:
+    - 1 — Query was initiated by the client.
+    - 0 — Query was initiated by another query for distributed query execution.
+- `user` (String) — Name of the user who initiated the current query.
+- `query_id` (String) — ID of the query.
+- `address` (IPv6) — IP address that was used to make the query.
+- `port` (UInt16) — The client port that was used to make the query.
+- `initial_user` (String) —  Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+- `initial_address` (IPv6) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — The client port that was used to make the parent query.
+- `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — OS's username who runs [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+- `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    - 0 — The query was launched from the TCP interface.
+    - 1 — `GET` method was used.
+    - 2 — `POST` method was used.
+- `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
+- `quota_key` (String) — The "quota key" specified in the [quotas](quotas.md) setting (see `keyed`).
+- `revision` (UInt32) — ClickHouse revision.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+
+When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+
+!!! note
+    The storage period for logs is unlimited. Logs aren't automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+
+You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
 
 ## system.trace_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the `query_profiler_real_time_period_ns` and `query_profiler_cpu_time_period_ns` settings should be set.
+ClickHouse creates this table when the [trace_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query_profiler_real_time_period_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query_profiler_cpu_time_period_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 

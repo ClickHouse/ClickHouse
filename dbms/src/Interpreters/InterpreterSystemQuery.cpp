@@ -121,7 +121,9 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
+        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery"))
+{
+}
 
 
 BlockIO InterpreterSystemQuery::execute()
