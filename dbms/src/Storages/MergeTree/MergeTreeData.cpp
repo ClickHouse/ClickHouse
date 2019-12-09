@@ -811,10 +811,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
             if (Poco::File(marker_path).exists())
             {
-                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse.");
+                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
                 std::lock_guard loading_lock(mutex);
                 broken_parts_to_detach.push_back(part);
                 ++suspicious_broken_parts;
+                return;
             }
 
             try
