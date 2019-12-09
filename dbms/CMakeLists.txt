@@ -100,7 +100,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
-list (REMOVE_ITEM clickhouse_common_io_sources src/Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources src/Common/malloc.cpp src/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -139,6 +139,9 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
+set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)

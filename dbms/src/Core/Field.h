@@ -102,7 +102,7 @@ public:
 
     operator T() const { return dec; }
     T getValue() const { return dec; }
-    T getScaleMultiplier() const;
+    T getScaleMultiplier() const { return T::getScaleMultiplier(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>

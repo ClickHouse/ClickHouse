@@ -59,8 +59,11 @@ protected:
             auto num_rows = chunk.getNumRows();
             columns = chunk.mutateColumns();
             if (limit_rows && num_rows > limit_rows)
+            {
+                num_rows = limit_rows;
                 for (auto & column : columns)
-                    column = (*column->cut(0, limit_rows)->convertToFullColumnIfConst()).mutate();
+                    column = (*column->cut(0, num_rows)->convertToFullColumnIfConst()).mutate();
+            }
 
             total_merged_rows += num_rows;
             merged_rows = num_rows;
