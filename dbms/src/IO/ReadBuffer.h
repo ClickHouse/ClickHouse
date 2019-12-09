@@ -59,7 +59,10 @@ public:
         return res;
     }
 
-    /// Required to support buffers from infinite streams.
+    /// Required to support buffers from infinite streams:
+    /// they usually provide data in isolated messages (like Kafka).
+    /// Resets internal state of buffer to start reading the next message.
+    /// Returns true if there is next message, otherwise false.
     virtual bool reset() { return false; }
 
     inline void nextIfAtEnd()
