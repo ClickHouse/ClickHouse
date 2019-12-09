@@ -98,8 +98,11 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         try
         {
             consumer->subscribe(topics);
+
             /// FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
             ///        see https://github.com/edenhill/librdkafka/issues/2077
+            if (poll(poll_timeout))
+                return;
         }
         catch (cppkafka::HandleException & e)
         {
@@ -107,9 +110,6 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
                 throw;
         }
     }
-
-    if (poll(poll_timeout))
-        return;
 
     /// While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     /// If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
