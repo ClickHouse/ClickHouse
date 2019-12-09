@@ -1490,18 +1490,18 @@ using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
 
-class PreparedFunctionCast : public PreparedFunctionImpl
+class ExecutableFunctionCast : public IExecutableFunctionImpl
 {
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
 
-    explicit PreparedFunctionCast(WrapperType && wrapper_function_, const char * name_)
+    explicit ExecutableFunctionCast(WrapperType && wrapper_function_, const char * name_)
             : wrapper_function(std::move(wrapper_function_)), name(name_) {}
 
     String getName() const override { return name; }
 
 protected:
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// drop second argument, pass others
         ColumnNumbers new_arguments{arguments.front()};
@@ -1524,7 +1524,7 @@ private:
 
 struct NameCast { static constexpr auto name = "CAST"; };
 
-class FunctionCast final : public IFunctionBase
+class FunctionCast final : public IFunctionBaseImpl
 {
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
@@ -1540,9 +1540,9 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    ExecutableFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
-        return std::make_shared<PreparedFunctionCast>(
+        return std::make_unique<ExecutableFunctionCast>(
                 prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
     }
 
@@ -1584,14 +1584,13 @@ private:
         else
             function = FunctionTo<DataType>::Type::create(context);
 
-        /// Check conversion using underlying function
-        {
-            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
-        }
+        auto function_adaptor =
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function->execute(block, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1599,14 +1598,13 @@ private:
     {
         FunctionPtr function = FunctionToString::create(context);
 
-        /// Check conversion using underlying function
-        {
-            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
-        }
+        auto function_adaptor =
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function->execute(block, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1628,14 +1626,13 @@ private:
 
         FunctionPtr function = FunctionTo<DataTypeUUID>::Type::create(context);
 
-        /// Check conversion using underlying function
-        {
-            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
-        }
+        auto function_adaptor =
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
-        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            function->execute(block, arguments, result, input_rows_count);
+            function_adaptor->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1836,15 +1833,12 @@ private:
         else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
+            auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                    .build(ColumnsWithTypeAndName{{nullptr, from_type, "" }});
 
-            /// Check conversion using underlying function
+            return [func_or_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
-                function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
-            }
-
-            return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
-            {
-                function->execute(block, arguments, result, input_rows_count);
+                func_or_adaptor->execute(block, arguments, result, input_rows_count);
             };
         }
         else
@@ -2183,13 +2177,13 @@ private:
     }
 };
 
-class FunctionBuilderCast : public FunctionBuilderImpl
+class FunctionBuilderCast : public IFunctionOverloadResolverImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionOverloadResolverPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderCast>(context); }
 
     FunctionBuilderCast(const Context & context_) : context(context_) {}
 
@@ -2201,7 +2195,7 @@ public:
 
 protected:
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());
 
@@ -2209,10 +2203,10 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_shared<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
+        return std::make_unique<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)

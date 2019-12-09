@@ -184,29 +184,28 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class FunctionBuilderConcat : public FunctionBuilderImpl
+class FunctionBuilderConcat : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderConcat>(context); }
 
-    FunctionBuilderConcat(const Context & context_) : context(context_) {}
+    explicit FunctionBuilderConcat(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().get("arrayConcat", context)->build(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments, return_type);
         else
-            return std::make_shared<DefaultFunction>(
+            return std::make_unique<DefaultFunction>(
                 FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(

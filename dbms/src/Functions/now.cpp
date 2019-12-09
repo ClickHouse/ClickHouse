@@ -73,9 +73,9 @@ public:
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionBaseNow>(time(nullptr));
+        return std::make_unique<FunctionBaseNow>(time(nullptr));
     }
 };
 
