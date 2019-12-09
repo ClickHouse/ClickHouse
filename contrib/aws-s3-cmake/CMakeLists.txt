@@ -9,6 +9,10 @@ OPTION(USE_AWS_MEMORY_MANAGEMENT "Aws memory management" OFF)
 configure_file("${AWS_CORE_LIBRARY_DIR}/include/aws/core/SDKConfig.h.in"
         "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
+configure_file("${AWS_COMMON_LIBRARY_DIR}/include/aws/common/config.h.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/include/aws/common/config.h" @ONLY)
+
+
 file(GLOB AWS_CORE_SOURCES
         "${AWS_CORE_LIBRARY_DIR}/source/*.cpp"
         "${AWS_CORE_LIBRARY_DIR}/source/auth/*.cpp"
