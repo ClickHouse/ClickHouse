@@ -20,9 +20,11 @@ else ()
     message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
 endif ()
 
-option (LINKER_NAME "Linker name or full path")
+STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
+LIST(GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
-find_program (LLD_PATH NAMES "ld.lld" "lld")
+option (LINKER_NAME "Linker name or full path")
+find_program (LLD_PATH NAMES "ld.lld" "lld" "lld-${COMPILER_VERSION_MAJOR}")
 find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
 if (NOT LINKER_NAME)
