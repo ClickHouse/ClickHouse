@@ -185,7 +185,7 @@ void buildSingleAttribute(
     {
         AutoPtr<Element> expression_element(doc->createElement("expression"));
 
-        /// Expression should be function or string
+        /// EXPRESSION PROPERTY should be expression or string
         String expression_str;
         if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
                 literal && literal->value.getType() == Field::Types::String)
