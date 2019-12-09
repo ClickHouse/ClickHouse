@@ -148,7 +148,10 @@ public:
         {
             int sig = 0;
             DB::readBinary(sig, in);
-            LOG_TRACE(log, "Received signal " << sig);
+            // We may log some specific signals afterwards, with different log
+            // levels and more info, but for completeness we log all signals
+            // here at trace level.
+            LOG_TRACE(log, "Received signal " << strsignal(sig) << " (" << sig << ")");
 
             if (sig == Signals::StopThread)
             {
