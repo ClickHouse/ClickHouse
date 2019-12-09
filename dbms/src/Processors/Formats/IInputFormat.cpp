@@ -5,7 +5,6 @@
 namespace DB
 {
 
-// static
 const BlockMissingValues IInputFormat::none;
 
 bool IInputFormat::reset()
