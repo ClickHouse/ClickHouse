@@ -20,7 +20,7 @@ class Context;
   * Function could use for initialization (take ownership of shared_ptr, for example)
   *  some dictionaries from Context.
   */
-class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionOverloadResolverPtr(const Context &)>>
+class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionOverloadResolverImplPtr(const Context &)>>
 {
 public:
 
@@ -47,6 +47,12 @@ public:
     /// Returns nullptr if not found.
     FunctionOverloadResolverPtr tryGet(const std::string & name, const Context & context) const;
 
+    /// Throws an exception if not found.
+    FunctionOverloadResolverImplPtr getImpl(const std::string & name, const Context & context) const;
+
+    /// Returns nullptr if not found.
+    FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, const Context & context) const;
+
 private:
     using Functions = std::unordered_map<std::string, Creator>;
 
@@ -54,9 +60,9 @@ private:
     Functions case_insensitive_functions;
 
     template <typename Function>
-    static FunctionOverloadResolverPtr createDefaultFunction(const Context & context)
+    static FunctionOverloadResolverImplPtr createDefaultFunction(const Context & context)
     {
-        return std::make_shared<DefaultFunctionBuilder>(Function::create(context));
+        return std::make_unique<DefaultFunctionBuilder>(Function::create(context));
     }
 
     const Functions & getCreatorMap() const override { return functions; }

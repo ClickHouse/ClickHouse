@@ -42,6 +42,8 @@ public:
     virtual String getName() const = 0;
 
     virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) = 0;
+
+    virtual void createLowCardinalityResultCache(size_t cache_size) = 0;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;

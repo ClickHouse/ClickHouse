@@ -133,9 +133,10 @@ public:
         for (const auto & argument : arguments)
             columns.push_back(block.getByPosition(argument));
 
-        auto function = std::make_shared<FunctionExpression>(expression_actions, types, names,
+        auto function = std::make_unique<FunctionExpression>(expression_actions, types, names,
                                                              capture->return_type, capture->return_name);
-        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function), columns);
+        auto function_adaptor = std::make_shared<FunctionBaseAdaptor>(std::move(function));
+        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function_adaptor), columns);
     }
 
 private:

@@ -960,8 +960,11 @@ private:
     void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
                                       size_t tuple_size, size_t input_rows_count)
     {
-        ComparisonFunction func_compare(context);
-        ConvolutionFunction func_convolution;
+        auto func_compare = ComparisonFunction::create(context);
+        auto func_convolution = ConvolutionFunction::create(context);
+
+        auto func_compare_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare));
+        auto func_convolution_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_convolution));
 
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
@@ -969,9 +972,11 @@ private:
             tmp_block.insert(x[i]);
             tmp_block.insert(y[i]);
 
+            auto impl = func_compare_adaptor.build({x[i], y[i]});
+
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+            impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
         /// Logical convolution.
@@ -981,7 +986,10 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
+        ColumnsWithTypeAndName convolution_types(convolution_args.size(), { nullptr, std::make_shared<DataTypeUInt8>(), "" });
+        auto impl = func_convolution_adaptor.build(convolution_types);
+
+        impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
@@ -989,11 +997,24 @@ private:
     void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                                          const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
     {
-        HeadComparisonFunction func_compare_head(context);
-        TailComparisonFunction func_compare_tail(context);
-        FunctionAnd func_and;
-        FunctionOr func_or;
-        FunctionComparison<EqualsOp, NameEquals> func_equals(context);
+        auto func_compare_head = HeadComparisonFunction::create(context);
+        auto func_compare_tail = TailComparisonFunction::create(context);
+        auto func_and = FunctionAnd::create(context);
+        auto func_or = FunctionOr::create(context);
+        auto func_equals = FunctionComparison<EqualsOp, NameEquals>::create(context);
+
+        auto func_compare_head_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare_head));
+        auto func_compare_tail_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare_tail));
+        auto func_equals_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_equals));
+
+        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
+                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
+
+        auto func_and_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_and))
+                .build(bin_args);
+
+        auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_or))
+                .build(bin_args);
 
         Block tmp_block;
 
@@ -1007,14 +1028,20 @@ private:
 
             if (i + 1 != tuple_size)
             {
-                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+                auto impl_head = func_compare_head_adaptor.build({x[i], y[i]});
+                impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
                 tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
+
+                auto impl_equals = func_equals_adaptor.build({x[i], y[i]});
+                impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
-                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            {
+                auto impl_tail = func_compare_tail_adaptor.build({x[i], y[i]});
+                impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            }
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
@@ -1022,9 +1049,9 @@ private:
         while (i > 0)
         {
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
+            func_and_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
+            func_or_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
         }
 
@@ -1119,12 +1146,15 @@ public:
 
         if (left_tuple && right_tuple)
         {
+            auto adaptor = FunctionOverloadResolverAdaptor(
+                    std::make_unique<DefaultFunctionBuilder>(FunctionComparison<Op, Name>::create(context)));
+
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                getReturnType(args);
+                adaptor.build(args);
             }
         }
 

@@ -88,7 +88,8 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
-    virtual IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
+    using Monotonicity = IFunctionBase::Monotonicity;
+    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -284,10 +285,11 @@ public:
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
+    using Monotonicity = IFunctionBase::Monotonicity;
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
       * NULL can be passed as one of the arguments. This means that the corresponding range is unlimited on the left or on the right.
       */
-    virtual IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
+    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -357,7 +359,7 @@ public:
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) final;
 
-    void createLowCardinalityResultCache(size_t cache_size);
+    void createLowCardinalityResultCache(size_t cache_size) override;
 
 private:
     ExecutableFunctionImplPtr impl;
@@ -427,7 +429,7 @@ private:
 class FunctionOverloadResolverAdaptor : public IFunctionOverloadResolver
 {
 public:
-    FunctionOverloadResolverAdaptor(FunctionOverloadResolverImplPtr impl_) : impl(std::move(impl_)) {}
+    explicit FunctionOverloadResolverAdaptor(FunctionOverloadResolverImplPtr impl_) : impl(std::move(impl_)) {}
 
     String getName() const final { return impl->getName(); }
 
@@ -530,7 +532,8 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
-    IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    using Monotonicity = IFunctionBase::Monotonicity;
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return function->getMonotonicityForRange(type, left, right);
     }
