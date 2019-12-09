@@ -14,17 +14,22 @@
 namespace DB
 {
 
-/** https://en.wikipedia.org/wiki/Great-circle_distance
- *
- *  The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
- *  The function uses great circle distance formula https://en.wikipedia.org/wiki/Great-circle_distance .
- *  Throws exception when one or several input values are not within reasonable bounds.
- *  Latitude must be in [-90, 90], longitude must be [-180, 180].
- *  Original code of this implementation of this function is here https://github.com/sphinxsearch/sphinx/blob/409f2c2b5b2ff70b04e38f92b6b1a890326bad65/src/sphinxexpr.cpp#L3825.
- *  Andrey Aksenov, the author of original code, permitted to use this code in ClickHouse under the Apache 2.0 license.
- *  Presentation about this code from Highload++ Siberia 2019 is here https://github.com/ClickHouse/ClickHouse/files/3324740/1_._._GEODIST_._.pdf
- *  The main idea of this implementation is optimisations based on Taylor series, trigonometric identity and calculated constants once for cosine, arcsine(sqrt) and look up table.
- */
+/** Calculates the distance between two geographical locations.
+  * There are two variants:
+  * greatCircleDistance: calculates the distance on a sphere: https://en.wikipedia.org/wiki/Great-circle_distance
+  * geoDistance: calculates the distance on WGS-84 ellipsoid.
+  *
+  * The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
+  *
+  * Latitude must be in [-90, 90], longitude must be [-180, 180].
+  *
+  * Original code of this implementation of this function is here:
+  * https://github.com/sphinxsearch/sphinx/blob/409f2c2b5b2ff70b04e38f92b6b1a890326bad65/src/sphinxexpr.cpp#L3825.
+  * Andrey Aksenov, the author of original code, permitted to use this code in ClickHouse under the Apache 2.0 license.
+  * Presentation about this code from Highload++ Siberia 2019 is here https://github.com/ClickHouse/ClickHouse/files/3324740/1_._._GEODIST_._.pdf
+  * The main idea of this implementation is optimisations based on Taylor series, trigonometric identity
+  *  and calculated constants once for cosine, arcsine(sqrt) and look up table.
+  */
 
 namespace
 {
