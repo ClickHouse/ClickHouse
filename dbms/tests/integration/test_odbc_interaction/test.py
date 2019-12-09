@@ -219,5 +219,10 @@ def test_bridge_dies_with_parent(started_cluster):
     time.sleep(1) # just for sure, that odbc-bridge caught signal
     bridge_pid = node1.get_process_pid("odbc-bridge")
 
+    if bridge_pid:
+        out = node1.exec_in_container(["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"], privileged=True, user='root')
+        print("Bridge is running, gdb output:")
+        print(out)
+
     assert clickhouse_pid is None
     assert bridge_pid is None
