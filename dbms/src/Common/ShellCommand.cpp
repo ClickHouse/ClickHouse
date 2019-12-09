@@ -69,7 +69,7 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
         {
             log_message << ", ";
         }
-        
+
         /// NOTE: No escaping is performed.
         log_message << "'" << argv[i] << "'";
     }
