@@ -502,7 +502,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
                 String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
 
-                auto function_capture = std::make_shared<FunctionCapture>(
+                auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
                 data.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
 
