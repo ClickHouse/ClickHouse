@@ -7,7 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/range.h>
-#include <math.h>
+#include <cmath>
 #include <array>
 
 
@@ -35,8 +35,8 @@ namespace
 {
 
 constexpr double PI = 3.14159265358979323846;
-constexpr float DEG_IN_RAD = static_cast<float>(PI / 180.0);
-constexpr float DEG_IN_RAD_HALF = static_cast<float>(PI / 360.0);
+constexpr float RAD_IN_DEG = static_cast<float>(PI / 180.0);
+constexpr float RAD_IN_DEG_HALF = static_cast<float>(PI / 360.0);
 
 constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
@@ -188,8 +188,8 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
     {
         // points too far away; use haversine
 
-        float a = sqrf(geodistFastSin(lat_diff * DEG_IN_RAD_HALF))
-            + geodistFastCos(lat1deg * DEG_IN_RAD) * geodistFastCos(lat2deg * DEG_IN_RAD) * sqrf(geodistFastSin(lon_diff * DEG_IN_RAD_HALF));
+        float a = sqrf(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
+            + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqrf(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
         return geodistFastAsinSqrt(a);
     }
