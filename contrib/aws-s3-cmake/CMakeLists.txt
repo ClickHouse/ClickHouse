@@ -116,6 +116,8 @@ set_target_properties(
         ${CMAKE_BINARY_DIR}/install/lib/libcurl.${CURL_LIB_SUFFIX}
 )
 
+add_dependencies(libcurl libcurl_ex)
+
 target_link_libraries(libcurl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
 
 add_library(aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
