@@ -83,6 +83,7 @@ void geodistInit()
         /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
         /// depending on the latitude (in radians).
 
+        /// https://github.com/mapbox/cheap-ruler/blob/master/index.js#L67
         wgs84_metric_meters_lut[i * 2] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
         wgs84_metric_meters_lut[i * 2 + 1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
 
