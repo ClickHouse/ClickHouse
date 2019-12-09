@@ -26,7 +26,7 @@ public:
         : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
     {
         if (disk_path.back() != '/')
-            throw Exception("Disk disk_path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
     const String & getName() const override { return name; }
@@ -97,10 +97,6 @@ private:
     Poco::DirectoryIterator iter;
 };
 
-/**
- * Information about reserved size on concrete local disk.
- * Doesn't reserve bytes in constructor.
- */
 class DiskLocalReservation : public IReservation
 {
 public:
