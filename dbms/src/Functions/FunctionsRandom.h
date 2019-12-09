@@ -2,7 +2,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 
 

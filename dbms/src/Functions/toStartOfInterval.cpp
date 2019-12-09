@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 
 

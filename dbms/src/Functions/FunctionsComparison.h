@@ -24,7 +24,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>

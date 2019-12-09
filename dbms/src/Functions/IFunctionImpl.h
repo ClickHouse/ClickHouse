@@ -1,4 +1,5 @@
 #pragma once
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -83,8 +84,8 @@ public:
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
     virtual bool isInjective(const Block & /*sample_block*/) { return false; }
-    virtual bool isDeterministic() const = 0;
-    virtual bool isDeterministicInScopeOfQuery() const = 0;
+    virtual bool isDeterministic() const { return true; }
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
     virtual IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
@@ -365,13 +366,13 @@ private:
     PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 
     bool defaultImplementationForConstantArguments(
-        Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
 
     bool defaultImplementationForNulls(
-        Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
 
     void executeWithoutLowCardinalityColumns(
-        Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
+            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
 };
 
 class FunctionBaseAdaptor final : public IFunctionBase
