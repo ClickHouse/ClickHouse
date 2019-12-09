@@ -81,12 +81,13 @@ struct PartialSortingLessWithCollation
             int res;
 
             if (it->column_const)
+            {
                 res = 0;
+            }
             else if (isCollationRequired(it->description))
             {
                 const ColumnString & column_string = assert_cast<const ColumnString &>(*it->column);
                 res = column_string.compareAtWithCollation(a, b, *it->column, *it->description.collator);
-
             }
             else
                 res = it->column->compareAt(a, b, *it->column, it->description.nulls_direction);
