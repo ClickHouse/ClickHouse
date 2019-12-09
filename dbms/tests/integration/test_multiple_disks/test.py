@@ -1067,7 +1067,7 @@ def test_freeze(start_cluster):
 
 def test_kill_while_insert(start_cluster):
     try:
-        name = "test_kill_while_merge"
+        name = "test_kill_while_insert"
 
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
