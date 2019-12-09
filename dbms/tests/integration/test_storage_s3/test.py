@@ -242,9 +242,11 @@ def test_remote_host_filter(cluster):
     instance = cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
-    query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format("invalid_host", cluster.minio_redirect_port, format)
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
+        "invalid_host", cluster.minio_port, cluster.minio_bucket, format)
     assert "not allowed in config.xml" in instance.query_and_get_error(query)
 
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format("invalid_host", cluster.minio_port, cluster.minio_bucket, format, other_values)
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
+        "invalid_host", cluster.minio_port, cluster.minio_bucket, format, other_values)
     assert "not allowed in config.xml" in instance.query_and_get_error(query)
