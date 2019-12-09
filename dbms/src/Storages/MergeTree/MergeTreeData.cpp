@@ -766,13 +766,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (startsWith(it.name(), "tmp"))
                 continue;
 
-            Poco::Path marker_path(it.path(), DELETE_ON_DESTROY_MARKER_PATH);
-            if (Poco::File(marker_path).exists())
-            {
-                Poco::File(it.path()).remove(true);
-                continue;
-            }
-
             part_names_with_disks.emplace_back(it.name(), disk_ptr);
         }
     }
@@ -813,6 +806,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_disk_ptr, part_name, part_info);
             part->relative_path = part_name;
             bool broken = false;
+
+            Poco::Path part_path(getFullPathOnDisk(part_disk_ptr), part_name);
+            Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
+            if (Poco::File(marker_path).exists())
+            {
+                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse.");
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
+            }
 
             try
             {
@@ -2547,10 +2550,9 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             {
                 Poco::File(marker_path).createFile();
             }
-            catch (...)
+            catch (Poco::Exception & e)
             {
-                LOG_WARNING(log, "Exception has occurred while creating DeleteOnDestroy marker: '"
-                    << marker_path.toString() + "'.");
+                LOG_ERROR(log, e.what() << " (while creating DeleteOnDestroy marker: " + backQuote(marker_path.toString()) + ")");
             }
             return;
         }
