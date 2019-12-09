@@ -18,7 +18,7 @@ This function is case-insensitive.
 
 **Returned value**
 
-- String with the absolute domain name.
+- String with the fully qualified domain name.
 
 Type: `String`.
 
