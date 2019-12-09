@@ -25,10 +25,11 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     default_codec_, settings_, index_granularity_, true)
     , squashing(storage.getSettings()->index_granularity, storage.getSettings()->index_granularity_bytes) /// FIXME
 {
+    String data_file_name = DATA_FILE_NAME + settings.filename_suffix;
     stream = std::make_unique<ColumnStream>(
-        DATA_FILE_NAME,
-        part_path + DATA_FILE_NAME, DATA_FILE_EXTENSION,
-        part_path + DATA_FILE_NAME, marks_file_extension,
+        data_file_name,
+        part_path + data_file_name, DATA_FILE_EXTENSION,
+        part_path + data_file_name, marks_file_extension,
         default_codec,
         settings.max_compress_block_size,
         settings.estimated_size,

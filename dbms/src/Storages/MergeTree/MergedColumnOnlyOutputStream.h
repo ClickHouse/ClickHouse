@@ -20,9 +20,10 @@ public:
         const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-        WrittenOffsetColumns & already_written_offset_columns_,
+        WrittenOffsetColumns * offset_columns_ = nullptr,
         const MergeTreeIndexGranularity & index_granularity = {},
-        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr,
+        const String & filename_suffix = "");
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -31,14 +32,7 @@ public:
 
 private:
     Block header;
-
     bool sync;
-    bool skip_offsets;
-
-    /// To correctly write Nested elements column-by-column.
-    WrittenOffsetColumns & already_written_offset_columns;
-
-    MergeTreeDataPartWriterWide * writer_wide;
 };
 
 

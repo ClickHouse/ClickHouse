@@ -59,6 +59,8 @@ protected:
     // MergeTreeIndexAggregators skip_indices_aggregators;
     // std::vector<size_t> skip_index_filling;
 
+    static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);
+
     MergeTreeWriterPtr writer;
 
     // const bool with_final_mark;

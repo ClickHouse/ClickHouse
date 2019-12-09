@@ -187,42 +187,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    Block primary_key_block;
-    Block skip_indexes_block;
-
-    auto primary_key_column_names = storage.primary_key_columns;
-
     std::set<String> skip_indexes_column_names_set;
     for (const auto & index : storage.skip_indices)
         std::copy(index->columns.cbegin(), index->columns.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
-    {
-        const auto & name = primary_key_column_names[i];
-        primary_key_block.insert(i, block.getByName(name));
-
-        /// Reorder primary key columns in advance and add them to `primary_key_columns`.
-        if (permutation)
-        {
-            auto & column = primary_key_block.getByPosition(i);
-            column.column = column.column->permute(*permutation, 0);
-        }
-    }
-
-    for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
-    {
-        const auto & name = skip_indexes_column_names[i];
-        skip_indexes_block.insert(i, block.getByName(name));
-
-        /// Reorder index columns in advance.
-        if (permutation)
-        {
-            auto & column = skip_indexes_block.getByPosition(i);
-            column.column = column.column->permute(*permutation, 0);
-        }
-    }
+    Block primary_key_block = getBlockAndPermute(block, storage.primary_key_columns, permutation);
+    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
 
     writer->write(block, permutation, primary_key_block, skip_indexes_block);
     writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
