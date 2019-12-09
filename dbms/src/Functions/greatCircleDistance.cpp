@@ -42,8 +42,30 @@ constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
-/// Earth mean diameter in meters, https://en.wikipedia.org/wiki/Earth
-constexpr float EARTH_DIAMETER = 2 * 6371000;
+/** We use "WGS-84 ellipsoidal quadratic mean radius of Earth" as the approximation to calculate distances on sphere.
+  * The motivation for it is explained here: https://math.wikia.org/wiki/Ellipsoidal_quadratic_mean_radius
+  *
+  * Brief explanation:
+  * - the radius of sphere is choosen to minimize the difference between distance on that sphere and distance on WGS-84 ellipsoid between two points,
+  *   averaged uniformly (?) by all angles (?) between points.
+  * This sounds not clear enough for me: what set we are averaging and by what measure?
+  *
+  * The value should be calculated this way:
+  * WITH 6378137.0 AS a, 6356752.314245 AS b SELECT sqrt(3 * a * a + b * b) / 2
+  *
+  * But for unknown reason, slightly different value is used.
+  * This constant may be changed in future with a note about backward incompatible change in the changelog.
+  *
+  * See also:
+  * https://github.com/Project-OSRM/osrm-backend/blob/bb1f4a025a3cefd3598a38b9d3e55485d1080ec5/third_party/libosmium/include/osmium/geom/haversine.hpp#L58-L59
+  * https://github.com/Project-OSRM/osrm-backend/issues/5051
+  * https://github.com/mapbox/turf-swift/issues/26
+  * https://github.com/Project-OSRM/osrm-backend/pull/5041
+  * https://en.wikipedia.org/wiki/Talk:Great-circle_distance/Archive_1
+  */
+constexpr float EARTH_RADIUS = 6372797.560856;
+constexpr float EARTH_DIAMETER = 2 * EARTH_RADIUS;
+
 
 float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
 float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
