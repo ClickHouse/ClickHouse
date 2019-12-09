@@ -58,7 +58,7 @@ __attribute__((constructor)) static void auxv_init()
 void *__vdsosym(const char *vername, const char *name)
 {
 	size_t i;
-
+	if (!eh) return 0;
 	Phdr *ph = (void *)((char *)eh + eh->e_phoff);
 	size_t *dynv=0, base=-1;
 	for (i=0; i<eh->e_phnum; i++, ph=(void *)((char *)ph+eh->e_phentsize)) {
