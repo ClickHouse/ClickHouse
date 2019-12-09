@@ -63,6 +63,8 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
+    /// Temporary tables read
+    bool temporary_tables_read = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
