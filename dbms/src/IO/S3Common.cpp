@@ -60,9 +60,11 @@ namespace S3
     }
 
 
-    URI::URI(Poco::URI & uri)
+    URI::URI(Poco::URI & uri_)
     {
         static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
+
+        uri = uri_;
 
         // s3://*
         if (uri.getScheme() == "s3" || uri.getScheme() == "S3")

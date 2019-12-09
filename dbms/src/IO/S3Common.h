@@ -43,12 +43,13 @@ private:
  */
 struct URI
 {
+    Poco::URI uri;
     // Custom endpoint if URI scheme is not S3.
     String endpoint;
     String bucket;
     String key;
 
-    explicit URI (Poco::URI & uri);
+    explicit URI (Poco::URI & uri_);
 };
 
 }

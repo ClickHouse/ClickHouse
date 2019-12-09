@@ -154,7 +154,7 @@ StorageS3::StorageS3(const S3::URI & uri_,
     , compression_method(compression_method_)
     , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
 {
-    context_global.getRemoteHostFilter().checkURL(uri_.endpoint);
+    context_global.getRemoteHostFilter().checkURL(uri_.uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }
