@@ -29,6 +29,9 @@ private:
     /// We allow to return empty chunks this way, which is required for streaming sources.
     virtual std::optional<Chunk> generate() = 0;
 
+    /// Resets source's internal state in attempt to read new data from beginning.
+    /// Useful for formatted inputs from infinite streams, like Kafka,
+    /// which provide isolated messages that need to be formatted separately.
     virtual bool reset() { return false; }
 };
 
