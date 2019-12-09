@@ -1,13 +1,10 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <sched.h>
-#include <syscall.h>
 #include "syscall.h"
 #include "atomic.h"
 
 #ifdef VDSO_GETCPU_SYM
-
-void *__vdsosym(const char *, const char *);
 
 static void *volatile vdso_func;
 
