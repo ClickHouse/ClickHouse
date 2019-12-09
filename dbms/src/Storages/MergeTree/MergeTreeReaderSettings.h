@@ -26,6 +26,7 @@ struct WriterSettings
     size_t aio_threshold;
     bool can_use_adaptive_granularity;
     bool blocks_are_granules_size;
+    String filename_suffix = "";
     size_t estimated_size = 0;
 };
 }

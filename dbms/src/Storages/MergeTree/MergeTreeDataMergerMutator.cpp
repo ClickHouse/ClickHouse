@@ -849,7 +849,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge
                 std::vector<MergeTreeIndexPtr>{},
-                written_offset_columns,
+                &written_offset_columns,
                 to.getIndexGranularity());
 
             size_t column_elems_written = 0;
@@ -1118,8 +1118,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
-        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
-
         MergedColumnOnlyOutputStream out(
             new_data_part,
             updated_header,
@@ -1127,7 +1125,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             compression_codec,
             /* skip_offsets = */ false,
             std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
-            unused_written_offsets,
+            nullptr,
             source_part->index_granularity,
             &source_part->index_granularity_info
         );

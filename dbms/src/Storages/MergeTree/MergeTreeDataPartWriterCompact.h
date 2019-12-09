@@ -17,8 +17,8 @@ public:
         const WriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation,
-        const Block & primary_key_block, const Block & skip_indexes_block) override;
+    void write(const Block & block, const IColumn::Permutation * permutation = nullptr,
+        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) override;
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) override;
 

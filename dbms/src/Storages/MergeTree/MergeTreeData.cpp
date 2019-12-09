@@ -1426,7 +1426,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     if (part)
         part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
     else
-        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE); /// FIXME support compact parts
+        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE); /// FIXME which extension should we use??
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1435,7 +1435,6 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
     std::vector<std::pair<String, String>> conversions;
-
 
     /// Remove old indices
     std::set<String> new_indices_set;
@@ -1522,6 +1521,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         }
     }
 
+    std::cerr << "(alterDataPart) conversions.size(): " << conversions.size() << "\n";
+ 
     if (!conversions.empty())
     {
         /// Give proper names for temporary columns with conversion results.
@@ -1529,30 +1530,36 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         NamesWithAliases projection;
         projection.reserve(conversions.size());
 
-        for (const auto & source_and_expression : conversions)
+        if (part && part->getType() == MergeTreeDataPartType::COMPACT)
+        {
+            out_rename_map["data_converting.bin"] = "data.bin";
+            out_rename_map["data_converting.mrk3"] = "data.mrk3";
+        }
+
+        for (const auto & [source_name, expression_name] : conversions)
         {
             /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
+            String temporary_column_name = source_name + " converting";
 
-            String original_column_name = source_and_expression.first;
-            String temporary_column_name = original_column_name + " converting";
-
-            projection.emplace_back(source_and_expression.second, temporary_column_name);
+            projection.emplace_back(expression_name, temporary_column_name);
 
             /// After conversion, we need to rename temporary files into original.
-
-            new_types[source_and_expression.first]->enumerateStreams(
-                [&](const IDataType::SubstreamPath & substream_path)
+            if (!part || part->getType() == MergeTreeDataPartType::WIDE)
+            {
+                new_types[source_name]->enumerateStreams(
+                [&, source_name=source_name](const IDataType::SubstreamPath & substream_path)
                 {
                     /// Skip array sizes, because they cannot be modified in ALTER.
                     if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
                         return;
 
-                    String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
+                    String original_file_name = IDataType::getFileNameForStream(source_name, substream_path);
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
                     out_rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
                 }, {});
+            }
         }
 
         out_expression->add(ExpressionAction::project(projection));
@@ -1563,15 +1570,15 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         WriteBufferFromOwnString out;
         out << "Will ";
         bool first = true;
-        for (const auto & from_to : out_rename_map)
+        for (const auto & [from, to] : out_rename_map)
         {
             if (!first)
                 out << ", ";
             first = false;
-            if (from_to.second.empty())
-                out << "remove " << from_to.first;
+            if (to.empty())
+                out << "remove " << from;
             else
-                out << "rename " << from_to.first << " to " << from_to.second;
+                out << "rename " << from << " to " << to;
         }
         out << " in part " << part->name;
         LOG_DEBUG(log, out.str());
@@ -1720,6 +1727,11 @@ void MergeTreeData::alterDataPart(
 
     DataPart::Checksums add_checksums;
 
+    std::cerr << "(alterDataPart) map size: " << transaction->rename_map.size() << "\n";
+    for (const auto & elem : transaction->rename_map)
+        std::cerr << "(" << elem.first << ", " << elem.second << ") ";
+    std::cerr << "\n";
+ 
     if (transaction->rename_map.empty() && !force_update_metadata)
     {
         transaction->clear();
@@ -1729,9 +1741,9 @@ void MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
+        std::cerr << "(alterDataPart) expression: " << expression->dumpActions() << "\n";
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
                 *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
-
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
@@ -1755,9 +1767,10 @@ void MergeTreeData::alterDataPart(
             true /* skip_offsets */,
             /// Don't recalc indices because indices alter is restricted
             std::vector<MergeTreeIndexPtr>{},
-            unused_written_offsets,
+            nullptr /* offset_columns */,
             part->index_granularity,
-            &part->index_granularity_info);
+            &part->index_granularity_info,
+            "_converting");
 
         in.readPrefix();
         out.writePrefix();

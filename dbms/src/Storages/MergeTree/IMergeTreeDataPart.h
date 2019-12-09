@@ -314,7 +314,7 @@ public:
     void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & /* column */, const IDataType & /* type */ ) const { return true; }
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */ ) const { return true; }
 
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 

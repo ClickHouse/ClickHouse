@@ -577,13 +577,14 @@ void IMergeTreeDataPart::loadColumns(bool require)
             columns.writeText(out);
         }
         Poco::File(path + ".tmp").renameTo(path);
-
-        return;
+    }
+    else
+    {
+        is_frozen = !poco_file_path.canWrite();
+        ReadBufferFromFile file = openForReading(path);
+        columns.readText(file);    
     }
 
-    is_frozen = !poco_file_path.canWrite();
-    ReadBufferFromFile file = openForReading(path);
-    columns.readText(file);
     index_granularity_info.initialize(storage, getType(), columns.size());
     for (const auto & it : columns)
         sample_block.insert({it.type, it.name});
@@ -599,10 +600,7 @@ void IMergeTreeDataPart::loadColumnSizes()
     auto column_sizes_path = getFullPath() + "columns_sizes.txt";
     auto columns_sizes_file = Poco::File(column_sizes_path);
     if (!columns_sizes_file.exists())
-    {
-        LOG_WARNING(storage.log, "No file column_sizes.txt in part " + name);
         return;
-    }
 
     ReadBufferFromFile buffer(column_sizes_path, columns_sizes_file.getSize());
     auto it = columns.begin();

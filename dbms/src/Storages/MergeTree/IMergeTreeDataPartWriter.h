@@ -70,7 +70,7 @@ public:
         bool need_finish_last_granule);
 
     virtual void write(
-        const Block & block, const IColumn::Permutation * permutation,
+        const Block & block, const IColumn::Permutation * permutation = nullptr,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
@@ -91,6 +91,12 @@ public:
     const MergeTreeData::ColumnSizeByName & getColumnsSizes() const
     {
         return columns_sizes;
+    }
+
+    void setOffsetColumns(WrittenOffsetColumns * written_offset_columns_, bool skip_offsets_)
+    {
+        written_offset_columns = written_offset_columns_;
+        skip_offsets = skip_offsets_;
     }
 
     void initSkipIndices();
@@ -150,6 +156,11 @@ protected:
     bool skip_indices_initialized = false;
 
     MergeTreeData::ColumnSizeByName columns_sizes;
+
+    /// To correctly write Nested elements column-by-column.
+    WrittenOffsetColumns * written_offset_columns = nullptr;
+    bool skip_offsets = false;
+
 };
 
 using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

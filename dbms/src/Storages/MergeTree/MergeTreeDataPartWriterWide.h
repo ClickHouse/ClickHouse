@@ -19,12 +19,12 @@ public:
         const WriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    void write(const Block & block, const IColumn::Permutation * permutation,
+    void write(const Block & block, const IColumn::Permutation * permutation = nullptr,
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) override;
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) override;
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -33,8 +33,7 @@ public:
         const String & name,
         const IDataType & type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets = false);
+        WrittenOffsetColumns & offset_columns);
 
 private:
     /// Write single granule of one column (rows between 2 marks)
@@ -43,7 +42,6 @@ private:
         const IDataType & type,
         const IColumn & column,
         WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
         IDataType::SerializeBinaryBulkSettings & serialize_settings,
         size_t from_row,
@@ -55,7 +53,6 @@ private:
         const String & name,
         const IDataType & type,
         WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
         size_t number_of_rows,
         DB::IDataType::SubstreamPath & path);
     
@@ -63,15 +60,13 @@ private:
         const std::string & column_name,
         const DataTypePtr column_type,
         WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
         DB::IDataType::SubstreamPath & path);
 
     void addStreams(
         const String & name,
         const IDataType & type,
         const CompressionCodecPtr & effective_codec,
-        size_t estimated_size,
-        bool skip_offsets);      
+        size_t estimated_size);
 
     SerializationStates serialization_states;
     bool can_use_adaptive_granularity;

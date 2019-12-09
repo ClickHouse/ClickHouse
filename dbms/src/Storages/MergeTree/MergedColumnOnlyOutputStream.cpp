@@ -7,12 +7,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
     CompressionCodecPtr default_codec, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    WrittenOffsetColumns & already_written_offset_columns_,
+    WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
-    const MergeTreeIndexGranularityInfo * index_granularity_info)
+    const MergeTreeIndexGranularityInfo * index_granularity_info,
+    const String & filename_suffix)
     : IMergedBlockOutputStream(data_part),
-    header(header_), sync(sync_), skip_offsets(skip_offsets_),
-    already_written_offset_columns(already_written_offset_columns_)
+    header(header_), sync(sync_)
 {
     // std::cerr << "(MergedColumnOnlyOutputStream) storage: " << storage.getTableName() << "\n";
     // std::cerr << "(MergedColumnOnlyOutputStream) can_use_adaptive_granularity: " << can_use_adaptive_granularity << "\n";
@@ -20,16 +20,13 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     // if (index_granularity_info_)
     //     std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
 
-    
     WriterSettings writer_settings(
         data_part->storage.global_context.getSettings(),
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity());
+    writer_settings.filename_suffix = filename_suffix;
 
     writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc, default_codec, writer_settings, index_granularity);
-    writer_wide = typeid_cast<MergeTreeDataPartWriterWide *>(writer.get());
-    if (!writer_wide)
-        throw Exception("MergedColumnOnlyOutputStream can be used only for writing Wide parts", ErrorCodes::LOGICAL_ERROR);
-
+    writer->setOffsetColumns(offset_columns_, skip_offsets_);
     writer->initSkipIndices();
 }
 
@@ -41,14 +38,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    std::vector<ColumnWithTypeAndName> skip_indexes_columns(skip_indexes_column_names.size());
-    std::map<String, size_t> skip_indexes_column_name_to_position;
-    for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
-    {
-        const auto & name = skip_indexes_column_names[i];
-        skip_indexes_column_name_to_position.emplace(name, i);
-        skip_indexes_columns[i] = block.getByName(name);
-    }
+    Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, nullptr);
 
     size_t rows = block.rows();
     if (!rows)
@@ -56,15 +46,9 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
     std::cerr << "(MergedColumnOnlyOutputStream::write) writing rows: " << rows << "\n";    
 
-    WrittenOffsetColumns offset_columns = already_written_offset_columns;
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        const auto & column = block.getByName(header.getByPosition(i).name);
-        writer_wide->writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets);
-    }
-
-    writer_wide->calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
-    writer_wide->next();
+    writer->write(block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+    writer->next();
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
@@ -77,6 +61,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
     writer->finishDataSerialization(checksums, sync);
+    writer->finishSkipIndicesSerialization(checksums);
 
     return checksums;
 }

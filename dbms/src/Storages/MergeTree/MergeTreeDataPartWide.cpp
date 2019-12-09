@@ -180,6 +180,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     String full_path = getFullPath();
     index_granularity_info.changeGranularityIfRequired(full_path);
 
+
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -339,22 +340,22 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
 
 
 
-// bool MergeTreeDataPartWide::hasColumnFiles(const String & column_name, const IDataType & type) const
-// {
-//     bool res = true;
+bool MergeTreeDataPartWide::hasColumnFiles(const String & column_name, const IDataType & type) const
+{
+    bool res = true;
 
-//     type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-//     {
-//         String file_name = IDataType::getFileNameForStream(column_name, substream_path);
+    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        String file_name = IDataType::getFileNameForStream(column_name, substream_path);
 
-//         auto bin_checksum = checksums.files.find(file_name + ".bin");
-//         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
+        auto bin_checksum = checksums.files.find(file_name + ".bin");
+        auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
 
-//         if (bin_checksum == checksums.files.end() || mrk_checksum == checksums.files.end())
-//             res = false;
-//     }, {});
+        if (bin_checksum == checksums.files.end() || mrk_checksum == checksums.files.end())
+            res = false;
+    }, {});
 
-//     return res;
-// }
+    return res;
+}
 
 }
