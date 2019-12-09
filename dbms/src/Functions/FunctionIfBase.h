@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <DataTypes/Native.h>
 
 

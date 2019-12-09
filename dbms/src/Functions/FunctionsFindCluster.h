@@ -6,7 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <IO/WriteHelpers.h>

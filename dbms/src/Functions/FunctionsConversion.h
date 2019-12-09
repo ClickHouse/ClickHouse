@@ -35,7 +35,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>

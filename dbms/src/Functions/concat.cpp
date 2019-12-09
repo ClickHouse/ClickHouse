@@ -8,7 +8,7 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <ext/map.h>
 #include <ext/range.h>

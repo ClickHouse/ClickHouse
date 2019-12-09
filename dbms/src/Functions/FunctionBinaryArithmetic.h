@@ -17,7 +17,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include "IFunction.h"
+#include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
 #include "intDiv.h"
 #include "castTypeToEither.h"

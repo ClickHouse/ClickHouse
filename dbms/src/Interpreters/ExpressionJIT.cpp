@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
+#include <Functions/IFunctionImpl.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -283,7 +284,7 @@ struct LLVMContext
     }
 };
 
-class LLVMPreparedFunction : public PreparedFunctionImpl
+class LLVMPreparedFunction : public IExecutableFunctionImpl
 {
     std::string name;
     void * function;

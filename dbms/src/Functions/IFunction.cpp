@@ -1,4 +1,3 @@
-#include "IFunction.h"
 #include "IFunctionImpl.h"
 
 #include <Common/config.h>

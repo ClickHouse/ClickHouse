@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <IO/WriteBufferFromString.h>

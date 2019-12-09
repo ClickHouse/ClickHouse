@@ -5,7 +5,7 @@
 
 #include <Columns/ColumnVector.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 

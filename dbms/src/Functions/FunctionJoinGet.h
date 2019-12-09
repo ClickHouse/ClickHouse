@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableStructureLockHolder.h>
 
