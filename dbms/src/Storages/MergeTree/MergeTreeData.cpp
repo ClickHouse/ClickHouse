@@ -2588,7 +2588,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return getActiveContainingPart(part_info);
 }
 
-
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id)
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
@@ -2754,8 +2753,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.push_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
@@ -2771,6 +2771,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         }), parts.end());
 
     if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+
+    if (parts.empty())
     {
         String no_parts_to_move_message;
         if (moving_part)
@@ -2782,7 +2785,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 
@@ -2798,17 +2801,20 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.emplace_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-
     auto volume = storage_policy->getVolumeByName(name);
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2834,7 +2840,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 

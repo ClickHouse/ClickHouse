@@ -1078,3 +1078,61 @@ def test_kill_while_insert(start_cluster):
 
     finally:
         """Don't drop table afterwards to not shadow assertion."""
+
+
+def test_move_while_merge(start_cluster):
+    try:
+        name = "test_move_while_merge"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY sleep(2)
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
+        node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
+
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        assert len(parts) == 2
+
+        def optimize():
+            node1.query("OPTIMIZE TABLE {name}".format(name=name))
+
+        optimize = threading.Thread(target=optimize)
+        optimize.start()
+
+        time.sleep(0.5)
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+
+        exiting = False
+        no_exception = {}
+
+        def alter():
+            while not exiting:
+                try:
+                    node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+                    no_exception['missing'] = 'exception'
+                    break
+                except QueryRuntimeException:
+                    """"""
+
+        alter_thread = threading.Thread(target=alter)
+        alter_thread.start()
+
+        optimize.join()
+
+        time.sleep(0.5)
+
+        exiting = True
+        alter_thread.join()
+        assert len(no_exception) == 0
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["2"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
