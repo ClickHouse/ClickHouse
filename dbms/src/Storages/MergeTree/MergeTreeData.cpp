@@ -793,10 +793,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     if (getStoragePolicy()->getName() != "default")
     {
         /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
-        std::unordered_set<String> disks_set(disks.begin(), disks.end());
+        std::unordered_set<String> defined_disk_names;
+        for (const auto & disk_ptr : disks)
+            defined_disk_names.insert(disk_ptr->getName());
+
         for (auto & [disk_name, disk_ptr] : global_context.getDiskSelector().getDisksMap())
         {
-            if (disks_set.count(disk_name) == 0)
+            if (defined_disk_names.count(disk_name) == 0)
             {
                 for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
                 {
