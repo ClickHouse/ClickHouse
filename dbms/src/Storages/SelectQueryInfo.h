@@ -41,14 +41,22 @@ struct InputSortingInfo
 
     InputSortingInfo(const SortDescription & order_key_prefix_descr_, int direction_)
         : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+
+    bool operator ==(const InputSortingInfo & other) const
+    {
+        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
+    }
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using InputSortingInfoPtr = std::shared_ptr<InputSortingInfo>;
+using InputSortingInfoPtr = std::shared_ptr<const InputSortingInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+
+class ReadInOrderOptimizer;
+using ReadInOrderOptimizerPtr = std::shared_ptr<ReadInOrderOptimizer>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -63,6 +71,8 @@ struct SelectQueryInfo
     PrewhereInfoPtr prewhere_info;
 
     InputSortingInfoPtr input_sorting_info;
+
+    ReadInOrderOptimizerPtr order_by_optimizer;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

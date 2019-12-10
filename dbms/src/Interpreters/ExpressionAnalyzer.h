@@ -18,6 +18,7 @@ class Context;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -46,6 +47,9 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
+
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
 };
 
 
@@ -169,6 +173,8 @@ public:
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
+    const ManyExpressionActions & getOrderByActions() const { return order_by_elements_actions; }
+
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
 
@@ -201,7 +207,7 @@ public:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
-    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
