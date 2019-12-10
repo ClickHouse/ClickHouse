@@ -295,7 +295,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (auto view_source = context->getViewSource())
             {
                 auto & storage_values = static_cast<const StorageValues &>(*view_source);
-                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                auto tmp_table_id = storage_values.getStorageID();
+                //FIXME maybe add uuid?
+                if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
                 {
                     /// Read from view source.
                     storage = context->getViewSource();
