@@ -96,6 +96,12 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
+}
+
+
 MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
@@ -813,6 +819,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_disk_ptr, part_name, part_info);
             part->relative_path = part_name;
             bool broken = false;
+
+            Poco::Path part_path(getFullPathOnDisk(part_disk_ptr), part_name);
+            Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
+            if (Poco::File(marker_path).exists())
+            {
+                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
+                return;
+            }
 
             try
             {
@@ -2528,7 +2545,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
@@ -2541,6 +2558,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
+
+            Poco::Path marker_path(Poco::Path(original_active_part->getFullPath()), DELETE_ON_DESTROY_MARKER_PATH);
+            try
+            {
+                Poco::File(marker_path).createFile();
+            }
+            catch (Poco::Exception & e)
+            {
+                LOG_ERROR(log, e.what() << " (while creating DeleteOnDestroy marker: " + backQuote(marker_path.toString()) + ")");
+            }
             return;
         }
     }

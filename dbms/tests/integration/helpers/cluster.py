@@ -571,11 +571,11 @@ class ClickHouseInstance:
     def http_query(self, sql, data=None):
         return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
 
-    def restart_clickhouse(self, stop_start_wait_sec=5):
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
 
