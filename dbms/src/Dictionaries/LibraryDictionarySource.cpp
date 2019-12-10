@@ -7,6 +7,7 @@
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
