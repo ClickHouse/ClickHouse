@@ -13,6 +13,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
+#include <Storages/StorageID.h>
 
 
 namespace DB
@@ -340,7 +341,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_uuid("UUID");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
@@ -352,14 +352,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
     ParserNameList names_p;
-    ParserStringLiteral uuid_p;
 
-    ASTPtr database;
-    ASTPtr table;
-    ASTPtr uuid;
+    StorageID table_id;
     ASTPtr columns_list;
-    ASTPtr to_database;
-    ASTPtr to_table;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -389,21 +384,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
-    if (!name_p.parse(pos, table, expected))
+    if (!parseStorageID(pos, table_id, expected))
         return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
-
-    if (attach && s_uuid.ignore(pos, expected))
-    {
-        if (!uuid_p.parse(pos, uuid, expected))
-            return false;
-    }
 
     if (s_on.ignore(pos, expected))
     {
@@ -421,8 +403,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        tryGetIdentifierNameInto(database, query->database);
-        tryGetIdentifierNameInto(table, query->table);
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+        query->uuid = table_id.uuid;
 
         return true;
     }
@@ -479,14 +462,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
-    if (uuid)
-        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
-
-    tryGetIdentifierNameInto(to_database, query->to_database);
-    tryGetIdentifierNameInto(to_table, query->to_table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
@@ -504,7 +483,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_uuid("UUID");
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -515,14 +493,10 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    ParserStringLiteral uuid_p;
 
-    ASTPtr database;
-    ASTPtr table;
-    ASTPtr uuid;
+    StorageID table_id;
+    StorageID to_table_id;
     ASTPtr columns_list;
-    ASTPtr to_database;
-    ASTPtr to_table;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -555,21 +529,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (s_if_not_exists.ignore(pos, expected))
        if_not_exists = true;
 
-    if (!name_p.parse(pos, table, expected))
+    if (!parseStorageID(pos, table_id, expected))
         return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
-
-    if (attach && s_uuid.ignore(pos, expected))
-    {
-        if (!uuid_p.parse(pos, uuid, expected))
-            return false;
-    }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
@@ -580,15 +541,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     // TO [db.]table
     if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        if (!name_p.parse(pos, to_table, expected))
+        if (!parseStorageID(pos, to_table_id, expected))
             return false;
-
-        if (s_dot.ignore(pos, expected))
-        {
-            to_database = to_table;
-            if (!name_p.parse(pos, to_table, expected))
-                return false;
-        }
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
@@ -617,14 +571,12 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->is_live_view = true;
     query->temporary = is_temporary;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    tryGetIdentifierNameInto(to_database, query->to_database);
-    tryGetIdentifierNameInto(to_table, query->to_table);
-    if (uuid)
-        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
+    query->to_table_id = to_table_id;
 
     query->set(query->columns_list, columns_list);
 
@@ -713,12 +665,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserNameList names_p;
     ParserStringLiteral uuid_p;
 
-    ASTPtr database;
-    ASTPtr table;
-    ASTPtr uuid;
+    StorageID table_id;
+    StorageID to_table_id;
     ASTPtr columns_list;
-    ASTPtr to_database;
-    ASTPtr to_table;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -759,21 +708,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!replace_view && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
-    if (!name_p.parse(pos, table, expected))
+    if (!parseStorageID(pos, table_id, expected))
         return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
-
-    if (attach && s_uuid.ignore(pos, expected))
-    {
-        if (!uuid_p.parse(pos, uuid, expected))
-            return false;
-    }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
@@ -784,15 +720,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // TO [db.]table
     if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        if (!name_p.parse(pos, to_table, expected))
+        if (!parseStorageID(pos, to_table_id, expected))
             return false;
-
-        if (s_dot.ignore(pos, expected))
-        {
-            to_database = to_table;
-            if (!name_p.parse(pos, to_table, expected))
-                return false;
-        }
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
@@ -805,7 +734,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view && !to_table)
+    if (is_materialized_view && to_table_id.empty())
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
         if (!storage_p.parse(pos, storage, expected))
@@ -833,14 +762,12 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
-    if (uuid)
-        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    tryGetIdentifierNameInto(to_database, query->to_database);
-    tryGetIdentifierNameInto(to_table, query->to_table);
+    query->to_table_id = to_table_id;
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

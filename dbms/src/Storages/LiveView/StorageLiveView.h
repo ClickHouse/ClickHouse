@@ -41,8 +41,7 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    String getSelectDatabaseName() const { return select_database_name; }
-    String getSelectTableName() const { return select_table_name; }
+    StorageID getSelectTableID() const { return select_table_id; }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -140,8 +139,7 @@ public:
         const Context & context);
 
 private:
-    String select_database_name;
-    String select_table_name;
+    StorageID select_table_id;
     ASTPtr inner_query;
     Context & global_context;
     bool is_temporary = false;

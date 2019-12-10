@@ -15,6 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
+    String uuid;
     bool temporary{false};
 
 protected:
