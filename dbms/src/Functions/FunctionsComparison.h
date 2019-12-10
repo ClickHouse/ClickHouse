@@ -960,6 +960,9 @@ private:
     void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
                                       size_t tuple_size, size_t input_rows_count)
     {
+        if (0 == tuple_size)
+            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+
         auto func_compare = ComparisonFunction::create(context);
         auto func_convolution = ConvolutionFunction::create(context);
 
@@ -977,6 +980,13 @@ private:
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
             impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+        }
+
+        if (tuple_size == 1)
+        {
+            /// Do not call AND for single-element tuple.
+            block.getByPosition(result).column = tmp_block.getByPosition(2).column;
+            return;
         }
 
         /// Logical convolution.
