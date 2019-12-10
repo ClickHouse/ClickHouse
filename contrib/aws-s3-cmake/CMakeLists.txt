@@ -3,7 +3,6 @@ SET(AWS_CORE_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core)
 SET(AWS_CHECKSUMS_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-checksums)
 SET(AWS_COMMON_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-c-common)
 SET(AWS_EVENT_STREAM_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream)
-SET(CURL_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
 
 OPTION(USE_AWS_MEMORY_MANAGEMENT "Aws memory management" OFF)
 configure_file("${AWS_CORE_LIBRARY_DIR}/include/aws/core/SDKConfig.h.in"
@@ -83,43 +82,6 @@ set(S3_INCLUDES
         "${CMAKE_CURRENT_BINARY_DIR}/include/"
         )
 
-include(ExternalProject)
-
-ExternalProject_Add(
-        libcurl_ex
-        SOURCE_DIR "${CURL_LIBRARY_DIR}"
-        INSTALL_DIR ${CMAKE_BINARY_DIR}/install
-        CMAKE_ARGS
-        -DCMAKE_USE_OPENSSL=ON
-        -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS}
-        -DHTTP_ONLY=ON
-        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-        -DBUILD_CURL_TESTS=OFF
-        -DBUILD_TESTING=OFF
-        -DBUILD_CURL_EXE=OFF
-        -DCURL_ZLIB=OFF
-        -DOPENSSL_ROOT_DIR=${ClickHouse_SOURCE_DIR}/contrib/ssl
-        -DOPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}
-)
-
-add_library(libcurl UNKNOWN IMPORTED)
-
-if (BUILD_SHARED_LIBS)
-    set(CURL_LIB_SUFFIX so)
-else()
-    set(CURL_LIB_SUFFIX a)
-endif()
-
-set_target_properties(
-        libcurl
-        PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_BINARY_DIR}/install/lib/libcurl.${CURL_LIB_SUFFIX}
-)
-
-add_dependencies(libcurl libcurl_ex)
-
-target_link_libraries(libcurl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
-
 add_library(aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
 target_include_directories(aws_s3_checksums PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
 if(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -130,8 +92,6 @@ set_target_properties(aws_s3_checksums PROPERTIES LINKER_LANGUAGE C)
 set_property(TARGET aws_s3_checksums PROPERTY C_STANDARD 99)
 
 add_library(aws_s3 ${S3_UNIFIED_SRC})
-
-add_dependencies(aws_s3 libcurl_ex)
 
 target_compile_definitions(aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
 target_compile_definitions(aws_s3 PUBLIC -DENABLE_CURL_CLIENT)

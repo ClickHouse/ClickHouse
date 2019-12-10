@@ -313,6 +313,9 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
+    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+    add_subdirectory(curl-cmake)
+    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
     add_subdirectory(aws-s3-cmake)
 endif ()
 
