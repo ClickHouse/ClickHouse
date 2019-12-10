@@ -713,8 +713,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    const String database_name_ = getDatabaseName();
-    const String table_name_ = getTableName();
+    auto table_id = getStorageID();
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
@@ -723,7 +722,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});   //FIXME
     setColumns(std::move(new_columns));
 }
 

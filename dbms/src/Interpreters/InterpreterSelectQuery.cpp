@@ -295,7 +295,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (auto view_source = context->getViewSource())
             {
                 auto & storage_values = static_cast<const StorageValues &>(*view_source);
-                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                auto tmp_table_id = storage_values.getStorageID();
+                if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
                 {
                     /// Read from view source.
                     storage = context->getViewSource();
@@ -419,9 +420,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header);
 
     /// Remove limits for some tables in the `system` database.
-    if (storage && (storage->getDatabaseName() == "system"))
+    if (storage && (table_id->database_name == "system"))
     {
-        String table_name = storage->getTableName();
+        String table_name = table_id->table_name;
         if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
         {
             options.ignore_quota = true;

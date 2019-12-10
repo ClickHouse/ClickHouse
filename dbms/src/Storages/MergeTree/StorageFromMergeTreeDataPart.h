@@ -49,11 +49,7 @@ public:
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage({
-                      part_->storage.getDatabaseName(),
-                      part_->storage.getTableName() + " (part " + part_->name + ")"
-                   }
-        , part_->storage.getVirtuals())
+        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
         , part(part_)
     {
         setColumns(part_->storage.getColumns());
@@ -62,6 +58,12 @@ protected:
 
 private:
     MergeTreeData::DataPartPtr part;
+
+    static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
+    {
+        auto table_id = part_->storage.getStorageID();
+        return StorageID(table_id.database_name, table_id.table_name + " (part " + part_->name + ")");
+    }
 };
 
 }

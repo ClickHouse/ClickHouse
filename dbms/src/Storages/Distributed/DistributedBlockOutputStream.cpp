@@ -90,7 +90,7 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG(log, storage.getTableName()
+            LOG_DEBUG(log, storage.getStorageID().getNameForLogs()
                 << ": column " + col.name + " will be removed, "
                 << "because it is MATERIALIZED");
         }
@@ -515,7 +515,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         else
         {
             if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getTableName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
 
             writeToShard(block, {shard_info.dir_name_for_internal_replication});
         }

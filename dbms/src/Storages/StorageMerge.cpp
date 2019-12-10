@@ -281,7 +281,10 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage ? storage->getTableName() : "");
+    StorageID table_id;
+    if (storage)
+        table_id = storage->getStorageID();
+    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_id.table_name);
 
     if (!storage)
         return BlockInputStreams{
@@ -301,7 +304,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
-        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, storage->getTableName());
+        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_id.table_name);
 
         /// Maximum permissible parallelism is streams_num
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
@@ -332,7 +335,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
         {
             if (has_table_virtual_column)
                 source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
-                    source_stream, std::make_shared<DataTypeString>(), storage->getTableName(), "_table");
+                    source_stream, std::make_shared<DataTypeString>(), table_id.table_name, "_table");
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.
@@ -381,7 +384,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         if (storage.get() != this)
         {
             selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
-            virtual_column->insert(storage->getTableName());
+            auto table_id = storage->getStorageID();
+            virtual_column->insert(table_id.table_name);
         }
 
         iterator->next();
@@ -394,7 +398,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
-        selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getTableName()) == values.end(); });
+        //FIXME table name can be changed, use StorageID
+        selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getStorageID().table_name) == values.end(); });
     }
 
     return selected_tables;
