@@ -13,7 +13,8 @@ class Context;
 class FileDictionarySource final : public IDictionarySource
 {
 public:
-    FileDictionarySource(const std::string & filename_, const std::string & format_, Block & sample_block_, const Context & context_);
+    FileDictionarySource(const std::string & filepath_, const std::string & format_,
+        Block & sample_block_, const Context & context_, bool check_config);
 
     FileDictionarySource(const FileDictionarySource & other);
 
@@ -47,7 +48,7 @@ public:
 private:
     Poco::Timestamp getLastModification() const;
 
-    const std::string filename;
+    const std::string filepath;
     const std::string format;
     Block sample_block;
     const Context & context;
