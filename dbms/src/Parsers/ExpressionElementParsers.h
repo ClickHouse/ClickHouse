@@ -56,6 +56,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+struct StorageID;
+/// Table name, possibly with database name and UUID as string literal
+/// [db_name.]table_name [UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx']
+//TODO replace with class
+bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected);
+
 /// Just *
 class ParserAsterisk : public IParserBase
 {

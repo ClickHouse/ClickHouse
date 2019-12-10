@@ -142,6 +142,7 @@ public:
     String with_name;
 
     /// REPLACE(ATTACH) PARTITION partition FROM db.table
+    //FIXME use StorageID
     String from_database;
     String from_table;
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table

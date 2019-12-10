@@ -91,10 +91,6 @@ class CompiledExpressionCache;
 
 #endif
 
-/// (database name, table name)
-//FIXME replace with StorageID
-//using DatabaseAndTableName = std::pair<String, String>;
-
 /// Table -> set of table-views that make SELECT from it.
 using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
 using Dependencies = std::vector<StorageID>;
@@ -128,6 +124,7 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
+///TODO remove syntax sugar and legacy methods from Context (e.g.  getInputFormat(...) which just returns object from factory)
 class Context
 {
 private:
@@ -286,7 +283,9 @@ public:
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
+    StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+    StoragePtr tryGetTable(const StorageID & table_id) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
@@ -592,7 +591,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, Exception * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 
