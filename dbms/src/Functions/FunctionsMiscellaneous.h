@@ -44,6 +44,8 @@ public:
         block.getByPosition(result).column = expr_block.getByName(signature->return_name).column;
     }
 
+bool useDefaultImplementationForNulls() const override { return false; }
+
 private:
     ExpressionActionsPtr expression_actions;
     SignaturePtr signature;
