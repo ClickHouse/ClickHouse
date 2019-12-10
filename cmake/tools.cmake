@@ -27,11 +27,34 @@ option (LINKER_NAME "Linker name or full path")
 find_program (LLD_PATH NAMES "ld.lld" "lld" "lld-${COMPILER_VERSION_MAJOR}")
 find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
+# We prefer LLD linker over Gold or BFD.
+
 if (NOT LINKER_NAME)
     if (LLD_PATH)
-        set (LINKER_NAME "lld")
-    elseif (GOLD_PATH)
-        set (LINKER_NAME "gold")
+        # GCC driver requires one of supported linker names like "lld".
+        # Clang driver simply allows full linker path.
+
+        if (COMPILER_GCC)
+            get_filename_component(LLD_BASE_NAME ${LLD_PATH} NAME)
+            if (LLD_BASE_NAME STREQUAL ld.lld)
+                set (LINKER_NAME "lld")
+            endif ()
+        else ()
+            set (LINKER_NAME ${LLD_PATH})
+        endif ()
+    endif ()
+endif ()
+
+if (NOT LINKER_NAME)
+    if (GOLD_PATH)
+        if (COMPILER_GCC)
+            get_filename_component(GOLD_BASE_NAME ${GOLD_PATH} NAME)
+            if (GOLD_BASE_NAME STREQUAL ld.gold)
+                set (LINKER_NAME "gold")
+            endif ()
+        else ()
+            set (LINKER_NAME ${GOLD_PATH})
+        endif ()
     endif ()
 endif ()
 
