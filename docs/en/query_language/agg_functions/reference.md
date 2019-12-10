@@ -858,7 +858,7 @@ Don't use this function for calculating timings. There is a more suitable functi
 
 ## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds. 
+Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds.
 
 ```sql
 quantileTiming(level)(expr)
@@ -868,7 +868,7 @@ quantileTiming(level)(expr)
 
 - `level` — Quantile level. Range: [0, 1].
 - `expr` — [Expression](../syntax.md#syntax-expressions) returning a [Float*](../../data_types/float.md)-type number. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
-    
+
     - If negative values are passed to the function, the behavior is undefined.
     - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
@@ -1006,6 +1006,16 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 ## corr(x, y)
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+## categoricalInformationValue
+
+Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
+
+```sql
+categoricalInformationValue(category1, category2, ..., tag)
+```
+
+The result indicates how a discrete (categorical) feature `[category1, category2, ...]` contribute to a learning model which predicting the value of `tag`.
 
 ## simpleLinearRegression
 
