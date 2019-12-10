@@ -170,6 +170,10 @@ set(CURL_CA_FALLBACK OFF CACHE BOOL
 set(CURL_CA_PATH "auto" CACHE STRING
         "Location of default CA path. Set 'none' to disable or 'auto' for auto-detection. Defaults to 'auto'.")
 
+if (NOT OPENSSL_FOUND)
+    set(CURL_CA_PATH "none")
+endif()
+
 if("${CURL_CA_BUNDLE}" STREQUAL "")
     message(FATAL_ERROR "Invalid value of CURL_CA_BUNDLE. Use 'none', 'auto' or file path.")
 elseif("${CURL_CA_BUNDLE}" STREQUAL "none")
