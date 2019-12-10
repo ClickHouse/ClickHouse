@@ -17,6 +17,7 @@ class MergeProgressCallback;
 struct FutureMergedMutatedPart
 {
     String name;
+    String path;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
 
@@ -29,6 +30,7 @@ struct FutureMergedMutatedPart
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
+    void updatePath(const MergeTreeData & storage, const DiskSpace::ReservationPtr & reservation);
 };
 
 
