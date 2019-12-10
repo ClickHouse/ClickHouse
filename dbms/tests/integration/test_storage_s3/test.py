@@ -250,3 +250,15 @@ def test_remote_host_filter(cluster):
     query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
         "invalid_host", cluster.minio_port, cluster.minio_bucket, format, other_values)
     assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
+
+@pytest.mark.parametrize("s3_storage_args", [
+    "''",  # 1 arguments
+    "'','','','','',''"  # 6 arguments
+])
+def test_wrong_s3_syntax(cluster, s3_storage_args):
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3({})".format(s3_storage_args)
+    assert expected_err_msg in instance.query_and_get_error(query)
