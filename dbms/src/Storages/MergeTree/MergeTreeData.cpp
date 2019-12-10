@@ -3355,9 +3355,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
         String backup_part_absolute_path = backup_path
-            + "data/"
-            + escapeForFileName(getDatabaseName()) + "/"
-            + escapeForFileName(getTableName()) + "/"
+            + relative_data_path
             + part->relative_path;
         localBackup(part_absolute_path, backup_part_absolute_path);
         part->is_frozen.store(true, std::memory_order_relaxed);

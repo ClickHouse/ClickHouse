@@ -54,10 +54,11 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
         {
             StoragePtr inner_table = materialized_view->getTargetTable();
+            auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->database = inner_table->getDatabaseName();
-            insert->table = inner_table->getTableName();
+            insert->database = inner_table_id.database_name;
+            insert->table = inner_table_id.table_name;         //FIXME add uuid
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();

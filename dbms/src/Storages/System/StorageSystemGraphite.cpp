@@ -48,20 +48,22 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
             {
                 const String & config_name = table_data->merging_params.graphite_params.config_name;
 
+                auto table_id = table_data->getStorageID();
                 if (!graphite_configs.count(config_name))
                 {
+                    //TODO add uuid
                     Config new_config =
                     {
                         table_data->merging_params.graphite_params,
-                        { table_data->getDatabaseName() },
-                        { table_data->getTableName() },
+                        { table_id.database_name },
+                        { table_id.database_name },
                     };
                     graphite_configs.emplace(config_name, new_config);
                 }
                 else
                 {
-                    graphite_configs[config_name].databases.emplace_back(table_data->getDatabaseName());
-                    graphite_configs[config_name].tables.emplace_back(table_data->getTableName());
+                    graphite_configs[config_name].databases.emplace_back(table_id.database_name);
+                    graphite_configs[config_name].tables.emplace_back(table_id.database_name);
                 }
             }
         }

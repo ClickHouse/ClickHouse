@@ -260,8 +260,7 @@ void StorageMergeTree::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
+    auto table_id = getStorageID();
 
     if (!params.isMutable())
     {
@@ -279,7 +278,7 @@ void StorageMergeTree::alter(
         changeSettings(new_changes, table_lock_holder);
 
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
+        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, settings_modifier);
         setColumns(std::move(new_columns));
         return;
     }
@@ -326,7 +325,7 @@ void StorageMergeTree::alter(
 
     changeSettings(new_changes, table_lock_holder);
 
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
 
     /// Reinitialize primary key because primary key column types might have changed.

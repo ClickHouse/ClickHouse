@@ -3173,8 +3173,7 @@ void StorageReplicatedMergeTree::alter(
 
     LOG_DEBUG(log, "Doing ALTER");
 
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
+    auto table_id = getStorageID();
 
     if (params.isSettingsAlter())
     {
@@ -3187,8 +3186,8 @@ void StorageReplicatedMergeTree::alter(
         changeSettings(new_changes, table_lock_holder);
 
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        global_context.getDatabase(current_database_name)->alterTable(
-            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+        global_context.getDatabase(table_id.database_name)->alterTable(
+            query_context, table_id.table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
         return;
     }
 
@@ -3268,8 +3267,8 @@ void StorageReplicatedMergeTree::alter(
 
             changeSettings(new_changes, table_lock_holder);
 
-            global_context.getDatabase(current_database_name)->alterTable(
-                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+            global_context.getDatabase(table_id.database_name)->alterTable(
+                query_context, table_id.table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
 
         }
 
