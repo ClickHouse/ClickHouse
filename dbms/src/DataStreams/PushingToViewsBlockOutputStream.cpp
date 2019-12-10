@@ -46,7 +46,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = context.getTable(database_table.database_name, database_table.table_name);   //FIXME
+        auto dependent_table = context.getTable(database_table);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -219,7 +219,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// InterpreterSelectQuery will do processing of alias columns.
             Context local_context = *views_context;
             local_context.addViewSource(
-                    StorageValues::create(StorageID(storage->getDatabaseName(), storage->getTableName()), storage->getColumns(),   //FIXME
+                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
                                           block));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);

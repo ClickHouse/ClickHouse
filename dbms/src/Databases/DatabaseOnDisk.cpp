@@ -29,7 +29,6 @@ namespace DB
 {
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 namespace ErrorCodes
 {

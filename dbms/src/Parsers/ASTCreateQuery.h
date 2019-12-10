@@ -4,6 +4,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Storages/StorageID.h>
 
 
 namespace DB
@@ -65,15 +66,13 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;
-    String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
-    String to_table;
+    StorageID to_table_id;   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
-    String uuid;   /// For ATTACH TABLE query when db engine is Atomic
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
