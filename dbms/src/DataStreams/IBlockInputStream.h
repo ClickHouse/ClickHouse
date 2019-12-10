@@ -101,6 +101,9 @@ public:
       */
     virtual void readSuffix();
 
+    /// FIXME: almost the same as |ISource::reset()|, and should go away when |NativeFormat| gets rewritten.
+    void reset();
+
     /// Must be called before `read()` and `readPrefix()`.
     void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
@@ -287,6 +290,8 @@ private:
 
     /// Here you need to do a finalization, which can lead to an exception.
     virtual void readSuffixImpl() {}
+
+    virtual void resetImpl() {}
 
     void updateExtremes(Block & block);
 

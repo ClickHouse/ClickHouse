@@ -137,6 +137,19 @@ void IBlockInputStream::readSuffix()
 }
 
 
+void IBlockInputStream::reset()
+{
+#ifndef NDEBUG
+    read_prefix_is_called = false;
+    read_suffix_is_called = false;
+#endif
+    is_cancelled = false;
+    is_killed = false;
+
+    resetImpl();
+}
+
+
 void IBlockInputStream::updateExtremes(Block & block)
 {
     size_t num_columns = block.columns();

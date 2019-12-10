@@ -57,12 +57,10 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
     }
 }
 
-void NativeBlockInputStream::resetParser()
+void NativeBlockInputStream::resetImpl()
 {
     istr_concrete = nullptr;
     use_index = false;
-    header.clear();
-    avg_value_size_hints.clear();
 }
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)

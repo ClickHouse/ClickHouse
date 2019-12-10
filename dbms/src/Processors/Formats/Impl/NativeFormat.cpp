@@ -56,10 +56,7 @@ private:
 
     bool reset() override
     {
-        stream->resetParser();
-        read_prefix = false;
-        read_suffix = false;
-
+        stream->reset();
         return IInputFormat::reset();
     }
 };

@@ -78,11 +78,9 @@ public:
 
     Block getHeader() const override;
 
-    void resetParser();
-
-
 protected:
     Block readImpl() override;
+    void resetImpl() override;
 
 private:
     ReadBuffer & istr;
