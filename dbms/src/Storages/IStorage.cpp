@@ -176,7 +176,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getStorageID().getNameForLogs() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))
@@ -344,7 +344,7 @@ TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_
 void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
 }
@@ -352,7 +352,7 @@ void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & l
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
         lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
@@ -405,15 +405,14 @@ void IStorage::alter(
     if (params.isModifyingData())
         throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    const String database_name = getDatabaseName();
-    const String table_name = getTableName();
+    auto table_id = getStorageID();
 
     if (params.isSettingsAlter())
     {
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);   //FIXME
     }
     else
     {
@@ -422,7 +421,7 @@ void IStorage::alter(
         auto new_indices = getIndices();
         auto new_constraints = getConstraints();
         params.applyForColumnsOnly(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+        context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});     //FIXME
         setColumns(std::move(new_columns));
     }
 }

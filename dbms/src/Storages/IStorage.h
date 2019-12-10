@@ -90,18 +90,6 @@ public:
     /// The name of the table.
     StorageID getStorageID(std::unique_lock<std::mutex> * lock = nullptr) const;
 
-    // FIXME remove those methods
-    std::string getTableName() const
-    {
-        std::lock_guard lock(id_mutex);
-        return id.table_name;
-    }
-    std::string getDatabaseName() const
-    {
-        std::lock_guard lock(id_mutex);
-        return id.database_name;
-    }
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 

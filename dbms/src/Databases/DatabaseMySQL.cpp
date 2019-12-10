@@ -132,9 +132,9 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
 
     {
         /// init create query.
-
-        create_table_query->table = storage->getTableName();
-        create_table_query->database = storage->getDatabaseName();
+        auto table_id = storage->getStorageID();
+        create_table_query->table = table_id.table_name;
+        create_table_query->database = table_id.database_name;
 
         for (const auto & column_type_and_name : storage->getColumns().getOrdinary())
         {
@@ -144,7 +144,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
             columns_expression_list->children.emplace_back(column_declaration);
         }
 
-        auto mysql_table_name = std::make_shared<ASTLiteral>(storage->getTableName());
+        auto mysql_table_name = std::make_shared<ASTLiteral>(table_id.table_name);
         auto storage_engine_arguments = table_storage_define->as<ASTStorage>()->engine->arguments;
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
     }
