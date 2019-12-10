@@ -1,3 +1,26 @@
+-- trivial
+
+SELECT
+    categoricalInformationValue(x.1, x.2)
+FROM (
+    SELECT
+        arrayJoin(arrayPopBack([(1, 0)])) as x
+);
+
+SELECT
+    categoricalInformationValue(x.1, x.2)
+FROM (
+    SELECT
+        arrayJoin([(0, 0)]) as x
+);
+
+SELECT
+    categoricalInformationValue(x.1, x.2)
+FROM (
+    SELECT
+        arrayJoin([(1, 0)]) as x
+);
+
 -- single category
 
 SELECT
