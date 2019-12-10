@@ -450,7 +450,11 @@ public:
         return std::make_shared<FunctionBaseAdaptor>(impl->build(arguments, getReturnType(arguments)));
     }
 
-    void getLambdaArgumentTypes(DataTypes & arguments) const final { return impl->getLambdaArgumentTypes(arguments); }
+    void getLambdaArgumentTypes(DataTypes & arguments) const final
+    {
+        checkNumberOfArguments(arguments.size());
+        impl->getLambdaArgumentTypes(arguments);
+    }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return impl->getArgumentsThatAreAlwaysConstant(); }
 
@@ -524,6 +528,8 @@ public:
         return function->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments_);
     }
 
+    bool isStateful() const override { return function->isStateful(); }
+
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
@@ -582,7 +588,7 @@ public:
         return std::make_unique<DefaultFunction>(function, data_types, return_type);
     }
 
-    void getLambdaArgumentTypes(DataTypes & arguments) const override { return function->getLambdaArgumentTypes(arguments); }
+    void getLambdaArgumentTypes(DataTypes & arguments) const override { function->getLambdaArgumentTypes(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;
