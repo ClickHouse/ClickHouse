@@ -305,7 +305,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
         auto col_res = block.getByPosition(result).type->createColumn()->cloneResized(block_size);
         if (block_size)
@@ -506,7 +506,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-ExecutableFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMPreparedFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {
