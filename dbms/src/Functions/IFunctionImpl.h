@@ -421,6 +421,8 @@ public:
         return impl->getMonotonicityForRange(type, left, right);
     }
 
+    const IFunctionBaseImpl * getImpl() const { return impl.get(); }
+
 private:
     FunctionBaseImplPtr impl;
 };
