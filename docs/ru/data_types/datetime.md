@@ -28,20 +28,35 @@ ClickHouse по умолчанию выводит значение в форма
 
 **1.** Создание таблицы с столбцом типа `DateTime` и вставка данных в неё:
 
-```sql
-CREATE TABLE dt( timestamp DateTime('Europe/Moscow') ) ENGINE TinyLog
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Europe/Moscow'), 
+    `event_id` UInt8
+)
+ENGINE = TinyLog
 ```
 ```sql
-INSERT INTO dt Values (1546300800), ('2019-01-01 00:00:00')
+INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)
 ```
 ```sql
 SELECT * FROM dt
 ```
 ```text
-┌───────────timestamp─┐
-│ 2019-01-01 03:00:00 │
-│ 2019-01-01 00:00:00 │
-└─────────────────────┘
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        2 │
+└─────────────────────┴──────────┘
+```
+
+Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`, однако столбец `timestamp` хранит время в часовом поясе `Europe/Moscow (UTC+3)`, таким образом значение, вставленное в виде Unix timestamp, представляет время `2019-01-01 03:00:00`.
+
+```sql
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
+```
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        2 │
+└─────────────────────┴──────────┘
 ```
 
 **2.** Получение часового пояса для значения типа `DateTime`:

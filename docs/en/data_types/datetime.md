@@ -30,19 +30,35 @@ When inserting data into ClickHouse, you can use different formats of date and t
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
 ```sql
-CREATE TABLE dt( timestamp DateTime('Europe/Moscow') ) ENGINE TinyLog
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Europe/Moscow'), 
+    `event_id` UInt8
+)
+ENGINE = TinyLog
 ```
 ```sql
-INSERT INTO dt Values (1546300800), ('2019-01-01 00:00:00')
+INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)
 ```
 ```sql
 SELECT * FROM dt
 ```
 ```text
-┌───────────timestamp─┐
-│ 2019-01-01 03:00:00 │
-│ 2019-01-01 00:00:00 │
-└─────────────────────┘
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        2 │
+└─────────────────────┴──────────┘
+```
+
+Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London (UTC+0)` time zone, but the `timestamp` column stores values in the `Europe/Moscow (UTC+3)` timezone, so the value inserted as Unix timestamp represents the `2019-01-01 03:00:00` date and time.
+
+```sql
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
+```
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        2 │
+└─────────────────────┴──────────┘
 ```
 
 **2.** Getting a time zone for a `DateTime`-type value:
