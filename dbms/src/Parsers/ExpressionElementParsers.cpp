@@ -30,7 +30,7 @@
 #include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/queryToString.h>
-#include <boost/algorithm/string.hpp>
+#include <Storages/StorageID.h>
 #include "ASTColumnsMatcher.h"
 
 
@@ -194,6 +194,40 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         parts.clear();
     node = std::make_shared<ASTIdentifier>(name, std::move(parts));
 
+    return true;
+}
+
+
+bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected)
+{
+    ParserKeyword s_uuid("UUID");
+    ParserIdentifier name_p;
+    ParserStringLiteral uuid_p;
+    ParserToken s_dot(TokenType::Dot);
+
+    ASTPtr database;
+    ASTPtr table;
+    ASTPtr uuid;
+
+    if (!name_p.parse(pos, table, expected))
+        return false;
+
+    if (s_dot.ignore(pos, expected))
+    {
+        database = table;
+        if (!name_p.parse(pos, table, expected))
+            return false;
+    }
+
+    if (s_uuid.ignore(pos, expected))
+    {
+        if (!uuid_p.parse(pos, uuid, expected))
+            return false;
+    }
+
+    tryGetIdentifierNameInto(database, res.database_name);
+    tryGetIdentifierNameInto(table, res.table_name);
+    res.uuid = uuid ? uuid->as<ASTLiteral>()->value.get<String>() : "";
     return true;
 }
 

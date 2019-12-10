@@ -758,7 +758,6 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-//FIXME use uuids if not empty
 
 void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
@@ -767,7 +766,7 @@ void Context::addDependencyUnsafe(const StorageID & from, const StorageID & wher
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.database_name, from.table_name);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
@@ -785,7 +784,7 @@ void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & w
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.database_name, from.table_name);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
@@ -940,24 +939,32 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
     return jt->second.first;
 }
 
-
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
+    return getTable(StorageID(database_name, table_name));
+}
+
+StoragePtr Context::getTable(const StorageID & table_id) const
+{
     Exception exc;
-    auto res = getTableImpl(database_name, table_name, &exc);
+    auto res = getTableImpl(table_id, &exc);
     if (!res)
         throw exc;
     return res;
 }
 
-
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(database_name, table_name, nullptr);
+    return tryGetTable(StorageID(database_name, table_name));
+}
+
+StoragePtr Context::tryGetTable(const StorageID & table_id) const
+{
+    return getTableImpl(table_id, nullptr);
 }
 
 
-StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
+StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * exception) const
 {
     String db;
     DatabasePtr database;
@@ -965,14 +972,15 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     {
         auto lock = getLock();
 
-        if (database_name.empty())
+        if (table_id.database_name.empty())
         {
-            StoragePtr res = tryGetExternalTable(table_name);
+            StoragePtr res = tryGetExternalTable(table_id.table_name);
             if (res)
                 return res;
         }
 
-        db = resolveDatabase(database_name, current_database);
+        //FIXME what if table was moved to another database?
+        db = resolveDatabase(table_id.database_name, current_database);
         checkDatabaseAccessRightsImpl(db);
 
         Databases::const_iterator it = shared->databases.find(db);
@@ -986,11 +994,11 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
         database = it->second;
     }
 
-    auto table = database->tryGetTable(*this, table_name);
+    auto table = database->tryGetTable(*this, table_id.table_name);
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            *exception = Exception("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
