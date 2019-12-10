@@ -15,20 +15,14 @@ namespace DB
 {
 
 template <typename T = UInt64>
-class AggregateFunctionCategoricalIV final :
-    public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>
+class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>
 {
 private:
     size_t category_count;
 
 public:
-    AggregateFunctionCategoricalIV(
-        const DataTypes & arguments_,
-        const Array & params_
-    ) :
-        IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>> {
-            arguments_, params_
-        },
+    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_) :
+        IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>> {arguments_, params_},
         category_count {arguments_.size() - 1}
     {
         // notice: argument types has been checked before
@@ -99,10 +93,8 @@ public:
     {
         for (size_t i : ext::range(0, category_count + 1))
         {
-            reinterpret_cast<T *>(place)[i * 2] +=
-                reinterpret_cast<const T *>(rhs)[i * 2];
-            reinterpret_cast<T *>(place)[i * 2 + 1] +=
-                reinterpret_cast<const T *>(rhs)[i * 2 + 1];
+            reinterpret_cast<T *>(place)[i * 2] += reinterpret_cast<const T *>(rhs)[i * 2];
+            reinterpret_cast<T *>(place)[i * 2 + 1] += reinterpret_cast<const T *>(rhs)[i * 2 + 1];
         }
     }
 
@@ -154,10 +146,7 @@ public:
             T no = reinterpret_cast<const T *>(place)[i * 2];
             T yes = reinterpret_cast<const T *>(place)[i * 2 + 1];
 
-            data_col.insertValue(
-                (no * rev_no - yes * rev_yes)
-                    * (log(no * rev_no) - log(yes * rev_yes))
-            );
+            data_col.insertValue((no * rev_no - yes * rev_yes) * (log(no * rev_no) - log(yes * rev_yes)));
         }
 
         offset_col.insertValue(data_col.size());

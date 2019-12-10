@@ -26,25 +26,19 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
     assertNoParameters(name, params);
 
     if (arguments.size() < 2)
-        throw Exception {
+        throw Exception(
             "Aggregate function " + name + " requires two or more arguments",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-        };
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & argument : arguments)
     {
         if (!WhichDataType(argument).isUInt8())
-            throw Exception {
-                "All the arguments of aggregate function " + name
-                    + " should be UInt8",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+            throw Exception(
+                "All the arguments of aggregate function " + name + " should be UInt8",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    return std::make_shared<AggregateFunctionCategoricalIV<>>(
-        arguments,
-        params
-    );
+    return std::make_shared<AggregateFunctionCategoricalIV<>>(arguments, params);
 }
 
 }
@@ -53,10 +47,7 @@ void registerAggregateFunctionCategoricalIV(
     AggregateFunctionFactory & factory
 )
 {
-    factory.registerFunction(
-        "categoricalInformationValue",
-        createAggregateFunctionCategoricalIV
-    );
+    factory.registerFunction("categoricalInformationValue", createAggregateFunctionCategoricalIV);
 }
 
 }
