@@ -27,7 +27,7 @@ option (LINKER_NAME "Linker name or full path")
 find_program (LLD_PATH NAMES "ld.lld" "lld" "lld-${COMPILER_VERSION_MAJOR}")
 find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
-if (NOT LINKER_NAME)
+if (NOT LINKER_NAME AND NOT COMPILER_GCC)
     if (LLD_PATH)
         set (LINKER_NAME "lld")
     elseif (GOLD_PATH)
