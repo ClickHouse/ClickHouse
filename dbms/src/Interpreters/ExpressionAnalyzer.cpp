@@ -724,7 +724,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
         step.required_output.push_back(child->getColumnName());
 }
 
-bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
+bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order)
 {
     const auto * select_query = getSelectQuery();
 
@@ -743,6 +743,12 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
         step.required_output.push_back(order_expression->getColumnName());
+
+        if (optimize_read_in_order)
+        {
+            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(sourceColumns(), context));
+            getRootActions(child, only_types, order_by_elements_actions.back());
+        }
     }
 
     return true;
