@@ -199,7 +199,9 @@ public:
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments, return_type);
+        {
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
+        }
         else
             return std::make_unique<DefaultFunction>(
                 FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);

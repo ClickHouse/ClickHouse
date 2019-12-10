@@ -126,7 +126,7 @@ public:
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments, return_type);
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayReverse", context)).buildImpl(arguments);
         else
             return std::make_unique<DefaultFunction>(
                 FunctionReverse::create(context),
