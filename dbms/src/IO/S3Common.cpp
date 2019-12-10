@@ -33,7 +33,7 @@ namespace S3
         Aws::ShutdownAPI(aws_options);
     }
 
-    ClientFactory &ClientFactory::instance()
+    ClientFactory & ClientFactory::instance()
     {
         static ClientFactory ret;
         return ret;
