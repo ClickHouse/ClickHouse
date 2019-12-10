@@ -325,7 +325,7 @@ public:
     }
 };
 
-static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBase & f)
+static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBaseImpl & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
@@ -685,14 +685,14 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                     continue;
             }
 
-            std::shared_ptr<LLVMFunction> fn;
+            FunctionBasePtr fn;
             if (compilation_cache)
             {
                 std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
                 {
                     Stopwatch watch;
-                    std::shared_ptr<LLVMFunction> result_fn;
-                    result_fn = std::make_shared<LLVMFunction>(inlined_func, sample_block);
+                    FunctionBasePtr result_fn;
+                    result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(inlined_func, sample_block));
                     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
                     return result_fn;
                 });
@@ -700,12 +700,12 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             else
             {
                 Stopwatch watch;
-                fn = std::make_shared<LLVMFunction>(fused[i], sample_block);
+                fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(fused[i], sample_block));
                 ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
 
             actions[i].function_base = fn;
-            actions[i].argument_names = fn->getArgumentNames();
+            actions[i].argument_names = typeid_cast<const LLVMFunction *>(typeid_cast<const FunctionBaseAdaptor *>(fn.get())->getImpl())->getArgumentNames();
             actions[i].is_function_compiled = true;
 
             continue;

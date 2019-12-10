@@ -63,10 +63,10 @@ public:
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
  * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
  */
-class CompiledExpressionCache : public LRUCache<UInt128, LLVMFunction, UInt128Hash>
+class CompiledExpressionCache : public LRUCache<UInt128, IFunctionBase, UInt128Hash>
 {
 public:
-    using Base = LRUCache<UInt128, LLVMFunction, UInt128Hash>;
+    using Base = LRUCache<UInt128, IFunctionBase, UInt128Hash>;
     using Base::Base;
 };
 
