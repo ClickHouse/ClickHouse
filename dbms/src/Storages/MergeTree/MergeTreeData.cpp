@@ -51,11 +51,12 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <optional>
 #include <set>
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
-#include <optional>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -788,6 +789,26 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Poco::DirectoryIterator end;
 
     auto disks = storage_policy->getDisks();
+
+    if (getStoragePolicy()->getName() != "default")
+    {
+        /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
+        std::unordered_set<String> disks_set(disks.begin(), disks.end());
+        for (auto & [disk_name, disk_ptr] : global_context.getDiskSelector().getDisksMap())
+        {
+            if (disks_set.count(disk_name) == 0)
+            {
+                for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
+                {
+                    /// Skip temporary directories.
+                    if (startsWith(it.name(), "tmp"))
+                        continue;
+
+                    throw Exception("Part " + backQuote(it.name()) + " was found on a disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
+                }
+            }
+        }
+    }
 
     /// Reversed order to load part from low priority disks firstly.
     /// Used for keep part on low priority disk if duplication found
