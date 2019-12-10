@@ -445,9 +445,14 @@ public:
 
     void checkNumberOfArguments(size_t number_of_arguments) const final;
 
+    FunctionBaseImplPtr buildImpl(const ColumnsWithTypeAndName & arguments) const
+    {
+        return impl->build(arguments, getReturnType(arguments));
+    }
+
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const final
     {
-        return std::make_shared<FunctionBaseAdaptor>(impl->build(arguments, getReturnType(arguments)));
+        return std::make_shared<FunctionBaseAdaptor>(buildImpl(arguments));
     }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const final
