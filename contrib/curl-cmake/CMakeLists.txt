@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 SET(CURL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
 SET(CURL_LIBRARY_DIR ${CURL_SOURCE_DIR}/lib)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake;${CMAKE_MODULE_PATH}")
-include(Utilities)
 include(Macros)
 include(CMakeDependentOption)
 include(CheckCCompilerFlag)
@@ -17,18 +16,12 @@ string(REGEX MATCH "#define LIBCURL_VERSION_NUM 0x[0-9a-fA-F]+"
         CURL_VERSION_NUM ${CURL_VERSION_H_CONTENTS})
 string(REGEX REPLACE "[^0]+0x" "" CURL_VERSION_NUM ${CURL_VERSION_NUM})
 
-message(STATUS "curl version=[${CURL_VERSION}]")
+message(STATUS "Use curl version=[${CURL_VERSION}]")
 set(OPERATING_SYSTEM "${CMAKE_SYSTEM_NAME}")
 set(OS "\"${CMAKE_SYSTEM_NAME}\"")
 
-include_directories(${CURL_SOURCE_DIR}/include)
-
-option(CURL_WERROR "Turn compiler warnings into errors" OFF)
 option(PICKY_COMPILER "Enable picky compiler options" ON)
-option(ENABLE_ARES "Set to ON to enable c-ares support" OFF)
 option(ENABLE_THREADED_RESOLVER "Set to ON to enable threaded DNS lookup" ON)
-option(ENABLE_DEBUG "Set to ON to enable curl debug features" OFF)
-option(ENABLE_CURLDEBUG "Set to ON to build with TrackMemory feature enabled" OFF)
 
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_CLANG)
     if(PICKY_COMPILER)
@@ -41,16 +34,6 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_CLANG)
             endif()
         endforeach()
     endif()
-endif()
-
-if(ENABLE_DEBUG)
-    # DEBUGBUILD will be defined only for Debug builds
-    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS $<$<CONFIG:Debug>:DEBUGBUILD>)
-    set(ENABLE_CURLDEBUG ON)
-endif()
-
-if(ENABLE_CURLDEBUG)
-    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS CURLDEBUG)
 endif()
 
 # For debug libs and exes, add "-d" postfix
@@ -109,11 +92,6 @@ curl_nroff_check()
 set(CMAKE_C_FLAGS "${CMAKE_ANSI_CFLAGS} ${CMAKE_C_FLAGS}")
 set(CMAKE_REQUIRED_FLAGS ${CMAKE_ANSI_CFLAGS})
 
-if(CURL_STATIC_CRT)
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
-endif()
-
 # Include all the necessary files for macros
 include(CheckFunctionExists)
 include(CheckIncludeFile)
@@ -147,9 +125,6 @@ if (OPENSSL_FOUND)
     set(USE_OPENSSL ON)
 
     list(APPEND CURL_LIBS ${OPENSSL_LIBRARIES})
-    include_directories(${OPENSSL_INCLUDE_DIR})
-
-    #set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
     check_include_file("openssl/crypto.h" HAVE_OPENSSL_CRYPTO_H)
     check_include_file("openssl/err.h"    HAVE_OPENSSL_ERR_H)
     check_include_file("openssl/pem.h"    HAVE_OPENSSL_PEM_H)
@@ -175,9 +150,6 @@ if (ZLIB_FOUND)
     set(USE_ZLIB ON)
 
     list(APPEND CURL_LIBS ${ZLIB_LIBRARIES})
-    include_directories(${ZLIB_INCLUDE_DIRS})
-
-    #list(APPEND CMAKE_REQUIRED_INCLUDES ${ZLIB_INCLUDE_DIRS})
 endif()
 
 option(ENABLE_UNIX_SOCKETS "Define if you want Unix domain sockets support" ON)
@@ -511,8 +483,6 @@ set(CMAKE_REQUIRED_INCLUDES "${CURL_SOURCE_DIR}/include")
 set(CMAKE_EXTRA_INCLUDE_FILES "curl/system.h")
 check_type_size("curl_off_t"  SIZEOF_CURL_OFF_T)
 set(CMAKE_EXTRA_INCLUDE_FILES "")
-set(CMAKE_REQUIRED_INCLUDES "")
-set(CMAKE_REQUIRED_FLAGS "")
 
 foreach(CURL_TEST
         HAVE_GLIBC_STRERROR_R
@@ -569,18 +539,6 @@ if(NOT HAVE_IN_ADDR_T)
     set(in_addr_t "unsigned long")
 endif()
 
-# Fix libz / zlib.h
-
-if(NOT CURL_SPECIAL_LIBZ)
-    if(NOT HAVE_LIBZ)
-        set(HAVE_ZLIB_H 0)
-    endif()
-
-    if(NOT HAVE_ZLIB_H)
-        set(HAVE_LIBZ 0)
-    endif()
-endif()
-
 # Check for nonblocking
 set(HAVE_DISABLED_NONBLOCKING 1)
 if(HAVE_FIONBIO OR
@@ -597,16 +555,6 @@ set(CURL_PULL_STDINT_H ${HAVE_STDINT_H})
 set(CURL_PULL_INTTYPES_H ${HAVE_INTTYPES_H})
 
 include(CMake/OtherTests.cmake)
-
-if(CURL_WERROR)
-    if(MSVC_VERSION)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX")
-    else()
-        # this assumes clang or gcc style options
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
-    endif()
-endif()
-
 
 SET(LIB_VAUTH_CFILES
         "${CURL_LIBRARY_DIR}/vauth/vauth.c" "${CURL_LIBRARY_DIR}/vauth/cleartext.c" "${CURL_LIBRARY_DIR}/vauth/cram.c"
@@ -685,21 +633,35 @@ SET(HHEADERS ${LIB_HFILES} ${LIB_VAUTH_HFILES} ${LIB_VTLS_HFILES}
         ${LIB_VQUIC_HFILES} ${LIB_VSSH_HFILES})
 
 configure_file(${CURL_SOURCE_DIR}/lib/curl_config.h.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h)
+        ${CMAKE_CURRENT_BINARY_DIR}/curl/curl_config.h)
 
 list(APPEND HHEADERS
-        ${CMAKE_CURRENT_BINARY_DIR}/curl_config.h
+        ${CMAKE_CURRENT_BINARY_DIR}/curl/curl_config.h
         )
 
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/../include)
-include_directories(${CURL_SOURCE_DIR}/..)
-include_directories(${CURL_SOURCE_DIR}/../include)
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/..)
-include_directories(${CURL_SOURCE_DIR})
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-
 add_library(libcurl ${HHEADERS} ${CSOURCES})
+
+if(NOT BUILD_SHARED_LIBS)
+    set_target_properties(libcurl PROPERTIES INTERFACE_COMPILE_DEFINITIONS CURL_STATICLIB)
+endif()
+
+if(HIDES_CURL_PRIVATE_SYMBOLS)
+    set_property(TARGET libcurl APPEND PROPERTY COMPILE_DEFINITIONS "CURL_HIDDEN_SYMBOLS")
+    set_property(TARGET libcurl APPEND PROPERTY COMPILE_FLAGS ${CURL_CFLAG_SYMBOLS_HIDE})
+endif()
+
+if(OPENSSL_FOUND)
+    target_include_directories(libcurl PUBLIC ${OPENSSL_INCLUDE_DIR})
+    message("-- Including openssl ${OPENSSL_INCLUDE_DIR} to curl")
+endif()
+
+if(ZLIB_FOUND)
+    target_include_directories(libcurl PUBLIC ${ZLIB_INCLUDE_DIRS}})
+    message("-- Including zlib ${ZLIB_INCLUDE_DIRS} to curl")
+endif()
+
 target_compile_definitions(libcurl PUBLIC -DHAVE_CONFIG_H)
 target_compile_definitions(libcurl PUBLIC -DBUILDING_LIBCURL)
-target_include_directories(libcurl PUBLIC "${CURL_SOURCE_DIR}/include" "${CURL_LIBRARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+target_include_directories(libcurl PUBLIC "${CURL_SOURCE_DIR}/include" "${CURL_LIBRARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/curl")
+
 target_link_libraries(libcurl ${CURL_LIBS})
