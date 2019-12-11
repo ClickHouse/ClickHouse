@@ -217,15 +217,14 @@ BlockInputStreams StorageMerge::read(
             auto current_info = query_info.order_by_optimizer->analyze(it->first);
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
-            else if (!current_info || *current_info != *input_sorting_info)
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
                 input_sorting_info.reset();
 
             if (!input_sorting_info)
                 break;
         }
 
-        /// We have to modify query_info to create proper pipeline after read stage.
-        const_cast<SelectQueryInfo &>(query_info).input_sorting_info = input_sorting_info;
+        query_info.input_sorting_info = input_sorting_info;
     }
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)

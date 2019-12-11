@@ -20,7 +20,7 @@ public:
         const SortDescription & required_sort_description,
         const SyntaxAnalyzerResultPtr & syntax_result);
 
-    InputSortingInfoPtr analyze(const StoragePtr & storage);
+    InputSortingInfoPtr analyze(const StoragePtr & storage) const;
 
 private:
     ManyExpressionActions elements_actions;
