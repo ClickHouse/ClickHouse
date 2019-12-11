@@ -851,7 +851,7 @@ private:
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+            if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
                 return never;
 
             std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
