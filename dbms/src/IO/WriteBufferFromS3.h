@@ -7,13 +7,15 @@
 #include <memory>
 #include <vector>
 #include <Core/Types.h>
-#include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <aws/s3/S3Client.h>
 
+namespace Aws::S3
+{
+    class S3Client;
+}
 
 namespace DB
 {

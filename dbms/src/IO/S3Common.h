@@ -4,15 +4,14 @@
 
 #if USE_AWS_S3
 
-#include <regex>
 #include <Core/Types.h>
-
-#include <Poco/Net/HTTPRequest.h>
-#include <aws/s3/S3Client.h>
-#include <boost/noncopyable.hpp>
 #include <Poco/URI.h>
 #include <aws/core/Aws.h>
 
+namespace Aws::S3
+{
+    class S3Client;
+}
 
 namespace DB::S3
 {
@@ -20,8 +19,6 @@ namespace DB::S3
 class ClientFactory
 {
 public:
-    ClientFactory();
-
     ~ClientFactory();
 
     static ClientFactory & instance();
@@ -31,7 +28,10 @@ public:
                                               const String & secret_access_key);
 
 private:
-    static Aws::SDKOptions aws_options;
+    ClientFactory();
+
+private:
+    Aws::SDKOptions aws_options;
 };
 
 /**

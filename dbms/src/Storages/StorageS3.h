@@ -8,7 +8,11 @@
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
-#include <aws/s3/S3Client.h>
+
+namespace Aws::S3
+{
+    class S3Client;
+}
 
 namespace DB
 {
@@ -71,5 +75,7 @@ private:
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
 };
+
 }
+
 #endif

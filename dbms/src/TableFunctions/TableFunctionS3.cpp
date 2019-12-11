@@ -7,8 +7,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include "parseColumnsListForTableFunction.h"
 
 namespace DB
 {

@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <common/logger_useful.h>
+#include <aws/s3/S3Client.h>
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
