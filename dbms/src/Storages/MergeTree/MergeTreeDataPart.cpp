@@ -346,6 +346,11 @@ MergeTreeDataPart::~MergeTreeDataPart()
             }
 
             dir.remove(true);
+
+            if (state == State::DeleteOnDestroy)
+            {
+                LOG_TRACE(storage.log, "Removed part from old location " << path);
+            }
         }
         catch (...)
         {
@@ -581,7 +586,6 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 
 void MergeTreeDataPart::loadIndexGranularity()
 {
-
     String full_path = getFullPath();
     index_granularity_info.changeGranularityIfRequired(full_path);
 

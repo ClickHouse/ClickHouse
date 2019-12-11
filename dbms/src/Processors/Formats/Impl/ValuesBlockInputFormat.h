@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return "ValuesBlockInputFormat"; }
 
+    void resetParser() override;
+
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:

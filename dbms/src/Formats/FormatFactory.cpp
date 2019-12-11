@@ -281,6 +281,8 @@ void registerInputFormatProcessorTSKV(FormatFactory & factory);
 void registerOutputFormatProcessorTSKV(FormatFactory & factory);
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
@@ -336,6 +338,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTSKV(*this);
     registerInputFormatProcessorJSONEachRow(*this);
     registerOutputFormatProcessorJSONEachRow(*this);
+    registerInputFormatProcessorJSONCompactEachRow(*this);
+    registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
