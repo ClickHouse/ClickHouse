@@ -228,14 +228,14 @@ struct SubtractIntervalImpl : public Transform
     }
 };
 
-struct SubtractSecondsImpl  : SubtractIntervalImpl<AddSecondsImpl>  { static constexpr auto name = "subtractSeconds"; };
-struct SubtractMinutesImpl  : SubtractIntervalImpl<AddMinutesImpl>  { static constexpr auto name = "subtractMinutes"; };
-struct SubtractHoursImpl    : SubtractIntervalImpl<AddHoursImpl>    { static constexpr auto name = "subtractHours"; };
-struct SubtractDaysImpl     : SubtractIntervalImpl<AddDaysImpl>     { static constexpr auto name = "subtractDays"; };
-struct SubtractWeeksImpl    : SubtractIntervalImpl<AddWeeksImpl>    { static constexpr auto name = "subtractWeeks"; };
-struct SubtractMonthsImpl   : SubtractIntervalImpl<AddMonthsImpl>   { static constexpr auto name = "subtractMonths"; };
+struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
+struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
+struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
+struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
+struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr auto name = "subtractWeeks"; };
+struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
 struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static constexpr auto name = "subtractQuarters"; };
-struct SubtractYearsImpl    : SubtractIntervalImpl<AddYearsImpl>    { static constexpr auto name = "subtractYears"; };
+struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
 
 
 template <typename Transform>
@@ -387,8 +387,6 @@ public:
                 return resolveReturnType<DataTypeDateTime64>(arguments);
             default:
             {
-                // TODO (vnemkov): quick and dirty way to check, remove before merging.
-                assert(false);
                 throw Exception("Invalid type of 1st argument of function " + getName() + ": "
                     + arguments[0].type->getName() + ", expected: Date, DateTime or DateTime64.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

@@ -24,7 +24,7 @@ namespace DB
 {
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>() - scale_, scale_),
+    : DataTypeDecimalBase<DateTime64>(DecimalUtils::maxPrecision<DateTime64>(), scale_),
       TimezoneMixin(time_zone_name)
 {
 }

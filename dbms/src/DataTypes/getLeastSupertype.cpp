@@ -230,20 +230,28 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             // big enough to hold max whole-value of any type from `types`.
             // That would sacrifice scale when comparing DateTime64 of different scales.
 
-            UInt32 max_datetime64_precision = 0;
+            UInt32 max_datetime64_whole_precision = 0;
             for (const auto & t : types)
             {
                 if (auto dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
-                    const auto precision = dt64->getPrecision();
-                    max_datetime64_precision = std::max(precision, max_datetime64_precision);
+                    const auto whole_precision = dt64->getPrecision() - dt64->getScale();
+                    max_datetime64_whole_precision = std::max(whole_precision, max_datetime64_whole_precision);
                 }
             }
 
-            const UInt32 least_decimal_precision = have_datetime ? leastDecimalPrecisionFor(TypeIndex::UInt32) : have_date ? leastDecimalPrecisionFor(TypeIndex::UInt16) : 0;
-            max_datetime64_precision = std::max(least_decimal_precision, max_datetime64_precision);
+            UInt32 least_decimal_precision = 0;
+            if (have_datetime)
+            {
+                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt32);
+            }
+            else if (have_date)
+            {
+                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt16);
+            }
+            max_datetime64_whole_precision = std::max(least_decimal_precision, max_datetime64_whole_precision);
 
-            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_precision;
+            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_whole_precision;
             return std::make_shared<DataTypeDateTime64>(scale);
         }
     }
