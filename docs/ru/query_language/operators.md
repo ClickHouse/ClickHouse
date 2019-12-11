@@ -67,6 +67,8 @@
 
 ## Оператор для работы с датами и временем {#operators-datetime}
 
+### EXTRACT
+
 ```sql
 EXTRACT(part FROM date);
 ```
@@ -127,6 +129,39 @@ FROM test.Orders;
 ```
 
 Больше примеров приведено в [тестах](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+
+### INTERVAL {#operator-interval}
+
+Создаёт значение типа [Interval](../data_types/special_data_types/interval.md) которое должно использоваться в арифметических операциях со значениями типов [Date](../data_types/date.md) и [DateTime](../data_types/datetime.md).
+
+Типы интервалов:
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
+
+!!! warning "Внимание"
+    Интервалы различных типов нельзя объединять. Нельзя использовать выражения вида `INTERVAL 4 DAY 1 HOUR`. Вместо этого интервалы можно выразить в единицах меньших или равных наименьшей единице интервала, Например, `INTERVAL 25 HOUR`. Также можно выполнять последовательные операции как показано в примере ниже.
+
+Пример:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+```
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+**Смотрите также**
+
+- Тип данных [Interval](../data_types/special_data_types/interval.md)
+- Функции преобразования типов [toInterval](functions/type_conversion_functions.md#function-tointerval)
 
 ## Оператор логического отрицания
 

@@ -1016,6 +1016,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+    future_merged_part.updatePath(*this, reserved_space);
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
 
@@ -1141,6 +1142,11 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// Can throw an exception.
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
+    if (!reserved_space)
+    {
+        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(estimated_space_for_result) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1151,6 +1157,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
+    future_mutated_part.updatePath(*this, reserved_space);
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
         database_name, table_name, future_mutated_part);
@@ -2873,7 +2880,8 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        move_parts_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -2897,7 +2905,7 @@ void StorageReplicatedMergeTree::shutdown()
     queue_task_handle.reset();
 
     if (move_parts_task_handle)
-        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
+        global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)

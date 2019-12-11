@@ -295,25 +295,10 @@ namespace DB
 
     void writeFieldText(const Field & x, WriteBuffer & buf)
     {
-        DB::String res = applyVisitor(DB::FieldVisitorToString(), x);
+        DB::String res = Field::dispatch(DB::FieldVisitorToString(), x);
         buf.write(res.data(), res.size());
     }
 
-
-    template <> Decimal32 DecimalField<Decimal32>::getScaleMultiplier() const
-    {
-        return DataTypeDecimal<Decimal32>::getScaleMultiplier(scale);
-    }
-
-    template <> Decimal64 DecimalField<Decimal64>::getScaleMultiplier() const
-    {
-        return DataTypeDecimal<Decimal64>::getScaleMultiplier(scale);
-    }
-
-    template <> Decimal128 DecimalField<Decimal128>::getScaleMultiplier() const
-    {
-        return DataTypeDecimal<Decimal128>::getScaleMultiplier(scale);
-    }
 
     template <typename T>
     static bool decEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)

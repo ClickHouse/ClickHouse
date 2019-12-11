@@ -19,7 +19,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
@@ -201,6 +200,8 @@ void TCPHandler::runImpl()
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+
+                state.temporary_tables_read = true;
             });
 
             /// Send structure of columns to client for function input()
@@ -339,6 +340,18 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        try
+        {
+            if (exception && !state.temporary_tables_read)
+                query_context->initializeExternalTablesIfSet();
+        }
+        catch (...)
+        {
+            network_error = true;
+            LOG_WARNING(log, "Can't read external tables after query failure.");
+        }
+
 
         try
         {
@@ -924,7 +937,9 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings.
     Settings & settings = query_context->getSettingsRef();
-    settings.deserialize(*in);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
+    settings.deserialize(*in, settings_format);
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
@@ -953,7 +968,9 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_client_info.read(*in, client_revision);
 
     Settings & skip_settings = query_context->getSettingsRef();
-    skip_settings.deserialize(*in);
+    auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                      : SettingsBinaryFormat::OLD;
+    skip_settings.deserialize(*in, settings_format);
 
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);

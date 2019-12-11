@@ -76,7 +76,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/iostream_debug_helpers.h")
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -100,7 +100,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
-list (REMOVE_ITEM clickhouse_common_io_sources src/Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources src/Common/malloc.cpp src/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -139,6 +139,9 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
+set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
@@ -376,6 +379,10 @@ if (USE_POCO_MONGODB)
     dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
+if (USE_POCO_REDIS)
+    dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
+endif()
+
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
@@ -428,6 +435,8 @@ if (USE_JEMALLOC)
 
     if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
         # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # Actually we link JEMALLOC to almost all libraries.
+        # This is just hotfix for some uninvestigated problem.
         target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
     endif()
 endif ()

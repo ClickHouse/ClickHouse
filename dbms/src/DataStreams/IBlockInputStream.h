@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/SettingsCommon.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -24,7 +23,7 @@ namespace ErrorCodes
 }
 
 class ProcessListElement;
-class QuotaForIntervals;
+class QuotaContext;
 class QueryStatus;
 struct SortColumnDescription;
 using SortDescription = std::vector<SortColumnDescription>;
@@ -221,9 +220,9 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    virtual void setQuota(QuotaForIntervals & quota_)
+    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_)
     {
-        quota = &quota_;
+        quota = quota_;
     }
 
     /// Enable calculation of minimums and maximums by the result columns.
@@ -264,6 +263,11 @@ protected:
       */
     bool checkTimeLimit();
 
+#ifndef NDEBUG
+    bool read_prefix_is_called = false;
+    bool read_suffix_is_called = false;
+#endif
+
 private:
     bool enabled_extremes = false;
 
@@ -274,8 +278,8 @@ private:
 
     LocalLimits limits;
 
-    QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
-    double prev_elapsed = 0;
+    std::shared_ptr<QuotaContext> quota;    /// If nullptr - the quota is not used.
+    UInt64 prev_elapsed = 0;
 
     /// The approximate total number of rows to read. For progress bar.
     size_t total_rows_approx = 0;
@@ -316,10 +320,6 @@ private:
                 return;
     }
 
-#ifndef NDEBUG
-    bool read_prefix_is_called = false;
-    bool read_suffix_is_called = false;
-#endif
 };
 
 }

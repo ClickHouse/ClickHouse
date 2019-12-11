@@ -96,6 +96,12 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
+}
+
+
 MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
@@ -544,19 +550,6 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
         }
     }
 
-    bool has_date_column = false;
-    for (const auto & elem : ttl_expression->getRequiredColumnsWithTypes())
-    {
-        if (typeid_cast<const DataTypeDateTime *>(elem.type.get()) || typeid_cast<const DataTypeDate *>(elem.type.get()))
-        {
-            has_date_column = true;
-            break;
-        }
-    }
-
-    if (!has_date_column)
-        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
-
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
 
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
@@ -813,6 +806,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_disk_ptr, part_name, part_info);
             part->relative_path = part_name;
             bool broken = false;
+
+            Poco::Path part_path(getFullPathOnDisk(part_disk_ptr), part_name);
+            Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
+            if (Poco::File(marker_path).exists())
+            {
+                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
+                return;
+            }
 
             try
             {
@@ -2528,7 +2532,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
@@ -2541,6 +2545,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
+
+            Poco::Path marker_path(Poco::Path(original_active_part->getFullPath()), DELETE_ON_DESTROY_MARKER_PATH);
+            try
+            {
+                Poco::File(marker_path).createFile();
+            }
+            catch (Poco::Exception & e)
+            {
+                LOG_ERROR(log, e.what() << " (while creating DeleteOnDestroy marker: " + backQuote(marker_path.toString()) + ")");
+            }
             return;
         }
     }
@@ -2559,7 +2573,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info);
 }
-
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id)
 {
@@ -2726,8 +2739,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.push_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
@@ -2743,6 +2757,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         }), parts.end());
 
     if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+
+    if (parts.empty())
     {
         String no_parts_to_move_message;
         if (moving_part)
@@ -2754,7 +2771,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 
@@ -2770,17 +2787,20 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.emplace_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-
     auto volume = storage_policy->getVolumeByName(name);
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2806,7 +2826,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 
@@ -2933,7 +2953,7 @@ MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
-    for (const String & path : getDataPaths())
+    for (const auto & [path, disk] : getDataPathsWithDisks())
     {
         for (Poco::DirectoryIterator it(path + "detached");
             it != Poco::DirectoryIterator(); ++it)
@@ -2944,6 +2964,7 @@ MergeTreeData::getDetachedParts() const
             auto & part = res.back();
 
             DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
+            part.disk = disk->getName();
         }
     }
     return res;
@@ -3269,6 +3290,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
+    if (!reservation)
+    {
+        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(src_part->bytes_on_disk) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    }
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3324,6 +3350,15 @@ Strings MergeTreeData::getDataPaths() const
     auto disks = storage_policy->getDisks();
     for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
+    return res;
+}
+
+MergeTreeData::PathsWithDisks MergeTreeData::getDataPathsWithDisks() const
+{
+    PathsWithDisks res;
+    auto disks = storage_policy->getDisks();
+    for (const auto & disk : disks)
+        res.emplace_back(getFullPathOnDisk(disk), disk);
     return res;
 }
 
@@ -3469,6 +3504,11 @@ bool MergeTreeData::selectPartsAndMove()
         return false;
 
     return moveParts(std::move(moving_tagger));
+}
+
+bool MergeTreeData::areBackgroundMovesNeeded() const
+{
+    return storage_policy->getVolumes().size() > 1;
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space)

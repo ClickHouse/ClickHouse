@@ -99,7 +99,8 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
-    moving_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
 
 
@@ -115,7 +116,7 @@ void StorageMergeTree::shutdown()
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
     if (moving_task_handle)
-        global_context.getBackgroundPool().removeTask(moving_task_handle);
+        global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 }
 
 
@@ -342,7 +343,7 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -359,6 +360,8 @@ public:
             else
                 throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
         }
+
+        future_part_.updatePath(storage, reserved_space);
 
         for (const auto & part : future_part.parts)
         {

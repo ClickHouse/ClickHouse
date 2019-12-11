@@ -588,9 +588,22 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-            writeVarUInt(UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER), out);
-            context.getSettingsRef().serialize(out);
-            writeStringBinary(query_string, out);
+            /// Prepare the header.
+            /// We wrap the header into a string for compatibility with older versions:
+            /// a shard will able to read the header partly and ignore other parts based on its version.
+            WriteBufferFromOwnString header_buf;
+            writeVarUInt(ClickHouseRevision::get(), header_buf);
+            writeStringBinary(query_string, header_buf);
+            context.getSettingsRef().serialize(header_buf);
+
+            /// Add new fields here, for example:
+            /// writeVarUInt(my_new_data, header_buf);
+
+            /// Write the header.
+            const StringRef header = header_buf.stringRef();
+            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+            writeStringBinary(header, out);
+            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
             stream.writePrefix();
             stream.write(block);
