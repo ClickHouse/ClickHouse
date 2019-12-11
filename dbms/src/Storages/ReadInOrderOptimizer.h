@@ -20,12 +20,12 @@ public:
         const SortDescription & required_sort_description,
         const SyntaxAnalyzerResultPtr & syntax_result);
 
-    InputSortingInfoPtr analyze(const MergeTreeData & storage);
+    InputSortingInfoPtr analyze(const StoragePtr & storage);
 
 private:
     ManyExpressionActions elements_actions;
     NameSet forbidden_columns;
-    const SortDescription & required_sort_description;
+    SortDescription required_sort_description;
 };
 
 }

@@ -1613,8 +1613,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 getSortDescription(query, *context),
                 query_info.syntax_analyzer_result);
 
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                query_info.input_sorting_info = query_info.order_by_optimizer->analyze(*merge_tree_data);
+            query_info.input_sorting_info = query_info.order_by_optimizer->analyze(storage);
         }
 
 
