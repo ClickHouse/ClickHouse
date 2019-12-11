@@ -10,8 +10,6 @@
 namespace DB
 {
 
-template <> struct NearestFieldTypeImpl<Message::Priority> { using Type = UInt64; };
-
 Block TextLogElement::createBlock()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
