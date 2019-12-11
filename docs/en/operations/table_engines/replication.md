@@ -10,11 +10,6 @@ Replication is only supported for tables in the MergeTree family:
 - ReplicatedVersionedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
 
-ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information.
-
-!!! attention "Attention"
-    Don't forget to set up the [authentication on Zookeeper](../access_rights.md#zookeeper-authentification).
-
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
 Replication does not depend on sharding. Each shard has its own independent replication.
@@ -26,6 +21,11 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 - The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
 - The `DROP TABLE` query deletes the replica located on the server where the query is run.
 - The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
+
+ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information.
+
+!!! attention "Attention"
+    Don't forget to set up the [authentication on Zookeeper](../access_rights.md#zookeeper-authentification).
 
 To use replication, set the addresses of the ZooKeeper cluster in the config file. Example:
 
