@@ -64,7 +64,8 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
 {
     UInt32 unread_scale = scale;
     bool done = tryReadDecimalText(istr, x, precision, unread_scale);
-    x *= Base::getScaleMultiplier(unread_scale);
+
+    x *= T::getScaleMultiplier(unread_scale);
     return done;
 }
 
@@ -76,7 +77,7 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
         readCSVDecimalText(istr, x, precision, unread_scale);
     else
         readDecimalText(istr, x, precision, unread_scale);
-    x *= Base::getScaleMultiplier(unread_scale);
+    x *= T::getScaleMultiplier(unread_scale);
 }
 
 template <typename T>
@@ -102,7 +103,8 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
-    x *= Base::getScaleMultiplier(unread_scale);
+    x *= T::getScaleMultiplier(unread_scale);
+
     return x;
 }
 

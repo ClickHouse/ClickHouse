@@ -4,7 +4,7 @@ FROM ubuntu:18.04
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 
 RUN apt-get update \
-    && env DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata python llvm-6.0 llvm-6.0-dev libreadline-dev libicu-dev bsdutils llvm-8 \
+    && env DEBIAN_FRONTEND=noninteractive apt-get -y install tzdata python llvm-6.0 llvm-6.0-dev libreadline-dev libicu-dev bsdutils llvm-8 gdb \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

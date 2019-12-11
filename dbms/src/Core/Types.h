@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <common/Types.h>
+#include <Common/intExp.h>
 
 
 namespace DB
@@ -147,6 +148,8 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
+    static T getScaleMultiplier(UInt32 scale);
+
     T value;
 };
 
@@ -176,6 +179,10 @@ template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
+
+template <> inline Int32 Decimal32::getScaleMultiplier(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
 
 inline const char * getTypeName(TypeIndex idx)
 {

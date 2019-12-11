@@ -217,17 +217,119 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## trimLeft(s)
+## trimLeft {#trimleft}
 
-Returns a string that removes the whitespace characters on left side.
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
 
-## trimRight(s)
+**Syntax** 
 
-Returns a string that removes the whitespace characters on right side.
+```sql
+trimLeft()
+```
 
-## trimBoth(s)
+Alias: `ltrim`.
 
-Returns a string that removes the whitespace characters on either side.
+**Parameters** 
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimLeft('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimLeft('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
+
+## trimRight {#trimright}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimRight()
+```
+
+Alias: `rtrim`.
+
+**Parameters**
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimRight('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimRight('     Hello, world!     ')─┐
+│      Hello, world!                   │
+└──────────────────────────────────────┘
+```
+
+## trimBoth  {#trimboth}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimBoth()
+```
+
+Alias: `trim`.
+
+**Parameters**
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimBoth('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimBoth('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
 
 ## CRC32(s)
 

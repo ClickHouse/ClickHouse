@@ -139,4 +139,4 @@ LIMIT 20
 
 CPU効率のために、クエリ言語は宣言型（SQLまたはMDX）、または少なくともベクトル（J、K）でなければなりません。 クエリには、最適化を可能にする暗黙的なループのみを含める必要があります。
 
-[Original article](https://clickhouse.yandex/docs/en/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/ja/) <!--hide-->

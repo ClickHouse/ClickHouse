@@ -2,13 +2,13 @@
 
 #include <mutex>
 #include <pcg_random.hpp>
-#include <common/DateLUT.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 
 
@@ -288,7 +288,7 @@ class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 public:
     /// Called to load or reload an object.
     using CreateObjectFunction = std::function<LoadablePtr(
-        const String & /* name */, const ObjectConfig & /* config */, bool config_changed, const LoadablePtr & /* previous_version */)>;
+        const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
 
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
@@ -560,8 +560,8 @@ public:
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
-        /// Iterate through all the objects and find loaded ones which should be checked if they were modified.
-        std::unordered_map<LoadablePtr, bool> is_modified_map;
+        /// Iterate through all the objects and find loaded ones which should be checked if they need update.
+        std::unordered_map<LoadablePtr, bool> should_update_map;
         {
             std::lock_guard lock{mutex};
             TimePoint now = std::chrono::system_clock::now();
@@ -569,22 +569,26 @@ public:
             {
                 const auto & info = name_and_info.second;
                 if ((now >= info.next_update_time) && !info.loading() && info.loaded())
-                    is_modified_map.emplace(info.object, true);
+                    should_update_map.emplace(info.object, info.failedToReload());
             }
         }
 
         /// Find out which of the loaded objects were modified.
-        /// We couldn't perform these checks while we were building `is_modified_map` because
+        /// We couldn't perform these checks while we were building `should_update_map` because
         /// the `mutex` should be unlocked while we're calling the function object->isModified()
-        for (auto & [object, is_modified_flag] : is_modified_map)
+        for (auto & [object, should_update_flag] : should_update_map)
         {
             try
             {
-                is_modified_flag = object->isModified();
+                /// Maybe alredy true, if we have an exception
+                if (!should_update_flag)
+                    should_update_flag = object->isModified();
             }
             catch (...)
             {
                 tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getName() + "' was modified");
+                /// Cannot check isModified, so update
+                should_update_flag = true;
             }
         }
 
@@ -598,19 +602,18 @@ public:
                 {
                     if (info.loaded())
                     {
-                        auto it = is_modified_map.find(info.object);
-                        if (it == is_modified_map.end())
-                            continue; /// Object has been just loaded (it wasn't loaded while we were building the map `is_modified_map`), so we don't have to reload it right now.
+                        auto it = should_update_map.find(info.object);
+                        if (it == should_update_map.end())
+                            continue; /// Object has been just loaded (it wasn't loaded while we were building the map `should_update_map`), so we don't have to reload it right now.
 
-                        bool is_modified_flag = it->second;
-                        if (!is_modified_flag)
+                        bool should_update_flag = it->second;
+                        if (!should_update_flag)
                         {
-                            /// Object wasn't modified so we only have to set `next_update_time`.
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
                             continue;
                         }
 
-                        /// Object was modified and should be reloaded.
+                        /// Object was modified or it was failed to reload last time, so it should be reloaded.
                         startLoading(name, info);
                     }
                     else if (info.failed())
@@ -633,6 +636,7 @@ private:
         bool loading() const { return loading_id != 0; }
         bool wasLoading() const { return loaded() || failed() || loading(); }
         bool ready() const { return (loaded() || failed()) && !forced_to_reload; }
+        bool failedToReload() const { return loaded() && exception != nullptr; }
 
         Status status() const
         {
@@ -787,14 +791,13 @@ private:
     std::pair<LoadablePtr, std::exception_ptr> loadOneObject(
         const String & name,
         const ObjectConfig & config,
-        bool config_changed,
         LoadablePtr previous_version)
     {
         LoadablePtr new_object;
         std::exception_ptr new_exception;
         try
         {
-            new_object = create_object(name, config, config_changed, previous_version);
+            new_object = create_object(name, config, previous_version);
         }
         catch (...)
         {
@@ -874,8 +877,7 @@ private:
             {
                 if (next_update_time == TimePoint::max())
                     return String();
-                return ", next update is scheduled at "
-                    + DateLUT::instance().timeToString(std::chrono::system_clock::to_time_t(next_update_time));
+                return ", next update is scheduled at " + ext::to_string(next_update_time);
             };
             if (previous_version)
                 tryLogException(new_exception, log, "Could not update " + type_name + " '" + name + "'"
@@ -915,7 +917,8 @@ private:
             /// Use `create_function` to perform the actual loading.
             /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
             /// and require access to other objects.
-            auto [new_object, new_exception] = loadOneObject(name, info->object_config, info->config_changed, info->object);
+            bool need_complete_loading = !info->object || info->config_changed || info->forced_to_reload;
+            auto [new_object, new_exception] = loadOneObject(name, info->object_config, need_complete_loading ? nullptr : info->object);
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
@@ -975,7 +978,7 @@ private:
 
             /// do not update loadable objects with zero as lifetime
             const auto & lifetime = loaded_object->getLifetime();
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+            if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
                 return never;
 
             if (!error_count)
@@ -1072,7 +1075,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, Logger * log)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4),
+          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3),
           type_name_,
           log))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1197,6 +1200,12 @@ void ExternalLoader::reload(bool load_never_loading) const
     loading_dispatcher->reload(load_never_loading);
 }
 
+void ExternalLoader::reload(const FilterByNameFunction & filter_by_name, bool load_never_loading) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    loading_dispatcher->reload(filter_by_name, load_never_loading);
+}
+
 void ExternalLoader::addObjectAndLoad(
     const String & name,
     const String & external_name,
@@ -1216,9 +1225,9 @@ void ExternalLoader::addObjectAndLoad(
 
 
 ExternalLoader::LoadablePtr ExternalLoader::createObject(
-    const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const
+    const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
-    if (previous_version && !config_changed)
+    if (previous_version)
         return previous_version->clone();
 
     return create(name, *config.config, config.key_in_config);
