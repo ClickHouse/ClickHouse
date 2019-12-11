@@ -46,6 +46,8 @@ struct InputSortingInfo
     {
         return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
+
+    bool operator !=(const InputSortingInfo & other) const { return !(*this == other); }
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;

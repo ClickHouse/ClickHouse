@@ -19,7 +19,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     , required_sort_description(required_sort_description_)
 {
     if (elements_actions.size() != required_sort_description.size())
-        throw Exception("Sizes of sort decription and actions are mismatched", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Sizes of sort description and actions are mismatched", ErrorCodes::LOGICAL_ERROR);
 
     /// Do not analyze ARRAY JOIN result columns.
     /// TODO: forbid more columns for analyzing.
@@ -27,15 +27,16 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputSortingInfoPtr ReadInOrderOptimizer::analyze(const MergeTreeData & merge_tree)
+InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage)
 {
-    if (!merge_tree.hasSortingKey())
+    const MergeTreeData * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree || !merge_tree->hasSortingKey())
         return {};
 
     SortDescription order_key_prefix_descr;
     int read_direction = required_sort_description.at(0).direction;
 
-    const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
+    const auto & sorting_key_columns = merge_tree->getSortingKeyColumns();
     size_t prefix_size = std::min(required_sort_description.size(), sorting_key_columns.size());
 
     for (size_t i = 0; i < prefix_size; ++i)
