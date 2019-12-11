@@ -1159,7 +1159,7 @@ public:
         else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             UInt64 scale = DataTypeDateTime64::default_scale;
-            if (arguments.size() > 0)
+            if (arguments.size() > 1)
                 scale = extractToDecimalScale(arguments[1]);
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
             res = std::make_shared<DataTypeDateTime64>(scale, timezone);
