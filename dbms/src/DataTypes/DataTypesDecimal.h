@@ -52,7 +52,6 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-public:
     T parseFromString(const String & str) const;
     void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
 
@@ -95,13 +94,13 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     MaxNativeType converted_value;
     if (scale_to > scale_from)
     {
-        converted_value = DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_to - scale_from);
+        converted_value = MaxFieldType::getScaleMultiplier(scale_to - scale_from);
         if (common::mulOverflow(static_cast<MaxNativeType>(value), converted_value, converted_value))
             throw Exception(std::string(ToDataType::family_name) + " convert overflow",
                             ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
-        converted_value = value / DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_from - scale_to);
+        converted_value = value / MaxFieldType::getScaleMultiplier(scale_from - scale_to);
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
@@ -122,7 +121,7 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     using ToFieldType = typename ToDataType::FieldType;
 
     if constexpr (std::is_floating_point_v<ToFieldType>)
-        return static_cast<ToFieldType>(value) / FromDataType::getScaleMultiplier(scale);
+        return static_cast<ToFieldType>(value) / FromFieldType::getScaleMultiplier(scale);
     else
     {
         FromFieldType converted_value = convertDecimals<FromDataType, FromDataType>(value, scale, 0);
@@ -155,7 +154,8 @@ inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataType
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
-    using ToNativeType = typename ToDataType::FieldType::NativeType;
+    using ToFieldType = typename ToDataType::FieldType;
+    using ToNativeType = typename ToFieldType::NativeType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
@@ -163,7 +163,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = value * ToDataType::getScaleMultiplier(scale);
+        auto out = value * ToFieldType::getScaleMultiplier(scale);
         if constexpr (std::is_same_v<ToNativeType, Int128>)
         {
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;

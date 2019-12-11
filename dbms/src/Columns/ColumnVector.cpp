@@ -223,6 +223,12 @@ Float64 ColumnVector<T>::getFloat64(size_t n) const
 }
 
 template <typename T>
+Float32 ColumnVector<T>::getFloat32(size_t n) const
+{
+    return static_cast<Float32>(data[n]);
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);

@@ -27,7 +27,7 @@ struct ExternalLoaderConfigSettings
 };
 
 
-/** Iterface for manage user-defined objects.
+/** Interface for manage user-defined objects.
   * Monitors configuration file and automatically reloads objects in separate threads.
   * The monitoring thread wakes up every 'check_period_sec' seconds and checks
   * modification time of objects' configuration file. If said time is greater than
@@ -150,11 +150,15 @@ public:
     /// Also function can load dictionary synchronously
     void reload(const String & name, bool load_never_loading = false) const;
 
-
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
     /// The function can either skip them (false) or load for the first time (true).
     void reload(bool load_never_loading = false) const;
+
+    /// Starts reloading of all objects matched `filter_by_name`.
+    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
+    /// The function can either skip them (false) or load for the first time (true).
+    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false) const;
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
@@ -171,7 +175,7 @@ protected:
 private:
     struct ObjectConfig;
 
-    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
     class LoadablesConfigReader;
     std::unique_ptr<LoadablesConfigReader> config_files_reader;

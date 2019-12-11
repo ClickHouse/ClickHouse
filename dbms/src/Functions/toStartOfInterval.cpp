@@ -25,11 +25,11 @@ namespace
 {
     static constexpr auto function_name = "toStartOfInterval";
 
-    template <DataTypeInterval::Kind unit>
+    template <IntervalKind::Kind unit>
     struct Transform;
 
     template <>
-    struct Transform<DataTypeInterval::Year>
+    struct Transform<IntervalKind::Year>
     {
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
@@ -43,7 +43,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Quarter>
+    struct Transform<IntervalKind::Quarter>
     {
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
@@ -57,7 +57,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Month>
+    struct Transform<IntervalKind::Month>
     {
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
@@ -71,7 +71,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Week>
+    struct Transform<IntervalKind::Week>
     {
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
@@ -85,7 +85,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Day>
+    struct Transform<IntervalKind::Day>
     {
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
@@ -99,7 +99,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Hour>
+    struct Transform<IntervalKind::Hour>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -107,7 +107,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Minute>
+    struct Transform<IntervalKind::Minute>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -118,7 +118,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Second>
+    struct Transform<IntervalKind::Second>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -164,9 +164,9 @@ public:
                     "Illegal type " + arguments[1].type->getName() + " of argument of function " + getName()
                         + ". Should be an interval of time",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            result_type_is_date = (interval_type->getKind() == DataTypeInterval::Year)
-                || (interval_type->getKind() == DataTypeInterval::Quarter) || (interval_type->getKind() == DataTypeInterval::Month)
-                || (interval_type->getKind() == DataTypeInterval::Week);
+            result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
+                || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
+                || (interval_type->getKind() == IntervalKind::Week);
         };
 
         auto check_timezone_argument = [&]
@@ -178,7 +178,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
                 throw Exception(
-                    "The timezone argument of function " + getName() + " with interval type " + interval_type->kindToString()
+                    "The timezone argument of function " + getName() + " with interval type " + interval_type->getKind().toString()
                         + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
@@ -278,28 +278,29 @@ private:
 
         switch (interval_type->getKind())
         {
-            case DataTypeInterval::Second:
-                return execute<FromDataType, UInt32, DataTypeInterval::Second>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Minute:
-                return execute<FromDataType, UInt32, DataTypeInterval::Minute>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Hour:
-                return execute<FromDataType, UInt32, DataTypeInterval::Hour>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Day:
-                return execute<FromDataType, UInt32, DataTypeInterval::Day>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Week:
-                return execute<FromDataType, UInt16, DataTypeInterval::Week>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Month:
-                return execute<FromDataType, UInt16, DataTypeInterval::Month>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Quarter:
-                return execute<FromDataType, UInt16, DataTypeInterval::Quarter>(from, time_column, num_units, time_zone);
-            case DataTypeInterval::Year:
-                return execute<FromDataType, UInt16, DataTypeInterval::Year>(from, time_column, num_units, time_zone);
+            case IntervalKind::Second:
+                return execute<FromDataType, UInt32, IntervalKind::Second>(from, time_column, num_units, time_zone);
+            case IntervalKind::Minute:
+                return execute<FromDataType, UInt32, IntervalKind::Minute>(from, time_column, num_units, time_zone);
+            case IntervalKind::Hour:
+                return execute<FromDataType, UInt32, IntervalKind::Hour>(from, time_column, num_units, time_zone);
+            case IntervalKind::Day:
+                return execute<FromDataType, UInt32, IntervalKind::Day>(from, time_column, num_units, time_zone);
+            case IntervalKind::Week:
+                return execute<FromDataType, UInt16, IntervalKind::Week>(from, time_column, num_units, time_zone);
+            case IntervalKind::Month:
+                return execute<FromDataType, UInt16, IntervalKind::Month>(from, time_column, num_units, time_zone);
+            case IntervalKind::Quarter:
+                return execute<FromDataType, UInt16, IntervalKind::Quarter>(from, time_column, num_units, time_zone);
+            case IntervalKind::Year:
+                return execute<FromDataType, UInt16, IntervalKind::Year>(from, time_column, num_units, time_zone);
         }
 
         __builtin_unreachable();
     }
 
-    template <typename FromDataType, typename ToType, DataTypeInterval::Kind unit, typename ColumnType>
+
+    template <typename FromDataType, typename ToType, IntervalKind::Kind unit, typename ColumnType>
     ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();

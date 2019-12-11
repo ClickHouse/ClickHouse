@@ -144,6 +144,11 @@ public:
         data.push_back(T());
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        data.resize_fill(data.size() + length, T());
+    }
+
     void popBack(size_t n) override
     {
         data.resize_assume_reserved(data.size() - n);
@@ -205,6 +210,7 @@ public:
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
+    Float32 getFloat32(size_t n) const override;
 
     UInt64 getUInt(size_t n) const override
     {
