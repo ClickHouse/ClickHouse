@@ -33,7 +33,7 @@ For the latest stable version, switch to the `stable` branch.
 ```bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc`
+$ cmake .. -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc` -DENABLE_MYSQL=0
 $ ninja
 $ cd ..
 ```
@@ -43,7 +43,7 @@ $ cd ..
 ```bash
 $ mkdir build
 $ cd build
-$ cmake .. -DENABLE_CLICKHOUSE_ALL=0 -DENABLE_CLICKHOUSE_CLIENT=1 -DENABLE_MYSQL=0 -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc`
+$ cmake .. -DENABLE_CLICKHOUSE_ALL=0 -DENABLE_CLICKHOUSE_CLIENT=1 -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc` -DENABLE_MYSQL=0
 $ ninja
 $ cd ..
 ```
