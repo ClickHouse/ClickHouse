@@ -799,7 +799,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (auto & [disk_name, disk_ptr] : global_context.getDiskSelector().getDisksMap())
         {
-            if (defined_disk_names.count(disk_name) == 0)
+            if (defined_disk_names.count(disk_name) == 0 && Poco::File(getFullPathOnDisk(disk_ptr)).exists())
             {
                 for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
                 {
