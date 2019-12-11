@@ -51,19 +51,20 @@ InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage) co
             order_key_prefix_descr.push_back(required_sort_description[i]);
         else
         {
-            bool first = true;
+            /// Allow only one simple monotonic functions with one argument
+            bool found_function = false;
             for (const auto & action : elements_actions[i]->getActions())
             {
                 if (action.type != ExpressionAction::APPLY_FUNCTION)
                     continue;
 
-                if (!first)
+                if (found_function)
                 {
                     current_direction = 0;
                     break;
                 }
                 else
-                    first = false;
+                    found_function = true;
 
                 if (action.argument_names.size() != 1 || action.argument_names.at(0) != sorting_key_columns[i])
                 {
@@ -87,6 +88,9 @@ InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage) co
                 else if (!monotonicity.is_positive)
                     current_direction *= -1;
             }
+
+            if (!found_function)
+                current_direction = 0;
 
             if (!current_direction || (i > 0 && current_direction != read_direction))
                 break;
