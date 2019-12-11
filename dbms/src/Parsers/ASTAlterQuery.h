@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/ASTTTLElement.h>
 
 
 namespace DB
@@ -129,9 +128,15 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    PartDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    enum MoveDestinationType
+    {
+        DISK,
+        VOLUME,
+    };
 
-    String move_destination_name;             /// option for MOVE PART/PARTITION
+    MoveDestinationType move_destination_type;
+
+    String move_destination_name;
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */

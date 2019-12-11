@@ -350,15 +350,9 @@ public:
 
         /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
-            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
+            reserved_space = future_part_.parts[0]->disk->reserve(total_size);
         else
-        {
-            MergeTreeDataPart::TTLInfos ttl_infos;
-            for (auto & part_ptr : future_part_.parts)
-                ttl_infos.update(part_ptr->ttl_infos);
-
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
-        }
+            reserved_space = storage.reserveSpace(total_size);
         if (!reserved_space)
         {
             if (is_mutation)
