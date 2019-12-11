@@ -521,7 +521,7 @@ void TCPHandler::processOrdinaryQuery()
         }
         async_in.readSuffix();
 
-        /** When the data has run out, we send the profiling data and totals up to the last zero block,
+        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
           * so that this information can be used in the suffix output of stream.
           * If the request has been interrupted, then sendTotals and other methods should not be called,
           * because we have not read all the data.
@@ -531,10 +531,9 @@ void TCPHandler::processOrdinaryQuery()
             sendTotals(state.io.in->getTotals());
             sendExtremes(state.io.in->getExtremes());
             sendProfileInfo(state.io.in->getProfileInfo());
-            sendProgress();
         }
 
-        sendLogs();
+        sendData({});
     }
 
     state.io.onFinish();
