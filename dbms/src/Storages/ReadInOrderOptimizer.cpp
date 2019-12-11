@@ -27,7 +27,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         forbidden_columns.insert(elem.first);
 }
 
-InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage)
+InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage) const
 {
     const MergeTreeData * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
     if (!merge_tree || !merge_tree->hasSortingKey())
@@ -51,10 +51,6 @@ InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage)
             order_key_prefix_descr.push_back(required_sort_description[i]);
         else
         {
-            const auto & input_columns = elements_actions[i]->getRequiredColumnsWithTypes();
-            if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
-                break;
-
             bool first = true;
             for (const auto & action : elements_actions[i]->getActions())
             {
@@ -69,6 +65,12 @@ InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage)
                 else
                     first = false;
 
+                if (action.argument_names.size() != 1 || action.argument_names.at(0) != sorting_key_columns[i])
+                {
+                    current_direction = 0;
+                    break;
+                }
+
                 const auto & func = *action.function_base;
                 if (!func.hasInformationAboutMonotonicity())
                 {
@@ -76,7 +78,7 @@ InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage)
                     break;
                 }
 
-                auto monotonicity = func.getMonotonicityForRange(*input_columns.front().type, {}, {});
+                auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), {}, {});
                 if (!monotonicity.is_monotonic)
                 {
                     current_direction = 0;
