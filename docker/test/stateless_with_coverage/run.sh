@@ -1,11 +1,17 @@
 #!/bin/bash
 
 kill_clickhouse () {
-    while kill -0 `pgrep -u clickhouse`;
+    kill `pgrep -u clickhouse` 2>/dev/null
+
+    for i in {1..10}
     do
-        kill `pgrep -u clickhouse` 2>/dev/null
-        echo "Process" `pgrep -u clickhouse` "still alive"
-        sleep 10
+        if ! kill -0 `pgrep -u clickhouse`; then
+            echo "No clickhouse process"
+            break
+        else
+            echo "Process" `pgrep -u clickhouse` "still alive"
+            sleep 10
+        fi
     done
 }
 
