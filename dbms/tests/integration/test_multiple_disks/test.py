@@ -1107,8 +1107,8 @@ def test_kill_while_insert(start_cluster):
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
-        finally:
-            """ClickHouse may be inactive at this moment."""
+        except:
+            """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
 
 def test_move_while_merge(start_cluster):
