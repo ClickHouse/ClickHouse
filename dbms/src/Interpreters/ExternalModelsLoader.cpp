@@ -18,7 +18,8 @@ ExternalModelsLoader::ExternalModelsLoader(Context & context_)
 }
 
 std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
-        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) const
+    const std::string & name, const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix, const std::string & /* repository_name */) const
 {
     String type = config.getString(config_prefix + ".type");
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");
