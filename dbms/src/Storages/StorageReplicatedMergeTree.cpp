@@ -1035,6 +1035,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         throw Exception("Future merged part name " + backQuote(future_merged_part.name) + " differs from part name in log entry: "
             + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
+    future_merged_part.updatePath(*this, reserved_space);
 
     auto table_id = getStorageID();
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
@@ -1176,6 +1177,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
+    future_mutated_part.updatePath(*this, reserved_space);
 
     auto table_id = getStorageID();
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(

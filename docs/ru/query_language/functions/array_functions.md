@@ -814,4 +814,40 @@ SELECT arrayReverse([1, 2, 3])
 Синоним для ["arrayReverse"](#array_functions-arrayreverse)
 
 
+## arrayCompact {#arraycompact}
+
+Удаляет дубликаты из массива. Порядок результирующих значений определяется порядком в исходном массиве.
+
+**Синтаксис**
+
+```sql
+arrayCompact(arr)
+```
+
+**Параметры**
+
+`arr` — [Массив](../../data_types/array.md) для обхода.
+
+**Возвращаемое значение**
+
+Массив без дубликатов.
+
+Тип: `Array`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
+```
+
+Ответ:
+
+```text
+┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
+│ [1,nan,nan,2,3]                            │
+└────────────────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->

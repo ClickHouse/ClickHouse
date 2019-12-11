@@ -96,6 +96,12 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
+}
+
+
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -800,6 +806,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_disk_ptr, part_name, part_info);
             part->relative_path = part_name;
             bool broken = false;
+
+            Poco::Path part_path(getFullPathOnDisk(part_disk_ptr), part_name);
+            Poco::Path marker_path(part_path, DELETE_ON_DESTROY_MARKER_PATH);
+            if (Poco::File(marker_path).exists())
+            {
+                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
+                std::lock_guard loading_lock(mutex);
+                broken_parts_to_detach.push_back(part);
+                ++suspicious_broken_parts;
+                return;
+            }
 
             try
             {
@@ -2511,7 +2528,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (const auto & original_active_part : getDataPartsStateRange(DataPartState::Committed))
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part_copy->name == original_active_part->name)
         {
@@ -2524,6 +2541,16 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Committed);
+
+            Poco::Path marker_path(Poco::Path(original_active_part->getFullPath()), DELETE_ON_DESTROY_MARKER_PATH);
+            try
+            {
+                Poco::File(marker_path).createFile();
+            }
+            catch (Poco::Exception & e)
+            {
+                LOG_ERROR(log, e.what() << " (while creating DeleteOnDestroy marker: " + backQuote(marker_path.toString()) + ")");
+            }
             return;
         }
     }
@@ -2542,7 +2569,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info);
 }
-
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id)
 {
@@ -2709,8 +2735,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.push_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
@@ -2726,6 +2753,9 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         }), parts.end());
 
     if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+
+    if (parts.empty())
     {
         String no_parts_to_move_message;
         if (moving_part)
@@ -2737,7 +2767,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 
@@ -2753,17 +2783,20 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     DataPartsVector parts;
     if (moving_part)
     {
-        parts.push_back(getActiveContainingPart(partition_id));
-        if (!parts.back())
+        auto part_info = MergeTreePartInfo::fromPartName(partition_id, format_version);
+        parts.emplace_back(getActiveContainingPart(part_info));
+        if (!parts.back() || parts.back()->name != part_info.getPartName())
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
         parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
-
     auto volume = storage_policy->getVolumeByName(name);
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
+
+    if (parts.empty())
+        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2789,7 +2822,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+        throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
 

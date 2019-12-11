@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/RemoteHostFilter.h>
 
 
 namespace Poco
@@ -43,7 +44,7 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class QuotaForIntervals;
+class QuotaContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -76,8 +77,10 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class AccessControlManager;
 class SettingsConstraints;
 struct StorageID;
+class RemoteHostFilter;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -134,7 +137,8 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
-    std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
+    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -199,6 +203,11 @@ public:
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
+    AccessControlManager & getAccessControlManager();
+    const AccessControlManager & getAccessControlManager() const;
+    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
+    void checkQuotaManagementIsAllowed();
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
@@ -237,9 +246,6 @@ public:
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
-
-    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
-    QuotaForIntervals & getQuota();
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
@@ -356,6 +362,10 @@ public:
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;
 
+    /// Storage of allowed hosts from config.xml
+    void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
+    const RemoteHostFilter & getRemoteHostFilter() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -402,7 +412,6 @@ public:
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
-
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.

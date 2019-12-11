@@ -16,6 +16,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -133,18 +134,19 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
 }
 
-StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args)
+StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
     is_db_table = false;
+    std::string db_dir_path_abs = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
     Poco::Path poco_path = Poco::Path(table_path_);
     if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+        poco_path = Poco::Path(user_files_path, poco_path);
 
     const std::string path = poco_path.absolute().toString();
     paths = listFilesWithRegexpMatching("/", path);
     for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context_global, user_files_absolute_path, cur_path);
+        checkCreationIsAllowed(context_global, user_files_path, cur_path);
 }
 
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
@@ -245,7 +247,7 @@ BlockInputStreams StorageFile::read(
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
@@ -259,7 +261,7 @@ BlockInputStreams StorageFile::read(
                 std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
-    return blocks_input;
+    return narrowBlockInputStreams(blocks_input, num_streams);
 }
 
 

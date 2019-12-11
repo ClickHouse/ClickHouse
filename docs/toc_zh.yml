@@ -5,10 +5,12 @@ nav:
   - 'ClickHouse的独特功能': 'introduction/distinctive_features.md'
   - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
-  - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
+  - '历史': 'introduction/history.md'
 
 - '入门指南':
-  - '部署运行': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - '安装': 'getting_started/install.md'
+  - '教程': 'getting_started/tutorial.md'
   - '示例数据集':
     - '航班飞行数据': 'getting_started/example_datasets/ontime.md'
     - '纽约市出租车数据': 'getting_started/example_datasets/nyc_taxi.md'
@@ -16,6 +18,7 @@ nav:
     - '维基访问数据': 'getting_started/example_datasets/wikistat.md'
     - 'Criteo TB级别点击日志': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema基准测试': 'getting_started/example_datasets/star_schema.md'
+    - 'Yandex.Metrica': 'getting_started/example_datasets/metrica.md'
 
 - '客户端':
   - '介绍': 'interfaces/index.md'
@@ -145,6 +148,7 @@ nav:
     - 'GEO函数': 'query_language/functions/geo.md'
     - 'Nullable处理函数': 'query_language/functions/functions_for_nulls.md'
     - '机器学习函数': 'query_language/functions/machine_learning_functions.md'
+    - 'Introspection': 'query_language/functions/introspection.md'
     - '其他函数': 'query_language/functions/other_functions.md'
   - '聚合函数':
     - '介绍': 'query_language/agg_functions/index.md'
@@ -212,7 +216,7 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
-  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross.md'
+  - '如何在Linux中编译Mac OS X ClickHouse': 'development/build_cross_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '开发者指南': 'development/developer_instruction.md'

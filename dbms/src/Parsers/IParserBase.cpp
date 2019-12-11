@@ -12,20 +12,15 @@ namespace ErrorCodes
 
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     expected.add(pos, getName());
 
-    pos.increaseDepth();
-    bool res = parseImpl(pos, node, expected);
-    pos.decreaseDepth();
-
-    if (!res)
+    return wrapParseImpl(pos, IncreaseDepthTag{}, [&]
     {
-        node = nullptr;
-        pos = begin;
-    }
-
-    return res;
+        bool res = parseImpl(pos, node, expected);
+        if (!res)
+            node = nullptr;
+        return res;
+    });
 }
 
 }
