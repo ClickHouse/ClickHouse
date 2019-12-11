@@ -27,6 +27,7 @@
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -180,7 +181,15 @@ void DatabaseOrdinary::loadStoredObjects(
     auto & external_loader = context.getExternalDictionariesLoader();
     external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-    external_loader.reload(!lazy_load);
+
+    auto filter = [this](const std::string & dictionary_name) -> bool
+    {
+        if (!startsWith(dictionary_name, name + "." /* db name */))
+            return false;
+        LOG_INFO(log, "Loading dictionary " << backQuote(dictionary_name) << ", for database " << backQuote(name));
+        return true;
+    };
+    external_loader.reload(filter, !lazy_load);
 }
 
 
