@@ -33,10 +33,22 @@ For the latest stable version, switch to the `stable` branch.
 ```bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
+$ cmake .. -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc`
 $ ninja
 $ cd ..
 ```
+
+## Build ClickHouse client only
+
+```bash
+$ mkdir build
+$ cd build
+$ cmake .. -DENABLE_CLICKHOUSE_ALL=0 -DENABLE_CLICKHOUSE_CLIENT=1 -DENABLE_MYSQL=0 -DCMAKE_CXX_COMPILER=`which g++` -DCMAKE_C_COMPILER=`which gcc`
+$ ninja
+$ cd ..
+```
+
+
 
 ## Caveats
 
