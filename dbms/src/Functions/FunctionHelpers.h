@@ -90,6 +90,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
         size_t argument_index, bool (* validator_func)(const IDataType &),
         const char * expected_type_description);
 
+// Simple validator that is used in conjunction with validateFunctionArgumentTypes() to check if function arguments are as expected.
 struct FunctionArgumentTypeValidator
 {
     bool (* validator_func)(const IDataType &);
@@ -99,8 +100,20 @@ struct FunctionArgumentTypeValidator
 using FunctionArgumentTypeValidators = std::vector<FunctionArgumentTypeValidator>;
 
 /** Validate that function arguments match specification.
- * first, check that mandatory args present and have valid type.
- * second, check optional arguents types, skipping ones that are missing.
+ *
+ * Designed to simplify argument validation
+ * for functions with variable arguments (e.g. depending on result type or other trait).
+ * first, checks that mandatory args present and have valid type.
+ * second, checks optional arguents types, skipping ones that are missing.
+ *
+ * Please note that if you have several optional arguments, like f([a, b, c]),
+ * only these calls are considered valid:
+ *  f(a)
+ *  f(a, b)
+ *  f(a, b, c)
+ *
+ * But NOT these: f(a, c), f(b, c)
+ * In other words you can't skip
  *
  * If any mandatory arg is missing, throw an exception, with explicit description of expected arguments.
  */
