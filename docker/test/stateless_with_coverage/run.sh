@@ -12,7 +12,7 @@ kill_clickhouse () {
 wait_llvm_profdata () {
     while kill -0 `pgrep llvm-profdata-9`;
     do
-        echo "Waiting for profdata " `pgrep llvm-profdata-9` "still alive"
+        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive"
         sleep 3
     done
 }
