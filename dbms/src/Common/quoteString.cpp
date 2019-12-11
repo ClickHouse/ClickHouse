@@ -14,6 +14,15 @@ String quoteString(const StringRef & x)
 }
 
 
+String doubleQuoteString(const StringRef & x)
+{
+    String res(x.size, '\0');
+    WriteBufferFromString wb(res);
+    writeDoubleQuotedString(x, wb);
+    return res;
+}
+
+
 String backQuote(const StringRef & x)
 {
     String res(x.size, '\0');
