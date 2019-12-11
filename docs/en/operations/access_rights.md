@@ -106,7 +106,7 @@ Database access is not related to the [readonly](settings/permissions_for_querie
 
 ## ZooKeeper Authenticaton {#zookeeper-authentification}
 
-When you use [replication](table_engines/replication.md), ClickHouse stores replica's meta information in a ZooKeeper infrastructure. For more safety, set up authentification for ZooKeeper.
+When you use [replication](table_engines/replication.md), ClickHouse stores replica's meta information in a ZooKeeper cluster. It is recommended to set up ZooKeeper authentification for security reasons.
 
 ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem. The [zookeeper](server_settings/settings.md#server-settings_zookeeper) server configuration section allows setting up the username and password required for authenticating on the ZooKeeper server.
 
