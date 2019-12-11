@@ -24,7 +24,7 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information. Use ZooKeeper version 3.4.5 or later.
 
-To use replication, set parameters in the [zookeeper](server_settings/settings.md#server-settings_zookeeper) server configuration section.
+To use replication, set parameters in the [zookeeper](../server_settings/settings.md#server-settings_zookeeper) server configuration section.
 
 !!! attention "Attention"
     Don't neglect the securiry setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
