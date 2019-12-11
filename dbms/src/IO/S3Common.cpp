@@ -6,8 +6,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <iterator>
-#include <aws/core/Aws.h>
+#include <regex>
+#include <aws/s3/S3Client.h>
 #include <aws/core/auth/AWSCredentialsProvider.h>
 
 
@@ -21,10 +21,9 @@ namespace ErrorCodes
 
 namespace S3
 {
-    Aws::SDKOptions ClientFactory::aws_options;
-
     ClientFactory::ClientFactory()
     {
+        aws_options = Aws::SDKOptions {};
         Aws::InitAPI(aws_options);
     }
 

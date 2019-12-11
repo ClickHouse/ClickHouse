@@ -21,7 +21,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
-#include <aws/core/client/ClientConfiguration.h>
 #include <aws/s3/S3Client.h>
 
 
@@ -237,5 +236,7 @@ void registerStorageS3(StorageFactory & factory)
         return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
+
 }
+
 #endif

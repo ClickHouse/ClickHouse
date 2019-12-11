@@ -7,7 +7,7 @@
 
 #include <common/logger_useful.h>
 #include <aws/s3/model/GetObjectRequest.h>
-
+#include <aws/s3/S3Client.h>
 
 namespace DB
 {
