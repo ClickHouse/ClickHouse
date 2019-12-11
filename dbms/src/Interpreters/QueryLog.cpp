@@ -21,8 +21,6 @@
 namespace DB
 {
 
-template <> struct NearestFieldTypeImpl<QueryLogElement::Type> { using Type = UInt64; };
-
 Block QueryLogElement::createBlock()
 {
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
