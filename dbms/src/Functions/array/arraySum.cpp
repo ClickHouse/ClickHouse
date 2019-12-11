@@ -36,7 +36,7 @@ struct ArraySumImpl
         if (which.isDecimal())
         {
             UInt32 scale = getDecimalScale(*expression_return);
-            return std::make_shared<DataTypeDecimal<Decimal128>>(maxDecimalPrecision<Decimal128>(), scale);
+            return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::maxPrecision<Decimal128>(), scale);
         }
 
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
