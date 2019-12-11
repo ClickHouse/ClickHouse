@@ -25,17 +25,6 @@ const Type * checkAndGetDataType(const IDataType * data_type)
 }
 
 template <typename Type>
-std::shared_ptr<const Type> checkAndGetDataTypePtr(const DataTypePtr & data_type)
-{
-    if (typeid_cast<const Type *>(data_type.get()))
-    {
-        return std::static_pointer_cast<const Type>(data_type);
-    }
-
-    return std::shared_ptr<const Type>();
-}
-
-template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
     if (!column || !isColumnConst(*column))
@@ -109,6 +98,12 @@ struct FunctionArgumentTypeValidator
 
 using FunctionArgumentTypeValidators = std::vector<FunctionArgumentTypeValidator>;
 
+/** Validate that function arguments match specification.
+ * first, check that mandatory args present and have valid type.
+ * second, check optional arguents types, skipping ones that are missing.
+ *
+ * If any mandatory arg is missing, throw an exception, with explicit description of expected arguments.
+ */
 void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments, const FunctionArgumentTypeValidators & mandatory_args, const FunctionArgumentTypeValidators & optional_args = {});
 
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.

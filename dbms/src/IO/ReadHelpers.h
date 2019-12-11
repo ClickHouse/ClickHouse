@@ -12,6 +12,7 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
+#include <common/arithmeticOverflow.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
@@ -256,14 +257,14 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
     }
 }
 
-enum ReadIntTextCheckOverflow
+enum class ReadIntTextCheckOverflow
 {
-    READ_INT_DO_NOT_CHECK_OVERFLOW,
-    READ_INT_CHECK_OVERFLOW,
+    DO_NOT_CHECK_OVERFLOW,
+    CHECK_OVERFLOW,
 };
 
-template <typename T, typename ReturnType = void>
-ReturnType readIntTextImpl(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
+template <typename T, typename ReturnType = void, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
+ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -277,7 +278,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow che
             return ReturnType(false);
     }
 
-    size_t initial = buf.count();
+    const size_t initial_pos = buf.count();
     while (!buf.eof())
     {
         switch (*buf.position())
@@ -285,7 +286,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow che
             case '+':
                 break;
             case '-':
-                if (is_signed_v<T>)
+                if constexpr (is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -305,44 +306,48 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow che
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
+                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+                {
+                    // perform relativelly slow overflow check only when number of decimal digits so far is close to the max for given type.
+                    if (buf.count() - initial_pos >= std::numeric_limits<T>::max_digits10)
+                    {
+                        if (common::mulOverflow(res, static_cast<decltype(res)>(10), res)
+                            || common::addOverflow(res, static_cast<decltype(res)>(*buf.position() - '0'), res))
+                            return ReturnType(false);
+                        break;
+                    }
+                }
                 res *= 10;
                 res += *buf.position() - '0';
                 break;
             default:
                 goto end;
-//                x = negative ? -res : res;
-//                return ReturnType(true);
         }
         ++buf.position();
     }
 
 end:
     x = negative ? -res : res;
-    if (check_overflow && buf.count() - initial > std::numeric_limits<T>::digits10)
-    {
-        // the int literal is too big and x overflowed
-        return ReturnType(false);
-    }
 
     return ReturnType(true);
 }
 
-template <typename T>
-void readIntText(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
+void readIntText(T & x, ReadBuffer & buf)
 {
-    readIntTextImpl<T, void>(x, buf, check_overflow);
+    readIntTextImpl<T, void, check_overflow>(x, buf);
 }
 
-template <typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
+bool tryReadIntText(T & x, ReadBuffer & buf)
 {
-    return readIntTextImpl<T, bool>(x, buf, check_overflow);
+    return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
 
-template <typename T>
-void readIntText(Decimal<T> & x, ReadBuffer & buf, ReadIntTextCheckOverflow check_overflow = READ_INT_DO_NOT_CHECK_OVERFLOW)
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
+void readIntText(Decimal<T> & x, ReadBuffer & buf)
 {
-    readIntText(x.value, buf, check_overflow);
+    readIntText<check_overflow>(x.value, buf);
 }
 
 /** More efficient variant (about 1.5 times on real dataset).
@@ -642,7 +647,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<time_t, ReturnType>(datetime, buf, READ_INT_CHECK_OVERFLOW);
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     else
         return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
@@ -662,8 +667,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     if (!buf.eof() && *buf.position() == '.')
     {
         buf.ignore(1); // skip separator
-        const auto count1 = buf.count();
-        if (!tryReadIntText(c.fractional, buf, READ_INT_CHECK_OVERFLOW))
+        const auto pos_before_fractional = buf.count();
+        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
         {
             return ReturnType(false);
         }
@@ -674,7 +679,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
         // If scale is 3, but we read '12', promote fractional part to '120'.
         // And vice versa: if we read '1234', denote it to '123'.
-        const auto fractional_length = static_cast<Int32>(buf.count() - count1);
+        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
         if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
         {
             c.fractional *= common::exp10_i64(adjust_scale);
@@ -935,11 +940,11 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message =
 
 /** Helper function for implementation.
   */
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
 {
     ReadBufferFromMemory in(pos, end - pos);
-    tryReadIntText(x, in);
+    tryReadIntText<check_overflow>(x, in);
     return pos + in.count();
 }
 

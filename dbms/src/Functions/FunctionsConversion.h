@@ -254,7 +254,7 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64
 template <typename Transform>
 struct FromDateTime64Transform
 {
-    static constexpr auto name = "toDateTime64";
+    static constexpr auto name = Transform::name;
 
     const DateTime64::NativeType scale_multiplier = 1;
 
@@ -934,6 +934,7 @@ public:
         }
         else
         {
+            // Optional second argument with time zone for DateTime.
             UInt8 timezone_arg_position = 1;
             UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
 
@@ -1079,8 +1080,7 @@ public:
     static constexpr bool to_decimal =
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
-        std::is_same_v<ToDataType, DataTypeDateTime64>;
+        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
 
@@ -1144,7 +1144,7 @@ public:
             res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else if constexpr (to_decimal)
         {
-            UInt64 scale [[maybe_unused]] = extractToDecimalScale(arguments[1]);
+            UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
                 res = createDecimal<DataTypeDecimal>(9, scale);
@@ -1155,6 +1155,12 @@ public:
 
             if (!res)
                 throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+        }
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        {
+            UInt64 scale = extractToDecimalScale(arguments[1]);
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0);
+            res = std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
             res = std::make_shared<ToDataType>();
@@ -1170,7 +1176,7 @@ public:
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         bool ok = true;
-        if constexpr (to_decimal)
+        if constexpr (to_decimal || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             if (arguments.size() != 2)
                 throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};

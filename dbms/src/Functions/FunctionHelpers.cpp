@@ -136,7 +136,7 @@ void validateArgumentsImpl(const IFunction & func,
 
         const auto & arg = arguments[i + argument_offset];
         const auto validator = validators[i];
-        if (validator.validator_func(*arg.type) == false)
+        if (!validator.validator_func(*arg.type))
             throw Exception("Illegal type " + arg.type->getName() +
                             " of " + std::to_string(i) +
                             " argument of function " + func.getName() +

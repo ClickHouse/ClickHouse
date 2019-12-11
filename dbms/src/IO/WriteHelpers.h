@@ -732,7 +732,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
         LocalDateTime(values.year, values.month, values.day_of_month,
             date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
-    if (scale > 0 && c.fractional)
+    if (scale > 0)
     {
         buf.write(fractional_time_delimiter);
 
@@ -740,7 +740,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
         static_assert(sizeof(data) >= MaxScale);
 
         auto fractional = c.fractional;
-        for (Int32 pos = scale - 1; pos >= 0; --pos, fractional /= DateTime64(10))
+        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
             data[pos] += fractional % DateTime64(10);
 
         writeString(&data[0], static_cast<size_t>(scale), buf);
