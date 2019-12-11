@@ -164,6 +164,9 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
 
     /// XXX: very fishy place with const-casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
+
+    /// Since we provide the whole message at once, the consequent invocation of |next()| without resetting
+    /// should indicate the end of buffer.
     if (buffer().begin() == new_position)
         return false;
 
