@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
