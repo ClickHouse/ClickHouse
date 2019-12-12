@@ -8,6 +8,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+}
+
 std::mutex DiskLocal::mutex;
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
@@ -85,6 +91,11 @@ bool DiskLocal::isDirectory(const String & path) const
     return Poco::File(disk_path + path).isDirectory();
 }
 
+size_t DiskLocal::getFileSize(const String & path) const
+{
+    return Poco::File(disk_path + path).getSize();
+}
+
 void DiskLocal::createDirectory(const String & path)
 {
     Poco::File(disk_path + path).createDirectory();
@@ -93,6 +104,19 @@ void DiskLocal::createDirectory(const String & path)
 void DiskLocal::createDirectories(const String & path)
 {
     Poco::File(disk_path + path).createDirectories();
+}
+
+void DiskLocal::clearDirectory(const String & path)
+{
+    std::vector<Poco::File> files;
+    Poco::File(disk_path + path).list(files);
+    for (auto & file : files)
+        file.remove(true);
+}
+
+void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
+{
+    Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
 }
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
@@ -110,14 +134,19 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path) const
+std::unique_ptr<ReadBuffer> DiskLocal::read(const String & path, size_t buf_size) const
 {
-    return std::make_unique<ReadBufferFromFile>(disk_path + path);
+    return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path)
+std::unique_ptr<WriteBuffer> DiskLocal::write(const String & path, size_t buf_size)
 {
-    return std::make_unique<WriteBufferFromFile>(disk_path + path);
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size);
+}
+
+std::unique_ptr<WriteBuffer> DiskLocal::append(const String & path, size_t buf_size)
+{
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, O_APPEND | O_CREAT | O_WRONLY);
 }
 
 

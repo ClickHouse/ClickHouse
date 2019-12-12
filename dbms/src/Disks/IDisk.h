@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -77,14 +78,26 @@ public:
     /// Return `true` if the specified file exists and it's a directory.
     virtual bool isDirectory(const String & path) const = 0;
 
+    /// Return size of the specified file.
+    virtual size_t getFileSize(const String & path) const = 0;
+
     /// Create directory.
     virtual void createDirectory(const String & path) = 0;
 
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const String & path) = 0;
 
+    /// Remove all files from the directory.
+    virtual void clearDirectory(const String & path) = 0;
+
+    /// Move directory from `from_path` to `to_path`.
+    virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
+
     /// Return iterator to the contents of the specified directory.
     virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+
+    /// Return `true` if the specified directory is empty.
+    bool isDirectoryEmpty(const String & path);
 
     /// Move the file from `from_path` to `to_path`.
     virtual void moveFile(const String & from_path, const String & to_path) = 0;
@@ -93,10 +106,13 @@ public:
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
     /// Open the file for read and return ReadBuffer object.
-    virtual std::unique_ptr<ReadBuffer> readFile(const String & path) const = 0;
+    virtual std::unique_ptr<ReadBuffer> read(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
 
     /// Open the file for write and return WriteBuffer object.
-    virtual std::unique_ptr<WriteBuffer> writeFile(const String & path) = 0;
+    virtual std::unique_ptr<WriteBuffer> write(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) = 0;
+
+    /// Open the file for write in append mode and return WriteBuffer object.
+    virtual std::unique_ptr<WriteBuffer> append(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -144,5 +160,4 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 {
     return disk->getPath() + path;
 }
-
 }

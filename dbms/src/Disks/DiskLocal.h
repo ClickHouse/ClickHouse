@@ -49,9 +49,15 @@ public:
 
     bool isDirectory(const String & path) const override;
 
+    size_t getFileSize(const String & path) const override;
+
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
+
+    void clearDirectory(const String & path) override;
+
+    void moveDirectory(const String & from_path, const String & to_path) override;
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
@@ -59,9 +65,11 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path) const override;
+    std::unique_ptr<ReadBuffer> read(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path) override;
+    std::unique_ptr<WriteBuffer> write(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) override;
+
+    std::unique_ptr<WriteBuffer> append(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) override;
 
 private:
     bool tryReserve(UInt64 bytes);

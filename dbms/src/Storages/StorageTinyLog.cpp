@@ -34,8 +34,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/CheckResults.h>
 
-#include <Poco/DirectoryIterator.h>
-
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 
 
@@ -86,17 +84,17 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t max_read_buffer_size_)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
-            compressed(plain)
+        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size)
+            : plain(disk->read(data_path, std::min(max_read_buffer_size, disk->getFileSize(data_path)))),
+            compressed(*plain)
         {
         }
 
-        ReadBufferFromFile plain;
+        std::unique_ptr<ReadBuffer> plain;
         CompressedReadBuffer compressed;
     };
 
-    using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
+    using FileStreams = std::map<String, std::unique_ptr<Stream>>;
     FileStreams streams;
 
     using DeserializeState = IDataType::DeserializeBinaryBulkStatePtr;
@@ -139,30 +137,30 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
-            plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, std::move(codec), max_compress_block_size)
+        Stream(const DiskPtr & disk, const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
+            plain(disk->append(data_path, max_compress_block_size)),
+            compressed(*plain, std::move(codec), max_compress_block_size)
         {
         }
 
-        WriteBufferFromFile plain;
+        std::unique_ptr<WriteBuffer> plain;
         CompressedWriteBuffer compressed;
 
         void finalize()
         {
             compressed.next();
-            plain.next();
+            plain->next();
         }
     };
 
-    using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
+    using FileStreams = std::map<String, std::unique_ptr<Stream>>;
     FileStreams streams;
 
     using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
     SerializeStates serialize_states;
 
-    using WrittenStreams = std::set<std::string>;
+    using WrittenStreams = std::set<String>;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenStreams & written_streams);
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
@@ -184,11 +182,8 @@ Block TinyLogBlockInputStream::readImpl()
         return res;
     }
 
-    {
-        /// if there are no files in the folder, it means that the table is empty
-        if (Poco::DirectoryIterator(storage.fullPath()) == Poco::DirectoryIterator())
-            return res;
-    }
+    if (storage.disk->isDirectoryEmpty(storage.table_path))
+        return res;
 
     for (const auto & name_type : columns)
     {
@@ -200,7 +195,7 @@ Block TinyLogBlockInputStream::readImpl()
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + storage.fullPath());
+            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
             throw;
         }
 
@@ -226,7 +221,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(), max_read_buffer_size);
+            streams[stream_name] = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file, max_read_buffer_size);
 
         return &streams[stream_name]->compressed;
     };
@@ -250,7 +245,8 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
 
         const auto & columns = storage.getColumns();
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(),
+            streams[stream_name] = std::make_unique<Stream>(storage.disk,
+                                                            storage.files[stream_name].data_file,
                                                             columns.getCodecOrDefault(name),
                                                             storage.max_compress_block_size);
 
@@ -297,7 +293,7 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (auto & stream : streams)
         stream.second->finalize();
 
-    std::vector<Poco::File> column_files;
+    Strings column_files;
     for (auto & pair : streams)
         column_files.push_back(storage.files[pair.first].data_file);
 
@@ -323,31 +319,26 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 
 StorageTinyLog::StorageTinyLog(
-    const std::string & path_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    DiskPtr disk_,
+    const String & database_name_,
+    const String & table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : path(path_), table_name(table_name_), database_name(database_name_),
+    : disk(disk_), database_name(database_name_), table_name(table_name_),
+    table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
     max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
+    file_checker(disk, table_path + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
 
-    if (path.empty())
-        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
-
-    String full_path = path + escapeForFileName(table_name) + '/';
     if (!attach)
     {
-        /// create files if they do not exist
-        if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
-                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
+        /// create directories if they do not exist
+        disk->createDirectories(table_path);
     }
 
     for (const auto & col : getColumns().getAllPhysical())
@@ -368,8 +359,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
         {
             ColumnData column_data;
             files.insert(std::make_pair(stream_name, column_data));
-            files[stream_name].data_file = Poco::File(
-                path + escapeForFileName(table_name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+            files[stream_name].data_file = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
         }
     };
 
@@ -378,20 +368,21 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageTinyLog::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    /// Rename directory with data.
-    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    String new_table_path = "data/" + escapeForFileName(new_database_name) + '/' + escapeForFileName(new_table_name) + '/';
 
-    path = new_path_to_db;
-    table_name = new_table_name;
+    disk->moveDirectory(table_path, new_table_path);
+
     database_name = new_database_name;
-    file_checker.setPath(path + escapeForFileName(table_name) + "/" + "sizes.json");
+    table_name = new_table_name;
+    table_path = new_table_path;
+    file_checker.setPath(table_path + "sizes.json");
 
-    for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-        it->second.data_file = Poco::File(path + escapeForFileName(table_name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
+    for (auto & file : files)
+        file.second.data_file = table_path + Poco::Path(file.second.data_file).getFileName();
 }
 
 
@@ -431,12 +422,10 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    auto file = Poco::File(path + escapeForFileName(table_name));
-    file.remove(true);
-    file.createDirectories();
+    disk->clearDirectory(table_path);
 
     files.clear();
-    file_checker = FileChecker{path + escapeForFileName(table_name) + '/' + "sizes.json"};
+    file_checker = FileChecker{disk, table_path + "sizes.json"};
 
     for (const auto &column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
@@ -453,7 +442,7 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            args.context.getDefaultDisk(), args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

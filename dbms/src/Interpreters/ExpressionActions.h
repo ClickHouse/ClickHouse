@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
+#include <Common/UInt128.h>
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>

@@ -13,6 +13,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace DB
