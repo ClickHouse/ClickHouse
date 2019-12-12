@@ -125,7 +125,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
         const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->disk);
-        DiskSpace::ReservationPtr reservation;
+        ReservationPtr reservation;
         if (ttl_entry_ptr)
         {
             auto destination = ttl_entry_ptr->getDestination(policy);

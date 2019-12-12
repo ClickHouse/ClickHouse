@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/SimpleIncrement.h>
-#include <Common/DiskSpaceMonitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
@@ -679,14 +678,14 @@ public:
     ReservationPtr reserveSpace(UInt64 expected_size) const;
 
     /// Reserves space at least 1MB on specific disk or volume.
-    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
-    DiskSpace::ReservationPtr tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
+    ReservationPtr reserveSpace(UInt64 expected_size, SpacePtr space) const;
+    ReservationPtr tryReserveSpace(UInt64 expected_size, SpacePtr space) const;
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
-    DiskSpace::ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
+    ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move) const;
-    DiskSpace::ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
+    ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move) const;
     /// Choose disk with max available free space
@@ -740,10 +739,10 @@ public:
         ASTPtr entry_ast;
 
         /// Returns destination disk or volume for this rule.
-        DiskSpace::SpacePtr getDestination(const DiskSpace::StoragePolicyPtr & policy) const;
+        SpacePtr getDestination(const StoragePolicyPtr & policy) const;
 
         /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
+        bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
     const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
