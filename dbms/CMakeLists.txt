@@ -246,13 +246,6 @@ set_source_files_properties(
         src/Common/SymbolIndex.cpp
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
-# allow construction of std::variant<unsigned ...>(1) for Dwarf
-if (USE_LIBCXX AND NOT USE_INTERNAL_LIBCXX_LIBRARY)
-    set_source_files_properties(src/Common/Dwarf.cpp PROPERTIES COMPILE_DEFINITIONS
-                                "_LIBCPP_ENABLE_NARROWING_CONVERSIONS_IN_VARIANT=1")
-endif ()
-
-
 target_link_libraries (clickhouse_common_io
         PUBLIC
     common
