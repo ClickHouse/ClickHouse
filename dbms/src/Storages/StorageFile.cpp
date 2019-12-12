@@ -150,7 +150,13 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path_abs, poco_path);
 
             const std::string path = poco_path.absolute().toString();
-            paths = listFilesWithRegexpMatching("/", path);
+            if (path.find_first_of("*?{") == std::string::npos)
+            {
+                checkCreationIsAllowed(context_global, db_dir_path_abs, path);
+                paths.push_back(path);
+            }
+            else
+                paths = listFilesWithRegexpMatching("/", path);
             for (const auto & cur_path : paths)
                 checkCreationIsAllowed(context_global, db_dir_path_abs, cur_path);
             is_db_table = false;
@@ -264,6 +270,11 @@ BlockInputStreams StorageFile::read(
     BlockInputStreams blocks_input;
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
+    else
+    {
+        if (paths.size() == 1 && !Poco::File(paths[0]).exists())
+            throw Exception("File " + paths[0] + " is not exist", ErrorCodes::FILE_DOESNT_EXIST);
+    }
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
