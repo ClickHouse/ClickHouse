@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/randomSeed.h>
 #include <IO/WriteHelpers.h>
@@ -13,12 +12,6 @@
 #include <pcg_random.hpp>
 #include <random>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-    extern const Metric MemoryTrackingInBackgroundProcessingPool;
-}
 
 namespace DB
 {
@@ -137,7 +130,7 @@ void BackgroundProcessingPool::threadFunction()
 
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     if (auto memory_tracker = CurrentThread::getMemoryTracker())
-        memory_tracker->setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
+        memory_tracker->setMetric(settings.memory_metric);
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, settings.thread_sleep_seconds_random_part)(rng)));
@@ -195,7 +188,7 @@ void BackgroundProcessingPool::threadFunction()
                 continue;
 
             {
-                CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
+                CurrentMetrics::Increment metric_increment{settings.tasks_metric};
                 task_result = task->function();
             }
         }
