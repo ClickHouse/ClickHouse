@@ -71,8 +71,6 @@ namespace CurrentMetrics
     extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
 }
 
-}
-
 
 namespace DB
 {
