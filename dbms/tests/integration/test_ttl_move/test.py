@@ -417,8 +417,8 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         wait_expire_1_thread.start()
 
         for _ in range(2):
-            data = [] # 16MB in total
-            for i in range(8):
+            data = [] # 14MB in total
+            for i in range(7):
                 data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time_1 if i > 0 or positive else time_2))) # 1MB row
 
             node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
@@ -436,7 +436,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"external" if positive else "jbod1"}
 
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "16"
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "14"
 
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
