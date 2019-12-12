@@ -268,8 +268,10 @@ void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger 
             const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
             if (Poco::File(database.getDataPath() + '/' + table_name).exists())
             {
-                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
-                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+                /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
+                Poco::File(dir_it->path()).renameTo(database.getMetadataPath() + table_name + ".sql");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously and will be restored");
+                iterating_function(table_name + ".sql");
             }
             else
             {
