@@ -20,6 +20,7 @@
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
+#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -53,19 +54,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int ALIAS_REQUIRED;
-}
-
-NameSet removeDuplicateColumns(NamesAndTypesList & columns)
-{
-    NameSet names;
-    for (auto it = columns.begin(); it != columns.end();)
-    {
-        if (names.emplace(it->name).second)
-            ++it;
-        else
-            columns.erase(it++);
-    }
-    return names;
 }
 
 namespace
@@ -134,7 +122,7 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & se
     {
         const auto & joined_expression = table_join_node->table_expression->as<ASTTableExpression &>();
 
-        columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
+        columns_from_joined_table = getColumnsFromTableExpression(joined_expression, context);
 
         joined_table.first = DatabaseAndTableWithAlias(joined_expression, context.getCurrentDatabase());
         for (const auto & column : columns_from_joined_table)
