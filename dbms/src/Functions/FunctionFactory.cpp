@@ -13,15 +13,15 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNKNOWN_FUNCTION;
-extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 
 void FunctionFactory::registerFunction(const
-                                       std::string & name,
-                                       Creator creator,
-                                       CaseSensitiveness case_sensitiveness)
+    std::string & name,
+    Creator creator,
+    CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, creator).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",

@@ -284,13 +284,13 @@ struct LLVMContext
     }
 };
 
-class LLVMPreparedFunction : public IExecutableFunctionImpl
+class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
     std::string name;
     void * function;
 
 public:
-    LLVMPreparedFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
+    LLVMExecutableFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
         : name(name_)
     {
         auto it = symbols.find(name);
@@ -506,7 +506,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMPreparedFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {

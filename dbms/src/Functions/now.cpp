@@ -10,10 +10,10 @@ namespace DB
 {
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 
-class PreparedFunctionNow : public IExecutableFunctionImpl
+class ExecutableFunctionNow : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionNow(time_t time_) : time_value(time_) {}
+    explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
 
     String getName() const override { return "now"; }
 
@@ -48,7 +48,7 @@ public:
 
     ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_unique<PreparedFunctionNow>(time_value);
+        return std::make_unique<ExecutableFunctionNow>(time_value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -59,7 +59,7 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderNow : public IFunctionOverloadResolverImpl
+class NowOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "now";
@@ -69,7 +69,7 @@ public:
     bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<FunctionBuilderNow>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<NowOverloadResolver>(); }
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
 
@@ -81,7 +81,7 @@ public:
 
 void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderNow>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

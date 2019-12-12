@@ -51,7 +51,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFixedString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<FunctionBuilderCast>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();

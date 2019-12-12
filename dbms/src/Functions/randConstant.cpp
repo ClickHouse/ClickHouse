@@ -6,10 +6,10 @@ namespace DB
 {
 
 template <typename ToType, typename Name>
-class PreparedFunctionRandomConstant : public IExecutableFunctionImpl
+class ExecutableFunctionRandomConstant : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionRandomConstant(ToType value_) : value(value_) {}
+    explicit ExecutableFunctionRandomConstant(ToType value_) : value(value_) {}
 
     String getName() const override { return Name::name; }
 
@@ -45,7 +45,7 @@ public:
 
     ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_unique<PreparedFunctionRandomConstant<ToType, Name>>(value);
+        return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -58,7 +58,7 @@ private:
 };
 
 template <typename ToType, typename Name>
-class FunctionBuilderRandomConstant : public IFunctionOverloadResolverImpl
+class RandomConstantOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = Name::name;
@@ -79,7 +79,7 @@ public:
 
     static FunctionOverloadResolverImplPtr create(const Context &)
     {
-        return std::make_unique<FunctionBuilderRandomConstant<ToType, Name>>();
+        return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
@@ -101,7 +101,7 @@ public:
 
 
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
-using FunctionBuilderRandConstant = FunctionBuilderRandomConstant<UInt32, NameRandConstant>;
+using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameRandConstant>;
 
 void registerFunctionRandConstant(FunctionFactory & factory)
 {

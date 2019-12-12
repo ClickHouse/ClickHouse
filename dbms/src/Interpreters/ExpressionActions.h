@@ -81,7 +81,7 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
-    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
+    /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionOverloadResolverPtr function_builder;
 
     /// For unaligned [LEFT] ARRAY JOIN

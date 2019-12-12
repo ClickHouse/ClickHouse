@@ -35,7 +35,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
@@ -1585,7 +1585,7 @@ private:
             function = FunctionTo<DataType>::Type::create(context);
 
         auto function_adaptor =
-                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
@@ -1599,7 +1599,7 @@ private:
         FunctionPtr function = FunctionToString::create(context);
 
         auto function_adaptor =
-                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
@@ -1627,7 +1627,7 @@ private:
         FunctionPtr function = FunctionTo<DataTypeUUID>::Type::create(context);
 
         auto function_adaptor =
-                FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+                FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                 .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
 
         return [function_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
@@ -1833,7 +1833,7 @@ private:
         else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
-            auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(function))
+            auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                     .build(ColumnsWithTypeAndName{{nullptr, from_type, "" }});
 
             return [func_or_adaptor] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
@@ -2177,15 +2177,15 @@ private:
     }
 };
 
-class FunctionBuilderCast : public IFunctionOverloadResolverImpl
+class CastOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderCast>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<CastOverloadResolver>(context); }
 
-    FunctionBuilderCast(const Context & context_) : context(context_) {}
+    CastOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 

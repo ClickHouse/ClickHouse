@@ -59,13 +59,13 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderJoinGet final : public IFunctionOverloadResolverImpl
+class JoinGetOverloadResolver final : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "joinGet";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderJoinGet>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<JoinGetOverloadResolver>(context); }
 
-    explicit FunctionBuilderJoinGet(const Context & context_) : context(context_) {}
+    explicit JoinGetOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 
