@@ -617,7 +617,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        RegionsNames::Language language = RegionsNames::Language::RU;
+        RegionsNames::Language language = RegionsNames::Language::ru;
 
         /// If the result language is specified
         if (arguments.size() == 2)
