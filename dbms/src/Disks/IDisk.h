@@ -97,9 +97,6 @@ public:
 
     /// Open the file for write and return WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & path) = 0;
-
-    /// Return `true` if underlying storage supports atomic move of files (rename).
-    virtual bool supportsAtomicMove() const { return false; }
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

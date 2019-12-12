@@ -63,8 +63,6 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path) override;
 
-    bool supportsAtomicMove() const override { return true; }
-
 private:
     bool tryReserve(UInt64 bytes);
 
