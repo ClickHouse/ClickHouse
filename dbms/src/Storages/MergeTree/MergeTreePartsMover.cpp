@@ -89,6 +89,10 @@ bool MergeTreePartsMover::selectPartsForMove(
     const AllowedMovingPredicate & can_move,
     const std::lock_guard<std::mutex> & /* moving_parts_lock */)
 {
+    unsigned parts_to_move_by_policy_rules = 0;
+    unsigned parts_to_move_by_ttl_rules = 0;
+    double parts_to_move_total_size_bytes = 0.0;
+
     MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
 
     if (data_parts.empty())
@@ -143,6 +147,8 @@ bool MergeTreePartsMover::selectPartsForMove(
             {
                 to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->bytes_on_disk);
             }
+            ++parts_to_move_by_ttl_rules;
+            parts_to_move_total_size_bytes += part->bytes_on_disk;
         }
         else
         {
@@ -165,8 +171,14 @@ bool MergeTreePartsMover::selectPartsForMove(
                 break;
             }
             parts_to_move.emplace_back(part, std::move(reservation));
+            ++parts_to_move_by_policy_rules;
+            parts_to_move_total_size_bytes += part->bytes_on_disk;
         }
     }
+
+    LOG_TRACE(log, "Selected " << parts_to_move_by_policy_rules << " parts to move according to storage policy rules and "
+        << parts_to_move_by_ttl_rules << " parts according to TTL rules, "
+        << formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes) << " total");
 
     return !parts_to_move.empty();
 }
