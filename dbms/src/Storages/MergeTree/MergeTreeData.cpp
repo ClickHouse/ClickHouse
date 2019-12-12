@@ -3124,7 +3124,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 namespace
 {
 
-inline DiskSpace::ReservationPtr checkAndReturnReservation(UInt64 expected_size, ReservationPtr reservation)
+inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, ReservationPtr reservation)
 {
     if (reservation)
         return reservation;
@@ -3135,7 +3135,7 @@ inline DiskSpace::ReservationPtr checkAndReturnReservation(UInt64 expected_size,
 
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
+ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
@@ -3144,7 +3144,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) cons
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
@@ -3153,36 +3153,36 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, Disk
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-DiskSpace::ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr space) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     return space->reserve(expected_size);
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
+ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
-DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
+ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    DiskSpace::ReservationPtr reservation;
+    ReservationPtr reservation;
 
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
     if (ttl_entry != nullptr)
     {
-        DiskSpace::SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
+        SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
         if (!destination_ptr)
         {
             if (ttl_entry->destination_type == PartDestinationType::VOLUME)
@@ -3207,7 +3207,7 @@ DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt6
     return reservation;
 }
 
-DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & policy) const
+SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy) const
 {
     if (destination_type == PartDestinationType::VOLUME)
         return policy->getVolumeByName(destination_name);
@@ -3217,7 +3217,7 @@ DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::Sto
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const
+bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const
 {
     if (destination_type == PartDestinationType::VOLUME)
     {
