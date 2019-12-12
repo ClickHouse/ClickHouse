@@ -67,6 +67,8 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric MemoryTrackingForMerges;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
 }
 
 
@@ -1518,6 +1520,8 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
         pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
         pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
         pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
+        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
         shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
     }
     return *shared->background_move_pool;
