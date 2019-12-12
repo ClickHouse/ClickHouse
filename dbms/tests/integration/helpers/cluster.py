@@ -13,6 +13,7 @@ import urllib
 import xml.dom.minidom
 import logging
 import docker
+import pprint
 import psycopg2
 import pymongo
 import pymysql
@@ -296,6 +297,7 @@ class ClickHouseCluster:
                 print "Can't connect to MySQL " + str(ex)
                 time.sleep(0.5)
 
+        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
         raise Exception("Cannot wait MySQL container")
 
     def wait_postgres_to_start(self, timeout=60):
@@ -644,7 +646,16 @@ class ClickHouseInstance:
         output = output.decode('utf8')
         exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
         if exit_code:
-            raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
+            container_info = self.docker_client.api.inspect_container(container.id)
+            image_id = container_info.get('Image')
+            image_info = self.docker_client.api.inspect_image(image_id)
+            print("Command failed in container {}: ".format(container.id))
+            pprint.pprint(container_info)
+            print("")
+            print("Container {} uses image {}: ".format(container.id, image_id))
+            pprint.pprint(image_info)
+            print("")
+            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container.id, exit_code, output))
         return output
 
     def contains_in_log(self, substring):

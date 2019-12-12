@@ -86,13 +86,23 @@ test_odbc_interaction/test.py ......                                     [100%]
 You can just open shell inside a container by overwritting the command:
 ./runner --command=bash
 
+### Rebuilding the docker containers
+
+The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
+```
+cd docker/test/integration
+docker build -t yandex/clickhouse-integration-test .
+```
+
+The helper container used by the `runner` script is in `dbms/tests/integration/image/Dockerfile`.
+
 ### Adding new tests
 
 To add new test named `foo`, create a directory `test_foo` with an empty `__init__.py` and a file
 named `test.py` containing tests in it. All functions with names starting with `test` will become test cases.
 
 `helpers` directory contains utilities for:
-* Launching a ClickHouse cluster with or without ZooKeeper indocker containers.
+* Launching a ClickHouse cluster with or without ZooKeeper in docker containers.
 * Sending queries to launched instances.
 * Introducing network failures such as severing network link between two instances.
 
