@@ -20,6 +20,11 @@ def check_args_and_update_paths(args):
     if not os.path.isabs(args.binary):
         args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
 
+    if not args.bridge_binary:
+        args.bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-odbc-bridge')
+    elif not os.path.isabs(args.bridge_binary):
+        args.bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.bridge_binary))
+
     if not os.path.isabs(args.configs_dir):
         args.configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.configs_dir))
 
@@ -47,8 +52,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--bridge-binary",
-        default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", "/usr/bin/clickhouse-odbc-bridge"),
-        help="Path to clickhouse-odbc-bridge binary")
+        default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", ""),
+        help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.")
 
     parser.add_argument(
         "--configs-dir",
@@ -106,5 +111,5 @@ if __name__ == "__main__":
         command=args.command
     )
 
-    #print(cmd)
+    print("Running pytest container as: '" + cmd + "'.")
     subprocess.check_call(cmd, shell=True)
