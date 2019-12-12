@@ -77,7 +77,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    explicit IStorage(StorageID id_) : id(std::move(id_)) {}
+    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {}
     IStorage(StorageID id_, ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
@@ -167,7 +167,7 @@ protected: /// still thread-unsafe part.
     IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
-    StorageID id;
+    StorageID storage_id;
     mutable std::mutex id_mutex;
     ColumnsDescription columns; /// combined real and virtual columns
     const ColumnsDescription virtuals = {};
@@ -315,7 +315,7 @@ public:
 
     /**
      * Just updates names of database and table without moving any data on disk
-     * Can be called only from DatabaseAtomic.
+     * Can be called directly only from DatabaseAtomic.
      */
     virtual void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr);
 

@@ -177,7 +177,6 @@ StorageLiveView::StorageLiveView(
     select_table_id = extractDependentTableFromSelectQuery(select_query, global_context, true);
 
     /// If the table is not specified - use the table `system.one`
-    //FIXME why?
     if (select_table_id.empty())
         select_table_id = StorageID("system", "one");
 

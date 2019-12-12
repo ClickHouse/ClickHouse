@@ -56,14 +56,14 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
                     {
                         table_data->merging_params.graphite_params,
                         { table_id.database_name },
-                        { table_id.database_name },
+                        { table_id.table_name },
                     };
                     graphite_configs.emplace(config_name, new_config);
                 }
                 else
                 {
                     graphite_configs[config_name].databases.emplace_back(table_id.database_name);
-                    graphite_configs[config_name].tables.emplace_back(table_id.database_name);
+                    graphite_configs[config_name].tables.emplace_back(table_id.table_name);
                 }
             }
         }

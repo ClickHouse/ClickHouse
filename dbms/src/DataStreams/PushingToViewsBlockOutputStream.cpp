@@ -58,7 +58,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             query = materialized_view->getInnerQuery();
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
-            insert->table = inner_table_id.table_name;         //FIXME add uuid
+            insert->table = inner_table_id.table_name;
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();

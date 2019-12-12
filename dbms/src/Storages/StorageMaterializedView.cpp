@@ -47,11 +47,10 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context &
     ASTPtr subquery = extractTableExpression(query, 0);
 
     if (!db_and_table && !subquery)
-        return {};  //FIXME in which cases we cannot get table name?
+        return {};
 
     if (db_and_table)
     {
-        //TODO uuid
         return StorageID(db_and_table->database, db_and_table->table/*, db_and_table->uuid*/);
     }
     else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
@@ -126,7 +125,6 @@ StorageMaterializedView::StorageMaterializedView(
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        //TODO use uuid
         target_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_.table_name));
     }
     else
