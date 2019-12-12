@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS dictdb.table_for_dict;
+DROP DICTIONARY IF EXISTS dictdb.dict_exists;
 DROP DATABASE IF EXISTS dictdb;
 
 CREATE DATABASE dictdb ENGINE = Ordinary;
@@ -37,4 +39,6 @@ LAYOUT(FLAT());
 
 SELECT dictGetFloat64('dictdb.dict_exists', 'value', toUInt64(1));
 
-DROP DATABASE IF EXISTS dictdb;
+DROP TABLE dictdb.table_for_dict;
+DROP DICTIONARY dictdb.dict_exists;
+DROP DATABASE dictdb;
