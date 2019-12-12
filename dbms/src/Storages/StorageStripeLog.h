@@ -5,30 +5,27 @@
 
 #include <ext/shared_ptr_helper.h>
 
-#include <Poco/File.h>
-
+#include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
-#include <Core/Defines.h>
 
 
 namespace DB
 {
-
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-friend class StripeLogBlockInputStream;
-friend class StripeLogBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageStripeLog>;
+    friend class StripeLogBlockInputStream;
+    friend class StripeLogBlockOutputStream;
+    friend struct ext::shared_ptr_helper<StorageStripeLog>;
 
 public:
-    std::string getName() const override { return "StripeLog"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
+    String getName() const override { return "StripeLog"; }
+    String getTableName() const override { return table_name; }
+    String getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -40,27 +37,39 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(
+        const String & new_path_to_db,
+        const String & new_database_name,
+        const String & new_table_name,
+        TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    /// Data of the file.
-    struct ColumnData
-    {
-        Poco::File data_file;
-    };
-    using Files_t = std::map<String, ColumnData>;
-
-    std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
-
-    Strings getDataPaths() const override { return {full_path()}; }
+    Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
+protected:
+    StorageStripeLog(
+        DiskPtr disk_,
+        const String & database_name_,
+        const String & table_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        bool attach,
+        size_t max_compress_block_size_);
+
 private:
-    String path;
-    String table_name;
+    struct ColumnData
+    {
+        String data_file;
+    };
+    using Files = std::map<String, ColumnData>;
+
+    DiskPtr disk;
     String database_name;
+    String table_name;
+    String table_path;
 
     size_t max_compress_block_size;
 
@@ -68,16 +77,6 @@ private:
     mutable std::shared_mutex rwlock;
 
     Logger * log;
-
-protected:
-    StorageStripeLog(
-        const std::string & path_,
-        const std::string & database_name_,
-        const std::string & table_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        bool attach,
-        size_t max_compress_block_size_);
 };
 
 }
