@@ -1005,8 +1005,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Start to make the main work
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
-    /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_merge);
+    /// Can throw an exception while reserving space.
+    MergeTreeDataPart::TTLInfos ttl_infos;
+    for (auto & part_ptr : parts)
+    {
+        ttl_infos.update(part_ptr->ttl_infos);
+    }
+    DiskSpace::ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
+            ttl_infos, time(nullptr));
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1139,14 +1145,9 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         entry.new_part_name, format_version);
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
-    /// Can throw an exception.
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
-    DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
-    if (!reserved_space)
-    {
-        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(estimated_space_for_result) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+    /// Can throw an exception.
+    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->disk);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
