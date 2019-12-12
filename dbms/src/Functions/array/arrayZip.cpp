@@ -59,34 +59,19 @@ public:
         auto first_argument = block.getByPosition(arguments[0]);
         const auto & first_array_column = checkAndGetColumn<ColumnArray>(first_argument.column.get());
 
+        Columns res_tuple_columns(arguments.size());
+        res_tuple_columns[0] = first_array_column->getDataPtr();
+
         for (size_t index = 1; index < arguments.size(); ++index)
         {
             const auto & argument_type_and_column = block.getByPosition(arguments[index]);
             const auto & argument_array_column = checkAndGetColumn<ColumnArray>(argument_type_and_column.column.get());
 
-            if (argument_array_column->size() != first_array_column->size())
+            if (!first_array_column->hasEqualOffsets(*argument_array_column))
                 throw Exception("The argument 1 and argument " + toString(index + 1) + " of function have different array sizes",
                                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-            if (argument_array_column->getData().size() != first_array_column->getData().size())
-                throw Exception("The argument 1 and argument " + toString(index + 1) + " of function have different array sizes",
-                                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-        }
-
-        Columns res_tuple_columns(arguments.size());
-        res_tuple_columns[0] = first_array_column->getDataPtr();
-        for (size_t argument_index = 1; argument_index < arguments.size(); ++argument_index)
-        {
-            const auto & argument_type_and_column = block.getByPosition(arguments[argument_index]);
-            const auto & argument_array_column = checkAndGetColumn<ColumnArray>(argument_type_and_column.column.get());
-
-            for (size_t row_index = 0; row_index < first_array_column->size(); ++row_index)
-                if (first_array_column->getOffsets()[row_index] != argument_array_column->getOffsets()[row_index])
-                    throw Exception(
-                        "The argument 1 and argument " + toString(argument_index + 1) + " of function have different array sizes",
-                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
-
-            res_tuple_columns[argument_index] = argument_array_column->getDataPtr();
+            res_tuple_columns[index] = argument_array_column->getDataPtr();
         }
 
         block.getByPosition(result).column = ColumnArray::create(
