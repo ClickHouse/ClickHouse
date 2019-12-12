@@ -250,6 +250,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
+    ParserTTLExpressionList parser_ttl_list;
 
     ASTPtr engine;
     ASTPtr partition_by;
@@ -303,7 +304,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, ttl_table, expected))
+            if (parser_ttl_list.parse(pos, ttl_table, expected))
                 continue;
             else
                 return false;
