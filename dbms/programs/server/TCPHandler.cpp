@@ -531,6 +531,7 @@ void TCPHandler::processOrdinaryQuery()
             sendTotals(state.io.in->getTotals());
             sendExtremes(state.io.in->getExtremes());
             sendProfileInfo(state.io.in->getProfileInfo());
+            sendProgress();
         }
 
         sendData({});
