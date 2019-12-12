@@ -1285,28 +1285,28 @@ protected:
       * We assume that we compare values that are not too far away.
       * For example, when we increment 0xFFFFFFFF, we get 0. So, 0xFFFFFFFF is less than 0.
       */
-    class WarpingUInt32
+    class WrappingUInt32
     {
     public:
         UInt32 value;
 
-        WarpingUInt32(UInt32 _value)
+        WrappingUInt32(UInt32 _value)
             : value(_value)
         {}
 
-        bool operator<(const WarpingUInt32 & other) const
+        bool operator<(const WrappingUInt32 & other) const
         {
             return value != other.value && *this <= other;
         }
 
-        bool operator<=(const WarpingUInt32 & other) const
+        bool operator<=(const WrappingUInt32 & other) const
         {
             const UInt32 HALF = 1 << 31;
             return (value <= other.value && other.value - value < HALF)
                 || (value > other.value && value - other.value > HALF);
         }
 
-        bool operator==(const WarpingUInt32 & other) const
+        bool operator==(const WrappingUInt32 & other) const
         {
             return value == other.value;
         }
@@ -1318,8 +1318,8 @@ protected:
     class Zxid
     {
     public:
-        WarpingUInt32 epoch;
-        WarpingUInt32 counter;
+        WrappingUInt32 epoch;
+        WrappingUInt32 counter;
         Zxid(UInt64 _zxid)
             : epoch(_zxid >> 32)
             , counter(_zxid)
