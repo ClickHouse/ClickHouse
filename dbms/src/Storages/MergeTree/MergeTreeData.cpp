@@ -38,6 +38,7 @@
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
@@ -67,6 +68,12 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+}
+
+
+namespace
+{
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
 }
 
 
@@ -124,7 +131,6 @@ MergeTreeData::MergeTreeData(
     , merging_params(merging_params_)
     , partition_by_ast(partition_by_ast_)
     , sample_by_ast(sample_by_ast_)
-    , ttl_table_ast(ttl_table_ast_)
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
@@ -566,15 +572,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
-    auto create_ttl_entry = [this](ASTPtr ttl_ast) -> TTLEntry
+    auto create_ttl_entry = [this](ASTPtr ttl_ast)
     {
+        TTLEntry result;
+
         auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
-        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+        result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+        result.destination_type = PartDestinationType::DELETE;
+        result.result_column = ttl_ast->getColumnName();
 
-        String result_column = ttl_ast->getColumnName();
-        checkTTLExpression(expr, result_column);
-
-        return {expr, result_column};
+        checkTTLExpression(result.expression, result.result_column);
+        return result;
     };
 
     if (!new_column_ttls.empty())
@@ -592,23 +600,49 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         for (const auto & [name, ast] : new_column_ttls)
         {
             if (columns_ttl_forbidden.count(name))
-                throw Exception("Trying to set ttl for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
             else
             {
                 auto new_ttl_entry = create_ttl_entry(ast);
                 if (!only_check)
-                    ttl_entries_by_name.emplace(name, new_ttl_entry);
+                    column_ttl_entries_by_name.emplace(name, new_ttl_entry);
             }
         }
     }
 
     if (new_ttl_table_ast)
     {
-        auto new_ttl_table_entry = create_ttl_entry(new_ttl_table_ast);
-        if (!only_check)
+        bool seen_delete_ttl = false;
+        for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
-            ttl_table_ast = new_ttl_table_ast;
-            ttl_table_entry = new_ttl_table_entry;
+            ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
+            if (ttl_element.destination_type == PartDestinationType::DELETE)
+            {
+                if (seen_delete_ttl)
+                {
+                    throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+                }
+
+                auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
+                if (!only_check)
+                {
+                    ttl_table_ast = ttl_element.children[0];
+                    ttl_table_entry = new_ttl_table_entry;
+                }
+
+                seen_delete_ttl = true;
+            }
+            else
+            {
+                auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+                if (!only_check)
+                {
+                    new_ttl_entry.entry_ast = ttl_element_ptr;
+                    new_ttl_entry.destination_type = ttl_element.destination_type;
+                    new_ttl_entry.destination_name = ttl_element.destination_name;
+                    move_ttl_entries.emplace_back(std::move(new_ttl_entry));
+                }
+            }
         }
     }
 }
@@ -3096,18 +3130,136 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
+namespace
 {
-    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
 
-    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-
-    auto reservation = storage_policy->reserve(expected_size);
+inline DiskSpace::ReservationPtr checkAndReturnReservation(UInt64 expected_size, DiskSpace::ReservationPtr reservation)
+{
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space.",
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space",
                     ErrorCodes::NOT_ENOUGH_SPACE);
+}
+
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto reservation = storage_policy->reserve(expected_size);
+
+    return checkAndReturnReservation(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto reservation = tryReserveSpace(expected_size, space);
+
+    return checkAndReturnReservation(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    return space->reserve(expected_size);
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    DiskSpace::ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
+
+    return checkAndReturnReservation(expected_size, std::move(reservation));
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    DiskSpace::ReservationPtr reservation;
+
+    auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
+    if (ttl_entry != nullptr)
+    {
+        DiskSpace::SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
+        if (!destination_ptr)
+        {
+            if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                LOG_WARNING(log, "Would like to reserve space on volume '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but volume was not found");
+            else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                LOG_WARNING(log, "Would like to reserve space on disk '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but disk was not found");
+        }
+        else
+        {
+            reservation = destination_ptr->reserve(expected_size);
+            if (reservation)
+                return reservation;
+        }
+    }
+
+    reservation = storage_policy->reserve(expected_size);
+
+    return reservation;
+}
+
+DiskSpace::SpacePtr MergeTreeData::TTLEntry::getDestination(const DiskSpace::StoragePolicyPtr & policy) const
+{
+    if (destination_type == PartDestinationType::VOLUME)
+        return policy->getVolumeByName(destination_name);
+    else if (destination_type == PartDestinationType::DISK)
+        return policy->getDiskByName(destination_name);
+    else
+        return {};
+}
+
+bool MergeTreeData::TTLEntry::isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const
+{
+    if (destination_type == PartDestinationType::VOLUME)
+    {
+        for (const auto & disk : policy->getVolumeByName(destination_name)->disks)
+            if (disk->getName() == part.disk->getName())
+                return true;
+    }
+    else if (destination_type == PartDestinationType::DISK)
+        return policy->getDiskByName(destination_name)->getName() == part.disk->getName();
+    return false;
+}
+
+const MergeTreeData::TTLEntry * MergeTreeData::selectTTLEntryForTTLInfos(
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t time_of_move) const
+{
+    const MergeTreeData::TTLEntry * result = nullptr;
+    /// Prefer TTL rule which went into action last.
+    time_t max_max_ttl = 0;
+
+    for (const auto & ttl_entry : move_ttl_entries)
+    {
+        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
+        if (ttl_info_it != ttl_infos.moves_ttl.end()
+                && ttl_info_it->second.max <= time_of_move
+                && max_max_ttl <= ttl_info_it->second.max)
+        {
+            result = &ttl_entry;
+            max_max_ttl = ttl_info_it->second.max;
+        }
+    }
+
+    return result;
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3289,12 +3441,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
-    if (!reservation)
-    {
-        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(src_part->bytes_on_disk) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+    auto reservation = reserveSpace(src_part->bytes_on_disk, src_part->disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
