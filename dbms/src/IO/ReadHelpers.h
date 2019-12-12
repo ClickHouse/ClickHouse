@@ -12,14 +12,17 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
+#include <common/arithmeticOverflow.h>
 
 #include <Core/Types.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -28,6 +31,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+
+#include <DataTypes/DataTypeDateTime.h>
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -252,7 +257,13 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
     }
 }
 
-template <typename T, typename ReturnType = void>
+enum class ReadIntTextCheckOverflow
+{
+    DO_NOT_CHECK_OVERFLOW,
+    CHECK_OVERFLOW,
+};
+
+template <typename T, typename ReturnType = void, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -267,6 +278,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             return ReturnType(false);
     }
 
+    const size_t initial_pos = buf.count();
     while (!buf.eof())
     {
         switch (*buf.position())
@@ -274,7 +286,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '+':
                 break;
             case '-':
-                if (is_signed_v<T>)
+                if constexpr (is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -294,30 +306,48 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
+                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+                {
+                    // perform relativelly slow overflow check only when number of decimal digits so far is close to the max for given type.
+                    if (buf.count() - initial_pos >= std::numeric_limits<T>::max_digits10)
+                    {
+                        if (common::mulOverflow(res, static_cast<decltype(res)>(10), res)
+                            || common::addOverflow(res, static_cast<decltype(res)>(*buf.position() - '0'), res))
+                            return ReturnType(false);
+                        break;
+                    }
+                }
                 res *= 10;
                 res += *buf.position() - '0';
                 break;
             default:
-                x = negative ? -res : res;
-                return ReturnType(true);
+                goto end;
         }
         ++buf.position();
     }
 
+end:
     x = negative ? -res : res;
+
     return ReturnType(true);
 }
 
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    readIntTextImpl<T, void>(x, buf);
+    readIntTextImpl<T, void, check_overflow>(x, buf);
 }
 
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 bool tryReadIntText(T & x, ReadBuffer & buf)
 {
-    return readIntTextImpl<T, bool>(x, buf);
+    return readIntTextImpl<T, bool, check_overflow>(x, buf);
+}
+
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
+void readIntText(Decimal<T> & x, ReadBuffer & buf)
+{
+    readIntText<check_overflow>(x.value, buf);
 }
 
 /** More efficient variant (about 1.5 times on real dataset).
@@ -617,10 +647,52 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<time_t, ReturnType>(datetime, buf);
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     else
         return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
+}
+
+template <typename ReturnType>
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
+{
+    time_t whole;
+    if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
+    {
+        return ReturnType(false);
+    }
+
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
+
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        buf.ignore(1); // skip separator
+        const auto pos_before_fractional = buf.count();
+        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
+        {
+            return ReturnType(false);
+        }
+
+        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
+        // about convention of ommiting trailing zero on fractional part
+        // and assumes that fractional part value is less than 10^scale.
+
+        // If scale is 3, but we read '12', promote fractional part to '120'.
+        // And vice versa: if we read '1234', denote it to '123'.
+        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
+        if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
+        {
+            c.fractional *= common::exp10_i64(adjust_scale);
+        }
+        else if (adjust_scale < 0)
+        {
+            c.fractional /= common::exp10_i64(-1 * adjust_scale);
+        }
+    }
+
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
+
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
@@ -628,9 +700,19 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
+inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
+}
+
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
+}
+
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -858,11 +940,11 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message =
 
 /** Helper function for implementation.
   */
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
 {
     ReadBufferFromMemory in(pos, end - pos);
-    tryReadIntText(x, in);
+    tryReadIntText<check_overflow>(x, in);
     return pos + in.count();
 }
 

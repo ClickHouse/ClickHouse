@@ -1,8 +1,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
+
+#include <time.h>
 
 
 namespace DB
