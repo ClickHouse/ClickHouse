@@ -213,19 +213,19 @@ void MergeTreeReaderWide::readData(
     };
 
     double & avg_value_size_hint = avg_value_size_hints[name];
-    IDataType::DeserializeBinaryBulkSettings settings;
-    settings.avg_value_size_hint = avg_value_size_hint;
+    IDataType::DeserializeBinaryBulkSettings deserialize_settings;
+    deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {
-        settings.getter = get_stream_getter(true);
-        type.deserializeBinaryBulkStatePrefix(settings, deserialize_binary_bulk_state_map[name]);
+        deserialize_settings.getter = get_stream_getter(true);
+        type.deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
 
-    settings.getter = get_stream_getter(false);
-    settings.continuous_reading = continue_reading;
+    deserialize_settings.getter = get_stream_getter(false);
+    deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
-    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
+    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 

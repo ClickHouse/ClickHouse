@@ -35,6 +35,8 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
+    std::vector<std::optional<size_t>> column_positions;
+
     size_t next_mark = 0;
 
     void initMarksLoader();

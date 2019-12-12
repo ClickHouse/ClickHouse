@@ -80,6 +80,10 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
             owned_uncompressed_cache = storage.global_context.getUncompressedCache();
         owned_mark_cache = storage.global_context.getMarkCache();
 
+        std::cerr << "In Part: " << task->data_part->getFullPath() << "\n";
+        std::cerr << "task->columns: " << task->columns.toString() << "\n";
+        std::cerr << "part->columns: " << task->data_part->columns.toString() << "\n";
+
         reader = task->data_part->getReader(task->columns, rest_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);

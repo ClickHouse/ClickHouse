@@ -904,6 +904,31 @@ protected:
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
+    using NameToType = std::map<String, const IDataType *>;
+
+    struct AlterAnalysisResult
+    {
+        ExpressionActionsPtr expression = nullptr;
+        bool force_update_metadata = false;
+        NameToType new_types;
+        /// For every column that need to be converted: source column name,
+        ///  column name of calculated expression for conversion.
+        std::vector<std::pair<String, String>> conversions;
+        NamesAndTypesList removed_columns;
+        Names removed_indices;
+    };
+
+    AlterAnalysisResult analyzeAlterConversions(
+        const NamesAndTypesList & old_columns,
+        const NamesAndTypesList & new_columns,
+        const IndicesASTs & old_indices,
+        const IndicesASTs & new_indices) const;
+    
+    NameToNameMap createRenameMap(
+        const DataPartPtr & part,
+        const NamesAndTypesList & old_columns,
+        const AlterAnalysisResult & analysis_result) const;
+
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
     /// out_rename_map maps column files for the out_expression onto new table files.
@@ -911,9 +936,9 @@ protected:
     /// for transformation-free changing of Enum values list).
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
-    void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-                                 const IndicesASTs & old_indices, const IndicesASTs & new_indices,
-                                 ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
+    // void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+    //                              const IndicesASTs & old_indices, const IndicesASTs & new_indices,
+    //                              ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();

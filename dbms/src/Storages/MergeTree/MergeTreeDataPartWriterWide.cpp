@@ -227,11 +227,11 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     std::cerr << "(writeColumn) column: " << name << "\n";
     std::cerr << "(writeColumn) index_offset: " << index_offset << "\n";
 
-    auto & settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns);
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
+    serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
 
     size_t total_rows = column.size();
     size_t current_row = 0;
@@ -294,10 +294,10 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    const auto & settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
+    serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
     WrittenOffsetColumns offset_columns;
 
     bool write_final_mark = (with_final_mark && data_written);
