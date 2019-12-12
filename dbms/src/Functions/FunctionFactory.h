@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
 
 
@@ -20,7 +20,7 @@ class Context;
   * Function could use for initialization (take ownership of shared_ptr, for example)
   *  some dictionaries from Context.
   */
-class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionBuilderPtr(const Context &)>>
+class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionOverloadResolverImplPtr(const Context &)>>
 {
 public:
 
@@ -42,10 +42,14 @@ public:
     }
 
     /// Throws an exception if not found.
-    FunctionBuilderPtr get(const std::string & name, const Context & context) const;
+    FunctionOverloadResolverPtr get(const std::string & name, const Context & context) const;
 
     /// Returns nullptr if not found.
-    FunctionBuilderPtr tryGet(const std::string & name, const Context & context) const;
+    FunctionOverloadResolverPtr tryGet(const std::string & name, const Context & context) const;
+
+    /// The same methods to get developer interface implementation.
+    FunctionOverloadResolverImplPtr getImpl(const std::string & name, const Context & context) const;
+    FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, const Context & context) const;
 
 private:
     using Functions = std::unordered_map<std::string, Creator>;
@@ -54,9 +58,9 @@ private:
     Functions case_insensitive_functions;
 
     template <typename Function>
-    static FunctionBuilderPtr createDefaultFunction(const Context & context)
+    static FunctionOverloadResolverImplPtr createDefaultFunction(const Context & context)
     {
-        return std::make_shared<DefaultFunctionBuilder>(Function::create(context));
+        return std::make_unique<DefaultOverloadResolver>(Function::create(context));
     }
 
     const Functions & getCreatorMap() const override { return functions; }

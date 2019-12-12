@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
