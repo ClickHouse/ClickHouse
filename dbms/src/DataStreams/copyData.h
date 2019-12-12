@@ -16,6 +16,8 @@ class Block;
   */
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<bool> * is_cancelled = nullptr);
 
+void copyData(BlockInputStreams & froms, BlockOutputStreams & tos);
+
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<bool()> & is_cancelled);
 
 void copyData(IBlockInputStream & from, IBlockOutputStream & to, const std::function<bool()> & is_cancelled,
