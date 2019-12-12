@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -684,7 +685,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes<true, false, true, false>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -1232,9 +1233,10 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(left_type) || isDecimal(right_type))
+        else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {
-            if (!allowDecimalComparison(left_type, right_type))
+            // compare
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

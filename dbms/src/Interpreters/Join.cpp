@@ -333,7 +333,7 @@ void Join::setSampleBlock(const Block & block)
         asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
         if (!asof_type)
         {
-            std::string msg = "ASOF join not supported for type";
+            std::string msg = "ASOF join not supported for type: ";
             msg += asof_column->getFamilyName();
             throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
         }

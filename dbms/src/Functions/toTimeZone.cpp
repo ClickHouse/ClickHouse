@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <Core/Field.h>
 
@@ -7,6 +8,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -39,12 +41,17 @@ public:
                 + toString(arguments.size()) + ", should be 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!WhichDataType(arguments[0].type).isDateTime())
+        const auto which_type = WhichDataType(arguments[0].type);
+        if (!which_type.isDateTime() && !which_type.isDateTime64())
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-        return std::make_shared<DataTypeDateTime>(time_zone_name);
+        if (which_type.isDateTime())
+            return std::make_shared<DataTypeDateTime>(time_zone_name);
+
+        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
+        return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override

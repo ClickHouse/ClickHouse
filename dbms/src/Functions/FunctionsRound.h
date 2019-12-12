@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 #include "IFunctionImpl.h"

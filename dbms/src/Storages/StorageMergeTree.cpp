@@ -343,16 +343,22 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
 
         /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
-            reserved_space = future_part_.parts[0]->disk->reserve(total_size);
+            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
         else
-            reserved_space = storage.reserveSpace(total_size);
+        {
+            MergeTreeDataPart::TTLInfos ttl_infos;
+            for (auto & part_ptr : future_part_.parts)
+                ttl_infos.update(part_ptr->ttl_infos);
+
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
+        }
         if (!reserved_space)
         {
             if (is_mutation)
@@ -360,6 +366,8 @@ public:
             else
                 throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
         }
+
+        future_part_.updatePath(storage, reserved_space);
 
         for (const auto & part : future_part.parts)
         {
