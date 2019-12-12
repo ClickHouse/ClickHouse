@@ -10,6 +10,8 @@ struct ASTTableExpression;
 class ASTSelectQuery;
 class Context;
 
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
+
 std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery & select_query);
 const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, size_t table_number);
 ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);

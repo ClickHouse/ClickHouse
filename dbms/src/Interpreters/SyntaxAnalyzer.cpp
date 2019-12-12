@@ -56,19 +56,6 @@ namespace ErrorCodes
     extern const int ALIAS_REQUIRED;
 }
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns)
-{
-    NameSet names;
-    for (auto it = columns.begin(); it != columns.end();)
-    {
-        if (names.emplace(it->name).second)
-            ++it;
-        else
-            columns.erase(it++);
-    }
-    return names;
-}
-
 namespace
 {
 

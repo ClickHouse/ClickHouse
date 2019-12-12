@@ -7,6 +7,19 @@
 namespace DB
 {
 
+NameSet removeDuplicateColumns(NamesAndTypesList & columns)
+{
+    NameSet names;
+    for (auto it = columns.begin(); it != columns.end();)
+    {
+        if (names.emplace(it->name).second)
+            ++it;
+        else
+            columns.erase(it++);
+    }
+    return names;
+}
+
 std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery & select_query)
 {
     if (!select_query.tables())

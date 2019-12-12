@@ -14,8 +14,6 @@
 namespace DB
 {
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
-
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
     alias = identifier.tryGetAlias();
