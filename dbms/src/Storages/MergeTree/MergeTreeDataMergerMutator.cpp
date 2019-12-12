@@ -120,6 +120,11 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         name = part_info.getPartName();
 }
 
+void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const DiskSpace::ReservationPtr & reservation)
+{
+    path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
+}
+
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size_)
     : data(data_), background_pool_size(background_pool_size_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
 {
