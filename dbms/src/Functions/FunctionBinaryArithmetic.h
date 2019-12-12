@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>

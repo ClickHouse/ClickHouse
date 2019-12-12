@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -22,12 +23,12 @@ namespace ErrorCodes
 ///
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
-    if (isDecimal(left_type))
+    if (isColumnedAsDecimal(left_type))
     {
-        if (isDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
+        if (isColumnedAsDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
             return true;
     }
-    else if (isNotDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+    else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
         return true;
     return false;
 }
@@ -82,7 +83,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = maxDecimalPrecision<Decimal128>();
+        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
