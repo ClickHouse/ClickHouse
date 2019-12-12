@@ -138,15 +138,15 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    std::string db_dir_path_abs = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    std::string user_files_path_abs = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
     Poco::Path poco_path = Poco::Path(table_path_);
     if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_path, poco_path);
+        poco_path = Poco::Path(user_files_path_abs, poco_path);
 
     const std::string path = poco_path.absolute().toString();
     paths = listFilesWithRegexpMatching("/", path);
     for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context_global, user_files_path, cur_path);
+        checkCreationIsAllowed(context_global, user_files_path_abs, cur_path);
 }
 
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)

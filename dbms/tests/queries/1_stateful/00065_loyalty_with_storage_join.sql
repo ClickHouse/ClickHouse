@@ -24,7 +24,7 @@ GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 DETACH TABLE join;
-ATTACH TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID);
+ATTACH TABLE join;-- (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID);
 
 SELECT
     loyalty,
