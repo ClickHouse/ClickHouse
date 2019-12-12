@@ -18,7 +18,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Poco/DirectoryIterator.h>
@@ -335,7 +335,7 @@ void StorageMergeTree::alter(
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
-    DiskSpace::ReservationPtr reserved_space;
+    ReservationPtr reserved_space;
 
     bool is_successful = false;
     String exception_message;
@@ -622,7 +622,7 @@ bool StorageMergeTree::merge(
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
+            merging_tagger->reserved_space, deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 
@@ -743,7 +743,7 @@ bool StorageMergeTree::tryMutatePart()
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-            tagger->reserved_space.get(), table_lock_holder);
+            tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;

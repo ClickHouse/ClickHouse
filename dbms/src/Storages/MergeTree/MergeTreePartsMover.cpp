@@ -94,7 +94,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     if (data_parts.empty())
         return false;
 
-    std::unordered_map<DiskSpace::DiskPtr, LargestPartsWithRequiredSize> need_to_move;
+    std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
     const auto & policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
@@ -125,7 +125,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
         const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->disk);
-        DiskSpace::ReservationPtr reservation;
+        ReservationPtr reservation;
         if (ttl_entry_ptr)
         {
             auto destination = ttl_entry_ptr->getDestination(policy);

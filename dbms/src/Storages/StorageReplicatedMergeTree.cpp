@@ -1,14 +1,14 @@
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
-#include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -1011,7 +1011,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     {
         ttl_infos.update(part_ptr->ttl_infos);
     }
-    DiskSpace::ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
+    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
             ttl_infos, time(nullptr));
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
@@ -1041,7 +1041,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
+            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -1147,7 +1147,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->disk);
+    ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->disk);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1174,7 +1174,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get(), table_lock);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

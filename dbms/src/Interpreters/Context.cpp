@@ -150,9 +150,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser
-    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
+    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser
-    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -1826,7 +1826,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+const DiskPtr & Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
@@ -1836,7 +1836,7 @@ const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
 }
 
 
-DiskSpace::DiskSelector & Context::getDiskSelector() const
+DiskSelector & Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1845,13 +1845,13 @@ DiskSpace::DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
     }
     return *shared->merge_tree_disk_selector;
 }
 
 
-const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
@@ -1861,7 +1861,7 @@ const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & nam
 }
 
 
-DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelector & Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1870,7 +1870,7 @@ DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
     return *shared->merge_tree_storage_policy_selector;
 }

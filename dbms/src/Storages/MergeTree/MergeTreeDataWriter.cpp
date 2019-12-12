@@ -228,7 +228,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     for (const auto & ttl_entry : data.move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    DiskSpace::ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
 
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name, new_part_info);
