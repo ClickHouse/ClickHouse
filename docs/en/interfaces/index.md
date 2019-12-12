@@ -3,6 +3,7 @@
 ClickHouse provides two network interfaces (both can be optionally wrapped in TLS for additional security):
 
 * [HTTP](http.md), which is documented and easy to use directly.
+* [Predefined HTTP](predefined_http.md), which is more easy integration with third-party tools.
 * [Native TCP](tcp.md), which has less overhead.
 
 In most cases it is recommended to use appropriate tool or library instead of interacting with those directly. Officially supported by Yandex are the following:
