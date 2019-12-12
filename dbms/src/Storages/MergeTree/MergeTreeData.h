@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SimpleIncrement.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
@@ -9,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -565,7 +567,7 @@ public:
     /// All MergeTreeData children have settings.
     void checkSettingCanBeChanged(const String & setting_name) const override;
 
-    /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
+    /// Remove columns, that have been marked as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.
@@ -587,7 +589,7 @@ public:
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
-    bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
+    bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
@@ -673,9 +675,20 @@ public:
     using PathsWithDisks = std::vector<PathWithDisk>;
     PathsWithDisks getDataPathsWithDisks() const;
 
-    /// Reserves space at least 1MB
-    ReservationPtr reserveSpace(UInt64 expected_size);
+    /// Reserves space at least 1MB.
+    ReservationPtr reserveSpace(UInt64 expected_size) const;
 
+    /// Reserves space at least 1MB on specific disk or volume.
+    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
+    DiskSpace::ReservationPtr tryReserveSpace(UInt64 expected_size, DiskSpace::SpacePtr space) const;
+
+    /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
+    DiskSpace::ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
+                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                time_t time_of_move) const;
+    DiskSpace::ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
+                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                time_t time_of_move) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
@@ -719,12 +732,27 @@ public:
     {
         ExpressionActionsPtr expression;
         String result_column;
+
+        /// Name and type of a destination are only valid in table-level context.
+        PartDestinationType destination_type;
+        String destination_name;
+
+        ASTPtr entry_ast;
+
+        /// Returns destination disk or volume for this rule.
+        DiskSpace::SpacePtr getDestination(const DiskSpace::StoragePolicyPtr & policy) const;
+
+        /// Checks if given part already belongs destination disk or volume for this rule.
+        bool isPartInDestination(const DiskSpace::StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
+    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
-    TTLEntriesByName ttl_entries_by_name;
+    TTLEntriesByName column_ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
+    std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;
     Names columns_required_for_sampling;

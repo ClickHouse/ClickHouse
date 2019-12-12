@@ -386,12 +386,21 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+
 /// Parser for list of key-value pairs.
 class ParserKeyValuePairsList : public IParserBase
 {
 protected:
     const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserTTLExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const { return "ttl expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }
