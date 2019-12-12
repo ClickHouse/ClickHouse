@@ -124,7 +124,6 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
-///TODO remove syntax sugar and legacy methods from Context (e.g.  getInputFormat(...) which just returns object from factory)
 class Context
 {
 private:
@@ -248,8 +247,6 @@ public:
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
-
-    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);

@@ -722,7 +722,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
     params.applyForColumnsOnly(new_columns);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});   //FIXME
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 
