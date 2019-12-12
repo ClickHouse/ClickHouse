@@ -1312,6 +1312,9 @@ protected:
         }
     };
 
+    /** Conforming Zxid definition.
+      * cf. https://github.com/apache/zookeeper/blob/631d1b284f0edb1c4f6b0fb221bf2428aec71aaa/zookeeper-docs/src/main/resources/markdown/zookeeperInternals.md#guarantees-properties-and-definitions
+      */
     class Zxid
     {
     public:
