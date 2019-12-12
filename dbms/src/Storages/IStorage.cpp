@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-IStorage::IStorage(StorageID id_, ColumnsDescription virtuals_) : id(std::move(id_)), virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
 {
 }
 
@@ -469,7 +469,7 @@ StorageID IStorage::getStorageID(std::unique_lock<std::mutex> * id_lock) const
         lock = std::unique_lock(id_mutex);
     else if (!*id_lock)
         *id_lock = std::unique_lock(id_mutex);
-    return id;
+    return storage_id;
 }
 
 void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name,
@@ -480,8 +480,8 @@ void IStorage::renameInMemory(const String & new_database_name, const String & n
         lock = std::unique_lock(id_mutex);
     else if (!*id_lock)
         *id_lock = std::unique_lock(id_mutex);
-    id.database_name = new_database_name;
-    id.table_name = new_table_name;
+    storage_id.database_name = new_database_name;
+    storage_id.table_name = new_table_name;
 }
 
 }
