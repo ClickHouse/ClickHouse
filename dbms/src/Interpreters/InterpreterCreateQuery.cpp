@@ -708,6 +708,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
     String dictionary_name = create.table;
 
     String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
