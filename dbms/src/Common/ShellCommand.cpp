@@ -119,6 +119,13 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
+        // Reset the signal mask: it may be non-empty and will be inherited
+        // by the child process, which might not expect this.
+        sigset_t mask;
+        ::sigemptyset(&mask);
+        ::sigprocmask(0, nullptr, &mask);
+        ::sigprocmask(SIG_UNBLOCK, &mask, nullptr);
+
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
