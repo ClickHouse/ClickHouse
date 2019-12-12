@@ -895,9 +895,9 @@ SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
 Result:
 
 ```text
-┌─arrayZipWithIndex(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
-│ [('a','d'),('b','e'),('c','f')]                     │
-└─────────────────────────────────────────────────────┘
+┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
+│ [('a','d'),('b','e'),('c','f')]            │
+└────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
