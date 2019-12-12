@@ -575,7 +575,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     String current_database = context.getCurrentDatabase();
-    if (create.database.empty())
+    if (!create.temporary && create.database.empty())
         create.database = current_database;
     if (!create.to_table_id.empty() && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;

@@ -109,7 +109,7 @@ void loadMetadata(Context & context, const String & default_database_name)
     }
 
     if (!default_database_name.empty() && !databases.count(default_database_name))
-        databases.emplace(default_database_name, path + "/metadata/" + escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
 
     for (const auto & [name, db_path] : databases)
         loadDatabase(context, name, db_path, has_force_restore_data_flag);

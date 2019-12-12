@@ -345,18 +345,18 @@ BlockInputStreams StorageDistributed::read(
         if (has_sharding_key)
         {
             auto smaller_cluster = skipUnusedShards(cluster, query_info);
-            auto storage_id = getStorageID();
+            auto table_id = getStorageID();
 
             if (smaller_cluster)
             {
                 cluster = smaller_cluster;
-                LOG_DEBUG(log, "Reading from " << storage_id.getNameForLogs() << ": "
+                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
                                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
             {
-                LOG_DEBUG(log, "Reading from " << storage_id.getNameForLogs() << ": "
+                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
                                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
             }
         }
