@@ -19,7 +19,12 @@
 # KIND, either express or implied.
 #
 ###########################################################################
-# This file is mostly copy-pasted from original curl CMakeLists.txt
+
+# NOTE:
+# This file is shrinked and reworked version of original curl CMakeLists.txt
+# Original file link https://github.com/curl/curl/blob/3b8bbbbd1609c638a3d3d0acb148a33dedb67be3/CMakeLists.txt
+# If you need to update curl building you can find patch file in this directory
+# and apply it to fresh original CMakeLists.txt file.
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 
 SET(CURL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
