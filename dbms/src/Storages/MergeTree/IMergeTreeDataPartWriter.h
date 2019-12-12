@@ -124,7 +124,6 @@ protected:
 
     WriterSettings settings;
 
-
     bool compute_granularity;
     bool with_final_mark;
     bool need_finish_last_granule;

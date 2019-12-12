@@ -44,6 +44,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
     }
+
+    column_positions.reserve(columns.size());
+    for (const auto & column : columns)
+        column_positions.push_back(data_part->getColumnPosition(column.name));
 }
 
 size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
@@ -63,30 +67,34 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         from_mark = next_mark;
 
     size_t read_rows = 0;
+    size_t num_columns = columns.size();
+
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
 
-        for (const auto & it : columns)
+        auto it = columns.begin();
+        for (size_t i = 0; i < num_columns; ++i, ++it)
         {
-            bool append = res.has(it.name);
+            if (!column_positions[i])
+                continue;
+
+            bool append = res.has(it->name);
             if (!append)
-                res.insert(ColumnWithTypeAndName(it.type->createColumn(), it.type, it.name));
+                res.insert(ColumnWithTypeAndName(it->type->createColumn(), it->type, it->name));
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
-            MutableColumnPtr column = res.getByName(it.name).column->assumeMutable();
+            MutableColumnPtr column = res.getByName(it->name).column->assumeMutable();
 
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto column_position = *data_part->getColumnPosition(it.name);
-
-                readData(it.name, *it.type, *column, from_mark, column_position, rows_to_read);
-
+                readData(it->name, *it->type, *column, from_mark, *column_positions[i], rows_to_read);
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
+
                 if (read_rows_in_column < rows_to_read)
                     throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) + 
-                        ". Rows expected: "+ toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+                        ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -97,14 +105,14 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + it.name + ")");
+                e.addMessage("(while reading column " + it->name + ")");
                 throw;
             }
 
             if (column->size())
-                res.getByName(it.name).column = std::move(column);
+                res.getByName(it->name).column = std::move(column);
             else
-                res.erase(it.name);
+                res.erase(it->name);
         }
 
         ++from_mark;
@@ -172,7 +180,6 @@ void MergeTreeReaderCompact::initMarksLoader()
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-
         auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_num);
 
         // std::cerr << "(MergeTreeReaderCompact::loadMarks) marks_count: " << marks_count << "\n";
@@ -236,4 +243,3 @@ void MergeTreeReaderCompact::seekToStart()
 }
 
 }
-

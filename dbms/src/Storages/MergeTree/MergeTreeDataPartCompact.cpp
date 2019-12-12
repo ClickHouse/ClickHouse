@@ -186,6 +186,17 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     index_granularity.setInitialized();    
 }
 
+bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
+{
+    if (!getColumnPosition(column_name))
+        return false;
+    /// FIXME replace everywhere hardcoded "data"
+    auto bin_checksum = checksums.files.find("data.bin");
+    auto mrk_checksum = checksums.files.find("data" + index_granularity_info.marks_file_extension);
+
+    return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
+}
+
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
 {
     UNUSED(require_part_metadata);
@@ -297,23 +308,5 @@ MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
 {
     removeIfNeeded();
 }
-
-// bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType & type) const
-// {
-//     bool res = true;
-
-//     type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-//     {
-//         String file_name = IDataType::getFileNameForStream(column_name, substream_path);
-
-//         auto bin_checksum = checksums.files.find(file_name + ".bin");
-//         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
-
-//         if (bin_checksum == checksums.files.end() || mrk_checksum == checksums.files.end())
-//             res = false;
-//     }, {});
-
-//     return res;
-// }
 
 }

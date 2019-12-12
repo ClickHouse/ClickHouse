@@ -1405,49 +1405,25 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         checkSettingCanBeChanged(setting.name);
 
     /// Check that type conversions are possible.
-    ExpressionActionsPtr unused_expression;
-    NameToNameMap unused_map;
-    bool unused_bool;
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+    analyzeAlterConversions(getColumns().getAllPhysical(), new_columns.getAllPhysical(), getIndices().indices, new_indices.indices);
 }
 
-
 /// FIXME implement alter for compact parts
-void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
-    NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
+NameToNameMap MergeTreeData::createRenameMap(
+    const DataPartPtr & part,
+    const NamesAndTypesList & old_columns,
+    const AlterAnalysisResult & analysis_result) const
 {
-    const auto settings = getSettings();
-    out_expression = nullptr;
-    out_rename_map = {};
-    out_force_update_metadata = false;
-    String part_mrk_file_extension;
-    if (part)
-        part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
-    else
-        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE); /// FIXME which extension should we use??
+    if (!part)
+        return {};
 
-    using NameToType = std::map<String, const IDataType *>;
-    NameToType new_types;
-    for (const NameAndTypePair & column : new_columns)
-        new_types.emplace(column.name, column.type.get());
+    const auto & part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
+    NameToNameMap rename_map;
 
-    /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
-    std::vector<std::pair<String, String>> conversions;
-
-    /// Remove old indices
-    std::set<String> new_indices_set;
-    for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
-    for (const auto & index_decl : old_indices)
+    for (const auto & index_name : analysis_result.removed_indices)
     {
-        const auto & index = index_decl->as<ASTIndexDeclaration &>();
-        if (!new_indices_set.count(index.name))
-        {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = "";
-        }
+        rename_map["skp_idx_" + index_name + ".idx"] = "";
+        rename_map["skp_idx_" + index_name + part_mrk_file_extension] = "";
     }
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
@@ -1460,117 +1436,53 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         }, {});
     }
 
-    for (const NameAndTypePair & column : old_columns)
+    for (const auto & column : analysis_result.removed_columns)
     {
-        if (!new_types.count(column.name))
+        if (part->hasColumnFiles(column.name, *column.type))
         {
-            /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name, *column.type))
+            column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {
-                column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-                {
-                    String file_name = IDataType::getFileNameForStream(column.name, substream_path);
+                String file_name = IDataType::getFileNameForStream(column.name, substream_path);
 
-                    /// Delete files if they are no longer shared with another column.
-                    if (--stream_counts[file_name] == 0)
-                    {
-                        out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + part_mrk_file_extension] = "";
-                    }
-                }, {});
-            }
-        }
-        else
-        {
-            /// The column was converted. Collect conversions.
-            const auto * new_type = new_types[column.name];
-            const String new_type_name = new_type->getName();
-            const auto * old_type = column.type.get();
-
-            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name, *column.type)))
-            {
-                if (isMetadataOnlyConversion(old_type, new_type))
+                /// Delete files if they are no longer shared with another column.
+                if (--stream_counts[file_name] == 0)
                 {
-                    out_force_update_metadata = true;
-                    continue;
+                    rename_map[file_name + ".bin"] = "";
+                    rename_map[file_name + part_mrk_file_extension] = "";
                 }
-
-                /// Need to modify column type.
-                if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), global_context);
-
-                out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
-
-                Names out_names;
-
-                /// This is temporary name for expression. TODO Invent the name more safely.
-                const String new_type_name_column = '#' + new_type_name + "_column";
-                out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
-
-                const auto & function = FunctionFactory::instance().get("CAST", global_context);
-                out_expression->add(ExpressionAction::applyFunction(
-                    function, Names{column.name, new_type_name_column}), out_names);
-
-                out_expression->add(ExpressionAction::removeColumn(new_type_name_column));
-                out_expression->add(ExpressionAction::removeColumn(column.name));
-
-                conversions.emplace_back(column.name, out_names.at(0));
-
-            }
+            }, {});
         }
     }
 
-    std::cerr << "(alterDataPart) conversions.size(): " << conversions.size() << "\n";
- 
-    if (!conversions.empty())
+    for (const auto & elem : analysis_result.conversions)
     {
-        /// Give proper names for temporary columns with conversion results.
+        /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
+        const auto & source_name = elem.first;
+        String temporary_column_name = source_name + " converting";
 
-        NamesWithAliases projection;
-        projection.reserve(conversions.size());
-
-        if (part && part->getType() == MergeTreeDataPartType::COMPACT)
-        {
-            out_rename_map["data_converting.bin"] = "data.bin";
-            out_rename_map["data_converting.mrk3"] = "data.mrk3";
-        }
-
-        for (const auto & [source_name, expression_name] : conversions)
-        {
-            /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
-            String temporary_column_name = source_name + " converting";
-
-            projection.emplace_back(expression_name, temporary_column_name);
-
-            /// After conversion, we need to rename temporary files into original.
-            if (!part || part->getType() == MergeTreeDataPartType::WIDE)
+        /// After conversion, we need to rename temporary files into original.
+        analysis_result.new_types.at(source_name)->enumerateStreams(
+            [&](const IDataType::SubstreamPath & substream_path)
             {
-                new_types[source_name]->enumerateStreams(
-                [&, source_name=source_name](const IDataType::SubstreamPath & substream_path)
-                {
-                    /// Skip array sizes, because they cannot be modified in ALTER.
-                    if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-                        return;
+                /// Skip array sizes, because they cannot be modified in ALTER.
+                if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                    return;
 
-                    String original_file_name = IDataType::getFileNameForStream(source_name, substream_path);
-                    String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
+                String original_file_name = IDataType::getFileNameForStream(source_name, substream_path);
+                String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
-                    out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
-                }, {});
-            }
-        }
-
-        out_expression->add(ExpressionAction::project(projection));
+                rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
+                rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
+            }, {});
     }
 
-    if (part && !out_rename_map.empty())
+
+    if (part && !rename_map.empty())
     {
         WriteBufferFromOwnString out;
         out << "Will ";
         bool first = true;
-        for (const auto & [from, to] : out_rename_map)
+        for (const auto & [from, to] : rename_map)
         {
             if (!first)
                 out << ", ";
@@ -1583,6 +1495,95 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         out << " in part " << part->name;
         LOG_DEBUG(log, out.str());
     }
+
+    return rename_map;
+}
+
+
+MergeTreeData::AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
+    const NamesAndTypesList & old_columns,
+    const NamesAndTypesList & new_columns,
+    const IndicesASTs & old_indices,
+    const IndicesASTs & new_indices) const
+{
+    AlterAnalysisResult res;
+    const auto settings = getSettings();
+
+    std::set<String> new_indices_set;
+    for (const auto & index_decl : new_indices)
+        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
+    for (const auto & index_decl : old_indices)
+    {
+        const auto & index = index_decl->as<ASTIndexDeclaration &>();
+        if (!new_indices_set.count(index.name))
+            res.removed_indices.push_back(index.name);
+    }
+
+    for (const NameAndTypePair & column : new_columns)
+        res.new_types.emplace(column.name, column.type.get());
+
+    for (const NameAndTypePair & column : old_columns)
+    {
+        if (!res.new_types.count(column.name))
+        {
+            res.removed_columns.push_back(column);
+        }
+        else
+        {
+            /// The column was converted. Collect conversions.
+            const auto * new_type = res.new_types[column.name];
+            const String new_type_name = new_type->getName();
+            const auto * old_type = column.type.get();
+
+            if (!new_type->equals(*old_type))
+            {
+                if (isMetadataOnlyConversion(old_type, new_type))
+                {
+                    res.force_update_metadata = true;
+                    continue;
+                }
+
+                /// Need to modify column type.
+                if (!res.expression)
+                    res.expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), global_context);
+
+                res.expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
+
+                Names out_names;
+
+                /// This is temporary name for expression. TODO Invent the name more safely.
+                const String new_type_name_column = '#' + new_type_name + "_column";
+                res.expression->add(ExpressionAction::addColumn(
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+
+                const auto & function = FunctionFactory::instance().get("CAST", global_context);
+                res.expression->add(ExpressionAction::applyFunction(
+                    function, Names{column.name, new_type_name_column}), out_names);
+
+                res.expression->add(ExpressionAction::removeColumn(new_type_name_column));
+                res.expression->add(ExpressionAction::removeColumn(column.name));
+
+                res.conversions.emplace_back(column.name, out_names.at(0));
+            }
+        }
+    }
+
+    if (!res.conversions.empty())
+    {
+        /// Give proper names for temporary columns with conversion results.
+        NamesWithAliases projection;
+        projection.reserve(res.conversions.size());
+
+        for (const auto & source_and_expression : res.conversions)
+        {
+            String temporary_column_name = source_and_expression.first + " converting";
+            projection.emplace_back(source_and_expression.second, temporary_column_name);
+        }
+
+        res.expression->add(ExpressionAction::project(projection));
+    }
+
+    return res;
 }
 
 
@@ -1612,13 +1613,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name,
     const MergeTreePartInfo & part_info,
     const DiskSpace::DiskPtr & disk,
-    const NamesAndTypesList & columns,
+    const NamesAndTypesList & columns_list,
     size_t bytes_uncompressed,
     size_t rows_count,
     const String & relative_path) const
 {
     auto part = createPart(name, choosePartType(bytes_uncompressed, rows_count), part_info, disk, relative_path);
-    part->setColumns(columns);
+    part->setColumns(columns_list);
     /// Don't save rows_count count here as it can change later 
     return part;
 }
@@ -1667,12 +1668,10 @@ void MergeTreeData::alterDataPart(
     AlterDataPartTransactionPtr & transaction)
 {
     const auto settings = getSettings();
-    ExpressionActionsPtr expression;
     const auto & part = transaction->getDataPart();
-    bool force_update_metadata;
-    createConvertExpression(part, part->columns, new_columns,
-            getIndices().indices, new_indices,
-            expression, transaction->rename_map, force_update_metadata);
+
+    auto res = analyzeAlterConversions(part->columns, new_columns, getIndices().indices, new_indices);
+    transaction->rename_map = createRenameMap(part, part->columns, res);
 
     size_t num_files_to_modify = transaction->rename_map.size();
     size_t num_files_to_remove = 0;
@@ -1726,29 +1725,24 @@ void MergeTreeData::alterDataPart(
     }
 
     DataPart::Checksums add_checksums;
-
-    std::cerr << "(alterDataPart) map size: " << transaction->rename_map.size() << "\n";
-    for (const auto & elem : transaction->rename_map)
-        std::cerr << "(" << elem.first << ", " << elem.second << ") ";
-    std::cerr << "\n";
  
-    if (transaction->rename_map.empty() && !force_update_metadata)
+    if (transaction->rename_map.empty() && !res.force_update_metadata)
     {
         transaction->clear();
         return;
     }
 
     /// Apply the expression and write the result to temporary files.
-    if (expression)
+    if (res.expression)
     {
-        std::cerr << "(alterDataPart) expression: " << expression->dumpActions() << "\n";
+        std::cerr << "(alterDataPart) expression: " << res.expression->dumpActions() << "\n";
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-                *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+                *this, part, res.expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
             static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
-        ExpressionBlockInputStream in(part_in, expression);
+        ExpressionBlockInputStream in(part_in, res.expression);
 
         /** Don't write offsets for arrays, because ALTER never change them
          *  (MODIFY COLUMN could only change types of elements but never modify array sizes).

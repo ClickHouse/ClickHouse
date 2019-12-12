@@ -77,6 +77,9 @@ public:
 
     void checkConsistency(bool /* require_part_metadata */) const override {}
 
+    bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
+
+
     ~MergeTreeDataPartCompact() override;
 
 private:
