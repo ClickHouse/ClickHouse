@@ -7,10 +7,15 @@ node = cluster.add_instance('node')
 path_to_userfiles_from_defaut_config = "/var/lib/clickhouse/user_files/"   # should be the same as in config file
 
 @pytest.fixture(scope="module")
-def start_cluster():
+def started_cluster():
     try:
         cluster.start()
+
         yield cluster
+
+    except Exception as ex:
+        print(ex)
+        raise ex
     finally:
         cluster.shutdown()
 
@@ -119,3 +124,9 @@ def test_table_function(start_cluster):
     node.exec_in_container(['bash', '-c', 'touch {}some/path/to/data.CSV'.format(path_to_userfiles_from_defaut_config)])
     node.query("insert into table function file('some/path/to/data.CSV', CSV, 'n UInt8, s String') select number, concat('str_', toString(number)) from numbers(100000)")
     assert node.query("select count() from file('some/path/to/data.CSV', CSV, 'n UInt8, s String')").rstrip() == '100000'
+    try:
+        node.query("insert into table function file('nonexist.csv', 'CSV', 'val1 UInt32') values (1)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        print ex
+        assert "doesn't exist" in str(ex)

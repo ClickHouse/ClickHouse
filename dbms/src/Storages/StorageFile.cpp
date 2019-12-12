@@ -114,7 +114,7 @@ void checkCreationIsAllowed(Context & context_global, const std::string & db_dir
 
     Poco::File table_path_poco_file = Poco::File(table_path);
     if (!table_path_poco_file.exists())
-        throw Exception("File " + table_path + " is not exist", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("File " + table_path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
     else if (table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
