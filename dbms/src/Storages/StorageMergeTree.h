@@ -58,7 +58,10 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+
+    /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
+
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop(TableStructureWriteLockHolder &) override;

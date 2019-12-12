@@ -446,26 +446,49 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     merging_mutating_task_handle->wake();
 }
 
+namespace
+{
+
+struct PartVersionWithName
+{
+    Int64 version;
+    String name;
+};
+
+bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
+{
+    return f.version < s.version;
+}
+
+}
+
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<Int64> part_data_versions;
+    std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVector();
-    part_data_versions.reserve(data_parts.size());
+    part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_data_versions.push_back(part->info.getDataVersion());
-    std::sort(part_data_versions.begin(), part_data_versions.end());
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
+
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-
+        const PartVersionWithName needle{mutation_version, ""};
         auto versions_it = std::lower_bound(
-            part_data_versions.begin(), part_data_versions.end(), mutation_version);
-        Int64 parts_to_do = versions_it - part_data_versions.begin();
+            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+
+        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        Names parts_to_do_names;
+        parts_to_do_names.reserve(parts_to_do);
+        for (size_t i = 0; i < parts_to_do; ++i)
+            parts_to_do_names.push_back(part_versions_with_names[i].name);
+
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         for (const MutationCommand & command : entry.commands)
@@ -478,8 +501,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 ss.str(),
                 entry.create_time,
                 block_numbers_map,
-                parts_to_do,
-                (parts_to_do == 0),
+                parts_to_do_names,
+                parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
