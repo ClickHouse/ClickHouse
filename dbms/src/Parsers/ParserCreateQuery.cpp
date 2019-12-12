@@ -826,6 +826,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_on("ON");
     ParserIdentifier name_p;
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
@@ -840,6 +841,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr name;
     ASTPtr attributes;
     ASTPtr dictionary;
+    String cluster_str;
 
     bool attach = false;
     if (!s_create.ignore(pos, expected))
@@ -863,6 +865,12 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     {
         database = name;
         if (!name_p.parse(pos, name, expected))
+            return false;
+    }
+
+    if (s_on.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
 
@@ -894,6 +902,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
+    query->cluster = cluster_str;
 
     return true;
 }
