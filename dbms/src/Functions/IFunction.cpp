@@ -126,7 +126,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+            return elem.type->createColumnConst(input_rows_count, Null());
 
         if (isColumnConst(*elem.column))
             continue;
