@@ -12,6 +12,7 @@
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <unordered_set>
 
 
 namespace DB
@@ -22,21 +23,68 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
 namespace
 {
-
-/// Lock mutex only in async mode
-/// In other case does nothing
-struct LoadingGuardForAsyncLoad
-{
-    std::unique_lock<std::mutex> lock;
-    LoadingGuardForAsyncLoad(bool async, std::mutex & mutex)
+    template <typename ReturnType>
+    ReturnType convertTo(ExternalLoader::LoadResult result)
     {
-        if (async)
-            lock = std::unique_lock(mutex);
+        if constexpr (std::is_same_v<ReturnType, ExternalLoader::LoadResult>)
+            return result;
+        else
+        {
+            static_assert(std::is_same_v<ReturnType, ExternalLoader::LoadablePtr>);
+            return std::move(result.object);
+        }
     }
-};
 
+    template <typename ReturnType>
+    ReturnType convertTo(ExternalLoader::LoadResults results)
+    {
+        if constexpr (std::is_same_v<ReturnType, ExternalLoader::LoadResults>)
+            return results;
+        else
+        {
+            static_assert(std::is_same_v<ReturnType, ExternalLoader::Loadables>);
+            ExternalLoader::Loadables objects;
+            objects.reserve(results.size());
+            for (const auto & result : results)
+            {
+                if (auto object = std::move(result.object))
+                    objects.push_back(std::move(object));
+            }
+            return objects;
+        }
+    }
+
+    template <typename ReturnType>
+    ReturnType notExists(const String & name)
+    {
+        if constexpr (std::is_same_v<ReturnType, ExternalLoader::LoadResult>)
+        {
+            ExternalLoader::LoadResult res;
+            res.name = name;
+            return res;
+        }
+        else
+        {
+            static_assert(std::is_same_v<ReturnType, ExternalLoader::LoadablePtr>);
+            return nullptr;
+        }
+    }
+
+
+    /// Lock mutex only in async mode
+    /// In other case does nothing
+    struct LoadingGuardForAsyncLoad
+    {
+        std::unique_lock<std::mutex> lock;
+        LoadingGuardForAsyncLoad(bool async, std::mutex & mutex)
+        {
+            if (async)
+                lock = std::unique_lock(mutex);
+        }
+    };
 }
 
 struct ExternalLoader::ObjectConfig
@@ -379,7 +427,7 @@ public:
                     /// Configuration has been changed.
                     info.config_changed = true;
 
-                    if (info.wasLoading())
+                    if (info.triedToLoad())
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
@@ -395,7 +443,7 @@ public:
         {
             if (infos.find(name) == infos.end())
             {
-                Info & info = infos.emplace(name, Info{config}).first->second;
+                Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
                     startLoading(name, info);
             }
@@ -424,7 +472,7 @@ public:
         {
             /// Start loading all the objects which were not loaded yet.
             for (auto & [name, info] : infos)
-                if (!info.wasLoading())
+                if (!info.triedToLoad())
                     startLoading(name, info);
         }
     }
@@ -448,34 +496,24 @@ public:
     }
 
     /// Returns the load result of the object.
-    LoadResult getCurrentLoadResult(const String & name) const
+    template <typename ReturnType>
+    ReturnType getCurrentLoadResult(const String & name) const
     {
         std::lock_guard lock{mutex};
         const Info * info = getInfo(name);
         if (!info)
-            return {Status::NOT_EXIST};
-        return info->loadResult();
+            return notExists<ReturnType>(name);
+        return info->getLoadResult<ReturnType>();
     }
 
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
-    LoadResults getCurrentLoadResults(const FilterByNameFunction & filter_by_name) const
+    template <typename ReturnType>
+    ReturnType getCurrentLoadResults(const FilterByNameFunction & filter) const
     {
         std::lock_guard lock{mutex};
-        return collectLoadResults(filter_by_name);
+        return collectLoadResults<ReturnType>(filter);
     }
-
-    LoadResults getCurrentLoadResults() const { return getCurrentLoadResults(allNames); }
-
-    /// Returns all the loaded objects as a map.
-    /// The function doesn't load anything, it just returns the current load results as is.
-    Loadables getCurrentlyLoadedObjects(const FilterByNameFunction & filter_by_name) const
-    {
-        std::lock_guard lock{mutex};
-        return collectLoadedObjects(filter_by_name);
-    }
-
-    Loadables getCurrentlyLoadedObjects() const { return getCurrentlyLoadedObjects(allNames); }
 
     size_t getNumberOfCurrentlyLoadedObjects() const
     {
@@ -499,91 +537,67 @@ public:
         return false;
     }
 
+    Strings getAllTriedToLoadNames() const
+    {
+        Strings names;
+        for (auto & [name, info] : infos)
+            if (info.triedToLoad())
+                names.push_back(name);
+        return names;
+    }
+
     /// Tries to load a specified object during the timeout.
-    /// Returns nullptr if the loading is unsuccessful or if there is no such object.
-    void load(const String & name, LoadablePtr & loaded_object, Duration timeout = NO_TIMEOUT)
+    template <typename ReturnType>
+    ReturnType tryLoad(const String & name, Duration timeout)
     {
         std::unique_lock lock{mutex};
         Info * info = loadImpl(name, timeout, lock);
-        loaded_object = (info ? info->object : nullptr);
-    }
-
-    /// Tries to finish loading of a specified object during the timeout.
-    /// Returns nullptr if the loading is unsuccessful or if there is no such object.
-    void loadStrict(const String & name, LoadablePtr & loaded_object)
-    {
-        std::unique_lock lock{mutex};
-        Info * info = loadImpl(name, NO_TIMEOUT, lock);
         if (!info)
-            throw Exception("No such " + type_name + " '" + name + "'.", ErrorCodes::BAD_ARGUMENTS);
-        checkLoaded(name, *info);
-        loaded_object = info->object;
+            return notExists<ReturnType>(name);
+        return info->getLoadResult<ReturnType>();
     }
 
-    /// Tries to start loading of the objects for which the specified functor returns true.
-    void load(const FilterByNameFunction & filter_by_name)
-    {
-        std::lock_guard lock{mutex};
-        for (auto & [name, info] : infos)
-            if (!info.wasLoading() && filter_by_name(name))
-                startLoading(name, info);
-    }
-
-    /// Tries to finish loading of the objects for which the specified function returns true.
-    void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT)
+    template <typename ReturnType>
+    ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        loadImpl(filter_by_name, timeout, lock);
-        loaded_objects = collectLoadedObjects(filter_by_name);
+        loadImpl(filter, timeout, lock);
+        return collectLoadResults<ReturnType>(filter);
     }
 
-    /// Tries to finish loading of the objects for which the specified function returns true.
-    void load(const FilterByNameFunction & filter_by_name, LoadResults & loaded_results, Duration timeout = NO_TIMEOUT)
+    /// Tries to load or reload a specified object.
+    template <typename ReturnType>
+    ReturnType tryLoadOrReload(const String & name, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        loadImpl(filter_by_name, timeout, lock);
-        loaded_results = collectLoadResults(filter_by_name);
-    }
-
-    /// Tries to finish loading of all the objects during the timeout.
-    void load(Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) { load(allNames, loaded_objects, timeout); }
-    void load(LoadResults & loaded_results, Duration timeout = NO_TIMEOUT) { load(allNames, loaded_results, timeout); }
-
-    /// Starts reloading a specified object.
-    void reload(const String & name, bool load_never_loading = false)
-    {
-        std::lock_guard lock{mutex};
         Info * info = getInfo(name);
         if (!info)
-        {
-            return;
-        }
+            return notExists<ReturnType>(name);
+        cancelLoading(*info);
+        info->forced_to_reload = true;
 
-        if (info->wasLoading() || load_never_loading)
-        {
-            cancelLoading(*info);
-            info->forced_to_reload = true;
-            startLoading(name, *info);
-        }
+        info = loadImpl(name, timeout, lock);
+        if (!info)
+            return notExists<ReturnType>(name);
+        return info->getLoadResult<ReturnType>();
     }
 
-    /// Starts reloading of the objects which `filter_by_name` returns true for.
-    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false)
+    template <typename ReturnType>
+    ReturnType tryLoadOrReload(const FilterByNameFunction & filter, Duration timeout)
     {
-        std::lock_guard lock{mutex};
+        std::unique_lock lock{mutex};
         for (auto & [name, info] : infos)
         {
-            if ((info.wasLoading() || load_never_loading) && filter_by_name(name))
+            if (filter(name))
             {
                 cancelLoading(info);
                 info.forced_to_reload = true;
-                startLoading(name, info);
             }
         }
-    }
 
-    /// Starts reloading of all the objects.
-    void reload(bool load_never_loading = false) { reload(allNames, load_never_loading); }
+        loadImpl(filter, timeout, lock);
+        return collectLoadResults<ReturnType>(filter);
+    }
 
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
@@ -658,12 +672,12 @@ public:
 private:
     struct Info
     {
-        Info(const ObjectConfig & object_config_) : object_config(object_config_) {}
+        Info(const String & name_, const ObjectConfig & object_config_) : name(name_), object_config(object_config_) {}
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
         bool loading() const { return loading_id != 0; }
-        bool wasLoading() const { return loaded() || failed() || loading(); }
+        bool triedToLoad() const { return loaded() || failed() || loading(); }
         bool ready() const { return (loaded() || failed()) && !forced_to_reload; }
         bool failedToReload() const { return loaded() && exception != nullptr; }
 
@@ -684,27 +698,37 @@ private:
             return std::chrono::duration_cast<Duration>(loading_end_time - loading_start_time);
         }
 
-        LoadResult loadResult() const
+        template <typename ReturnType>
+        ReturnType getLoadResult() const
         {
-            LoadResult result{status()};
-            result.object = object;
-            result.exception = exception;
-            result.loading_start_time = loading_start_time;
-            result.loading_duration = loadingDuration();
-            result.origin = object_config.path;
-            result.repository_name = object_config.repository_name;
-            return result;
+            if constexpr (std::is_same_v<ReturnType, LoadResult>)
+            {
+                LoadResult result;
+                result.name = name;
+                result.status = status();
+                result.object = object;
+                result.exception = exception;
+                result.loading_start_time = loading_start_time;
+                result.loading_duration = loadingDuration();
+                result.origin = object_config.path;
+                result.repository_name = object_config.repository_name;
+                return result;
+            }
+            else
+            {
+                static_assert(std::is_same_v<ReturnType, ExternalLoader::LoadablePtr>);
+                return object;
+            }
         }
 
-        ObjectConfig object_config;
+        String name;
         LoadablePtr object;
+        ObjectConfig object_config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
         size_t loading_id = 0; /// Non-zero if it's loading right now.
         size_t error_count = 0; /// Numbers of errors since last successful loading.
         std::exception_ptr exception; /// Last error occurred.
-        bool config_changed = false; /// Whether the config has been change since last successful loading.
-        bool forced_to_reload = false; /// Whether the current reloading is forced, i.e. caused by user's direction. For periodic reloading and reloading due to a config's change `forced_to_reload == false`.
         TimePoint next_update_time = TimePoint::max(); /// Time of the next update, `TimePoint::max()` means "never".
     };
 
@@ -724,26 +748,25 @@ private:
         return &it->second;
     }
 
-    Loadables collectLoadedObjects(const FilterByNameFunction & filter_by_name) const
+    template <typename ReturnType>
+    ReturnType collectLoadResults(const FilterByNameFunction & filter) const
     {
-        Loadables objects;
-        objects.reserve(infos.size());
-        for (const auto & [name, info] : infos)
-            if (info.loaded() && filter_by_name(name))
-                objects.emplace_back(info.object);
-        return objects;
-    }
-
-    LoadResults collectLoadResults(const FilterByNameFunction & filter_by_name) const
-    {
-        LoadResults load_results;
-        load_results.reserve(infos.size());
+        ReturnType results;
+        results.reserve(infos.size());
         for (const auto & [name, info] : infos)
         {
-            if (filter_by_name(name))
-                load_results.emplace_back(name, info.loadResult());
+            if (filter(name))
+            {
+                auto result = info.template getLoadResult<typename ReturnType::value_type>();
+                if constexpr (std::is_same_v<typename ReturnType::value_type, LoadablePtr>)
+                {
+                    if (!result)
+                        continue;
+                }
+                results.emplace_back(std::move(result));
+            }
         }
-        return load_results;
+        return results;
     }
 
     Info * loadImpl(const String & name, Duration timeout, std::unique_lock<std::mutex> & lock)
@@ -759,7 +782,7 @@ private:
             return info->ready();
         };
 
-        if (timeout == NO_TIMEOUT)
+        if (timeout == WAIT)
             event.wait(lock, pred);
         else
             event.wait_for(lock, timeout, pred);
@@ -767,14 +790,14 @@ private:
         return info;
     }
 
-    void loadImpl(const FilterByNameFunction & filter_by_name, Duration timeout, std::unique_lock<std::mutex> & lock)
+    void loadImpl(const FilterByNameFunction & filter, Duration timeout, std::unique_lock<std::mutex> & lock)
     {
         auto pred = [&]()
         {
             bool all_ready = true;
             for (auto & [name, info] : infos)
             {
-                if (info.ready() || !filter_by_name(name))
+                if (info.ready() || !filter(name))
                     continue;
                 if (!info.loading())
                     startLoading(name, info);
@@ -784,7 +807,7 @@ private:
             return all_ready;
         };
 
-        if (timeout == NO_TIMEOUT)
+        if (timeout == WAIT)
             event.wait(lock, pred);
         else
             event.wait_for(lock, timeout, pred);
@@ -946,11 +969,13 @@ private:
             /// Use `create_function` to perform the actual loading.
             /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
             /// and require access to other objects.
-            bool need_complete_loading = !info->object || info->config_changed || info->forced_to_reload;
-            auto [new_object, new_exception] = loadOneObject(name, info->object_config, need_complete_loading ? nullptr : info->object);
+            auto previous_version_to_use = info->object;
+            bool need_complete_reloading = !info->object || info->config_changed || info->forced_to_reload;
+            if (need_complete_reloading)
+                previous_version_to_use = nullptr; /// Need complete reloading, cannot use the previous version.
+            auto [new_object, new_exception] = loadOneObject(name, info->object_config, previous_version_to_use);
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
-
 
             processLoadResult(name, loading_id, info->object, new_object, new_exception, info->error_count, async);
             event.notify_all();
@@ -980,19 +1005,6 @@ private:
         info.loading_id = 0;
         info.loading_end_time = std::chrono::system_clock::now();
     }
-
-    void checkLoaded(const String & name, const Info & info)
-    {
-        if (info.loaded())
-            return;
-        if (info.loading())
-            throw Exception(type_name + " '" + name + "' is still loading.", ErrorCodes::BAD_ARGUMENTS);
-        if (info.failed())
-            std::rethrow_exception(info.exception);
-    }
-
-    /// Filter by name which matches everything.
-    static bool allNames(const String &) { return true; }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
     /// because single loadable can be loaded in single thread only.
@@ -1101,14 +1113,15 @@ private:
 };
 
 
-ExternalLoader::ExternalLoader(const String & type_name_, Logger * log)
-    : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log))
+ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
+    : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3),
           type_name_,
-          log))
+          log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
+    , log(log_)
 {
 }
 
@@ -1155,29 +1168,26 @@ ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) con
     return loading_dispatcher->getCurrentStatus(name);
 }
 
-ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult(const String & name) const
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::getCurrentLoadResult(const String & name) const
 {
-    return loading_dispatcher->getCurrentLoadResult(name);
+    return loading_dispatcher->getCurrentLoadResult<ReturnType>(name);
 }
 
-ExternalLoader::LoadResults ExternalLoader::getCurrentLoadResults() const
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::getCurrentLoadResults(const FilterByNameFunction & filter) const
 {
-    return loading_dispatcher->getCurrentLoadResults();
-}
-
-ExternalLoader::LoadResults ExternalLoader::getCurrentLoadResults(const FilterByNameFunction & filter_by_name) const
-{
-    return loading_dispatcher->getCurrentLoadResults(filter_by_name);
+    return loading_dispatcher->getCurrentLoadResults<ReturnType>(filter);
 }
 
 ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects() const
 {
-    return loading_dispatcher->getCurrentlyLoadedObjects();
+    return getCurrentLoadResults<Loadables>();
 }
 
-ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects(const FilterByNameFunction & filter_by_name) const
+ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects(const FilterByNameFunction & filter) const
 {
-    return loading_dispatcher->getCurrentlyLoadedObjects(filter_by_name);
+    return getCurrentLoadResults<Loadables>(filter);
 }
 
 size_t ExternalLoader::getNumberOfCurrentlyLoadedObjects() const
@@ -1185,56 +1195,104 @@ size_t ExternalLoader::getNumberOfCurrentlyLoadedObjects() const
     return loading_dispatcher->getNumberOfCurrentlyLoadedObjects();
 }
 
-void ExternalLoader::load(const String & name, LoadablePtr & loaded_object, Duration timeout) const
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::tryLoad(const String & name, Duration timeout) const
 {
-    loading_dispatcher->load(name, loaded_object, timeout);
+    return loading_dispatcher->tryLoad<ReturnType>(name, timeout);
 }
 
-void ExternalLoader::loadStrict(const String & name, LoadablePtr & loaded_object) const
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::tryLoad(const FilterByNameFunction & filter, Duration timeout) const
 {
-    loading_dispatcher->loadStrict(name, loaded_object);
+    return loading_dispatcher->tryLoad<ReturnType>(filter, timeout);
 }
 
-void ExternalLoader::load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout) const
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::load(const String & name) const
 {
-    if (filter_by_name)
-        loading_dispatcher->load(filter_by_name, loaded_objects, timeout);
-    else
-        loading_dispatcher->load(loaded_objects, timeout);
+    auto result = tryLoad<LoadResult>(name);
+    checkLoaded(result, false);
+    return convertTo<ReturnType>(result);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::load(const FilterByNameFunction & filter) const
+{
+    auto results = tryLoad<LoadResults>(filter);
+    checkLoaded(results, false);
+    return convertTo<ReturnType>(results);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::loadOrReload(const String & name) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    auto result = loading_dispatcher->tryLoadOrReload<LoadResult>(name, WAIT);
+    checkLoaded(result, true);
+    return convertTo<ReturnType>(result);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::loadOrReload(const FilterByNameFunction & filter) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    auto results = loading_dispatcher->tryLoadOrReload<LoadResults>(filter, WAIT);
+    checkLoaded(results, true);
+    return convertTo<ReturnType>(results);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::reloadAllTriedToLoad() const
+{
+    std::unordered_set<String> names;
+    boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
+    return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
+}
+
+Strings ExternalLoader::getAllTriedToLoadNames() const
+{
+    return loading_dispatcher->getAllTriedToLoadNames();
 }
 
 
-void ExternalLoader::load(const FilterByNameFunction & filter_by_name, LoadResults & loaded_objects, Duration timeout) const
+void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
+                                 bool check_no_errors) const
 {
-    if (filter_by_name)
-        loading_dispatcher->load(filter_by_name, loaded_objects, timeout);
-    else
-        loading_dispatcher->load(loaded_objects, timeout);
+    if (result.object && (!check_no_errors || !result.exception))
+        return;
+    if (result.status == ExternalLoader::Status::LOADING)
+        throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
+    if (result.exception)
+        std::rethrow_exceptiozn(result.exception);
+    if (result.status == ExternalLoader::Status::NOT_EXIST)
+        throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
+    if (result.status == ExternalLoader::Status::NOT_LOADED)
+        throw Exception(type_name + " '" + result.name + "' not tried to load", ErrorCodes::BAD_ARGUMENTS);
 }
 
-
-void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
+void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,
+                                 bool check_no_errors) const
 {
-    return loading_dispatcher->load(loaded_objects, timeout);
+    std::exception_ptr exception;
+    for (const auto & result : results)
+    {
+        try
+        {
+            checkLoaded(result, check_no_errors);
+        }
+        catch (...)
+        {
+            if (!exception)
+                exception = std::current_exception();
+            else
+                tryLogCurrentException(log);
+        }
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
-void ExternalLoader::reload(const String & name, bool load_never_loading) const
-{
-    reloadConfig();
-    loading_dispatcher->reload(name, load_never_loading);
-}
-
-void ExternalLoader::reload(bool load_never_loading) const
-{
-    reloadConfig();
-    loading_dispatcher->reload(load_never_loading);
-}
-
-void ExternalLoader::reload(const FilterByNameFunction & filter_by_name, bool load_never_loading) const
-{
-    reloadConfig();
-    loading_dispatcher->reload(filter_by_name, load_never_loading);
-}
 
 void ExternalLoader::reloadConfig() const
 {
@@ -1296,4 +1354,27 @@ std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status)
     return out << toString(status);
 }
 
+
+template ExternalLoader::LoadablePtr ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::getCurrentLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::getCurrentLoadResults<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+
+template ExternalLoader::LoadablePtr ExternalLoader::tryLoad<ExternalLoader::LoadablePtr>(const String &, Duration) const;
+template ExternalLoader::LoadResult ExternalLoader::tryLoad<ExternalLoader::LoadResult>(const String &, Duration) const;
+template ExternalLoader::Loadables ExternalLoader::tryLoad<ExternalLoader::Loadables>(const FilterByNameFunction &, Duration) const;
+template ExternalLoader::LoadResults ExternalLoader::tryLoad<ExternalLoader::LoadResults>(const FilterByNameFunction &, Duration) const;
+
+template ExternalLoader::LoadablePtr ExternalLoader::load<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::load<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::load<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::load<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+
+template ExternalLoader::LoadablePtr ExternalLoader::loadOrReload<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::loadOrReload<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::loadOrReload<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::loadOrReload<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+
+template ExternalLoader::Loadables ExternalLoader::reloadAllTriedToLoad<ExternalLoader::Loadables>() const;
+template ExternalLoader::LoadResults ExternalLoader::reloadAllTriedToLoad<ExternalLoader::LoadResults>() const;
 }
