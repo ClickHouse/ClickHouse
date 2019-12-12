@@ -11,10 +11,10 @@
 namespace DB
 {
 
-class PreparedFunctionToday : public IExecutableFunctionImpl
+class ExecutableFunctionToday : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionToday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
 
     String getName() const override { return "today"; }
 
@@ -47,7 +47,7 @@ public:
 
     ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_unique<PreparedFunctionToday>(day_value);
+        return std::make_unique<ExecutableFunctionToday>(day_value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -58,7 +58,7 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderToday : public IFunctionOverloadResolverImpl
+class TodayOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "today";
@@ -69,7 +69,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<FunctionBuilderToday>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<TodayOverloadResolver>(); }
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
@@ -81,7 +81,7 @@ public:
 
 void registerFunctionToday(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderToday>();
+    factory.registerFunction<TodayOverloadResolver>();
 }
 
 }

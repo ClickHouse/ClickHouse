@@ -59,7 +59,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
     return std::make_pair(storage_join, attr_name);
 }
 
-FunctionBaseImplPtr FunctionBuilderJoinGet::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+FunctionBaseImplPtr JoinGetOverloadResolver::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
@@ -73,7 +73,7 @@ FunctionBaseImplPtr FunctionBuilderJoinGet::build(const ColumnsWithTypeAndName &
     return std::make_unique<FunctionJoinGet>(table_lock, storage_join, join, attr_name, data_types, return_type);
 }
 
-DataTypePtr FunctionBuilderJoinGet::getReturnType(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr JoinGetOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
@@ -102,7 +102,7 @@ ExecutableFunctionImplPtr FunctionJoinGet::prepare(const Block &, const ColumnNu
 
 void registerFunctionJoinGet(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderJoinGet>();
+    factory.registerFunction<JoinGetOverloadResolver>();
 }
 
 }

@@ -112,13 +112,13 @@ public:
 
 
 /// Also works with arrays.
-class FunctionBuilderReverse : public IFunctionOverloadResolverImpl
+class ReverseOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderReverse>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit FunctionBuilderReverse(const Context & context_) : context(context_) {}
+    explicit ReverseOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -146,7 +146,7 @@ private:
 
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderReverse>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

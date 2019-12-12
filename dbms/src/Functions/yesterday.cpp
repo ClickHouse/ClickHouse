@@ -58,7 +58,7 @@ private:
     DataTypePtr return_type;
 };
 
-class FunctionBuilderYesterday : public IFunctionOverloadResolverImpl
+class YesterdayOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "yesterday";
@@ -69,7 +69,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<FunctionBuilderYesterday>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<YesterdayOverloadResolver>(); }
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
@@ -82,7 +82,7 @@ public:
 
 void registerFunctionYesterday(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderYesterday>();
+    factory.registerFunction<YesterdayOverloadResolver>();
 }
 
 }

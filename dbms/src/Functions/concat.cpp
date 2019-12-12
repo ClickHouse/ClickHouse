@@ -184,13 +184,13 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class FunctionBuilderConcat : public IFunctionOverloadResolverImpl
+class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FunctionBuilderConcat>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit FunctionBuilderConcat(const Context & context_) : context(context_) {}
+    explicit ConcatOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -226,7 +226,7 @@ private:
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderConcat>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

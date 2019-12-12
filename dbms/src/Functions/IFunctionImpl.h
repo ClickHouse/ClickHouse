@@ -1,12 +1,27 @@
 #pragma once
 #include <Functions/IFunction.h>
 
+/// This file contains developer interface for functions.
+/// In order to implement a new function you can choose one of two options:
+///  * Implement interface for IFunction (old function interface, which is planned to be removed sometimes)
+///  * Implement three interfaces for IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl
+/// Generally saying, IFunction represents a union of tree new interfaces. However, it can't be used for all cases.
+/// Examples:
+///  * Function properties may depend on arguments type (e.g. toUInt32(UInt8) is globally monotonic, toUInt32(UInt64) - only on intervals)
+///  * In implementation of lambda functions DataTypeFunction needs an functional object with known arguments and return type
+///  * Function CAST prepares specific implementation based on argument types
+///
+/// Interfaces for IFunction, IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl are pure.
+/// Default implementations are in adaptors classes (IFunctionAdaptors.h), which are implement user interfaces via developer ones.
+/// Interfaces IExecutableFunctionImpl, IFunctionBaseImpl and IFunctionOverloadResolverImpl are implemented via IFunction
+///  in DefaultExecutable, DefaultFunction and DefaultOverloadResolver classes (IFunctionAdaptors.h).
+
 namespace DB
 {
 
 /// Cache for functions result if it was executed on low cardinality column.
-class PreparedFunctionLowCardinalityResultCache;
-using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFunctionLowCardinalityResultCache>;
+class ExecutableFunctionLowCardinalityResultCache;
+using ExecutableFunctionLowCardinalityResultCachePtr = std::shared_ptr<ExecutableFunctionLowCardinalityResultCache>;
 
 class IExecutableFunctionImpl
 {
@@ -55,6 +70,10 @@ public:
 using ExecutableFunctionImplPtr = std::unique_ptr<IExecutableFunctionImpl>;
 
 
+/// This class generally has the same methods as in IFunctionBase.
+/// See comments for IFunctionBase in IFunction.h
+/// The main purpose is to implement `prepare` which returns IExecutableFunctionImpl, not IExecutableFunction
+/// Inheritance is not used for better readability.
 class IFunctionBaseImpl
 {
 public:
@@ -112,7 +131,7 @@ public:
         throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
+    /// This function will be called in default implementation. You can overload it or the previous one.
     virtual DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const
     {
         DataTypes data_types(arguments.size());
@@ -125,11 +144,13 @@ public:
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
 
+    /// Properties from IFunctionOverloadResolver. See comments in IFunction.h
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }
     virtual bool isVariadic() const { return false; }
 
+    /// Will be called if isVariadic returns true. You need to check if function can have specified number of arguments.
     virtual void checkNumberOfArgumentsIfVariadic(size_t /*number_of_arguments*/) const
     {
         throw Exception("checkNumberOfArgumentsIfVariadic is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -143,17 +164,17 @@ public:
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
 
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl():
-      *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call buildImpl() with return_type = Nullable(Nothing),
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build():
+      *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call build() with return_type = Nullable(Nothing),
       *  if some of arguments are Nullable, then:
       *   - Nullable types are substituted with nested types for getReturnType() function
-      *   - wrap getReturnType() result in Nullable type and pass to buildImpl
+      *   - wrap getReturnType() result in Nullable type and pass to build
       *
-      * Otherwise build returns buildImpl(arguments, getReturnType(arguments));
+      * Otherwise build returns build(arguments, getReturnType(arguments));
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and build().
       * If function arguments has low cardinality types, convert them to ordinary types.
       * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
@@ -227,68 +248,16 @@ public:
 
 #endif
 
-
-    /** Should we evaluate this function while constant folding, if arguments are constants?
-      * Usually this is true. Notable counterexample is function 'sleep'.
-      * If we will call it during query analysis, we will sleep extra amount of time.
-      */
+    /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
-
-    /** Some functions like ignore(...) or toTypeName(...) always return constant result which doesn't depend on arguments.
-      * In this case we can calculate result and assume that it's constant in stream header.
-      * There is no need to implement function if it has zero arguments.
-      * Must return ColumnConst with single row or nullptr.
-      */
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-
-    /** Function is called "injective" if it returns different result for different values of arguments.
-      * Example: hex, negate, tuple...
-      *
-      * Function could be injective with some arguments fixed to some constant values.
-      * Examples:
-      *  plus(const, x);
-      *  multiply(const, x) where x is an integer and constant is not divisible by two;
-      *  concat(x, 'const');
-      *  concat(x, 'const', y) where const contain at least one non-numeric character;
-      *  concat with FixedString
-      *  dictGet... functions takes name of dictionary as its argument,
-      *   and some dictionaries could be explicitly defined as injective.
-      *
-      * It could be used, for example, to remove useless function applications from GROUP BY.
-      *
-      * Sometimes, function is not really injective, but considered as injective, for purpose of query optimization.
-      * For example, toString function is not injective for Float64 data type,
-      *  as it returns 'nan' for many different representation of NaNs.
-      * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
-      *
-      * sample_block should contain data types of arguments and values of constants, if relevant.
-      */
     virtual bool isInjective(const Block & /*sample_block*/) { return false; }
-
-    /** Function is called "deterministic", if it returns same result for same values of arguments.
-      * Most of functions are deterministic. Notable counterexample is rand().
-      * Sometimes, functions are "deterministic" in scope of single query
-      *  (even for distributed query), but not deterministic it general.
-      * Example: now(). Another example: functions that work with periodically updated dictionaries.
-      */
-
     virtual bool isDeterministic() const { return true; }
-
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
-
     virtual bool isStateful() const { return false; }
-
-    /** Lets you know if the function is monotonic in a range of values.
-      * This is used to work with the index in a sorted chunk of data.
-      * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.
-      * All this is considered only for functions of one argument.
-      */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
-    /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
-      * NULL can be passed as one of the arguments. This means that the corresponding range is unlimited on the left or on the right.
-      */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
@@ -347,258 +316,6 @@ protected:
     }
 
 #endif
-};
-
-
-class ExecutableFunctionAdaptor final : public IExecutableFunction
-{
-public:
-    explicit ExecutableFunctionAdaptor(ExecutableFunctionImplPtr impl_) : impl(std::move(impl_)) {}
-
-    String getName() const final { return impl->getName(); }
-
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) final;
-
-    void createLowCardinalityResultCache(size_t cache_size) override;
-
-private:
-    ExecutableFunctionImplPtr impl;
-
-    /// Cache is created by function createLowCardinalityResultCache()
-    PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
-
-    bool defaultImplementationForConstantArguments(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
-
-    bool defaultImplementationForNulls(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
-
-    void executeWithoutLowCardinalityColumns(
-            Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run);
-};
-
-class FunctionBaseAdaptor final : public IFunctionBase
-{
-public:
-    explicit FunctionBaseAdaptor(FunctionBaseImplPtr impl_) : impl(std::move(impl_)) {}
-
-    String getName() const final { return impl->getName(); }
-
-    const DataTypes & getArgumentTypes() const final { return impl->getArgumentTypes(); }
-    const DataTypePtr & getReturnType() const final { return impl->getReturnType(); }
-
-    ExecutableFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const final
-    {
-        return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(sample_block, arguments, result));
-    }
-
-#if USE_EMBEDDED_COMPILER
-
-    bool isCompilable() const final { return impl->isCompilable(); }
-
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override
-    {
-        return impl->compile(builder, std::move(values));
-    }
-
-#endif
-
-    bool isStateful() const final { return impl->isStateful(); }
-    bool isSuitableForConstantFolding() const final { return impl->isSuitableForConstantFolding(); }
-
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const final
-    {
-        return impl->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments);
-    }
-
-    bool isInjective(const Block & sample_block) final { return impl->isInjective(sample_block); }
-    bool isDeterministic() const final { return impl->isDeterministic(); }
-    bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
-    bool hasInformationAboutMonotonicity() const final { return impl->hasInformationAboutMonotonicity(); }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const final
-    {
-        return impl->getMonotonicityForRange(type, left, right);
-    }
-
-    const IFunctionBaseImpl * getImpl() const { return impl.get(); }
-
-private:
-    FunctionBaseImplPtr impl;
-};
-
-
-class FunctionOverloadResolverAdaptor : public IFunctionOverloadResolver
-{
-public:
-    explicit FunctionOverloadResolverAdaptor(FunctionOverloadResolverImplPtr impl_) : impl(std::move(impl_)) {}
-
-    String getName() const final { return impl->getName(); }
-
-    bool isDeterministic() const final { return impl->isDeterministic(); }
-
-    bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
-
-    bool isStateful() const final { return impl->isStateful(); }
-
-    bool isVariadic() const final { return impl->isVariadic(); }
-
-    size_t getNumberOfArguments() const final { return impl->getNumberOfArguments(); }
-
-    void checkNumberOfArguments(size_t number_of_arguments) const final;
-
-    FunctionBaseImplPtr buildImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        return impl->build(arguments, getReturnType(arguments));
-    }
-
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const final
-    {
-        return std::make_shared<FunctionBaseAdaptor>(buildImpl(arguments));
-    }
-
-    void getLambdaArgumentTypes(DataTypes & arguments) const final
-    {
-        checkNumberOfArguments(arguments.size());
-        impl->getLambdaArgumentTypes(arguments);
-    }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return impl->getArgumentsThatAreAlwaysConstant(); }
-
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const final
-    {
-        return impl->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
-    }
-
-private:
-    FunctionOverloadResolverImplPtr impl;
-
-    DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
-};
-
-/// Wrappers over IFunction.
-
-class DefaultExecutable final : public IExecutableFunctionImpl
-{
-public:
-    explicit DefaultExecutable(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
-
-    String getName() const override { return function->getName(); }
-
-protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
-    {
-        return function->executeImpl(block, arguments, result, input_rows_count);
-    }
-    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
-    {
-        return function->executeImplDryRun(block, arguments, result, input_rows_count);
-    }
-    bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
-    bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
-
-private:
-    std::shared_ptr<IFunction> function;
-};
-
-class DefaultFunction final : public IFunctionBaseImpl
-{
-public:
-    DefaultFunction(std::shared_ptr<IFunction> function_, DataTypes arguments_, DataTypePtr return_type_)
-            : function(std::move(function_)), arguments(std::move(arguments_)), return_type(std::move(return_type_)) {}
-
-    String getName() const override { return function->getName(); }
-
-    const DataTypes & getArgumentTypes() const override { return arguments; }
-    const DataTypePtr & getReturnType() const override { return return_type; }
-
-#if USE_EMBEDDED_COMPILER
-
-    bool isCompilable() const override { return function->isCompilable(arguments); }
-
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
-
-#endif
-
-    ExecutableFunctionImplPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
-    {
-        return std::make_unique<DefaultExecutable>(function);
-    }
-
-    bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments_) const override
-    {
-        return function->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments_);
-    }
-
-    bool isStateful() const override { return function->isStateful(); }
-
-    bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
-
-    bool isDeterministic() const override { return function->isDeterministic(); }
-
-    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
-
-    bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
-
-    using Monotonicity = IFunctionBase::Monotonicity;
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        return function->getMonotonicityForRange(type, left, right);
-    }
-private:
-    std::shared_ptr<IFunction> function;
-    DataTypes arguments;
-    DataTypePtr return_type;
-};
-
-class DefaultFunctionBuilder : public IFunctionOverloadResolverImpl
-{
-public:
-    explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
-
-    void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
-    {
-        return function->checkNumberOfArgumentsIfVariadic(number_of_arguments);
-    }
-
-    bool isDeterministic() const override { return function->isDeterministic(); }
-    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
-
-    String getName() const override { return function->getName(); }
-    bool isStateful() const override { return function->isStateful(); }
-    bool isVariadic() const override { return function->isVariadic(); }
-    size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
-    {
-        return function->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
-    }
-
-    DataTypePtr getReturnType(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
-
-    bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
-
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return std::make_unique<DefaultFunction>(function, data_types, return_type);
-    }
-
-    void getLambdaArgumentTypes(DataTypes & arguments) const override { function->getLambdaArgumentTypes(arguments); }
-
-private:
-    std::shared_ptr<IFunction> function;
 };
 
 using FunctionPtr = std::shared_ptr<IFunction>;

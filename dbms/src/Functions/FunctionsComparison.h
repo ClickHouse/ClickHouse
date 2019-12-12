@@ -24,7 +24,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
@@ -966,8 +966,8 @@ private:
         auto func_compare = ComparisonFunction::create(context);
         auto func_convolution = ConvolutionFunction::create(context);
 
-        auto func_compare_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare));
-        auto func_convolution_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_convolution));
+        auto func_compare_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare));
+        auto func_convolution_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_convolution));
 
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
@@ -1013,17 +1013,17 @@ private:
         auto func_or = FunctionOr::create(context);
         auto func_equals = FunctionComparison<EqualsOp, NameEquals>::create(context);
 
-        auto func_compare_head_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare_head));
-        auto func_compare_tail_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_compare_tail));
-        auto func_equals_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_equals));
+        auto func_compare_head_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare_head));
+        auto func_compare_tail_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare_tail));
+        auto func_equals_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_equals));
 
         ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
                                            { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
 
-        auto func_and_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_and))
+        auto func_and_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_and))
                 .build(bin_args);
 
-        auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(func_or))
+        auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_or))
                 .build(bin_args);
 
         Block tmp_block;
@@ -1157,7 +1157,7 @@ public:
         if (left_tuple && right_tuple)
         {
             auto adaptor = FunctionOverloadResolverAdaptor(
-                    std::make_unique<DefaultFunctionBuilder>(FunctionComparison<Op, Name>::create(context)));
+                    std::make_unique<DefaultOverloadResolver>(FunctionComparison<Op, Name>::create(context)));
 
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <IO/WriteBufferFromString.h>
@@ -58,12 +58,12 @@ public:
     using Signature = ExecutableFunctionExpression::Signature;
     using SignaturePtr = ExecutableFunctionExpression::SignaturePtr;
 
-    FunctionExpression(const ExpressionActionsPtr & expression_actions_,
-            const DataTypes & argument_types_, const Names & argument_names_,
-            const DataTypePtr & return_type_, const std::string & return_name_)
-            : expression_actions(expression_actions_)
+    FunctionExpression(ExpressionActionsPtr expression_actions_,
+            DataTypes argument_types_, const Names & argument_names_,
+            DataTypePtr return_type_, const std::string & return_name_)
+            : expression_actions(std::move(expression_actions_))
             , signature(std::make_shared<Signature>(Signature{argument_names_, return_name_}))
-            , argument_types(argument_types_), return_type(return_type_)
+            , argument_types(std::move(argument_types_)), return_type(std::move(return_type_))
     {
     }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
 
 
@@ -47,10 +47,8 @@ public:
     /// Returns nullptr if not found.
     FunctionOverloadResolverPtr tryGet(const std::string & name, const Context & context) const;
 
-    /// Throws an exception if not found.
+    /// The same methods to get developer interface implementation.
     FunctionOverloadResolverImplPtr getImpl(const std::string & name, const Context & context) const;
-
-    /// Returns nullptr if not found.
     FunctionOverloadResolverImplPtr tryGetImpl(const std::string & name, const Context & context) const;
 
 private:
@@ -62,7 +60,7 @@ private:
     template <typename Function>
     static FunctionOverloadResolverImplPtr createDefaultFunction(const Context & context)
     {
-        return std::make_unique<DefaultFunctionBuilder>(Function::create(context));
+        return std::make_unique<DefaultOverloadResolver>(Function::create(context));
     }
 
     const Functions & getCreatorMap() const override { return functions; }

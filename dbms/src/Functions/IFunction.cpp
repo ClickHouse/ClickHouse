@@ -1,4 +1,4 @@
-#include "IFunctionImpl.h"
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
@@ -45,7 +45,7 @@ namespace ErrorCodes
 /// Cache for functions result if it was executed on low cardinality column.
 /// It's LRUCache which stores function result executed on dictionary and index mapping.
 /// It's expected that cache_size is a number of reading streams (so, will store single cached value per thread).
-class PreparedFunctionLowCardinalityResultCache
+class ExecutableFunctionLowCardinalityResultCache
 {
 public:
     /// Will assume that dictionaries with same hash has the same keys.
@@ -81,7 +81,7 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    explicit PreparedFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
+    explicit ExecutableFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -99,7 +99,7 @@ private:
 void ExecutableFunctionAdaptor::createLowCardinalityResultCache(size_t cache_size)
 {
     if (!low_cardinality_result_cache)
-        low_cardinality_result_cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(cache_size);
+        low_cardinality_result_cache = std::make_shared<ExecutableFunctionLowCardinalityResultCache>(cache_size);
 }
 
 
@@ -418,7 +418,7 @@ void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arg
             bool can_be_executed_on_default_arguments = impl->canBeExecutedOnDefaultArguments();
             bool use_cache = low_cardinality_result_cache && can_be_executed_on_default_arguments
                              && low_cardinality_column && low_cardinality_column->isSharedDictionary();
-            PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
+            ExecutableFunctionLowCardinalityResultCache::DictionaryKey key;
 
             if (use_cache)
             {
@@ -450,7 +450,7 @@ void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arg
             {
                 if (use_cache)
                 {
-                    auto cache_values = std::make_shared<PreparedFunctionLowCardinalityResultCache::CachedValues>();
+                    auto cache_values = std::make_shared<ExecutableFunctionLowCardinalityResultCache::CachedValues>();
                     cache_values->dictionary_holder = low_cardinality_column->getDictionaryPtr();
                     cache_values->function_result = res_dictionary;
                     cache_values->index_mapping = res_indexes;

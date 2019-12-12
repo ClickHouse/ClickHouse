@@ -8,6 +8,8 @@
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 
+/// This file contains user interface for functions.
+/// For developer interface (in case you need to implement a new function) see IFunctionImpl.h
 
 namespace llvm
 {
@@ -33,6 +35,7 @@ class Field;
 /// Motivation:
 ///  * Prepare something heavy once before main execution loop instead of doing it for each block.
 ///  * Provide const interface for IFunctionBase (later).
+///  * Create one executable function per thread to use caches without synchronization (later).
 class IExecutableFunction
 {
 public:
@@ -51,7 +54,8 @@ using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
 
-/// Function with known arguments and return type.
+/// Function with known arguments and return type (when the specific overload was chosen).
+/// It is also the point where all function-specific properties are known.
 class IFunctionBase
 {
 public:
@@ -172,7 +176,7 @@ public:
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
-/// Creates IFunctionBase from argument types list.
+/// Creates IFunctionBase from argument types list (chooses one function overload).
 class IFunctionOverloadResolver
 {
 public:
@@ -183,7 +187,6 @@ public:
 
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const = 0;
-
     virtual bool isDeterministicInScopeOfQuery() const = 0;
 
     /// Override and return true if function needs to depend on the state of the data.
@@ -195,10 +198,10 @@ public:
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
 
-    /// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
+    /// Throw if number of arguments is incorrect.
     virtual void checkNumberOfArguments(size_t number_of_arguments) const = 0;
 
-    /// Check arguments and return IFunctionBase.
+    /// Check if arguments are correct and returns IFunctionBase.
     virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const = 0;
 
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -214,7 +217,6 @@ public:
 };
 
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-
 
 
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.

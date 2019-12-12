@@ -55,7 +55,7 @@ public:
 
 private:
     /// lazy initialization in getReturnTypeImpl
-    /// TODO: init in FunctionBuilder
+    /// TODO: init in OverloadResolver
     mutable AggregateFunctionPtr aggregate_function;
 };
 

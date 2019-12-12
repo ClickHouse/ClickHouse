@@ -204,7 +204,7 @@ private:
             tmp_arguments.push_back(i);
         }
 
-        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultFunctionBuilder>(std::make_shared<FunctionTransform>()))
+        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
                     .build(tmp_block.getColumnsWithTypeAndName());
 
         tmp_block.insert(block.getByPosition(result));
