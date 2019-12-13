@@ -184,12 +184,6 @@
                     <port>9000</port>
                 </replica>
             </shard>
-            <shard>
-                <replica>
-                    <host>10.26.9.232</host>
-                    <port>9001</port>
-                </replica>
-            </shard>
         </test_shard_localhost>
         <test_cluster_two_shards_localhost>
              <shard>
