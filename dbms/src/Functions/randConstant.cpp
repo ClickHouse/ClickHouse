@@ -19,6 +19,8 @@ protected:
         block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
 private:
     ToType value;
 };
@@ -27,10 +29,10 @@ template <typename ToType, typename Name>
 class FunctionBaseRandomConstant : public IFunctionBase
 {
 public:
-    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_)
+    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_, DataTypePtr return_type_)
         : value(value_)
         , argument_types(std::move(argument_types_))
-        , return_type(std::make_shared<DataTypeNumber<ToType>>()) {}
+        , return_type(std::move(return_type_)) {}
 
     String getName() const override { return Name::name; }
 
@@ -66,6 +68,7 @@ public:
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
