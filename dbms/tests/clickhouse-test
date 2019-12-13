@@ -510,7 +510,7 @@ if __name__ == '__main__':
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
-    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
