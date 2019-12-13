@@ -50,35 +50,35 @@ def remove_part_from_disk(node, table, part_name):
 
 def test_check_normal_table_corruption(started_cluster):
     node1.query("INSERT INTO non_replicated_mt VALUES (toDate('2019-02-01'), 1, 10), (toDate('2019-02-01'), 2, 12)")
-    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201902", settings={"check_query_single_value_result": 0}) == "201902_1_1_0\t1\t\n"
+    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201902", settings={"check_query_single_value_result": 0}) == "201902_1_1_0_1\t1\t\n"
 
-    remove_checksums_on_disk(node1, "non_replicated_mt", "201902_1_1_0")
+    remove_checksums_on_disk(node1, "non_replicated_mt", "201902_1_1_0_1")
 
-    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0\t1\tChecksums recounted and written to disk."
-
-    assert node1.query("SELECT COUNT() FROM non_replicated_mt") == "2\n"
-
-    remove_checksums_on_disk(node1, "non_replicated_mt", "201902_1_1_0")
-
-    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201902", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0\t1\tChecksums recounted and written to disk."
+    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0_1\t1\tChecksums recounted and written to disk."
 
     assert node1.query("SELECT COUNT() FROM non_replicated_mt") == "2\n"
 
-    corrupt_data_part_on_disk(node1, "non_replicated_mt", "201902_1_1_0")
+    remove_checksums_on_disk(node1, "non_replicated_mt", "201902_1_1_0_1")
 
-    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 16."
+    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201902", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0_1\t1\tChecksums recounted and written to disk."
 
-    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 16."
+    assert node1.query("SELECT COUNT() FROM non_replicated_mt") == "2\n"
+
+    corrupt_data_part_on_disk(node1, "non_replicated_mt", "201902_1_1_0_1")
+
+    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0_1\t0\tCannot read all data. Bytes read: 2. Bytes expected: 16."
+
+    assert node1.query("CHECK TABLE non_replicated_mt", settings={"check_query_single_value_result": 0}).strip() == "201902_1_1_0_1\t0\tCannot read all data. Bytes read: 2. Bytes expected: 16."
 
     node1.query("INSERT INTO non_replicated_mt VALUES (toDate('2019-01-01'), 1, 10), (toDate('2019-01-01'), 2, 12)")
 
-    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201901", settings={"check_query_single_value_result": 0}) == "201901_2_2_0\t1\t\n"
+    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201901", settings={"check_query_single_value_result": 0}) == "201901_2_2_0_2\t1\t\n"
 
-    corrupt_data_part_on_disk(node1, "non_replicated_mt", "201901_2_2_0")
+    corrupt_data_part_on_disk(node1, "non_replicated_mt", "201901_2_2_0_2")
 
-    remove_checksums_on_disk(node1, "non_replicated_mt", "201901_2_2_0")
+    remove_checksums_on_disk(node1, "non_replicated_mt", "201901_2_2_0_2")
 
-    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201901", settings={"check_query_single_value_result": 0}) == "201901_2_2_0\t0\tCheck of part finished with error: \\'Cannot read all data. Bytes read: 2. Bytes expected: 16.\\'\n"
+    assert node1.query("CHECK TABLE non_replicated_mt PARTITION 201901", settings={"check_query_single_value_result": 0}) == "201901_2_2_0_2\t0\tCheck of part finished with error: \\'Cannot read all data. Bytes read: 2. Bytes expected: 16.\\'\n"
 
 
 def test_check_replicated_table_simple(started_cluster):

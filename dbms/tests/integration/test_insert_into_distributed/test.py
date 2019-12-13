@@ -138,11 +138,11 @@ def test_inserts_batching(started_cluster):
     # 4. Full batch of inserts after ALTER (that have different block structure).
     # 5. What was left to insert with the column structure before ALTER.
     expected = '''\
-20000101_20000101_1_1_0\t[1]
-20000101_20000101_2_2_0\t[2,3,4]
-20000101_20000101_3_3_0\t[5,6,7]
-20000101_20000101_4_4_0\t[10,11,12]
-20000101_20000101_5_5_0\t[8,9]
+20000101_20000101_1_1_0_1\t[1]
+20000101_20000101_2_2_0_2\t[2,3,4]
+20000101_20000101_3_3_0_3\t[5,6,7]
+20000101_20000101_4_4_0_4\t[10,11,12]
+20000101_20000101_5_5_0_5\t[8,9]
 '''
     assert TSV(result) == TSV(expected)
 
