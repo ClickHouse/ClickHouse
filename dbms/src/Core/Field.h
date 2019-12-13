@@ -525,7 +525,7 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
-// gcc 7.3.0
+// gcc 8.2.1
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
