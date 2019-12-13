@@ -32,11 +32,11 @@ void registerFunctionsGeo(FunctionFactory & factory)
 
 #if USE_H3
     registerFunctionGeoToH3(factory);
-	registerFunctionH3EdgeAngle(factory);
-	registerFunctionH3EdgeLengthM(factory);
-	registerFunctionH3GetResolution(factory);
-	registerFunctionH3IsValid(factory);
-	registerFunctionH3KRing(factory);
+    registerFunctionH3EdgeAngle(factory);
+    registerFunctionH3EdgeLengthM(factory);
+    registerFunctionH3GetResolution(factory);
+    registerFunctionH3IsValid(factory);
+    registerFunctionH3KRing(factory);
 #endif
 }
 
