@@ -37,7 +37,7 @@ namespace ErrorCodes
 
 /** Rounding Functions:
     * round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
-    * bankersRound(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
+    * roundBankers(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
     * floor(x, N) is the largest number <= x (N = 0 by default).
     * ceil(x, N) is the smallest number >= x (N = 0 by default).
     * trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
@@ -740,13 +740,13 @@ private:
 
 
 struct NameRound { static constexpr auto name = "round"; };
-struct NameBankersRound { static constexpr auto name = "bankersRound"; };
+struct NameRoundBankers { static constexpr auto name = "roundBankers"; };
 struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
 struct NameTrunc { static constexpr auto name = "trunc"; };
 
 using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round, TieBreakingMode::Auto>;
-using FunctionBankersRound = FunctionRounding<NameBankersRound, RoundingMode::Round, TieBreakingMode::Bankers>;
+using FunctionRoundBankers = FunctionRounding<NameRoundBankers, RoundingMode::Round, TieBreakingMode::Bankers>;
 using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor, TieBreakingMode::Auto>;
 using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil, TieBreakingMode::Auto>;
 using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc, TieBreakingMode::Auto>;
