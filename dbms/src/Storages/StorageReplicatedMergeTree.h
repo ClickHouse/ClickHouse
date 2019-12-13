@@ -86,6 +86,7 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
 
+    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
