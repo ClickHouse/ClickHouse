@@ -26,10 +26,10 @@ template <typename ToType, typename Name>
 class FunctionBaseRandomConstant : public IFunctionBaseImpl
 {
 public:
-    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_)
+    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_, DataTypePtr return_type_)
         : value(value_)
         , argument_types(std::move(argument_types_))
-        , return_type(std::make_shared<DataTypeNumber<ToType>>()) {}
+        , return_type(std::move(return_type_)) {}
 
     String getName() const override { return Name::name; }
 
@@ -65,6 +65,7 @@ public:
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -84,7 +85,7 @@ public:
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
 
-    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 
@@ -95,7 +96,7 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
-        return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types);
+        return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
     }
 };
 
