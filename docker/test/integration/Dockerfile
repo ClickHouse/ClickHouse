@@ -33,6 +33,8 @@ RUN curl 'https://cdn.mysql.com//Downloads/Connector-ODBC/8.0/mysql-connector-od
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN echo "TSAN_OPTIONS='halt_on_error=1 history_size=7'" >> /etc/environment; \
+# Sanitizer options
+RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
     echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
+    echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
