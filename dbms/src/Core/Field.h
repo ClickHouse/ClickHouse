@@ -525,6 +525,11 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::Int64:   return f(field.template get<Int64>());
@@ -532,6 +537,9 @@ public:
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
