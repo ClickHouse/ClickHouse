@@ -41,9 +41,4 @@ using TableWithColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
-std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context);
-
-std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query);
-ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
-
 }

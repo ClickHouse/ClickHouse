@@ -5,6 +5,7 @@
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -27,8 +28,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
 }
-
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 namespace
 {
@@ -56,7 +55,7 @@ public:
                 }
 
                 String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
-                NamesAndTypesList columns = getNamesAndTypeListFromTableExpression(*expr, context);
+                NamesAndTypesList columns = getColumnsFromTableExpression(*expr, context);
                 tables_order.push_back(table_name);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }

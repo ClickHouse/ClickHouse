@@ -104,13 +104,13 @@ private:
     struct greater;
 
 public:
-    using value_type = T;
-    using Container = PaddedPODArray<value_type>;
+    using ValueType = T;
+    using Container = PaddedPODArray<ValueType>;
 
 private:
     ColumnVector() {}
     ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const value_type x) : data(n, x) {}
+    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
     /// Sugar constructor.

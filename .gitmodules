@@ -107,3 +107,18 @@
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
+[submodule "contrib/aws"]
+	path = contrib/aws
+	url = https://github.com/aws/aws-sdk-cpp.git
+[submodule "aws-c-event-stream"]
+	path = contrib/aws-c-event-stream
+	url = https://github.com/awslabs/aws-c-event-stream.git
+[submodule "aws-c-common"]
+	path = contrib/aws-c-common
+	url = https://github.com/awslabs/aws-c-common.git
+[submodule "aws-checksums"]
+	path = contrib/aws-checksums
+	url = https://github.com/awslabs/aws-checksums.git
+[submodule "contrib/curl"]
+	path = contrib/curl
+	url = https://github.com/curl/curl.git

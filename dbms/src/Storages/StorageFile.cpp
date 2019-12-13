@@ -137,6 +137,8 @@ StorageFile::StorageFile(
     setColumns(columns_);
     setConstraints(constraints_);
 
+    std::string db_dir_path_abs = Poco::Path(db_dir_path).makeAbsolute().makeDirectory().toString();
+
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;
@@ -145,20 +147,20 @@ StorageFile::StorageFile(
         {
             Poco::Path poco_path = Poco::Path(table_path_);
             if (poco_path.isRelative())
-                poco_path = Poco::Path(db_dir_path, poco_path);
+                poco_path = Poco::Path(db_dir_path_abs, poco_path);
 
             const std::string path = poco_path.absolute().toString();
             paths = listFilesWithRegexpMatching("/", path);
             for (const auto & cur_path : paths)
-                checkCreationIsAllowed(context_global, db_dir_path, cur_path);
+                checkCreationIsAllowed(context_global, db_dir_path_abs, cur_path);
             is_db_table = false;
         }
         else /// Is DB's file
         {
-            if (db_dir_path.empty())
+            if (db_dir_path_abs.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            paths = {getTablePath(db_dir_path, table_name, format_name)};
+            paths = {getTablePath(db_dir_path_abs, table_name, format_name)};
             is_db_table = true;
             Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }

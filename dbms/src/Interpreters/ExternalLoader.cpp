@@ -288,7 +288,7 @@ class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 public:
     /// Called to load or reload an object.
     using CreateObjectFunction = std::function<LoadablePtr(
-        const String & /* name */, const ObjectConfig & /* config */, bool config_changed, const LoadablePtr & /* previous_version */)>;
+        const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
 
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
@@ -791,14 +791,13 @@ private:
     std::pair<LoadablePtr, std::exception_ptr> loadOneObject(
         const String & name,
         const ObjectConfig & config,
-        bool config_changed,
         LoadablePtr previous_version)
     {
         LoadablePtr new_object;
         std::exception_ptr new_exception;
         try
         {
-            new_object = create_object(name, config, config_changed, previous_version);
+            new_object = create_object(name, config, previous_version);
         }
         catch (...)
         {
@@ -918,7 +917,8 @@ private:
             /// Use `create_function` to perform the actual loading.
             /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
             /// and require access to other objects.
-            auto [new_object, new_exception] = loadOneObject(name, info->object_config, info->config_changed, info->object);
+            bool need_complete_loading = !info->object || info->config_changed || info->forced_to_reload;
+            auto [new_object, new_exception] = loadOneObject(name, info->object_config, need_complete_loading ? nullptr : info->object);
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
@@ -1075,7 +1075,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, Logger * log)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4),
+          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3),
           type_name_,
           log))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1225,9 +1225,9 @@ void ExternalLoader::addObjectAndLoad(
 
 
 ExternalLoader::LoadablePtr ExternalLoader::createObject(
-    const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const
+    const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
-    if (previous_version && !config_changed)
+    if (previous_version)
         return previous_version->clone();
 
     return create(name, *config.config, config.key_in_config);

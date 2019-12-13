@@ -100,7 +100,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
-list (REMOVE_ITEM clickhouse_common_io_sources src/Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources src/Common/malloc.cpp src/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -111,7 +111,7 @@ list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
+list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -139,6 +139,9 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
+set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
@@ -168,6 +171,7 @@ add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
 add_object_library(clickhouse_datatypes src/DataTypes)
 add_object_library(clickhouse_databases src/Databases)
+add_object_library(clickhouse_disks src/Disks)
 add_object_library(clickhouse_interpreters src/Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy src/Interpreters/ClusterProxy)
 add_object_library(clickhouse_columns src/Columns)
@@ -419,6 +423,12 @@ endif ()
 if (USE_HDFS)
     target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
+endif()
+
+if (USE_AWS_S3)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_CORE_INCLUDE_DIR})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
 if (USE_BROTLI)
