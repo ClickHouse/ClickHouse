@@ -125,7 +125,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Кодеки сжатия столбцов
+### Кодеки сжатия столбцов {#codecs}
 
 По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../operations/server_settings/settings.md#compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
