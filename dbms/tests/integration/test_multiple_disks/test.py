@@ -1069,8 +1069,6 @@ def test_kill_while_insert(start_cluster):
     try:
         name = "test_kill_while_insert"
 
-        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
-
         node1.query("""
             CREATE TABLE {name} (
                 s String
@@ -1107,7 +1105,10 @@ def test_kill_while_insert(start_cluster):
         assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["10"]
 
     finally:
-        """Don't drop table afterwards to not shadow assertion."""
+        try:
+            node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        except:
+            """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
 
 
 def test_move_while_merge(start_cluster):
