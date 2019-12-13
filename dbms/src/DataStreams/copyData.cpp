@@ -63,7 +63,7 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
         threads.reserve(froms.size());
         for (size_t i = 0; i < froms.size(); i++)
         {
-            threads.emplace_back([from = froms.at(i), to = tos.at(i)]() 
+            threads.emplace_back([from = froms.at(i), to = tos.at(i)]()
             {
                 from->readPrefix();
                 to->writePrefix();
@@ -79,13 +79,13 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
     else
     {
         ConcurrentBoundedQueue<Block> queue(froms.size());
-        ThreadFromGlobalPool from_threads([&]() 
+        ThreadFromGlobalPool from_threads([&]()
         {
             std::vector<ThreadFromGlobalPool> from_threads_;
             from_threads_.reserve(froms.size());
             for (auto & from : froms)
             {
-                from_threads_.emplace_back([&queue, from]() 
+                from_threads_.emplace_back([&queue, from]()
                 {
                     from->readPrefix();
                     while (Block block = from->read())
@@ -101,7 +101,7 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
         std::vector<ThreadFromGlobalPool> to_threads;
         for (auto & to : tos)
         {
-            to_threads.emplace_back([&queue, to]() 
+            to_threads.emplace_back([&queue, to]()
             {
                 to->writePrefix();
                 Block block;
