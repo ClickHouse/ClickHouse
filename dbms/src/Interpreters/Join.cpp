@@ -333,7 +333,7 @@ void Join::setSampleBlock(const Block & block)
         asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
         if (!asof_type)
         {
-            std::string msg = "ASOF join not supported for type";
+            std::string msg = "ASOF join not supported for type: ";
             msg += asof_column->getFamilyName();
             throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
         }
@@ -403,7 +403,7 @@ namespace
         Join & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
-        constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, JoinStuff::MappedOne> ||
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Map::mapped_type, JoinStuff::MappedOne> ||
                                     std::is_same_v<typename Map::mapped_type, JoinStuff::MappedOneFlagged>;
         constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
 
@@ -1123,7 +1123,7 @@ struct AdderNonJoined
     static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, JoinStuff::MappedAsof>;
-        constexpr bool mapped_one = std::is_same_v<Mapped, JoinStuff::MappedOne> || std::is_same_v<Mapped, JoinStuff::MappedOneFlagged>;
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, JoinStuff::MappedOne> || std::is_same_v<Mapped, JoinStuff::MappedOneFlagged>;
 
         if constexpr (mapped_asof)
         {

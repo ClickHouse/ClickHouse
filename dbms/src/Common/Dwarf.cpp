@@ -424,7 +424,7 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
     switch (form)
     {
         case DW_FORM_addr:
-            return read<uintptr_t>(sp);
+            return uint64_t(read<uintptr_t>(sp));
         case DW_FORM_block1:
             return readBytes(sp, read<uint8_t>(sp));
         case DW_FORM_block2:
@@ -436,23 +436,23 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
             return readBytes(sp, readULEB(sp));
         case DW_FORM_data1: [[fallthrough]];
         case DW_FORM_ref1:
-            return read<uint8_t>(sp);
+            return uint64_t(read<uint8_t>(sp));
         case DW_FORM_data2: [[fallthrough]];
         case DW_FORM_ref2:
-            return read<uint16_t>(sp);
+            return uint64_t(read<uint16_t>(sp));
         case DW_FORM_data4: [[fallthrough]];
         case DW_FORM_ref4:
-            return read<uint32_t>(sp);
+            return uint64_t(read<uint32_t>(sp));
         case DW_FORM_data8: [[fallthrough]];
         case DW_FORM_ref8:
             return read<uint64_t>(sp);
         case DW_FORM_sdata:
-            return readSLEB(sp);
+            return uint64_t(readSLEB(sp));
         case DW_FORM_udata: [[fallthrough]];
         case DW_FORM_ref_udata:
             return readULEB(sp);
         case DW_FORM_flag:
-            return read<uint8_t>(sp);
+            return uint64_t(read<uint8_t>(sp));
         case DW_FORM_flag_present:
             return 1;
         case DW_FORM_sec_offset: [[fallthrough]];

@@ -25,6 +25,7 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -359,7 +360,7 @@ PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsO
 {
     SubqueriesProjectionColumns projection_columns;
 
-    for (const auto & table_expression : getSelectTablesExpression(*ast_select))
+    for (const auto & table_expression : getTableExpressions(*ast_select))
         if (table_expression->subquery)
             getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
 
@@ -442,7 +443,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     if (!select_query->tables() || select_query->tables()->children.empty())
         return {};
 
-    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
+    std::vector<const ASTTableExpression *> tables_expression = getTableExpressions(*select_query);
 
     if (const auto * qualified_asterisk = asterisk->as<ASTQualifiedAsterisk>())
     {
