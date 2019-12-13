@@ -72,7 +72,8 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
-NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
+static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context,
+                                                NamesAndTypesList & materialized, NamesAndTypesList & aliases, NamesAndTypesList & virtuals)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
@@ -85,34 +86,60 @@ NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table
         const auto table_function = table_expression.table_function;
         auto query_context = const_cast<Context *>(&context.getQueryContext());
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        names_and_type_list = function_storage->getSampleBlockNonMaterialized().getNamesAndTypesList();
+        auto & columns = function_storage->getColumns();
+        names_and_type_list = columns.getOrdinary();
+        materialized = columns.getMaterialized();
+        aliases = columns.getAliases();
+        virtuals = columns.getVirtuals();
     }
     else if (table_expression.database_and_table_name)
     {
         DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
         const auto & table = context.getTable(database_table.database, database_table.table);
-        names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
+        auto & columns = table->getColumns();
+        names_and_type_list = columns.getOrdinary();
+        materialized = columns.getMaterialized();
+        aliases = columns.getAliases();
+        virtuals = columns.getVirtuals();
     }
 
     return names_and_type_list;
 }
 
-std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context)
+NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
+{
+    NamesAndTypesList materialized;
+    NamesAndTypesList aliases;
+    NamesAndTypesList virtuals;
+    return getColumnsFromTableExpression(table_expression, context, materialized, aliases, virtuals);
+}
+
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                      const Context & context, bool remove_duplicates)
 {
     std::vector<TableWithColumnNames> tables_with_columns;
 
-    if (select_query.tables() && !select_query.tables()->children.empty())
+    if (!table_expressions.empty())
     {
         String current_database = context.getCurrentDatabase();
 
-        for (const ASTTableExpression * table_expression : getTableExpressions(select_query))
+        for (const ASTTableExpression * table_expression : table_expressions)
         {
             DatabaseAndTableWithAlias table_name(*table_expression, current_database);
 
-            NamesAndTypesList names_and_types = getColumnsFromTableExpression(*table_expression, context);
-            removeDuplicateColumns(names_and_types);
+            NamesAndTypesList materialized;
+            NamesAndTypesList aliases;
+            NamesAndTypesList virtuals;
+            NamesAndTypesList names_and_types = getColumnsFromTableExpression(*table_expression, context, materialized, aliases, virtuals);
+
+            if (remove_duplicates)
+                removeDuplicateColumns(names_and_types);
 
             tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
+            auto & table = tables_with_columns.back();
+            table.addHiddenColumns(materialized);
+            table.addHiddenColumns(aliases);
+            table.addHiddenColumns(virtuals);
         }
     }
 
