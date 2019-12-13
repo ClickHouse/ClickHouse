@@ -123,7 +123,7 @@ BlockIO InterpreterInsertQuery::execute()
     BlockOutputStreams out_streams;
     auto query_sample_block = getSampleBlock(query, table);
 
-    while (out_streams_size-- > 0)
+    for (size_t i = 0; i < out_streams_size; i++)
     {
         /// We create a pipeline of several streams, into which we will write data.
         BlockOutputStreamPtr out;
@@ -168,7 +168,7 @@ BlockIO InterpreterInsertQuery::execute()
         }
 
         Block in_header = in_streams.at(0)->getHeader();
-        if(in_streams.size() > 1)
+        if (in_streams.size() > 1)
         {
             for (size_t i = 1; i < in_streams.size(); ++i)
                 assertBlocksHaveEqualStructure(in_streams[i]->getHeader(), in_header, "INSERT SELECT");

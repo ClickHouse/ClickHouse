@@ -3,6 +3,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -58,20 +59,19 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
 {
     if (froms.size() == tos.size())
     {
-        std::vector<std::thread> threads(froms.size());
+        std::vector<ThreadFromGlobalPool> threads;
+        threads.reserve(froms.size());
         for (size_t i = 0; i < froms.size(); i++)
         {
-            threads[i] = std::thread(
-                [&](BlockInputStreamPtr from, BlockOutputStreamPtr to) {
-                    from->readPrefix();
-                    to->writePrefix();
-                    while (Block block = from->read())
-                    {
-                        to->write(block);
-                    }
-                    from->readSuffix();
-                    to->writeSuffix();
-                }, froms.at(i), tos.at(i));
+            threads.emplace_back([from = froms.at(i), to = tos.at(i)]() 
+            {
+                from->readPrefix();
+                to->writePrefix();
+                while (Block block = from->read())
+                    to->write(block);
+                from->readSuffix();
+                to->writeSuffix();
+            });
         }
         for (auto & thread : threads)
             thread.join();
@@ -79,28 +79,30 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
     else
     {
         ConcurrentBoundedQueue<Block> queue(froms.size());
-        std::thread from_threads([&]() {
-            std::vector<std::thread> _from_threads;
-            for (auto & _from : froms)
+        ThreadFromGlobalPool from_threads([&]() 
+        {
+            std::vector<ThreadFromGlobalPool> from_threads_;
+            from_threads_.reserve(froms.size());
+            for (auto & from : froms)
             {
-                _from_threads.emplace_back([&](BlockInputStreamPtr from) {
+                from_threads_.emplace_back([&queue, from]() 
+                {
                     from->readPrefix();
                     while (Block block = from->read())
-                    {
                         queue.push(block);
-                    }
                     from->readSuffix();
-                }, _from);
+                });
             }
-            for (auto & thread : _from_threads)
+            for (auto & thread : from_threads_)
                 thread.join();
             for (size_t i = 0; i < tos.size(); i++)
                 queue.push({});
         });
-        std::vector<std::thread> _to_threads;
-        for (auto & _to : tos)
+        std::vector<ThreadFromGlobalPool> to_threads;
+        for (auto & to : tos)
         {
-            _to_threads.emplace_back([&](BlockOutputStreamPtr to) {
+            to_threads.emplace_back([&queue, to]() 
+            {
                 to->writePrefix();
                 Block block;
                 while (true)
@@ -111,11 +113,11 @@ void copyDataImpl(BlockInputStreams & froms, BlockOutputStreams & tos)
                     to->write(block);
                 }
                 to->writeSuffix();
-            }, _to);
+            });
         }
 
         from_threads.join();
-        for (auto & thread : _to_threads)
+        for (auto & thread : to_threads)
             thread.join();
     }
 }
