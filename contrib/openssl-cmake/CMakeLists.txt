@@ -57,7 +57,23 @@ perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSS
 perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha512-x86_64.s)
 perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp-x86_64.s)
 
+macro(perl_generate_config FILE_IN FILE_OUT)
+    add_custom_command(OUTPUT ${FILE_OUT}
+        COMMAND /usr/bin/env perl "-I${OPENSSL_SOURCE_DIR}" -Mconfigdata ${OPENSSL_SOURCE_DIR}/util/dofile.pl -oMakefile ${FILE_IN} > ${FILE_OUT})
+endmacro()
+
+perl_generate_config(${OPENSSL_SOURCE_DIR}/include/crypto/bn_conf.h.in ${OPENSSL_SOURCE_DIR}/include/crypto/bn_conf.h)
+perl_generate_config(${OPENSSL_SOURCE_DIR}/include/crypto/dso_conf.h.in ${OPENSSL_SOURCE_DIR}/include/crypto/dso_conf.h)
+perl_generate_config(${OPENSSL_SOURCE_DIR}/include/openssl/configuration.h.in ${OPENSSL_SOURCE_DIR}/include/openssl/configuration.h)
+perl_generate_config(${OPENSSL_SOURCE_DIR}/include/openssl/opensslv.h.in ${OPENSSL_SOURCE_DIR}/include/openssl/opensslv.h)
+
+
 set(CRYPTO_SRCS
+${OPENSSL_SOURCE_DIR}/include/crypto/bn_conf.h
+${OPENSSL_SOURCE_DIR}/include/crypto/dso_conf.h
+${OPENSSL_SOURCE_DIR}/include/openssl/configuration.h
+${OPENSSL_SOURCE_DIR}/include/openssl/opensslv.h
+
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cfb.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ecb.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ige.c
