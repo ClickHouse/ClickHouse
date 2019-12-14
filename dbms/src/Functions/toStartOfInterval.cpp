@@ -1,10 +1,12 @@
+#include <common/DateLUTImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -23,11 +25,11 @@ namespace
 {
     static constexpr auto function_name = "toStartOfInterval";
 
-    template <DataTypeInterval::Kind unit>
+    template <IntervalKind::Kind unit>
     struct Transform;
 
     template <>
-    struct Transform<DataTypeInterval::Year>
+    struct Transform<IntervalKind::Year>
     {
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
@@ -41,7 +43,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Quarter>
+    struct Transform<IntervalKind::Quarter>
     {
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
@@ -55,7 +57,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Month>
+    struct Transform<IntervalKind::Month>
     {
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
@@ -69,7 +71,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Week>
+    struct Transform<IntervalKind::Week>
     {
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
@@ -83,7 +85,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Day>
+    struct Transform<IntervalKind::Day>
     {
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
@@ -97,7 +99,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Hour>
+    struct Transform<IntervalKind::Hour>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -105,7 +107,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Minute>
+    struct Transform<IntervalKind::Minute>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -116,7 +118,7 @@ namespace
     };
 
     template <>
-    struct Transform<DataTypeInterval::Second>
+    struct Transform<IntervalKind::Second>
     {
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
@@ -125,7 +127,6 @@ namespace
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
     };
-
 }
 
 
@@ -163,9 +164,9 @@ public:
                     "Illegal type " + arguments[1].type->getName() + " of argument of function " + getName()
                         + ". Should be an interval of time",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            result_type_is_date = (interval_type->getKind() == DataTypeInterval::Year)
-                || (interval_type->getKind() == DataTypeInterval::Quarter) || (interval_type->getKind() == DataTypeInterval::Month)
-                || (interval_type->getKind() == DataTypeInterval::Week);
+            result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
+                || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
+                || (interval_type->getKind() == IntervalKind::Week);
         };
 
         auto check_timezone_argument = [&]
@@ -177,7 +178,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
                 throw Exception(
-                    "The timezone argument of function " + getName() + " with interval type " + interval_type->kindToString()
+                    "The timezone argument of function " + getName() + " with interval type " + interval_type->getKind().toString()
                         + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
@@ -233,26 +234,34 @@ private:
     ColumnPtr dispatchForColumns(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
-        if (WhichDataType(time_column.type.get()).isDateTime())
+        const auto & from_datatype = *time_column.type.get();
+        const auto which_type = WhichDataType(from_datatype);
+        if (which_type.isDateTime())
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
             if (time_column_vec)
-                return dispatchForIntervalColumn(*time_column_vec, interval_column, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, time_zone);
         }
-        if (WhichDataType(time_column.type.get()).isDate())
+        if (which_type.isDate())
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt16>(time_column.column.get());
             if (time_column_vec)
-                return dispatchForIntervalColumn(*time_column_vec, interval_column, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, time_zone);
+        }
+        if (which_type.isDateTime64())
+        {
+            const auto * time_column_vec = checkAndGetColumn<DataTypeDateTime64::ColumnType>(time_column.column.get());
+            if (time_column_vec)
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64&>(from_datatype), *time_column_vec, interval_column, time_zone);
         }
         throw Exception(
             "Illegal column for first argument of function " + getName() + ". Must contain dates or dates with time",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    template <typename FromType>
+    template <typename ColumnType, typename FromDataType>
     ColumnPtr dispatchForIntervalColumn(
-        const ColumnVector<FromType> & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -269,37 +278,48 @@ private:
 
         switch (interval_type->getKind())
         {
-            case DataTypeInterval::Second:
-                return execute<FromType, UInt32, DataTypeInterval::Second>(time_column, num_units, time_zone);
-            case DataTypeInterval::Minute:
-                return execute<FromType, UInt32, DataTypeInterval::Minute>(time_column, num_units, time_zone);
-            case DataTypeInterval::Hour:
-                return execute<FromType, UInt32, DataTypeInterval::Hour>(time_column, num_units, time_zone);
-            case DataTypeInterval::Day:
-                return execute<FromType, UInt32, DataTypeInterval::Day>(time_column, num_units, time_zone);
-            case DataTypeInterval::Week:
-                return execute<FromType, UInt16, DataTypeInterval::Week>(time_column, num_units, time_zone);
-            case DataTypeInterval::Month:
-                return execute<FromType, UInt16, DataTypeInterval::Month>(time_column, num_units, time_zone);
-            case DataTypeInterval::Quarter:
-                return execute<FromType, UInt16, DataTypeInterval::Quarter>(time_column, num_units, time_zone);
-            case DataTypeInterval::Year:
-                return execute<FromType, UInt16, DataTypeInterval::Year>(time_column, num_units, time_zone);
+            case IntervalKind::Second:
+                return execute<FromDataType, UInt32, IntervalKind::Second>(from, time_column, num_units, time_zone);
+            case IntervalKind::Minute:
+                return execute<FromDataType, UInt32, IntervalKind::Minute>(from, time_column, num_units, time_zone);
+            case IntervalKind::Hour:
+                return execute<FromDataType, UInt32, IntervalKind::Hour>(from, time_column, num_units, time_zone);
+            case IntervalKind::Day:
+                return execute<FromDataType, UInt32, IntervalKind::Day>(from, time_column, num_units, time_zone);
+            case IntervalKind::Week:
+                return execute<FromDataType, UInt16, IntervalKind::Week>(from, time_column, num_units, time_zone);
+            case IntervalKind::Month:
+                return execute<FromDataType, UInt16, IntervalKind::Month>(from, time_column, num_units, time_zone);
+            case IntervalKind::Quarter:
+                return execute<FromDataType, UInt16, IntervalKind::Quarter>(from, time_column, num_units, time_zone);
+            case IntervalKind::Year:
+                return execute<FromDataType, UInt16, IntervalKind::Year>(from, time_column, num_units, time_zone);
         }
 
         __builtin_unreachable();
     }
 
-    template <typename FromType, typename ToType, DataTypeInterval::Kind unit>
-    ColumnPtr execute(const ColumnVector<FromType> & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+
+    template <typename FromDataType, typename ToType, IntervalKind::Kind unit, typename ColumnType>
+    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
         auto result = ColumnVector<ToType>::create();
         auto & result_data = result->getData();
         result_data.resize(size);
-        for (size_t i = 0; i != size; ++i)
-            result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone);
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+        {
+            const auto transform = DateTime64BasicTransformWrapper<Transform<unit>>{from_datatype.getScale()};
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = transform.execute(time_data[i], num_units, time_zone);
+        }
+        else
+        {
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone);
+        }
         return result;
     }
 };

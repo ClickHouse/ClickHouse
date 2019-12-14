@@ -5,6 +5,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Util/Application.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
@@ -24,9 +25,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
+#include <Access/AccessControlManager.h>
+#include <Access/SettingsConstraints.h>
+#include <Access/QuotaContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
-#include <Interpreters/Quota.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -37,7 +40,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Access/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -65,6 +67,8 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric MemoryTrackingForMerges;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
 }
 
 
@@ -91,6 +95,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
+    extern const int NOT_ENOUGH_PRIVILEGES;
 }
 
 
@@ -130,8 +135,8 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
+    AccessControlManager access_control_manager;
     std::unique_ptr<UsersManager> users_manager;            /// Known users.
-    Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -147,9 +152,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser
-    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
+    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser
-    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -326,7 +331,7 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.quota = std::make_shared<QuotaForIntervals>();
+    res.quota = std::make_shared<QuotaContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -585,12 +590,31 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+AccessControlManager & Context::getAccessControlManager()
+{
+    auto lock = getLock();
+    return shared->access_control_manager;
+}
+
+const AccessControlManager & Context::getAccessControlManager() const
+{
+    auto lock = getLock();
+    return shared->access_control_manager;
+}
+
+void Context::checkQuotaManagementIsAllowed()
+{
+    if (!is_quota_management_allowed)
+        throw Exception(
+            "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
+    shared->access_control_manager.loadFromConfig(*shared->users_config);
     shared->users_manager->loadFromConfig(*shared->users_config);
-    shared->quotas.loadFromConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -631,7 +655,8 @@ void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->users_manager->getUser(client_info.current_user)->profile;
+    auto user = getUser(client_info.current_user);
+    String profile = user->profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -646,6 +671,10 @@ void Context::calculateUserSettings()
 
     /// 3) Apply settings from current user
     setProfile(profile);
+
+    quota = getAccessControlManager().createQuotaContext(
+        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
+    is_quota_management_allowed = user->is_quota_management_allowed;
 }
 
 
@@ -678,23 +707,8 @@ void Context::setUser(const String & name, const String & password, const Poco::
         client_info.quota_key = quota_key;
 
     calculateUserSettings();
-
-    setQuota(user_props->quota, quota_key, name, address.host());
 }
 
-
-void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
-{
-    auto lock = getLock();
-    quota = shared->quotas.get(name, quota_key, user_name, address);
-}
-
-
-QuotaForIntervals & Context::getQuota()
-{
-    auto lock = getLock();
-    return *quota;
-}
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
@@ -1496,7 +1510,20 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
 {
     auto lock = getLock();
     if (!shared->background_move_pool)
-        shared->background_move_pool.emplace(settings.background_move_pool_size, "BackgroundMovePool", "BgMoveProcPool");
+    {
+        BackgroundProcessingPool::PoolSettings pool_settings;
+        auto & config = getConfigRef();
+        pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
+        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
+        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
+        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
+        shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
+    }
     return *shared->background_move_pool;
 }
 
@@ -1803,7 +1830,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+const DiskPtr & Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
@@ -1813,7 +1840,7 @@ const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
 }
 
 
-DiskSpace::DiskSelector & Context::getDiskSelector() const
+DiskSelector & Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1822,13 +1849,13 @@ DiskSpace::DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
     }
     return *shared->merge_tree_disk_selector;
 }
 
 
-const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
@@ -1838,7 +1865,7 @@ const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & nam
 }
 
 
-DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelector & Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1847,7 +1874,7 @@ DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
     return *shared->merge_tree_storage_policy_selector;
 }
