@@ -137,7 +137,7 @@ Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/u
 Possible values:
 
 - Positive integer number of hops.
-- 0 — Unlimited number of hops.
+- 0 — No hops allowed.
 
 Default value: 0.
 
