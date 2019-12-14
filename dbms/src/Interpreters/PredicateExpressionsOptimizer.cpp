@@ -87,7 +87,8 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     /// split predicate with `and`
     std::vector<ASTPtr> outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(*ast_select, context);
+    std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*ast_select);
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
 
     bool is_rewrite_subquery = false;
     for (auto & outer_predicate : outer_predicate_expressions)

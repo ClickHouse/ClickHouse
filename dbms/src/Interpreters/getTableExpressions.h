@@ -17,6 +17,7 @@ const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, siz
 ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
 
 NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
-std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context);
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const std::vector<const ASTTableExpression *> & table_expressions,
+                                                                      const Context & context, bool remove_duplicates = true);
 
 }
