@@ -26,7 +26,7 @@ EXISTS t; -- Does not work for temporary tables. Maybe have to fix.
 EXISTS TABLE t;
 EXISTS DICTIONARY t;
 
-CREATE DICTIONARY database_for_dict.t (k UInt64, v String) PRIMARY KEY k LAYOUT(FLAT()) SOURCE(HTTP(URL 'https://yandex.ru/' FORMAT TSV)) LIFETIME(1000);
+CREATE DICTIONARY database_for_dict.t (k UInt64, v String) PRIMARY KEY k LAYOUT(FLAT()) SOURCE(HTTP(URL 'http://example.test/' FORMAT TSV)) LIFETIME(1000);
 EXISTS database_for_dict.t;
 EXISTS TABLE database_for_dict.t; -- Dictionaries are tables as well. But not all tables are dictionaries.
 EXISTS DICTIONARY database_for_dict.t;
