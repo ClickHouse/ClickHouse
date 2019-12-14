@@ -21,20 +21,49 @@ add_definitions(-DAES_ASM -DBSAES_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK160
 
 enable_language(ASM)
 
+macro(perl_generate_asm FILE_IN FILE_OUT)
+    add_custom_command(OUTPUT ${FILE_OUT}
+        COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
+endmacro()
+
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/aes-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-mb-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-sha1-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha1-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-sha256-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha256-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/bsaes-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/bsaes-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/aes/vpaes-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/rsaz-avx2.pl ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-avx2.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/rsaz-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gf2m.pl ${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-gf2m.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-mont.pl ${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-mont5.pl ${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont5.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/camellia/asm/cmll-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/chacha/asm/chacha-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/ec/asm/ecp_nistz256-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/ec/asm/x25519-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/ec/x25519-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.pl ${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/md5/asm/md5-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/md5/md5-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/modes/asm/aesni-gcm-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/modes/aesni-gcm-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/modes/asm/ghash-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/modes/ghash-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/poly1305/asm/poly1305-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/rc4/asm/rc4-md5-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-md5-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/rc4/asm/rc4-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/keccak1600-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-mb-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-mb-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha256-mb-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-mb-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-x86_64.s)   # This is not a mistake
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/sha/sha512-x86_64.s)
+perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp-x86_64.s)
+
 set(CRYPTO_SRCS
-${OPENSSL_SOURCE_DIR}/crypto/aes/aes-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cfb.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ecb.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ige.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_misc.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_ofb.c
 ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_wrap.c
-${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-mb-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha1-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha256-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/aes/bsaes-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/aes/vpaes-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/aria/aria.c
 ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_bitstr.c
 ${OPENSSL_SOURCE_DIR}/crypto/asn1/a_d2i_fp.c
@@ -169,15 +198,9 @@ ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_sqrt.c
 ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_srp.c
 ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_word.c
 ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_x931p.c
-${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-avx2.s
-${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz_exp.c
-${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-gf2m.s
-${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont.s
-${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont5.s
 ${OPENSSL_SOURCE_DIR}/crypto/buffer/buf_err.c
 ${OPENSSL_SOURCE_DIR}/crypto/buffer/buffer.c
-${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cfb.c
 ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_ctr.c
 ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_ecb.c
@@ -188,7 +211,6 @@ ${OPENSSL_SOURCE_DIR}/crypto/cast/c_ecb.c
 ${OPENSSL_SOURCE_DIR}/crypto/cast/c_enc.c
 ${OPENSSL_SOURCE_DIR}/crypto/cast/c_ofb64.c
 ${OPENSSL_SOURCE_DIR}/crypto/cast/c_skey.c
-${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/cmac/cm_ameth.c
 ${OPENSSL_SOURCE_DIR}/crypto/cmac/cmac.c
 ${OPENSSL_SOURCE_DIR}/crypto/cmp/cmp_asn.c
@@ -325,12 +347,10 @@ ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp224.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp256.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp521.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistputil.c
-${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_oct.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_smpl.c
 ${OPENSSL_SOURCE_DIR}/crypto/ec/ecx_meth.c
-${OPENSSL_SOURCE_DIR}/crypto/ec/x25519-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_all.c
 ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_cnf.c
 ${OPENSSL_SOURCE_DIR}/crypto/engine/eng_ctrl.c
@@ -480,23 +500,19 @@ ${OPENSSL_SOURCE_DIR}/crypto/threads_pthread.c
 ${OPENSSL_SOURCE_DIR}/crypto/threads_win.c
 ${OPENSSL_SOURCE_DIR}/crypto/trace.c
 ${OPENSSL_SOURCE_DIR}/crypto/uid.c
-${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.s
 ${OPENSSL_SOURCE_DIR}/crypto/md4/md4_dgst.c
 ${OPENSSL_SOURCE_DIR}/crypto/md4/md4_one.c
-${OPENSSL_SOURCE_DIR}/crypto/md5/md5-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/md5/md5_dgst.c
 ${OPENSSL_SOURCE_DIR}/crypto/md5/md5_one.c
 ${OPENSSL_SOURCE_DIR}/crypto/md5/md5_sha1.c
 ${OPENSSL_SOURCE_DIR}/crypto/mdc2/mdc2_one.c
 ${OPENSSL_SOURCE_DIR}/crypto/mdc2/mdc2dgst.c
-${OPENSSL_SOURCE_DIR}/crypto/modes/aesni-gcm-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/modes/cbc128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/ccm128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/cfb128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/ctr128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/cts128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/gcm128.c
-${OPENSSL_SOURCE_DIR}/crypto/modes/ghash-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/modes/ocb128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/ofb128.c
 ${OPENSSL_SOURCE_DIR}/crypto/modes/siv128.c
@@ -552,7 +568,6 @@ ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_lib.c
 ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_mime.c
 ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pk7_smime.c
 ${OPENSSL_SOURCE_DIR}/crypto/pkcs7/pkcs7err.c
-${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305.c
 ${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305_ameth.c
 ${OPENSSL_SOURCE_DIR}/crypto/property/defn_cache.c
@@ -578,8 +593,6 @@ ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_ecb.c
 ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_skey.c
 ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2cfb64.c
 ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2ofb64.c
-${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-md5-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/ripemd/rmd_dgst.c
 ${OPENSSL_SOURCE_DIR}/crypto/ripemd/rmd_one.c
 ${OPENSSL_SOURCE_DIR}/crypto/rsa/rsa_ameth.c
@@ -615,16 +628,10 @@ ${OPENSSL_SOURCE_DIR}/crypto/serializer/serializer_err.c
 ${OPENSSL_SOURCE_DIR}/crypto/serializer/serializer_lib.c
 ${OPENSSL_SOURCE_DIR}/crypto/serializer/serializer_meth.c
 ${OPENSSL_SOURCE_DIR}/crypto/serializer/serializer_pkey.c
-${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-mb-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/sha/sha1_one.c
 ${OPENSSL_SOURCE_DIR}/crypto/sha/sha1dgst.c
-${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-mb-x86_64.s
-${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/sha/sha256.c
 ${OPENSSL_SOURCE_DIR}/crypto/sha/sha3.c
-${OPENSSL_SOURCE_DIR}/crypto/sha/sha512-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/sha/sha512.c
 ${OPENSSL_SOURCE_DIR}/crypto/siphash/siphash.c
 ${OPENSSL_SOURCE_DIR}/crypto/siphash/siphash_ameth.c
@@ -661,7 +668,6 @@ ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_lib.c
 ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_null.c
 ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_openssl.c
 ${OPENSSL_SOURCE_DIR}/crypto/ui/ui_util.c
-${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp-x86_64.s
 ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
 ${OPENSSL_SOURCE_DIR}/crypto/x509/by_dir.c
 ${OPENSSL_SOURCE_DIR}/crypto/x509/by_file.c
@@ -846,6 +852,37 @@ ${OPENSSL_SOURCE_DIR}/providers/common/nid_to_name.c
 ${OPENSSL_SOURCE_DIR}/providers/common/provider_util.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_xts_fips.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/kdfs/pbkdf2_fips.c
+
+${OPENSSL_SOURCE_DIR}/crypto/aes/aes-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-mb-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha1-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-sha256-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/aesni-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/bsaes-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/aes/vpaes-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-avx2.s
+${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-gf2m.s
+${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont.s
+${OPENSSL_SOURCE_DIR}/crypto/bn/x86_64-mont5.s
+${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/ec/x25519-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/x86_64cpuid.s
+${OPENSSL_SOURCE_DIR}/crypto/md5/md5-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/modes/aesni-gcm-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/modes/ghash-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/poly1305/poly1305-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-md5-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-mb-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/sha1-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-mb-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/sha256-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/sha/sha512-x86_64.s
+${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp-x86_64.s
 )
 
 set(SSL_SRCS
