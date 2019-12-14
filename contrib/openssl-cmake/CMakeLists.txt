@@ -939,7 +939,7 @@ add_library(ssl ${SSL_SRCS})
 target_include_directories(crypto
 SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include
 SYSTEM PUBLIC ${OPENSSL_BINARY_DIR}/include
-PRIVATE linux_x86_64/include
+SYSTEM PUBLIC linux_x86_64/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/providers/common/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/providers/implementations/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/include
