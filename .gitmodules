@@ -29,9 +29,6 @@
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2.git
-[submodule "contrib/ssl"]
-	path = contrib/ssl
-	url = https://github.com/ClickHouse-Extras/ssl.git
 [submodule "contrib/llvm"]
 	path = contrib/llvm
 	url = https://github.com/ClickHouse-Extras/llvm
@@ -122,3 +119,6 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/openssl/openssl.git
