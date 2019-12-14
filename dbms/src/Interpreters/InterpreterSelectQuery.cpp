@@ -1417,8 +1417,14 @@ void InterpreterSelectQuery::executeFetchColumns(
             auto column = ColumnAggregateFunction::create(func);
             column->insertFrom(place);
 
+            auto header = analysis_result.before_aggregation->getSampleBlock();
+            size_t arguments_size = desc->argument_names.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = header.getByName(desc->argument_names[j]).type;
+
             Block block_with_count{
-                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, DataTypes(), Array()), desc->column_name}};
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
             if constexpr (pipeline_with_processors)
