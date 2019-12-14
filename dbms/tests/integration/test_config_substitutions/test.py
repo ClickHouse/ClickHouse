@@ -37,8 +37,8 @@ def test_allow_databases(start_cluster):
     assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'") == "db1\n"
     assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table' ") == "test_table\n"
     assert node5.query("SELECT name FROM system.columns WHERE database = 'db1' AND table = 'test_table'") == "date\nk1\nv1\n"
-    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n"
-    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n"
+    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0_1\n"
+    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0_1\n20000101_20000101_1_1_0_1\n20000101_20000101_1_1_0_1\n"
 
     assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'", user="test_allow").strip() == ""
     assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table'", user="test_allow").strip() == ""

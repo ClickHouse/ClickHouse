@@ -38,6 +38,7 @@ limitations under the License. */
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 

@@ -26,3 +26,11 @@ def test_sophisticated_default(started_cluster):
     instance.query("INSERT INTO sophisticated_default (c) VALUES (0)")
     assert instance.query("SELECT a, b, c FROM sophisticated_default") == "3\t9\t0\n"
 
+
+def test_partially_dropped_tables(started_cluster):
+    instance = started_cluster.instances['dummy']
+    assert instance.exec_in_container(['bash', '-c', 'cd / && find -name *.sql* | sort'], privileged=True, user='root') \
+          == "./var/lib/clickhouse/metadata/default/should_be_restored.sql\n" \
+             "./var/lib/clickhouse/metadata/default/sophisticated_default.sql\n"
+    assert instance.query("SELECT n FROM should_be_restored") == "1\n2\n3\n"
+    assert instance.query("SELECT count() FROM system.tables WHERE name='should_be_dropped'") == "0\n"

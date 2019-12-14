@@ -5,10 +5,12 @@ nav:
   - 'Distinctive Features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica Task': 'introduction/ya_metrika_task.md'
+  - 'History': 'introduction/history.md'
 
 - 'Getting Started':
-  - 'Deploying and Running': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - 'Installation': 'getting_started/install.md'
+  - 'Tutorial': 'getting_started/tutorial.md'
   - 'Example Datasets':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'

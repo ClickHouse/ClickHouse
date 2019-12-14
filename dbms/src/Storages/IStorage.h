@@ -426,7 +426,7 @@ public:
     virtual Names getSortingKeyColumns() const { return {}; }
 
     /// Returns storage policy if storage supports it
-    virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
+    virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
      */

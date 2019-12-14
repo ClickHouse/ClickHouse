@@ -97,7 +97,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
     }
 }
 
-void Pipe::setQuota(QuotaForIntervals & quota)
+void Pipe::setQuota(const std::shared_ptr<QuotaContext> & quota)
 {
     for (auto & processor : processors)
     {

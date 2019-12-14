@@ -12,13 +12,13 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
-#include <Common/intExp.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -29,7 +29,6 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
 
 #include <Formats/FormatSettings.h>
-
 
 namespace DB
 {
@@ -695,6 +694,46 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
             date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
 }
 
+/// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
+template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
+inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+    if (unlikely(!datetime64))
+    {
+        static const char s[] =
+        {
+            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+            between_date_time_delimiter,
+            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
+            fractional_time_delimiter,
+            // Exactly MaxScale zeroes
+            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
+        };
+        buf.write(s, sizeof(s) - (MaxScale - scale));
+        return;
+    }
+    auto c = DecimalUtils::split(datetime64, scale);
+    const auto & values = date_lut.getValues(c.whole);
+    writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
+        LocalDateTime(values.year, values.month, values.day_of_month,
+            date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
+
+    if (scale > 0)
+    {
+        buf.write(fractional_time_delimiter);
+
+        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+        static_assert(sizeof(data) >= MaxScale);
+
+        auto fractional = c.fractional;
+        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+            data[pos] += fractional % DateTime64(10);
+
+        writeString(&data[0], static_cast<size_t>(scale), buf);
+    }
+}
 
 /// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
 /// This is needed for HTTP requests.
@@ -764,12 +803,6 @@ inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTim
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
 
-template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
-template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
-
-
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
@@ -779,9 +812,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    T whole_part = value;
-    if (scale)
-        whole_part = value / decimalScaleMultiplier<T>(scale);
+    const T whole_part = DecimalUtils::getWholePart(value, scale);
 
     writeIntText(whole_part, ostr);
     if (scale)

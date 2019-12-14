@@ -46,12 +46,13 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();
+    factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
     factory.registerFunction<FunctionToFixedString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<FunctionBuilderCast>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -65,6 +66,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
     factory.registerFunction<FunctionToDateTimeOrZero>();
+    factory.registerFunction<FunctionToDateTime64OrZero>();
 
     factory.registerFunction<FunctionToDecimal32OrZero>();
     factory.registerFunction<FunctionToDecimal64OrZero>();
@@ -82,6 +84,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
     factory.registerFunction<FunctionToDateTimeOrNull>();
+    factory.registerFunction<FunctionToDateTime64OrNull>();
 
     factory.registerFunction<FunctionToDecimal32OrNull>();
     factory.registerFunction<FunctionToDecimal64OrNull>();
@@ -90,6 +93,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime64BestEffort>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
