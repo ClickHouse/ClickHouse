@@ -20,7 +20,7 @@ const DatabaseAndTableWithAlias & extractTable(const DatabaseAndTableWithAlias &
 
 const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & table)
 {
-    return table.first;
+    return table.table;
 }
 
 template <typename T>
