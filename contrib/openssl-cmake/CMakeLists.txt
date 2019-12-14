@@ -947,11 +947,10 @@ PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448
 PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_32
 PRIVATE ${OPENSSL_SOURCE_DIR})
 
-set (OPENSSL_INCLUDE_DIR ${OPENSSL_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
-
 target_include_directories(ssl
 PRIVATE ${OPENSSL_SOURCE_DIR})
 
 target_link_libraries(ssl crypto)
 
+set(OPENSSL_INCLUDE_DIR ${OPENSSL_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include_private)
 set(OPENSSL_LIBRARIES ssl crypto)
