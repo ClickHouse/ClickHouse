@@ -19,10 +19,10 @@ public:
     {
         setColumns(columns_);
     }
-    static StoragePtr createStorage(std::string database_name, std::string table_name,
-        const ColumnsDescription columns, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
+    static StoragePtr createStorage(const std::string & database_name, const std::string & table_name,
+        const ColumnsDescription & columns, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
     {
-        return std::make_shared<StorageBlocks>(std::move(database_name), std::move(table_name), std::move(columns), std::move(streams), to_stage);
+        return std::make_shared<StorageBlocks>(database_name, table_name, columns, streams, to_stage);
     }
     std::string getName() const override { return "Blocks"; }
     std::string getTableName() const override { return table_name; }
