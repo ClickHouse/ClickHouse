@@ -35,7 +35,6 @@ macro(curl_internal_test CURL_TEST)
         "-DLINK_LIBRARIES:STRING=${CMAKE_REQUIRED_LIBRARIES}")
     endif()
 
-    message(STATUS "Performing Curl Test ${CURL_TEST}")
     try_compile(${CURL_TEST}
       ${CMAKE_BINARY_DIR}
       ${CMAKE_CURRENT_SOURCE_DIR}/CMake/CurlTests.c
@@ -44,12 +43,10 @@ macro(curl_internal_test CURL_TEST)
       OUTPUT_VARIABLE OUTPUT)
     if(${CURL_TEST})
       set(${CURL_TEST} 1 CACHE INTERNAL "Curl test ${FUNCTION}")
-      message(STATUS "Performing Curl Test ${CURL_TEST} - Success")
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
         "Performing Curl Test ${CURL_TEST} passed with the following output:\n"
         "${OUTPUT}\n")
     else()
-      message(STATUS "Performing Curl Test ${CURL_TEST} - Failed")
       set(${CURL_TEST} "" CACHE INTERNAL "Curl test ${FUNCTION}")
       file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
         "Performing Curl Test ${CURL_TEST} failed with the following output:\n"
@@ -71,7 +68,6 @@ macro(curl_nroff_check)
         ERROR_QUIET)
       # Save the option if it was valid
       if(NROFF_MANOPT_OUTPUT)
-        message("Found *nroff option: -- ${_MANOPT}")
         set(NROFF_MANOPT ${_MANOPT})
         set(NROFF_USEFUL ON)
         break()

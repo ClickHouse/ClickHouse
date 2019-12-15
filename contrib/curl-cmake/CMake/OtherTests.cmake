@@ -54,8 +54,6 @@ if(curl_cv_recv)
                     return 0;
                   }"
                   curl_cv_func_recv_test)
-                message(STATUS
-                  "Tested: ${recv_retv} recv(${recv_arg1}, ${recv_arg2}, ${recv_arg3}, ${recv_arg4})")
                 if(curl_cv_func_recv_test)
                   set(curl_cv_func_recv_args
                     "${recv_arg1},${recv_arg2},${recv_arg3},${recv_arg4},${recv_retv}")
@@ -118,8 +116,6 @@ if(curl_cv_send)
                     return 0;
                   }"
                   curl_cv_func_send_test)
-                message(STATUS
-                  "Tested: ${send_retv} send(${send_arg1}, ${send_arg2}, ${send_arg3}, ${send_arg4})")
                 if(curl_cv_func_send_test)
                   string(REGEX REPLACE "(const) .*" "\\1" send_qual_arg2 "${send_arg2}")
                   string(REGEX REPLACE "const (.*)" "\\1" send_arg2 "${send_arg2}")

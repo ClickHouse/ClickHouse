@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunction.h"
+#include "IFunctionImpl.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <cmath>
@@ -38,6 +38,7 @@ namespace ErrorCodes
 
 /** Rounding Functions:
     * round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
+    * roundBankers(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for all numbers.
     * floor(x, N) is the largest number <= x (N = 0 by default).
     * ceil(x, N) is the smallest number >= x (N = 0 by default).
     * trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
@@ -77,10 +78,16 @@ enum class RoundingMode
 #endif
 };
 
+enum class TieBreakingMode
+{
+    Auto, // use banker's rounding for floating point numbers, round up otherwise
+    Bankers, // use banker's rounding
+};
+
 
 /** Rounding functions for integer values.
   */
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, TieBreakingMode tie_breaking_mode>
 struct IntegerRoundingComputation
 {
     static const size_t data_count = 1;
@@ -115,7 +122,21 @@ struct IntegerRoundingComputation
                 bool negative = x < 0;
                 if (negative)
                     x = -x;
-                x = (x + scale / 2) / scale * scale;
+                switch (tie_breaking_mode)
+                {
+                    case TieBreakingMode::Auto:
+                        x = (x + scale / 2) / scale * scale;
+                        break;
+                    case TieBreakingMode::Bankers:
+                    {
+                        T quotient = (x + scale / 2) / scale;
+                        if (quotient * scale == x + scale / 2)
+                            x = (quotient & ~1) * scale;
+                        else
+                            x = quotient * scale;
+                        break;
+                    }
+                }
                 if (negative)
                     x = -x;
                 return x;
@@ -324,11 +345,11 @@ public:
     }
 };
 
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, TieBreakingMode tie_breaking_mode>
 struct IntegerRoundingImpl
 {
 private:
-    using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode>;
+    using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
 
 public:
     template <size_t scale>
@@ -380,11 +401,12 @@ public:
 };
 
 
-template <typename T, RoundingMode rounding_mode>
-class DecimalRounding
+template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
+class DecimalRoundingImpl
 {
+private:
     using NativeType = typename T::NativeType;
-    using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative>;
+    using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
@@ -414,13 +436,13 @@ public:
 
 /** Select the appropriate processing algorithm depending on the scale.
   */
-template <typename T, RoundingMode rounding_mode>
+template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class Dispatcher
 {
     template <ScaleMode scale_mode>
     using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
-        IntegerRoundingImpl<T, rounding_mode, scale_mode>>;
+        IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
     static void apply(Block & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
     {
@@ -459,7 +481,7 @@ class Dispatcher
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
-            DecimalRounding<T, rounding_mode>::apply(col->getData(), vec_res, scale_arg);
+            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
 
         block.getByPosition(result).column = std::move(col_res);
     }
@@ -477,7 +499,7 @@ public:
 /** A template for functions that round the value of an input parameter of type
   * (U)Int8/16/32/64, Float32/64 or Decimal32/64/128, and accept an additional optional parameter (default is 0).
   */
-template <typename Name, RoundingMode rounding_mode>
+template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
 class FunctionRounding : public IFunction
 {
 public:
@@ -543,7 +565,7 @@ public:
             if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
             {
                 using FieldType = typename DataType::FieldType;
-                Dispatcher<FieldType, rounding_mode>::apply(block, column.column.get(), scale_arg, result);
+                Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(block, column.column.get(), scale_arg, result);
                 return true;
             }
             return false;
@@ -717,13 +739,15 @@ private:
 
 
 struct NameRound { static constexpr auto name = "round"; };
+struct NameRoundBankers { static constexpr auto name = "roundBankers"; };
 struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
 struct NameTrunc { static constexpr auto name = "trunc"; };
 
-using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round>;
-using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor>;
-using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil>;
-using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
+using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round, TieBreakingMode::Auto>;
+using FunctionRoundBankers = FunctionRounding<NameRoundBankers, RoundingMode::Round, TieBreakingMode::Bankers>;
+using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor, TieBreakingMode::Auto>;
+using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil, TieBreakingMode::Auto>;
+using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc, TieBreakingMode::Auto>;
 
 }

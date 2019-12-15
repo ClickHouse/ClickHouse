@@ -111,7 +111,7 @@ list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
+list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -245,13 +245,6 @@ set_source_files_properties(
         src/Common/Dwarf.cpp
         src/Common/SymbolIndex.cpp
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
-
-# allow construction of std::variant<unsigned ...>(1) for Dwarf
-if (USE_LIBCXX AND NOT USE_INTERNAL_LIBCXX_LIBRARY)
-    set_source_files_properties(src/Common/Dwarf.cpp PROPERTIES COMPILE_DEFINITIONS
-                                "_LIBCPP_ENABLE_NARROWING_CONVERSIONS_IN_VARIANT=1")
-endif ()
-
 
 target_link_libraries (clickhouse_common_io
         PUBLIC

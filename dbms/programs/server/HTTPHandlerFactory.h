@@ -9,6 +9,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "NotFoundHandler.h"
 #include "PingRequestHandler.h"
+#include "PrometheusRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "RootRequestHandler.h"
 
@@ -16,60 +17,111 @@
 namespace DB
 {
 
-template <typename HandlerType>
-class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+/// Handle request using child handlers
+class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
+    using TThis = HTTPRequestHandlerFactoryMain;
+
     IServer & server;
     Logger * log;
     std::string name;
 
+    std::vector<std::unique_ptr<Poco::Net::HTTPRequestHandlerFactory>> child_handler_factories;
+
 public:
-    HTTPRequestHandlerFactory(IServer & server_, const std::string & name_) : server(server_), log(&Logger::get(name_)), name(name_)
+    HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_);
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
+
+    template <typename T, typename... TArgs>
+    TThis * addHandler(TArgs &&... args)
     {
+        child_handler_factories.emplace_back(std::make_unique<T>(server, std::forward<TArgs>(args)...));
+        return this;
     }
+};
+
+
+/// Handle POST or GET with params
+template <typename HandleType>
+class HTTPQueryRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+private:
+    IServer & server;
+
+public:
+    HTTPQueryRequestHandlerFactory(IServer & server_) : server(server_) {}
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
     {
-        LOG_TRACE(log, "HTTP Request for " << name << ". "
-            << "Method: "
-            << request.getMethod()
-            << ", Address: "
-            << request.clientAddress().toString()
-            << ", User-Agent: "
-            << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-            << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-            << ", Content Type: " << request.getContentType()
-            << ", Transfer Encoding: " << request.getTransferEncoding());
+        if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+            return new HandleType(server);
+        return nullptr;
+    }
+};
 
-        const auto & uri = request.getURI();
 
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
-        {
-            if (uri == "/")
-                return new RootRequestHandler(server);
-            if (uri == "/ping")
-                return new PingRequestHandler(server);
-            else if (startsWith(uri, "/replicas_status"))
-                return new ReplicasStatusHandler(server.context());
-        }
+/// Handle GET or HEAD endpoint on specified path
+template <typename TGetEndpoint>
+class HTTPGetRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+private:
+    IServer & server;
+public:
+    HTTPGetRequestHandlerFactory(IServer & server_) : server(server_) {}
 
-        if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            return new HandlerType(server);
-        }
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
+    {
+        auto & method = request.getMethod();
+        if (!(method == Poco::Net::HTTPRequest::HTTP_GET || method == Poco::Net::HTTPRequest::HTTP_HEAD))
+            return nullptr;
 
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
-            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            return new NotFoundHandler;
-        }
+        auto & uri = request.getURI();
+        bool uri_match = TGetEndpoint::strict_path ? uri == TGetEndpoint::path : startsWith(uri, TGetEndpoint::path);
+        if (uri_match)
+            return new typename TGetEndpoint::HandleType(server);
 
         return nullptr;
     }
 };
 
-using HTTPHandlerFactory = HTTPRequestHandlerFactory<HTTPHandler>;
-using InterserverIOHTTPHandlerFactory = HTTPRequestHandlerFactory<InterserverIOHTTPHandler>;
+
+struct RootEndpoint
+{
+    static constexpr auto path = "/";
+    static constexpr auto strict_path = true;
+    using HandleType = RootRequestHandler;
+};
+
+struct PingEndpoint
+{
+    static constexpr auto path = "/ping";
+    static constexpr auto strict_path = true;
+    using HandleType = PingRequestHandler;
+};
+
+struct ReplicasStatusEndpoint
+{
+    static constexpr auto path = "/replicas_status";
+    static constexpr auto strict_path = false;
+    using HandleType = ReplicasStatusHandler;
+};
+
+using HTTPRootRequestHandlerFactory = HTTPGetRequestHandlerFactory<RootEndpoint>;
+using HTTPPingRequestHandlerFactory = HTTPGetRequestHandlerFactory<PingEndpoint>;
+using HTTPReplicasStatusRequestHandlerFactory = HTTPGetRequestHandlerFactory<ReplicasStatusEndpoint>;
+
+template <typename HandleType>
+HTTPRequestHandlerFactoryMain * createDefaultHandlerFatory(IServer & server, const std::string & name)
+{
+    auto handlerFactory = new HTTPRequestHandlerFactoryMain(server, name);
+    handlerFactory->addHandler<HTTPRootRequestHandlerFactory>()
+                  ->addHandler<HTTPPingRequestHandlerFactory>()
+                  ->addHandler<HTTPReplicasStatusRequestHandlerFactory>()
+                  ->addHandler<HTTPQueryRequestHandlerFactory<HandleType>>();
+    return handlerFactory;
+}
+
 
 }
