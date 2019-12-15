@@ -122,3 +122,9 @@
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
+[submodule "contrib/icudata"]
+	path = contrib/icudata
+	url = https://github.com/ClickHouse-Extras/icudata.git
+[submodule "contrib/icu"]
+	path = contrib/icu
+	url = https://github.com/unicode-org/icu.git

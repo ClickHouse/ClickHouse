@@ -165,6 +165,10 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
+if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
+    add_subdirectory (icu-cmake)
+endif ()
+
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
