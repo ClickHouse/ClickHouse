@@ -121,4 +121,4 @@
 	url = https://github.com/curl/curl.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
-	url = https://github.com/openssl/openssl.git
+	url = https://github.com/ClickHouse-Extras/openssl.git
