@@ -909,15 +909,15 @@ if (ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
 elseif (ARCH_AARCH64)
     set (CRYPTO_SRCS ${CRYPTO_SRCS}
-        ${OPENSSL_BINARY_DIR}/crypto/aes/aes_cbc.c
-        ${OPENSSL_BINARY_DIR}/crypto/aes/aes_core.c
-        ${OPENSSL_BINARY_DIR}/crypto/bn/bn_asm.c
-        ${OPENSSL_BINARY_DIR}/crypto/camellia/camellia.c
-        ${OPENSSL_BINARY_DIR}/crypto/camellia/cmll_cbc.c
-        ${OPENSSL_BINARY_DIR}/crypto/armcap.c
-        ${OPENSSL_BINARY_DIR}/crypto/rc4/rc4_enc.c
-        ${OPENSSL_BINARY_DIR}/crypto/rc4/rc4_skey.c
-        ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp_block.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/armcap.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S
         ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S
