@@ -1,6 +1,8 @@
 set(ICU_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source)
 set(ICUDATA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icudata/)
 
+# These lists of sources were generated from build log of the original ICU build system (configure + make).
+
 set(ICUUC_SOURCES
 ${ICU_SOURCE_DIR}/common/errorcode.cpp
 ${ICU_SOURCE_DIR}/common/putil.cpp
@@ -436,6 +438,7 @@ ${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp)
 enable_language(ASM)
 set(ICUDATA_SOURCES ${ICUDATA_SOURCE_DIR}/icudt66l_dat.S)
 
+# Note that we don't like any kind of binary plugins (because of runtime dependencies, vulnerabilities, ABI incompatibilities).
 add_definitions(-D_REENTRANT -DU_HAVE_ELF_H=1 -DU_HAVE_STRTOD_L=1 -DU_HAVE_XLOCALE_H=0 -DDEFAULT_ICU_PLUGINS="/dev/null")
 
 add_library(icuuc ${ICUUC_SOURCES})
