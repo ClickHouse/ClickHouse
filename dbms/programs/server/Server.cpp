@@ -672,6 +672,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                return address;
         };
 
+        /// This object will periodically calculate some metrics.
+        AsynchronousMetrics async_metrics(*global_context);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+
         for (const auto & listen_host : listen_hosts)
         {
             auto create_server = [&](const char * port_name, auto && func)
@@ -711,8 +715,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
@@ -729,7 +737,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -787,7 +795,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -803,7 +811,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -829,6 +837,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+            });
+
+            /// Prometheus (if defined and not setup yet with http_port)
+            create_server("prometheus.port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening http://" + address.toString());
             });
         }
 
@@ -931,10 +957,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
             throw;
         }
-
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
