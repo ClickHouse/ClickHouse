@@ -11,6 +11,7 @@ For example, in Ubuntu Bionic you can use the following commands:
 
 ```bash
 echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+sudo apt-get update
 sudo apt-get install clang-8
 ```
 
