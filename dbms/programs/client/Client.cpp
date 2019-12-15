@@ -18,7 +18,6 @@
 #include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-#include <common/readline_use.h>
 #include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
@@ -69,7 +68,12 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 
-#if USE_READLINE
+#if __has_include(<common/config_common.h>) /// This check is for Arcadia build system that doesn't have generated configs.
+#include <common/config_common.h>
+#endif
+
+#if USE_REPLXX
+#include <replxx.hxx>
 #include "Suggest.h"
 #endif
 
@@ -89,38 +93,6 @@
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
 
-#if USE_READLINE && RL_VERSION_MAJOR >= 7
-
-#define BRACK_PASTE_PREF "\033[200~"
-#define BRACK_PASTE_SUFF "\033[201~"
-
-#define BRACK_PASTE_LAST '~'
-#define BRACK_PASTE_SLEN 6
-
-/// This handler bypasses some unused macro/event checkings.
-static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
-{
-    std::string buf;
-    buf.reserve(128);
-
-    RL_SETSTATE(RL_STATE_MOREINPUT);
-    SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    int c;
-    while ((c = rl_read_key()) >= 0)
-    {
-        if (c == '\r')
-            c = '\n';
-        buf.push_back(c);
-        if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
-        {
-            buf.resize(buf.size() - BRACK_PASTE_SLEN);
-            break;
-        }
-    }
-    return static_cast<size_t>(rl_insert_text(buf.c_str())) == buf.size() ? 0 : 1;
-}
-
-#endif
 
 namespace DB
 {
@@ -443,6 +415,8 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+            Replxx repl;
+
 #if USE_READLINE
             SCOPE_EXIT({ Suggest::instance().finalize(); });
             if (server_revision >= Suggest::MIN_SERVER_REVISION
@@ -495,24 +469,6 @@ private:
             if (rl_initialize())
                 throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
 
-#if RL_VERSION_MAJOR >= 7
-            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-            ///  disabled, so that we are able to paste and execute multiline queries in a whole
-            ///  instead of erroring out, while be less intrusive.
-            if (config().has("multiquery") && !config().has("multiline"))
-            {
-                /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
-                ///  that the program can differentiate pasted text from typed-in text. This helps
-                ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
-                ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
-                ///  more details.
-                rl_variable_bind("enable-bracketed-paste", "on");
-
-                /// Use our bracketed paste handler to get better user experience. See comments above.
-                rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
-            }
-#endif
-
             auto clear_prompt_or_exit = [](int)
             {
                 /// This is signal safe.
@@ -548,11 +504,11 @@ private:
             /// This is intended for testing purposes.
             if (config().getBool("always_load_suggestion_data", false))
             {
-#if USE_READLINE
+#if USE_REPLXX
                 SCOPE_EXIT({ Suggest::instance().finalize(); });
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 #else
-                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Command line suggestions cannot work without 'replxx' library enabled at build time", ErrorCodes::BAD_ARGUMENTS);
 #endif
             }
 
