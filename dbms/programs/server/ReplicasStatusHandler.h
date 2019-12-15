@@ -1,5 +1,7 @@
 #pragma once
 
+#include "IServer.h"
+
 #include <Poco/Net/HTTPRequestHandler.h>
 
 
@@ -15,7 +17,7 @@ private:
     Context & context;
 
 public:
-    explicit ReplicasStatusHandler(Context & context_);
+    explicit ReplicasStatusHandler(IServer & server);
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 };
