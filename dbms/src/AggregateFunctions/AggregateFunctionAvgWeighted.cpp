@@ -13,7 +13,7 @@ template <typename T>
 struct AvgWeighted
 {
     using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
-    using Function = AggregateFunctionAvgWeighted<T, AggregateFunctionAvgWeightedData<FieldType>>;
+    using Function = AggregateFunctionAvgWeighted<T, AggregateFunctionAvgData<FieldType>>;
 };
 
 template <typename T>
@@ -25,14 +25,18 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
     assertBinary(name, argument_types);
 
     AggregateFunctionPtr res;
-    DataTypePtr data_type = argument_types[0];
+    const auto data_type = static_cast<const DataTypePtr>(argument_types[0]);
+    const auto data_type_weight = static_cast<const DataTypePtr>(argument_types[1]);
+    if (!data_type->equals(*data_type_weight))
+        throw Exception("Different types " + data_type->getName() + " and " + data_type_weight->getName() + " of arguments for aggregate function " + name,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<AggregateFuncAvgWeighted>(*data_type, *data_type, argument_types));
     else
         res.reset(createWithNumericType<AggregateFuncAvgWeighted>(*data_type, argument_types));
 
     if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+        throw Exception("Illegal type " + data_type->getName() + " of argument for aggregate function " + name,
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     return res;
 }
@@ -41,7 +45,7 @@ AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name
 
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("AvgWeighted", createAggregateFunctionAvgWeighted, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("avgWeighted", createAggregateFunctionAvgWeighted, AggregateFunctionFactory::CaseSensitive);
 }
 
 }
