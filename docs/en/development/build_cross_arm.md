@@ -10,7 +10,7 @@ Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian set
 For example, in Ubuntu Bionic you can use the following commands:
 
 ```bash
-sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
+echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
 sudo apt-get install clang-8
 ```
 
