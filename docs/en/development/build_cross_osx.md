@@ -37,9 +37,9 @@ Also, we need to download MacOS X SDK into the working tree.
 
 ```bash
 cd ClickHouse
-cd cmake/toolchain/darwin-x86_64
-wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-tar --strip-components=1 xJf MacOSX10.14.sdk.tar.xz
+wget 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz'
+mkdir -p build/cmake/toolchain/darwin-x86_64
+tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
 # Build ClickHouse
