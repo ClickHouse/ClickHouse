@@ -436,7 +436,7 @@ ${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp)
 enable_language(ASM)
 set(ICUDATA_SOURCES ${ICUDATA_SOURCE_DIR}/icudt66l_dat.S)
 
-add_definitions(-D_REENTRANT -DU_HAVE_ELF_H=1 -DU_HAVE_STRTOD_L=1 -DU_HAVE_XLOCALE_H=0 -DDEFAULT_ICU_PLUGINS="/dev/null" -DU_ATTRIBUTE_DEPRECATED)
+add_definitions(-D_REENTRANT -DU_HAVE_ELF_H=1 -DU_HAVE_STRTOD_L=1 -DU_HAVE_XLOCALE_H=0 -DDEFAULT_ICU_PLUGINS="/dev/null")
 
 add_library(icuuc ${ICUUC_SOURCES})
 add_library(icui18n ${ICUI18N_SOURCES})
