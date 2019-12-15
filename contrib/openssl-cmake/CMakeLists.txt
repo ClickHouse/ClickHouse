@@ -28,12 +28,11 @@ endif()
 
 enable_language(ASM)
 
-macro(perl_generate_asm FILE_IN FILE_OUT)
-    add_custom_command(OUTPUT ${FILE_OUT}
-        COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
-endmacro()
-
 if (ARCH_AMD64)
+    macro(perl_generate_asm FILE_IN FILE_OUT)
+        add_custom_command(OUTPUT ${FILE_OUT}
+            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
+    endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-sha1-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-sha1-x86_64.s)
@@ -65,6 +64,10 @@ if (ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
 elseif (ARCH_AARCH64)
+    macro(perl_generate_asm FILE_IN FILE_OUT)
+        add_custom_command(OUTPUT ${FILE_OUT}
+            COMMAND /usr/bin/env perl "linux64" ${FILE_IN} ${FILE_OUT})
+    endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/armv8-mont.pl ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S)
