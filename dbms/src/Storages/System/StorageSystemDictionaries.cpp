@@ -50,14 +50,21 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
     {
+        if (startsWith(load_result.repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX))
+            continue;
+
         size_t i = 0;
+        String database;
+        String short_name = dict_name;
 
-        res_columns[i++]->insert(load_result.repository_name);
-        if (!load_result.repository_name.empty())
-            res_columns[i++]->insert(dict_name.substr(load_result.repository_name.length() + 1));
-        else
-            res_columns[i++]->insert(dict_name);
+        if (!load_result.repository_name.empty() && startsWith(dict_name, load_result.repository_name + "."))
+        {
+            database = load_result.repository_name;
+            short_name = dict_name.substr(load_result.repository_name.length() + 1);
+        }
 
+        res_columns[i++]->insert(database);
+        res_columns[i++]->insert(short_name);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.origin);
 
