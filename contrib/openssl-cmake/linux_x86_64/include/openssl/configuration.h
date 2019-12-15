@@ -13,6 +13,14 @@
 #ifndef OPENSSL_CONFIGURATION_H
 # define OPENSSL_CONFIGURATION_H
 
+/// Never use features dependent on libc version.
+/// It's assumed that this file is included after libc headers.
+/// This edit was made for ClickHouse.
+#if defined(__GLIBC_PREREQ)
+    #undef __GLIBC_PREREQ
+#endif
+
+
 # ifdef  __cplusplus
 extern "C" {
 # endif
