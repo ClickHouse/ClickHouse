@@ -74,7 +74,7 @@
 
 #if USE_REPLXX
 #include <replxx.hxx>
-#include "Suggest.h"
+//#include "Suggest.h"
 #endif
 
 #ifndef __clang__
@@ -214,6 +214,9 @@ private:
     NameToNameMap query_parameters;
 
     ConnectionParameters connection_parameters;
+
+    std::optional<replxx::Replxx> repl;
+
 
     void initialize(Poco::Util::Application & self)
     {
@@ -415,9 +418,9 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-            Replxx repl;
+            repl.emplace();
 
-#if USE_READLINE
+#if 0
             SCOPE_EXIT({ Suggest::instance().finalize(); });
             if (server_revision >= Suggest::MIN_SERVER_REVISION
                 && !config().getBool("disable_suggestion", false))
@@ -453,7 +456,7 @@ private:
             {
                 if (Poco::File(history_file).exists())
                 {
-#if USE_READLINE
+#if 0
                     int res = read_history(history_file.c_str());
                     if (res)
                         std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
@@ -463,7 +466,7 @@ private:
                     Poco::File(history_file).createFile();
             }
 
-#if USE_READLINE
+#if 0
             /// Install Ctrl+C signal handler that will be used in interactive mode.
 
             if (rl_initialize())
@@ -504,7 +507,7 @@ private:
             /// This is intended for testing purposes.
             if (config().getBool("always_load_suggestion_data", false))
             {
-#if USE_REPLXX
+#if 0
                 SCOPE_EXIT({ Suggest::instance().finalize(); });
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 #else
@@ -607,10 +610,10 @@ private:
         String input;
         String prev_input;
 
-        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
+        while (const char * line_ = repl->input(input.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
-            free(line_);
+            //free(line_);
 
             size_t ws = line.size();
             while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
@@ -641,9 +644,9 @@ private:
                     std::string logged_query = input;
                     if (config().has("multiline"))
                         std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
-                    add_history(logged_query.c_str());
+                    repl->history_add(logged_query);
 
-#if USE_READLINE && HAVE_READLINE_HISTORY
+#if 0
                     if (!history_file.empty() && append_history(1, history_file.c_str()))
                         std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
@@ -673,7 +676,6 @@ private:
                                       << e.getStackTrace().toString() << std::endl;
 
                         std::cerr << std::endl;
-
                     }
 
                     /// Client-side exception during query execution can result in the loss of
