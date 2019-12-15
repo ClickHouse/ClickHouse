@@ -62,11 +62,6 @@ public:
 
     void drop() override;
 
-    void detachDictionary(const String &, const Context &) override
-    {
-        throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     String getMetadataPath() const override;
 
     void createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
@@ -87,11 +82,6 @@ public:
     void removeDictionary(const Context &, const String &) override
     {
         throw Exception("MySQL database engine does not support remove dictionary.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void attachTable(const String &, const StoragePtr &) override
-    {
-        throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void attachDictionary(const String &, const Context &) override
