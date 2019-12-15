@@ -946,7 +946,7 @@ private:
             new_exception = std::current_exception();
         }
         return std::make_pair(new_object, new_exception);
-    }     
+    }
 
     /// Saves the result of the loading, calculates the time of the next update, and handles errors.
     void saveResultOfLoadingSingleObject(
