@@ -66,7 +66,7 @@ if (ARCH_AMD64)
 elseif (ARCH_AARCH64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
-            COMMAND /usr/bin/env perl "linux64" ${FILE_IN} ${FILE_OUT})
+            COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
     endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
