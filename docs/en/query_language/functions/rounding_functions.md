@@ -96,7 +96,7 @@ Accept a number, round it down to an element in the specified array. If the valu
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
 
-## bankerRound(x\[, N\])
+## roundBankers(x\[, N\])
 
 Rounds a value to a specified number of decimal places.
 
