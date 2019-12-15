@@ -27,6 +27,9 @@ elseif(ARCH_AARCH64)
 endif()
 
 enable_language(ASM)
+if (COMPILER_CLANG)
+    add_definitions(-Wno-unused-command-line-argument)
+endif ()
 
 if (ARCH_AMD64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
