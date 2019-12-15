@@ -999,6 +999,7 @@ target_include_directories(crypto
 SYSTEM PUBLIC ${OPENSSL_SOURCE_DIR}/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/providers/common/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/providers/implementations/include
+PRIVATE ${OPENSSL_SOURCE_DIR}/crypto
 PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/include
 PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448
 PRIVATE ${OPENSSL_SOURCE_DIR}/crypto/ec/curve448/arch_32
