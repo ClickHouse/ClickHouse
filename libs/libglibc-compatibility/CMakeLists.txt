@@ -36,6 +36,10 @@ if (GLIBC_COMPATIBILITY)
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
+    if (COMPILER_CLANG)
+        target_compile_options(glibc-compatibility PRIVATE -Wno-unused-command-line-argument)
+    endif ()
+
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
     if (NOT USE_STATIC_LIBRARIES AND NOT MAKE_STATIC_LIBRARIES)
