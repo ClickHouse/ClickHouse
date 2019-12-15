@@ -29,7 +29,6 @@ set (KJ_SRCS
 
 add_library(kj ${KJ_SRCS})
 target_include_directories(kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
-target_compile_options(kj PRIVATE -Wno-non-virtual-dtor)
 
 set (CAPNP_SRCS
     ${CAPNPROTO_SOURCE_DIR}/capnp/c++.capnp.c++
@@ -51,7 +50,17 @@ set (CAPNP_SRCS
 
 add_library(capnp ${CAPNP_SRCS})
 target_link_libraries(capnp PUBLIC kj)
-target_compile_options(capnp PRIVATE -Wno-non-virtual-dtor)
+
+# The library has substandard code
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-maybe-uninitialized
+        -Wno-deprecated-declarations -Wno-class-memaccess)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-deprecated-declarations)
+endif ()
+
+target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS})
+target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS})
 
 set (CAPNPC_SRCS
     ${CAPNPROTO_SOURCE_DIR}/capnp/compiler/type-id.c++
