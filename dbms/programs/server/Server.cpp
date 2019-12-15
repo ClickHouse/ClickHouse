@@ -725,7 +725,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening http://" + address.toString());
+                LOG_INFO(log, "Listening for http://" + address.toString());
             });
 
             /// HTTPS
@@ -742,7 +742,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening https://" + address.toString());
+                LOG_INFO(log, "Listening for https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -800,7 +800,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
+                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -816,7 +816,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
+                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -854,7 +854,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening http://" + address.toString());
+                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });
         }
 
