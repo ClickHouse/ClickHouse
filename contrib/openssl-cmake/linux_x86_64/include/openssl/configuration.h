@@ -26,9 +26,15 @@ extern "C" {
  */
 
 # define OPENSSL_CONFIGURED_API 30000
-# ifndef OPENSSL_RAND_SEED_OS
-#  define OPENSSL_RAND_SEED_OS
-# endif
+
+/// This fragment was edited to avoid dependency on "getrandom" function that is not available on old libc and old Linux kernels.
+/// The DEVRANDOM method is also good.
+
+//# ifndef OPENSSL_RAND_SEED_OS
+//#  define OPENSSL_RAND_SEED_OS
+//# endif
+#define OPENSSL_RAND_SEED_DEVRANDOM
+
 # ifndef OPENSSL_THREADS
 #  define OPENSSL_THREADS
 # endif
