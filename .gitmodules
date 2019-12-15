@@ -128,3 +128,6 @@
 [submodule "contrib/icu"]
 	path = contrib/icu
 	url = https://github.com/unicode-org/icu.git
+[submodule "contrib/replxx"]
+	path = contrib/replxx
+	url = https://github.com/AmokHuginnsson/replxx.git
