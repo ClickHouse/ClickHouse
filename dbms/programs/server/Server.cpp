@@ -974,6 +974,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 }
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;

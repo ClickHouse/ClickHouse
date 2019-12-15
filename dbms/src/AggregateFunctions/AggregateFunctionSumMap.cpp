@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

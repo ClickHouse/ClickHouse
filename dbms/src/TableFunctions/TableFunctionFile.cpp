@@ -2,6 +2,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {

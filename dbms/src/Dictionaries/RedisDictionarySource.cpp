@@ -1,6 +1,7 @@
 #include "RedisDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 namespace DB
 {

@@ -5,13 +5,13 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <ext/range.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "readInvalidateQuery.h"
 #include "writeParenthesisedString.h"
+#include "DictionaryFactory.h"
 
 
 namespace DB

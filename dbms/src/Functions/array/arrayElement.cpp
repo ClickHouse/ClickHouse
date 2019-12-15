@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
