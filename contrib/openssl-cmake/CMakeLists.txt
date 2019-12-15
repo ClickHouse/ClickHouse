@@ -479,7 +479,6 @@ ${OPENSSL_SOURCE_DIR}/crypto/info.c
 ${OPENSSL_SOURCE_DIR}/crypto/init.c
 ${OPENSSL_SOURCE_DIR}/crypto/initthread.c
 ${OPENSSL_SOURCE_DIR}/crypto/mem.c
-${OPENSSL_SOURCE_DIR}/crypto/mem_dbg.c
 ${OPENSSL_SOURCE_DIR}/crypto/mem_sec.c
 ${OPENSSL_SOURCE_DIR}/crypto/o_dir.c
 ${OPENSSL_SOURCE_DIR}/crypto/o_fips.c
