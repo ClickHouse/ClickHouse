@@ -133,7 +133,7 @@ static llvm::TargetMachine * getNativeMachine()
 }
 
 #if LLVM_VERSION_MAJOR >= 7
-auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
+static auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 {
 #if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
     // REMOVE AFTER contrib/llvm upgrade
@@ -587,7 +587,7 @@ static bool isCompilable(const IFunctionBase & function)
     return function.isCompilable();
 }
 
-std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
+static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
 {
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).

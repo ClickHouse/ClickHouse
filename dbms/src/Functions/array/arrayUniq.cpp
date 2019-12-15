@@ -11,6 +11,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/WriteHelpers.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

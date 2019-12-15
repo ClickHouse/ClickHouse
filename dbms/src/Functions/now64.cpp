@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DateTime64::NativeType nowSubsecond(UInt32 scale)
+static DateTime64::NativeType nowSubsecond(UInt32 scale)
 {
     const Int32 fractional_scale = 9;
     timespec spec;
