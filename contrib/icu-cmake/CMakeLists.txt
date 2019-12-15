@@ -453,3 +453,7 @@ target_include_directories(icui18n SYSTEM PUBLIC ${ICU_SOURCE_DIR}/i18n/)
 
 target_compile_definitions(icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
 target_compile_definitions(icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
+
+if (COMPILER_CLANG)
+    target_compile_options(icudata PRIVATE -Wno-unused-command-line-argument)
+endif ()
