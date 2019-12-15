@@ -164,7 +164,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
 
-    DatabasePtr database = tryGetDatabase(database_name, false);
+    DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
     if (!database || !database->isDictionaryExist(context, dictionary_name))
     {

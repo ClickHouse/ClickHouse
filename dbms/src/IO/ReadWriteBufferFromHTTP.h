@@ -40,7 +40,7 @@ protected:
     UInt64 redirects { 0 };
     Poco::URI initial_uri;
     const ConnectionTimeouts & timeouts;
-    DB::SettingUInt64 max_redirects;
+    SettingUInt64 max_redirects;
 
 public:
     virtual void buildNewSession(const Poco::URI & uri) = 0;
@@ -244,7 +244,7 @@ public:
         const std::string & method_ = {},
         OutStreamCallback out_stream_callback_ = {},
         const ConnectionTimeouts & timeouts = {},
-        const DB::SettingUInt64 max_redirects = 0,
+        const SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const HTTPHeaderEntries & http_header_entries_ = {},
@@ -289,7 +289,7 @@ public:
         const ConnectionTimeouts & timeouts_ = {},
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const DB::SettingUInt64 max_redirects = 0,
+        const SettingUInt64 max_redirects = 0,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
               uri_,

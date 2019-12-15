@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>

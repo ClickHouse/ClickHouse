@@ -13,7 +13,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 

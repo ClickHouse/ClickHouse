@@ -7,6 +7,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
 #include <memory>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -21,8 +22,9 @@ class DatabaseMySQL : public IDatabase
 public:
     ~DatabaseMySQL() override;
 
-    DatabaseMySQL(const Context & context_, const String & database_name_, const String & mysql_host_name_, const UInt16 & mysql_port_,
-        const String & mysql_database_name_, const String & mysql_user_name_, const String & mysql_user_password_);
+    DatabaseMySQL(
+        const Context & global_context, const String & database_name, const String & metadata_path,
+        const ASTStorage * database_engine_define, const String & database_name_in_mysql, mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -54,36 +56,38 @@ public:
 
     ASTPtr tryGetCreateDictionaryQuery(const Context &, const String &) const override { return nullptr; }
 
-
     time_t getObjectMetadataModificationTime(const Context & context, const String & name) override;
 
     void shutdown() override;
 
-    StoragePtr detachTable(const String &) override
-    {
-        throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
+    void drop() override;
 
     void detachDictionary(const String &, const Context &) override
     {
         throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadStoredObjects(Context &, bool) override
-    {
-        /// do nothing
-    }
+    String getMetadataPath() const override;
 
-    void removeTable(const Context &, const String &) override
+    void createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
+
+    void loadStoredObjects(Context &, bool) override;
+
+    StoragePtr detachTable(const String & table_name) override;
+
+    void removeTable(const Context &, const String & table_name) override;
+
+    void attachTable(const String & table_name, const StoragePtr & storage) override;
+
+    void detachDictionary(const String &, const Context &) override
     {
-        throw Exception("MySQL database engine does not support remove table.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void removeDictionary(const Context &, const String &) override
     {
         throw Exception("MySQL database engine does not support remove dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
-
 
     void attachTable(const String &, const StoragePtr &) override
     {
@@ -95,50 +99,36 @@ public:
         throw Exception("MySQL database engine does not support attach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void createTable(const Context &, const String &, const StoragePtr &, const ASTPtr &) override
-    {
-        throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void createDictionary(const Context &, const String &, const ASTPtr &) override
     {
         throw Exception("MySQL database engine does not support create dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-
 private:
-    struct MySQLStorageInfo
-    {
-        StoragePtr storage;
-        UInt64 modification_time;
-        ASTPtr create_table_query;
-    };
-
-    const Context global_context;
-    const String database_name;
-    const String mysql_host_name;
-    const UInt16 mysql_port;
-    const String mysql_database_name;
-    const String mysql_user_name;
-    const String mysql_user_password;
+    Context global_context;
+    String database_name;
+    String metadata_path;
+    ASTPtr database_engine_define;
+    String database_name_in_mysql;
 
     mutable std::mutex mutex;
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 
-    mutable mysqlxx::Pool mysql_pool;
-    mutable std::vector<StoragePtr> outdated_tables;
-    mutable std::map<String, MySQLStorageInfo> local_tables_cache;
+    using MySQLPool = mysqlxx::Pool;
+    using ModifyTimeAndStorage = std::pair<UInt64, StoragePtr>;
 
+    mutable MySQLPool mysql_pool;
+    mutable std::vector<StoragePtr> outdated_tables;
+    mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
+
+    std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 
     void fetchTablesIntoLocalCache() const;
 
     std::map<String, UInt64> fetchTablesWithModificationTime() const;
-
-    DatabaseMySQL::MySQLStorageInfo createStorageInfo(
-        const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time) const;
 
     std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name) const;
 

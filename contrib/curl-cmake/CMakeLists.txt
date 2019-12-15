@@ -30,6 +30,9 @@ cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 SET(CURL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/curl)
 SET(CURL_LIBRARY_DIR ${CURL_SOURCE_DIR}/lib)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake;${CMAKE_MODULE_PATH}")
+# Disable status messages when perform checks
+set(CMAKE_REQUIRED_QUIET)
+
 include(Macros)
 include(CMakeDependentOption)
 include(CheckCCompilerFlag)
