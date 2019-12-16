@@ -29,6 +29,8 @@ public:
 
     std::string getTypeName() const override;
 
+    std::string getKeyDescription() const;
+
     size_t getBytesAllocated() const override;
 
     size_t getQueryCount() const override;

@@ -41,6 +41,11 @@ std::string IPolygonDictionary::getTypeName() const
     return "Polygon";
 }
 
+std::string IPolygonDictionary::getKeyDescription() const
+{
+    return dict_struct.getKeyDescription();
+}
+
 size_t IPolygonDictionary::getBytesAllocated() const
 {
     return bytes_allocated;
