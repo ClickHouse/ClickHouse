@@ -64,7 +64,7 @@ Each element of the list can have one of the following forms:
 
 - `<host>` — Hostname.
 
-    Example: `example.host.ru`.
+    Example: `example01.host.ru`.
 
     To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
 

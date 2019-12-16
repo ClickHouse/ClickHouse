@@ -22,7 +22,7 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 - The `DROP TABLE` query deletes the replica located on the server where the query is run.
 - The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
-ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information. Use ZooKeeper version 3.4.5 or later.
+ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information. Use ZooKeeper version 3.4.5 or newer.
 
 To use replication, set parameters in the [zookeeper](../server_settings/settings.md#server-settings_zookeeper) server configuration section.
 
