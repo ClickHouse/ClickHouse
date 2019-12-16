@@ -34,7 +34,11 @@ endif ()
 if (ARCH_AMD64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
-            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
+            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT}
+            # ASM code has broken unwind tables (CFI), strip them.
+            # Otherwise asynchronous unwind (that we use for query profiler)
+            #  will lead to segfault while trying to interpret wrong "CFA expression".
+            COMMAND sed -i -e '/^\.cfi_/d' ${FILE_OUT})
     endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s)
@@ -70,6 +74,7 @@ elseif (ARCH_AARCH64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
+            # Hope that the ASM code for AArch64 doesn't have broken CFI. Otherwise, add the same sed as for x86_64.
     endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
