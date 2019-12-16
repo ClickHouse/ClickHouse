@@ -119,26 +119,29 @@ struct IntegerRoundingComputation
             }
             case RoundingMode::Round:
             {
-                bool negative = x < 0;
-                if (negative)
-                    x = -x;
                 switch (tie_breaking_mode)
                 {
                     case TieBreakingMode::Auto:
+                        if (x < 0)
+                            x -= scale;
                         x = (x + scale / 2) / scale * scale;
                         break;
                     case TieBreakingMode::Bankers:
                     {
                         T quotient = (x + scale / 2) / scale;
                         if (quotient * scale == x + scale / 2)
+                            // round half to even
                             x = (quotient & ~1) * scale;
                         else
+                        {
+                            // round the others as usual
+                            if (x < 0)
+                                quotient -= 1;
                             x = quotient * scale;
+                        }
                         break;
                     }
                 }
-                if (negative)
-                    x = -x;
                 return x;
             }
         }
