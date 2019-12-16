@@ -114,7 +114,7 @@ Features:
 - Search and Navigation.
 
 ### Looker
-[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects, including ClickHouse support in version 6.24 and later. Looker is available as a SaaS platform and self-hosted. Users
+[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users
 can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their
 insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
 to integrate data with other applications.
