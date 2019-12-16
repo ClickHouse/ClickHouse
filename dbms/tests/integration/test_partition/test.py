@@ -65,30 +65,30 @@ def partition_complex_assert_checksums():
                                  "  | sort" \
                                  "  | uniq"
 
-    checksums = "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition/19700102_2_2_0/k.bin\n" \
-                "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition/19700201_1_1_0/v1.bin\n" \
-                "13cae8e658e0ca4f75c56b1fc424e150\tshadow/1/data/test/partition/19700102_2_2_0/minmax_p.idx\n" \
-                "25daad3d9e60b45043a70c4ab7d3b1c6\tshadow/1/data/test/partition/19700102_2_2_0/partition.dat\n" \
-                "3726312af62aec86b64a7708d5751787\tshadow/1/data/test/partition/19700201_1_1_0/partition.dat\n" \
-                "37855b06a39b79a67ea4e86e4a3299aa\tshadow/1/data/test/partition/19700102_2_2_0/checksums.txt\n" \
-                "38e62ff37e1e5064e9a3f605dfe09d13\tshadow/1/data/test/partition/19700102_2_2_0/v1.bin\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0/k.mrk\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0/p.mrk\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0/v1.mrk\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0/k.mrk\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0/p.mrk\n" \
-                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0/v1.mrk\n" \
-                "55a54008ad1ba589aa210d2629c1df41\tshadow/1/data/test/partition/19700201_1_1_0/primary.idx\n" \
-                "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition/19700201_1_1_0/checksums.txt\n" \
-                "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition/19700102_2_2_0/columns.txt\n" \
-                "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition/19700201_1_1_0/columns.txt\n" \
-                "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition/19700201_1_1_0/p.bin\n" \
-                "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition/19700102_2_2_0/primary.idx\n" \
-                "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700102_2_2_0/count.txt\n" \
-                "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700201_1_1_0/count.txt\n" \
-                "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition/19700102_2_2_0/p.bin\n" \
-                "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition/19700201_1_1_0/k.bin\n" \
-                "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition/19700201_1_1_0/minmax_p.idx\n"
+    checksums = "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition/19700102_2_2_0_2/k.bin\n" \
+                "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition/19700201_1_1_0_1/v1.bin\n" \
+                "13cae8e658e0ca4f75c56b1fc424e150\tshadow/1/data/test/partition/19700102_2_2_0_2/minmax_p.idx\n" \
+                "25daad3d9e60b45043a70c4ab7d3b1c6\tshadow/1/data/test/partition/19700102_2_2_0_2/partition.dat\n" \
+                "3726312af62aec86b64a7708d5751787\tshadow/1/data/test/partition/19700201_1_1_0_1/partition.dat\n" \
+                "37855b06a39b79a67ea4e86e4a3299aa\tshadow/1/data/test/partition/19700102_2_2_0_2/checksums.txt\n" \
+                "38e62ff37e1e5064e9a3f605dfe09d13\tshadow/1/data/test/partition/19700102_2_2_0_2/v1.bin\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0_2/k.mrk\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0_2/p.mrk\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700102_2_2_0_2/v1.mrk\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0_1/k.mrk\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0_1/p.mrk\n" \
+                "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition/19700201_1_1_0_1/v1.mrk\n" \
+                "55a54008ad1ba589aa210d2629c1df41\tshadow/1/data/test/partition/19700201_1_1_0_1/primary.idx\n" \
+                "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition/19700201_1_1_0_1/checksums.txt\n" \
+                "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition/19700102_2_2_0_2/columns.txt\n" \
+                "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition/19700201_1_1_0_1/columns.txt\n" \
+                "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition/19700201_1_1_0_1/p.bin\n" \
+                "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition/19700102_2_2_0_2/primary.idx\n" \
+                "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700102_2_2_0_2/count.txt\n" \
+                "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition/19700201_1_1_0_1/count.txt\n" \
+                "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition/19700102_2_2_0_2/p.bin\n" \
+                "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition/19700201_1_1_0_1/k.bin\n" \
+                "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition/19700201_1_1_0_1/minmax_p.idx\n"
 
     assert TSV(exec_bash(cmd).replace('  ', '\t')) == TSV(checksums)
 
@@ -149,7 +149,7 @@ def test_cannot_attach_active_part(cannot_attach_active_part_table):
     assert 0 <= error.find('Invalid part name')
 
     res = q("SElECT name FROM system.parts WHERE table='attach_active' AND database='test' ORDER BY name")
-    assert TSV(res) == TSV('0_1_1_0\n1_2_2_0\n2_3_3_0\n3_4_4_0')
+    assert TSV(res) == TSV('0_1_1_0_1\n1_2_2_0_2\n2_3_3_0_3\n3_4_4_0_4')
     assert TSV(q("SElECT count(), sum(n) FROM test.attach_active")) == TSV('16\t120')
 
 
@@ -171,30 +171,30 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     q("ALTER TABLE test.attach_partition DETACH PARTITION 0")
 
     path_to_detached = path_to_data + 'data/test/attach_partition/detached/'
-    exec_bash('mkdir {}'.format(path_to_detached + '0_5_5_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_1_1_0', path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0', path_to_detached +  'deleting_0_7_7_0'))
+    exec_bash('mkdir {}'.format(path_to_detached + '0_5_5_0_5'))
+    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_1_1_0_1', path_to_detached + 'attaching_0_6_6_0_6'))
+    exec_bash('cp -pr {} {}'.format(path_to_detached + '0_3_3_0_3', path_to_detached +  'deleting_0_7_7_0_7'))
 
     error = instance.client.query_and_get_error("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
     assert 0 <= error.find('No columns in part 0_5_5_0')
 
     parts = q("SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name")
-    assert TSV(parts) == TSV('1_2_2_0\n1_4_4_0')
+    assert TSV(parts) == TSV('1_2_2_0_2\n1_4_4_0_4')
     detached = q("SELECT name FROM system.detached_parts "
                  "WHERE table='attach_partition' AND database='test' ORDER BY name")
-    assert TSV(detached) == TSV('0_1_1_0\n0_3_3_0\n0_5_5_0\nattaching_0_6_6_0\ndeleting_0_7_7_0')
+    assert TSV(detached) == TSV('0_1_1_0_1\n0_3_3_0_3\n0_5_5_0_5\nattaching_0_6_6_0_6\ndeleting_0_7_7_0_7')
 
-    exec_bash('rm -r {}'.format(path_to_detached + '0_5_5_0'))
+    exec_bash('rm -r {}'.format(path_to_detached + '0_5_5_0_5'))
 
     q("ALTER TABLE test.attach_partition ATTACH PARTITION 0")
     parts = q("SElECT name FROM system.parts WHERE table='attach_partition' AND database='test' ORDER BY name")
-    expected = '0_5_5_0\n0_6_6_0\n1_2_2_0\n1_4_4_0'
+    expected = '0_5_5_0_5\n0_6_6_0_6\n1_2_2_0_2\n1_4_4_0_4'
     assert TSV(parts) == TSV(expected)
     assert TSV(q("SElECT count(), sum(n) FROM test.attach_partition")) == TSV('16\t120')
 
     detached = q("SELECT name FROM system.detached_parts "
                  "WHERE table='attach_partition' AND database='test' ORDER BY name")
-    assert TSV(detached) == TSV('attaching_0_6_6_0\ndeleting_0_7_7_0')
+    assert TSV(detached) == TSV('attaching_0_6_6_0_6\ndeleting_0_7_7_0_7')
 
 
 @pytest.fixture
@@ -217,28 +217,28 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 
     path_to_detached = path_to_data + 'data/test/drop_detached/detached/'
-    exec_bash('mkdir {}'.format(path_to_detached + 'attaching_0_6_6_0'))
-    exec_bash('mkdir {}'.format(path_to_detached + 'deleting_0_7_7_0'))
+    exec_bash('mkdir {}'.format(path_to_detached + 'attaching_0_6_6_0_6'))
+    exec_bash('mkdir {}'.format(path_to_detached + 'deleting_0_7_7_0_7'))
     exec_bash('mkdir {}'.format(path_to_detached + 'any_other_name'))
-    exec_bash('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_0'))
+    exec_bash('mkdir {}'.format(path_to_detached + 'prefix_1_2_2_0_2'))
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART '../1_2_2_0_2'", settings=s)
     assert 0 <= error.find('Invalid part name')
 
-    q("ALTER TABLE test.drop_detached DROP DETACHED PART '0_1_1_0'", settings=s)
+    q("ALTER TABLE test.drop_detached DROP DETACHED PART '0_1_1_0_1'", settings=s)
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'attaching_0_6_6_0_6'", settings=s)
     assert 0 <= error.find('Cannot drop part')
 
-    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0'", settings=s)
+    error = instance.client.query_and_get_error("ALTER TABLE test.drop_detached DROP DETACHED PART 'deleting_0_7_7_0_7'", settings=s)
     assert 0 <= error.find('Cannot drop part')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PART 'any_other_name'", settings=s)
 
     detached = q("SElECT name FROM system.detached_parts WHERE table='drop_detached' AND database='test' ORDER BY name")
-    assert TSV(detached) == TSV('0_3_3_0\n1_2_2_0\n1_4_4_0\nattaching_0_6_6_0\ndeleting_0_7_7_0\nprefix_1_2_2_0_0')
+    assert TSV(detached) == TSV('0_3_3_0_3\n1_2_2_0_2\n1_4_4_0_4\nattaching_0_6_6_0_6\ndeleting_0_7_7_0_7\nprefix_1_2_2_0_2')
 
     q("ALTER TABLE test.drop_detached DROP DETACHED PARTITION 1", settings=s)
     detached = q("SElECT name FROM system.detached_parts WHERE table='drop_detached' AND database='test' ORDER BY name")
-    assert TSV(detached) == TSV('0_3_3_0\nattaching_0_6_6_0\ndeleting_0_7_7_0')
+    assert TSV(detached) == TSV('0_3_3_0_3\nattaching_0_6_6_0_6\ndeleting_0_7_7_0_7')
 
