@@ -923,8 +923,14 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
+
+    Settings custom_settings{};
+    custom_settings.deserialize(*in);
+    auto settings_changes = custom_settings.changes();
+    query_context->checkSettingsConstraints(settings_changes);
+    query_context->applySettingsChanges(settings_changes);
+
     Settings & settings = query_context->getSettingsRef();
-    settings.deserialize(*in);
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
