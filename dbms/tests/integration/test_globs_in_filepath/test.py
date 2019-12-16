@@ -62,6 +62,7 @@ def test_linear_structure(start_cluster):
 
     test_requests = [("file{0..9}", "10"),
                      ("file?", "10"),
+                     ("nothing*", "0"),
                      ("file{0..9}{0..9}{0..9}", "10"),
                      ("file???", "10"),
                      ("file*", "20"),
