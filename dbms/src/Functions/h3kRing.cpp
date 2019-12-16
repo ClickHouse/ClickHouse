@@ -63,9 +63,9 @@ public:
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
 
-            const auto vec_size = H3_EXPORT(maxKringSize)(k);
+            const auto vec_size = maxKringSize(k);
             hindex_vec.resize(vec_size);
-            H3_EXPORT(kRing)(origin_hindex, k, hindex_vec.data());
+            kRing(origin_hindex, k, hindex_vec.data());
 
             dst_data.reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)

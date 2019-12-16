@@ -48,7 +48,7 @@ public:
             const int resolution = col_hindex->getUInt(row);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            Float64 res = 8.99320592271288084e-6 * H3_EXPORT(edgeLengthM)(resolution);
+            Float64 res = 8.99320592271288084e-6 * edgeLengthM(resolution);
 
             dst_data[row] = res;
         }
