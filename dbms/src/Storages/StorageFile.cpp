@@ -108,14 +108,12 @@ void checkCreationIsAllowed(Context & context_global, const std::string & db_dir
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
-
+    
     if (!startsWith(table_path, db_dir_path))
         throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
-
+    
     Poco::File table_path_poco_file = Poco::File(table_path);
-    if (!table_path_poco_file.exists())
-        throw Exception("File " + table_path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    else if (table_path_poco_file.isDirectory())
+    if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
@@ -152,7 +150,6 @@ StorageFile::StorageFile(
             const std::string path = poco_path.absolute().toString();
             if (path.find_first_of("*?{") == std::string::npos)
             {
-                checkCreationIsAllowed(context_global, db_dir_path_abs, path);
                 paths.push_back(path);
             }
             else
@@ -273,7 +270,7 @@ BlockInputStreams StorageFile::read(
     else
     {
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
-            throw Exception("File " + paths[0] + " is not exist", ErrorCodes::FILE_DOESNT_EXIST);
+            throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
     }
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
