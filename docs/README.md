@@ -1,3 +1,26 @@
+# Why you need to document ClickHouse?
+
+- Interestingly, a 2017 Github Open Source Survey showed that “Incomplete or Confusing Documentation” was the top complaint about open source software. http://opensourcesurvey.org/2017/.  Documentation is highly valued, but often overlooked.
+
+
+ClickHouse is an open source project and it has the same problems as all the open source projects. In looks like Some of contributors think that open source code is something like a trash bin for their ideas. That's true but not the whole true if you do something for yourself do it in your fork. The base repository is not a trash bin for undocumented features. If you want to contribute in project, remember that your contribution is for all who deal with project. Very many of these people don't know C++, they don't follow the project at GitHub. The most of that who can appreciate your work event can't know about undocumented features. Of course they'll see it in the changelog, but they can't use it. It leads to bad carma of unresponsible contributors and the project at all. 
+
+
+Of course documentation is not the most interesting thing in programming, but it's surely one of the most important part of the development processes. If you don't document your feature, nobody does and a team of the project loose their time answering questions in chats instead of doing the project better.
+
+
+It's in this file that you should properly document:
+
+all the functions in your software and how they work;
+what inputs and outputs its users should expect (and side effects, too);
+your project's main goal(s); and
+examples of implementation and uses.
+
+No matter how good your open source software product is on its own, you need to have proper documentation for it to be useful to your end users. 
+
+One of the most important contributions someone can make to an open source repository is a documentation update. For emerging developers, a pull request that improves existing docs based on their experience using a tool provides an entry to get involved in open source. Creating an environment where people are equally acknowledged for code and documentation contributions can go a long way to building a community around your project.
+
+
 # How to Contribute to ClickHouse Documentation
 
 ClickHouse uses the "documentation as code" approach, so you can edit Markdown files in this folder from the GitHub web interface. Alternatively, fork the ClickHouse repository, edit, commit, push, and open a pull request.

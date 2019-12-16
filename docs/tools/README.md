@@ -1,7 +1,3 @@
-## Why you need to write the documentation
-
-Interestingly, a 2017 Github Open Source Survey showed that “Incomplete or Confusing Documentation” was the top complaint about open source software. http://opensourcesurvey.org/2017/.  Documentation is highly valued, but often overlooked.
-
 ## How ClickHouse documentation is generated?
 
 ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it's dependencies to separately build all version of documentations (all languages in either single and multi page mode) as static HTMLs. The results are then put in correct directory structure. It can also generate PDF version.
