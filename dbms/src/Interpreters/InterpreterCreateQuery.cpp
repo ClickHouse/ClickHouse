@@ -95,29 +95,20 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
     }
 
-    String database_engine_name;
     if (!create.storage)
     {
-        database_engine_name = "Ordinary"; /// Default database engine.
         auto engine = std::make_shared<ASTFunction>();
-        engine->name = database_engine_name;
         auto storage = std::make_shared<ASTStorage>();
+        engine->name = "Ordinary";
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
     }
-    else
+    else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
-        const ASTStorage & storage = *create.storage;
-        const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
-        {
-            std::stringstream ostr;
-            formatAST(storage, ostr, false, false);
-            throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-        }
-
-        database_engine_name = engine.name;
+        std::stringstream ostr;
+        formatAST(*create.storage, ostr, false, false);
+        throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     String database_name_escaped = escapeForFileName(database_name);
@@ -153,19 +144,27 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         out.close();
     }
 
+    bool added = false;
+    bool renamed = false;
     try
     {
         context.addDatabase(database_name, database);
+        added = true;
 
         if (need_write_metadata)
+        {
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
+            renamed = true;
+        }
 
         database->loadStoredObjects(context, has_force_restore_data_flag);
     }
     catch (...)
     {
-        if (need_write_metadata)
+        if (renamed)
             Poco::File(metadata_file_tmp_path).remove();
+        if (added)
+            context.detachDatabase(database_name);
 
         throw;
     }
@@ -546,21 +545,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
-    String current_database = context.getCurrentDatabase();
-
-    String database_name = create.database.empty() ? current_database : create.database;
-    String table_name = create.table;
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
         // Table SQL definition is available even if the table is detached
-        auto query = context.getCreateTableQuery(database_name, table_name);
+        auto query = context.getCreateTableQuery(create.database, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
 
-    if (create.to_database.empty())
+    String current_database = context.getCurrentDatabase();
+    if (!create.temporary && create.database.empty())
+        create.database = current_database;
+    if (!create.to_table.empty() && create.to_database.empty())
         create.to_database = current_database;
 
     if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
@@ -573,16 +570,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = setProperties(create);
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, database_name);
-    if (!created)
+    bool created = doCreateTable(create, properties);
+
+    if (!created)   /// Table already exists
         return {};
 
-    return fillTableIfNeeded(create, database_name);
+    return fillTableIfNeeded(create);
 }
 
 bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
-                                           const InterpreterCreateQuery::TableProperties & properties,
-                                           const String & database_name)
+                                           const InterpreterCreateQuery::TableProperties & properties)
 {
     std::unique_ptr<DDLGuard> guard;
 
@@ -593,13 +590,13 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     bool need_add_to_database = !create.temporary || create.is_live_view;
     if (need_add_to_database)
     {
-        database = context.getDatabase(database_name);
+        database = context.getDatabase(create.database);
         data_path = database->getDataPath();
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
-        guard = context.getDDLGuard(database_name, table_name);
+        guard = context.getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))
@@ -611,7 +608,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
             {
                 /// when executing CREATE OR REPLACE VIEW, drop current existing view
                 auto drop_ast = std::make_shared<ASTDropQuery>();
-                drop_ast->database = database_name;
+                drop_ast->database = create.database;
                 drop_ast->table = table_name;
                 drop_ast->no_ddl_lock = true;
 
@@ -619,7 +616,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
                 interpreter.execute();
             }
             else
-                throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+                throw Exception("Table " + create.database + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
     }
     else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
@@ -637,7 +634,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
         res = StorageFactory::instance().get(create,
             data_path,
             table_name,
-            database_name,
+            create.database,
             context,
             context.getGlobalContext(),
             properties.columns,
@@ -664,7 +661,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     return true;
 }
 
-BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & database_name)
+BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
@@ -673,7 +670,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         auto insert = std::make_shared<ASTInsertQuery>();
 
         if (!create.temporary)
-            insert->database = database_name;
+            insert->database = create.database;
 
         insert->table = create.table;
         insert->select = create.select->clone();
