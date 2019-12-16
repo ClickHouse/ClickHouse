@@ -89,11 +89,6 @@ BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_
     throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
 }
 
-std::shared_ptr<const IExternalLoadable> IPolygonDictionary::clone() const
-{
-    return std::make_shared<IPolygonDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime)
-}
-
 void IPolygonDictionary::createAttributes() {
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
     {
@@ -222,6 +217,15 @@ SimplePolygonDictionary::SimplePolygonDictionary(
         const DictionaryLifetime dict_lifetime_)
         : IPolygonDictionary(name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
 {
+}
+
+std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
+{
+    return std::make_shared<SimplePolygonDictionary>(
+            this->name,
+            this->dict_struct,
+            this->source_ptr->clone(),
+            this->dict_lifetime);
 }
 
 void SimplePolygonDictionary::generate() {}
