@@ -532,6 +532,15 @@ private:
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
 
+    using CheckNodeCallback = std::function<bool(const String & nodevalue_from_zookeeper)>;
+
+    /// Wait for timeout seconds when condition became true for node
+    /// /replicas/{replica}/replica_replative_node_path value for all replicas.
+    /// operation_name_for_logging used for logging about errors.
+    void waitForAllReplicasToStatisfyNodeCondition(
+        size_t timeout, const String & operaton_name_for_logging,
+        const String & replica_relative_node_path, CheckNodeCallback condition) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */

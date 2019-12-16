@@ -54,6 +54,7 @@
 #include <thread>
 #include <future>
 
+#include <boost/algorithm/string/join.hpp>
 
 namespace ProfileEvents
 {
@@ -308,6 +309,92 @@ bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
     return metadata_from_zk.index_granularity_bytes == 0;
 }
 
+
+void StorageReplicatedMergeTree::waitForAllReplicasToStatisfyNodeCondition(
+    size_t timeout, const String & name_for_logging,
+    const String & replica_relative_node_path, CheckNodeCallback callback) const
+{
+    const auto operation_start = std::chrono::system_clock::now();
+    std::chrono::milliseconds total_time{timeout * 1000};
+    zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+    Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    std::set<String> inactive_replicas;
+    std::set<String> timed_out_replicas;
+    for (const String & replica : replicas)
+    {
+        LOG_DEBUG(log, "Waiting for " << replica << " to apply " + name_for_logging);
+
+        bool operation_is_processed_by_relica = false;
+        while (!partial_shutdown_called)
+        {
+            auto zookeeper = getZooKeeper();
+            /// Replica could be inactive.
+            if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+            {
+                LOG_WARNING(log, "Replica " << replica << " is not active during mutation query."
+                    << name_for_logging << " will be done asynchronously when replica becomes active.");
+
+                inactive_replicas.emplace(replica);
+                break;
+            }
+
+            String node_for_check = zookeeper_path + "/replicas/" + replica + "/" + replica_relative_node_path;
+            std::string node_for_check_value;
+            Coordination::Stat stat;
+            /// Replica could be removed
+            if (!zookeeper->tryGet(node_for_check, node_for_check_value, &stat, wait_event))
+            {
+                LOG_WARNING(log, replica << " was removed");
+                operation_is_processed_by_relica = true;
+                break;
+            }
+            else /// in other case check required node
+            {
+                if (callback(node_for_check_value))
+                {
+                    operation_is_processed_by_relica = true;
+                    break; /// operation is done
+                }
+            }
+
+            std::chrono::milliseconds time_spent =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - operation_start);
+            std::chrono::milliseconds time_left = total_time - time_spent;
+
+            /// We have some time to wait
+            if (time_left.count() > 0)
+                wait_event->tryWait(time_left.count());
+            else /// Otherwise time is up
+                break;
+        }
+
+        if (partial_shutdown_called)
+            throw Exception(name_for_logging + " is not finished because table shutdown was called. " + name_for_logging + " will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+
+        if (!operation_is_processed_by_relica && !inactive_replicas.count(replica))
+            timed_out_replicas.emplace(replica);
+    }
+
+    if (!inactive_replicas.empty() || !timed_out_replicas.empty())
+    {
+        std::stringstream exception_message;
+        exception_message << name_for_logging << " is not finished because";
+
+        if (!inactive_replicas.empty())
+            exception_message << " some replicas are inactive right now: " << boost::algorithm::join(inactive_replicas, ", ");
+
+        if (!timed_out_replicas.empty() && !inactive_replicas.empty())
+            exception_message << " and";
+
+        if (!timed_out_replicas.empty())
+            exception_message << " timeout when waiting for some replicas: " << boost::algorithm::join(timed_out_replicas, ", ");
+
+        exception_message << ". " << name_for_logging <<  " will be done asynchronously";
+
+        throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
+    }
+}
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
@@ -3200,6 +3287,7 @@ void StorageReplicatedMergeTree::alter(
         int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
     };
 
+    /// /columns and /metadata nodes
     std::vector<ChangedNode> changed_nodes;
 
     {
@@ -3294,6 +3382,10 @@ void StorageReplicatedMergeTree::alter(
 
     time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
 
+    /// This code is quite similar with waitForAllReplicasToStatisfyNodeCondition
+    /// but contains more complicated details (versions manipulations, multiple nodes, etc.).
+    /// It will be removed soon in favor of alter-modify implementation on top of mutations.
+    /// TODO (alesap)
     for (const String & replica : replicas)
     {
         LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
@@ -3396,8 +3488,16 @@ void StorageReplicatedMergeTree::alter(
             if (replica_nodes_changed_concurrently)
                 continue;
 
-            /// Now wait for replica nodes to change.
-
+            /// alter_query_event subscribed with zookeeper watch callback to /repliacs/{replica}/metadata
+            /// and /replicas/{replica}/columns nodes for current relica + shared nodes /columns and /metadata,
+            /// which is common for all replicas. If changes happen with this nodes (delete, set and create)
+            /// than event will be notified and wait will be interrupted.
+            ///
+            /// ReplicatedMergeTreeAlterThread responsible for local /replicas/{replica}/metadata and
+            /// /replicas/{replica}/columns changes. Shared /columns and /metadata nodes can be changed by *newer*
+            /// concurrent alter from other replica. First of all it will update shared nodes and we will have no
+            /// ability to identify, that our *current* alter finshed. So we cannot do anything better than just
+            /// return from *current* alter with success result.
             if (!replication_alter_columns_timeout)
             {
                 alter_query_event->wait();
@@ -4399,7 +4499,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
+void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -4502,6 +4602,20 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         else
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
+
+    if (query_context.getSettingsRef().mutation_synchronous_wait_timeout != 0) /// some timeout specified
+    {
+        auto check_callback = [mutation_number = entry.znode_name](const String & zk_value)
+        {
+            /// Maybe we already processed more fresh mutation
+            /// We can compare their znode names (numbers like 0000000000 and 0000000001).
+            return zk_value >= mutation_number;
+        };
+
+        waitForAllReplicasToStatisfyNodeCondition(
+            query_context.getSettingsRef().mutation_synchronous_wait_timeout, "Mutation", "mutation_pointer", check_callback);
+    }
+
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
