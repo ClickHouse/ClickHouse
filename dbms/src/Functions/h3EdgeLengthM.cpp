@@ -52,7 +52,7 @@ public:
         {
             const int resolution = col_hindex->getUInt(row);
 
-            Float64 res = H3_EXPORT(edgeLengthM)(resolution);
+            Float64 res = edgeLengthM(resolution);
 
             dst_data[row] = res;
         }

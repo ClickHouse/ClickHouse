@@ -47,7 +47,7 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 
-            UInt8 res = H3_EXPORT(h3GetResolution)(hindex);
+            UInt8 res = h3GetResolution(hindex);
 
             dst_data[row] = res;
         }

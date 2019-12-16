@@ -74,10 +74,10 @@ public:
             const UInt8 res = col_res->getUInt(row);
 
             GeoCoord coord;
-            coord.lon = H3_EXPORT(degsToRads)(lon);
-            coord.lat = H3_EXPORT(degsToRads)(lat);
+            coord.lon = degsToRads(lon);
+            coord.lat = degsToRads(lat);
 
-            H3Index hindex = H3_EXPORT(geoToH3)(&coord, res);
+            H3Index hindex = geoToH3(&coord, res);
 
             dst_data[row] = hindex;
         }
