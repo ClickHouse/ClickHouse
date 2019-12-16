@@ -154,9 +154,10 @@ SELECT geohashDecode('ezs42') AS res
 
 ## geoToH3 {#geotoh3}
 
-Returns unique number of H3 hexagon of required resolution in which point with given coordinates is located.
-[H3](https://uber.github.io/h3/#/documentation/overview/introduction) is an geographical indexing system where Earth surface divided into even hexagonal tiles. 
-This system is hierarchical, i. e. each hexagon on the top level can be splitted into seven even but smaller ones and so on.
+Returns [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
+
+[H3](https://uber.github.io/h3/#/documentation/overview/introduction) is a geographical indexing system where Earth's surface divided into even hexagonal tiles. This system is hierarchical, i. e. each hexagon on the top level can be splitted into seven even but smaller ones and so on.
+
 This index is used primarily for bucketing locations and other geospatial manipulations.
 
 **Syntax** 
