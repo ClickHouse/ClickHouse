@@ -443,7 +443,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.count("help"))
+    if (options.empty() || options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
