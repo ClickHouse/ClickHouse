@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int UNKNOWN_SETTING;
     extern const int TOO_BIG_AST;
+    extern const int UNFINISHED;
 }
 
 namespace ActionLocks
@@ -425,17 +426,18 @@ public:
 };
 
 
-void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
+void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = storage_policy->getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
+    Int64 version;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        Int64 version = increment.get();
+        version = increment.get();
         entry.commit(version);
         file_name = entry.file_name;
         auto insertion = current_mutations_by_id.emplace(file_name, std::move(entry));
@@ -444,6 +446,17 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
 
     LOG_INFO(log, "Added mutation: " << file_name);
     merging_mutating_task_handle->wake();
+
+    size_t timeout = query_context.getSettingsRef().mutation_synchronous_wait_timeout;
+    /// If timeout is set, than we can wait
+    if (timeout != 0)
+    {
+        LOG_INFO(log, "Waiting mutation: " << file_name << " for " << timeout << " seconds");
+        auto check = [version, this]() { return isMutationDone(version); };
+        std::unique_lock lock(mutation_wait_mutex);
+        if (!mutation_wait_event.wait_for(lock, std::chrono::seconds{timeout}, check))
+            throw Exception("Mutation " + file_name + " is not finished. Will be done asynchronously", ErrorCodes::UNFINISHED);
+    }
 }
 
 namespace
@@ -460,6 +473,17 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
     return f.version < s.version;
 }
 
+}
+
+bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    auto data_parts = getDataPartsVector();
+    for (const auto & data_part : data_parts)
+        if (data_part->info.getDataVersion() < mutation_version)
+            return false;
+    return true;
 }
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
@@ -771,6 +795,9 @@ bool StorageMergeTree::tryMutatePart()
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});
+
+        /// Notify all, who wait for this or previous mutations
+        mutation_wait_event.notify_all();
     }
     catch (...)
     {
