@@ -27,6 +27,8 @@ IPolygonDictionary::IPolygonDictionary(
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
 {
+    createAttributes();
+    loadData();
 }
 
 std::string IPolygonDictionary::getName() const
@@ -132,7 +134,7 @@ void IPolygonDictionary::calculateBytesAllocated()
 
 }
 
-void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &key_types, PaddedPODArray<UInt8> &out) {
+void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &key_types, PaddedPODArray<UInt8> &out) const {
     // TODO: Use constant in error message?
     if (key_types.size() != DIM)
         throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
@@ -227,8 +229,6 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
             this->source_ptr->clone(),
             this->dict_lifetime);
 }
-
-void SimplePolygonDictionary::generate() {}
 
 bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 {

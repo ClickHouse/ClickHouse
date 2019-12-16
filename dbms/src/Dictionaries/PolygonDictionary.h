@@ -50,7 +50,7 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
     // TODO: Refactor design to perform stronger checks, i.e. make this an override.
-    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) ;
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
 protected:
     using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
@@ -59,7 +59,6 @@ protected:
 
     std::vector<MultiPolygon> polygons;
 
-    virtual void generate() = 0;
     virtual bool find(const Point & point, size_t & id) const = 0;
 
     const std::string name;
@@ -101,7 +100,6 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
-    void generate() override;
     bool find(const Point & point, size_t & id) const override;
 };
 
