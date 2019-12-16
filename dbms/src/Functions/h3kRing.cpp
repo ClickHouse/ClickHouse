@@ -82,7 +82,7 @@ public:
             {
                 if (hindex != 0)
                 {
-                    current_offset++;
+                    ++current_offset;
                     dst_data.insert(hindex);
                 }
             }
