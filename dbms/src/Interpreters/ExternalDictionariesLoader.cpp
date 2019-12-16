@@ -1,7 +1,5 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/Context.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 namespace DB
 {
@@ -32,15 +30,4 @@ void ExternalDictionariesLoader::addConfigRepository(
     ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name"});
 }
 
-
-void ExternalDictionariesLoader::addDictionaryWithConfig(
-    const String & dictionary_name, const String & repo_name, const ASTCreateQuery & query, bool load_never_loading) const
-{
-    ExternalLoader::addObjectAndLoad(
-        dictionary_name, /// names are equal
-        dictionary_name,
-        repo_name,
-        getDictionaryConfigurationFromAST(query),
-        "dictionary", load_never_loading);
-}
 }

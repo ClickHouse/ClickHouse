@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <type_traits>
 

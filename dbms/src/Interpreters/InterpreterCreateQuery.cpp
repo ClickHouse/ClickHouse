@@ -127,8 +127,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// Create directories for tables metadata.
     String path = context.getPath();
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
-    Poco::File(metadata_path).createDirectory();
-
     DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
 
     /// Will write file with database metadata, if needed.
@@ -708,6 +706,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
     String dictionary_name = create.table;
 
     String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
