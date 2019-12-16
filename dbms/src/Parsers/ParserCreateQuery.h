@@ -266,7 +266,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
 class ParserIndexDeclarationList : public IParserBase
 {
 protected:

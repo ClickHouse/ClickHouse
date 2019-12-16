@@ -26,7 +26,6 @@ namespace DB
 struct ColumnSize;
 class MergeTreeData;
 
-
 /// Description of the data part.
 class MergeTreeDataPartWide : public IMergeTreeDataPart
 {
@@ -78,6 +77,10 @@ public:
     ColumnSize getTotalColumnsSize() const override;
 
     ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
+
+    NameToNameMap createRenameMapForAlter(
+        AlterAnalysisResult & analysis_result,
+        const NamesAndTypesList & old_columns) const override;
 
     ~MergeTreeDataPartWide() override;
 

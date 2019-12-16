@@ -92,8 +92,16 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const WriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
-     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        getFullPath(), storage, columns_list, indices_to_recalc,
+    NamesAndTypesList ordered_columns_list;
+    std::copy_if(columns_list.begin(), columns_list.end(),std::back_inserter(ordered_columns_list),
+        [this](const auto & column) { return getColumnPosition(column.name) != std::nullopt; });
+
+    /// Order of writing is important in compact format
+    ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
+        { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
+
+    return std::make_unique<MergeTreeDataPartWriterCompact>(
+        getFullPath(), storage, ordered_columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
 }
@@ -191,10 +199,61 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const 
     if (!getColumnPosition(column_name))
         return false;
     /// FIXME replace everywhere hardcoded "data"
-    auto bin_checksum = checksums.files.find("data.bin");
-    auto mrk_checksum = checksums.files.find("data" + index_granularity_info.marks_file_extension);
+    auto bin_checksum = checksums.files.find(String(DATA_FILE_NAME) + DATA_FILE_EXTENSION);
+    auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);
 
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
+}
+
+NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
+    AlterAnalysisResult & analysis_result,
+    const NamesAndTypesList & /* old_columns */) const
+{
+    const auto & part_mrk_file_extension = index_granularity_info.marks_file_extension;
+    NameToNameMap rename_map;
+
+    for (const auto & index_name : analysis_result.removed_indices)
+    {
+        rename_map["skp_idx_" + index_name + ".idx"] = "";
+        rename_map["skp_idx_" + index_name + part_mrk_file_extension] = "";
+    }
+
+    /// We have to rewrite all data if any column has been changed.
+    if (!analysis_result.removed_columns.empty() || !analysis_result.conversions.empty())
+    {
+        if (!analysis_result.expression)
+            analysis_result.expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), storage.global_context);
+
+        NameSet altered_columns;
+        NamesWithAliases projection;
+
+        for (const auto & column : analysis_result.removed_columns)
+            altered_columns.insert(column.name);
+
+        for (const auto & [source_name, result_name] : analysis_result.conversions)
+        {
+            altered_columns.insert(source_name);
+            projection.emplace_back(result_name, source_name);
+        }
+
+        /// Add other part columns to read
+        for (const auto & column : columns)
+        {
+            if (!altered_columns.count(column.name))
+            {
+                analysis_result.expression->addInput(column);
+                projection.emplace_back(column.name, "");
+            }
+        }
+        
+        analysis_result.expression->add(ExpressionAction::project(projection));
+        
+        String data_temp_name = String(DATA_FILE_NAME) + "_converting";
+        rename_map[data_temp_name + DATA_FILE_EXTENSION] = String(DATA_FILE_NAME) + DATA_FILE_EXTENSION;
+        rename_map[data_temp_name + part_mrk_file_extension] = DATA_FILE_NAME + part_mrk_file_extension;
+    }
+
+    return rename_map;
 }
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)

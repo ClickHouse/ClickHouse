@@ -15,7 +15,6 @@ namespace DB
 namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
-
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 

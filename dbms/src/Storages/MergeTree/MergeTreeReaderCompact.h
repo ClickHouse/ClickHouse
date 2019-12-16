@@ -47,8 +47,6 @@ private:
     void readData(const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, size_t column_position, size_t rows_to_read);
 
-    static auto constexpr NAME_OF_FILE_WITH_DATA = "data";
-
     /// Columns that are read.
 
     friend class MergeTreeRangeReader::DelayedStream;

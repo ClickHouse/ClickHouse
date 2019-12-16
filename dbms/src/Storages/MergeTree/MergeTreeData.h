@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -904,31 +905,12 @@ protected:
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
-    using NameToType = std::map<String, const IDataType *>;
-
-    struct AlterAnalysisResult
-    {
-        ExpressionActionsPtr expression = nullptr;
-        bool force_update_metadata = false;
-        NameToType new_types;
-        /// For every column that need to be converted: source column name,
-        ///  column name of calculated expression for conversion.
-        std::vector<std::pair<String, String>> conversions;
-        NamesAndTypesList removed_columns;
-        Names removed_indices;
-    };
-
     AlterAnalysisResult analyzeAlterConversions(
         const NamesAndTypesList & old_columns,
         const NamesAndTypesList & new_columns,
         const IndicesASTs & old_indices,
         const IndicesASTs & new_indices) const;
     
-    NameToNameMap createRenameMap(
-        const DataPartPtr & part,
-        const NamesAndTypesList & old_columns,
-        const AlterAnalysisResult & analysis_result) const;
-
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
     /// out_rename_map maps column files for the out_expression onto new table files.
