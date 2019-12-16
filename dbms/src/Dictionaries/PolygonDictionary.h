@@ -49,8 +49,6 @@ public:
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
-    std::shared_ptr<const IExternalLoadable> clone() const override;
-
     // TODO: Refactor design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) ;
 
@@ -64,17 +62,17 @@ protected:
     virtual void generate() = 0;
     virtual bool find(const Point & point, size_t & id) const = 0;
 
+    const std::string name;
+    const DictionaryStructure dict_struct;
+    const DictionarySourcePtr source_ptr;
+    const DictionaryLifetime dict_lifetime;
+
 private:
     void createAttributes();
     void blockToAttributes(const Block & block);
     void loadData();
 
     void calculateBytesAllocated();
-
-    const std::string name;
-    const DictionaryStructure dict_struct;
-    const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Block> blocks;
@@ -99,6 +97,9 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_);
+
+    std::shared_ptr<const IExternalLoadable> clone() const override;
+
 private:
     void generate() override;
     bool find(const Point & point, size_t & id) const override;
