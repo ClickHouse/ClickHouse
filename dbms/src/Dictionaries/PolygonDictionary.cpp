@@ -99,7 +99,7 @@ void IPolygonDictionary::createAttributes() {
     {
         attribute_index_by_name.emplace(dict_struct.attributes[i].name, i);
 
-        if (dict_struct.attributes[i].name.hierarchical)
+        if (dict_struct.attributes[i].hierarchical)
             throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
                             ErrorCodes::TYPE_MISMATCH};
     }
@@ -213,6 +213,15 @@ IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const F
     else
         throw Exception{"MultiPolygon is not represented by an array", ErrorCodes::TYPE_MISMATCH};
     return result;
+}
+
+SimplePolygonDictionary::SimplePolygonDictionary(
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_)
+        : IPolygonDictionary(name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
+{
 }
 
 void SimplePolygonDictionary::generate() {}

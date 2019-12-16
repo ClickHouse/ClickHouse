@@ -61,10 +61,10 @@ protected:
 
     std::vector<MultiPolygon> polygons;
 
-private:
     virtual void generate() = 0;
     virtual bool find(const Point & point, size_t & id) const = 0;
 
+private:
     void createAttributes();
     void blockToAttributes(const Block & block);
     void loadData();
@@ -93,6 +93,12 @@ private:
 
 class SimplePolygonDictionary : public IPolygonDictionary
 {
+public:
+    SimplePolygonDictionary(
+            const std::string & name_,
+            const DictionaryStructure & dict_struct_,
+            DictionarySourcePtr source_ptr_,
+            DictionaryLifetime dict_lifetime_);
 private:
     void generate() override;
     bool find(const Point & point, size_t & id) const override;
