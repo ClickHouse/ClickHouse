@@ -49,14 +49,27 @@ public:
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
 private:
+    struct TableProperties
+    {
+        ColumnsDescription columns;
+        IndicesDescription indices;
+        ConstraintsDescription constraints;
+    };
+
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
     BlockIO createDictionary(ASTCreateQuery & create);
 
-    /// Calculate list of columns, constraints, indices, etc... of table and return columns.
-    ColumnsDescription setProperties(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
+    TableProperties setProperties(ASTCreateQuery & create) const;
+    void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void setEngine(ASTCreateQuery & create) const;
     void checkAccess(const ASTCreateQuery & create);
+
+    /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
+    bool doCreateTable(const ASTCreateQuery & create, const TableProperties & properties, const String & database_name);
+    /// Inserts data in created table if it's CREATE ... SELECT
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, const String & database_name);
 
     ASTPtr query_ptr;
     Context & context;
