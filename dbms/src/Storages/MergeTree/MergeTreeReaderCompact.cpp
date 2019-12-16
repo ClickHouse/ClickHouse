@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Poco/File.h>
 
 namespace DB
@@ -21,11 +22,12 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
 {
     initMarksLoader();
     size_t buffer_size = settings.max_read_buffer_size;
+    const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME + MergeTreeDataPartCompact::DATA_FILE_EXTENSION;
 
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path + "data.bin", uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+            full_data_path, uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
         // if (profile_callback)
         //     buffer->setProfileCallback(profile_callback, clock_type);
@@ -36,7 +38,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path + "data.bin", 0, settings.min_bytes_to_use_direct_io, buffer_size);
+            full_data_path, 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
         // if (profile_callback)
         //     buffer->setProfileCallback(profile_callback, clock_type);
@@ -206,7 +208,7 @@ void MergeTreeReaderCompact::initMarksLoader()
         return res;
     };
 
-    auto mrk_path = data_part->index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
+    auto mrk_path = data_part->index_granularity_info.getMarksFilePath(path + MergeTreeDataPartCompact::DATA_FILE_NAME);
     marks_loader = MergeTreeMarksLoader{mark_cache, std::move(mrk_path), load, settings.save_marks_in_cache, columns_num};
 }
 

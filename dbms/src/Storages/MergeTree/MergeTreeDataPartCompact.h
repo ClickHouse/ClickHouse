@@ -34,6 +34,9 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
+    static constexpr auto DATA_FILE_NAME = "data";
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
+
     MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
@@ -79,6 +82,9 @@ public:
 
     bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
 
+    NameToNameMap createRenameMapForAlter(
+        AlterAnalysisResult & analysis_result,
+        const NamesAndTypesList & old_columns) const override;
 
     ~MergeTreeDataPartCompact() override;
 

@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
 // #include <Storages/MergeTree/IMergeTreeDataPart_fwd.h>
 // #include <Storages/MergeTree/IMergeTreeReader.h>
@@ -85,6 +86,13 @@ public:
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const { return columns.front().name; }
+
+    virtual NameToNameMap createRenameMapForAlter(
+        AlterAnalysisResult & /* analysis_result */,
+        const NamesAndTypesList & /* old_columns */) const
+    {
+        return {};
+    }
 
     virtual ~IMergeTreeDataPart();
 

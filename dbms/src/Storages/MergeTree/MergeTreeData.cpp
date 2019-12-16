@@ -1408,106 +1408,14 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     analyzeAlterConversions(getColumns().getAllPhysical(), new_columns.getAllPhysical(), getIndices().indices, new_indices.indices);
 }
 
-/// FIXME implement alter for compact parts
-NameToNameMap MergeTreeData::createRenameMap(
-    const DataPartPtr & part,
-    const NamesAndTypesList & old_columns,
-    const AlterAnalysisResult & analysis_result) const
-{
-    if (!part)
-        return {};
 
-    const auto & part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
-    NameToNameMap rename_map;
-
-    for (const auto & index_name : analysis_result.removed_indices)
-    {
-        rename_map["skp_idx_" + index_name + ".idx"] = "";
-        rename_map["skp_idx_" + index_name + part_mrk_file_extension] = "";
-    }
-
-    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : old_columns)
-    {
-        column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-        {
-            ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
-        }, {});
-    }
-
-    for (const auto & column : analysis_result.removed_columns)
-    {
-        if (part->hasColumnFiles(column.name, *column.type))
-        {
-            column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-            {
-                String file_name = IDataType::getFileNameForStream(column.name, substream_path);
-
-                /// Delete files if they are no longer shared with another column.
-                if (--stream_counts[file_name] == 0)
-                {
-                    rename_map[file_name + ".bin"] = "";
-                    rename_map[file_name + part_mrk_file_extension] = "";
-                }
-            }, {});
-        }
-    }
-
-    for (const auto & elem : analysis_result.conversions)
-    {
-        /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
-        const auto & source_name = elem.first;
-        String temporary_column_name = source_name + " converting";
-
-        /// After conversion, we need to rename temporary files into original.
-        analysis_result.new_types.at(source_name)->enumerateStreams(
-            [&](const IDataType::SubstreamPath & substream_path)
-            {
-                /// Skip array sizes, because they cannot be modified in ALTER.
-                if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-                    return;
-
-                String original_file_name = IDataType::getFileNameForStream(source_name, substream_path);
-                String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
-
-                rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
-            }, {});
-    }
-
-
-    if (part && !rename_map.empty())
-    {
-        WriteBufferFromOwnString out;
-        out << "Will ";
-        bool first = true;
-        for (const auto & [from, to] : rename_map)
-        {
-            if (!first)
-                out << ", ";
-            first = false;
-            if (to.empty())
-                out << "remove " << from;
-            else
-                out << "rename " << from << " to " << to;
-        }
-        out << " in part " << part->name;
-        LOG_DEBUG(log, out.str());
-    }
-
-    return rename_map;
-}
-
-
-MergeTreeData::AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
+AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
     const NamesAndTypesList & old_columns,
     const NamesAndTypesList & new_columns,
     const IndicesASTs & old_indices,
     const IndicesASTs & new_indices) const
 {
     AlterAnalysisResult res;
-    const auto settings = getSettings();
 
     std::set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
@@ -1566,21 +1474,6 @@ MergeTreeData::AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
                 res.conversions.emplace_back(column.name, out_names.at(0));
             }
         }
-    }
-
-    if (!res.conversions.empty())
-    {
-        /// Give proper names for temporary columns with conversion results.
-        NamesWithAliases projection;
-        projection.reserve(res.conversions.size());
-
-        for (const auto & source_and_expression : res.conversions)
-        {
-            String temporary_column_name = source_and_expression.first + " converting";
-            projection.emplace_back(source_and_expression.second, temporary_column_name);
-        }
-
-        res.expression->add(ExpressionAction::project(projection));
     }
 
     return res;
@@ -1671,7 +1564,28 @@ void MergeTreeData::alterDataPart(
     const auto & part = transaction->getDataPart();
 
     auto res = analyzeAlterConversions(part->columns, new_columns, getIndices().indices, new_indices);
-    transaction->rename_map = createRenameMap(part, part->columns, res);
+
+    NamesAndTypesList additional_columns;
+    transaction->rename_map = part->createRenameMapForAlter(res, part->columns);
+
+    if (!transaction->rename_map.empty())
+    {
+        WriteBufferFromOwnString out;
+        out << "Will ";
+        bool first = true;
+        for (const auto & [from, to] : transaction->rename_map)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+            if (to.empty())
+                out << "remove " << from;
+            else
+                out << "rename " << from << " to " << to;
+        }
+        out << " in part " << part->name;
+        LOG_DEBUG(log, out.str());
+    }
 
     size_t num_files_to_modify = transaction->rename_map.size();
     size_t num_files_to_remove = 0;
@@ -1743,6 +1657,8 @@ void MergeTreeData::alterDataPart(
             part->bytes_on_disk,
             static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, res.expression);
+
+        std::cerr << "im.header: " << in.getHeader().dumpStructure() << "\n";
 
         /** Don't write offsets for arrays, because ALTER never change them
          *  (MODIFY COLUMN could only change types of elements but never modify array sizes).
