@@ -3,9 +3,63 @@
 ## char
 Accepts multiple arguments of numberic types. Returns a string with the length as the number of passed arguments and each byte has the value of corresponding argument.
 
-## hex
+## hex {#hex}
 
-Accepts arguments of types: `String`, `unsigned integer`, `float`, `decimal`, `Date`, or `DateTime`. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes. For example, `hex (1) = '01'`. `Date` is encoded as the number of days since the beginning of the Unix epoch. `DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. `float` and `decimal` is encoded as their hexadecimal representation in memory.
+Returns a string containing the argument's hexadecimal representation. 
+
+**Syntax**
+
+```sql
+hex(arg);
+```
+
+Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. 
+
+The result of the function depends on the type of argument.
+
+For strings, all bytes are simply encoded as two hexadecimal numbers. 
+
+Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes. 
+
+`Date` is encoded as the number of days since the beginning of the Unix epoch. 
+
+`DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. 
+
+`Float` and `Decimal` is encoded as their hexadecimal representation in memory.
+
+**Parameters**
+
+- `arg` — A value to convert to hexadecimal. Types: [String](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Float](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+
+**Returned value**
+
+- A string with the hexadecimal representation of the argument.
+
+Type: `String`.
+
+**Example**
+
+```sql
+SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
+```
+
+```text
+┌─hex_presentation─┐
+│ 00007041         │
+│ 00008041         │
+└──────────────────┘
+```
+
+```sql
+SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
+```
+
+```text
+┌─hex_presentation─┐
+│ 0000000000002E40 │
+│ 0000000000003040 │
+└──────────────────┘
+```
 
 ## unhex(str)
 
