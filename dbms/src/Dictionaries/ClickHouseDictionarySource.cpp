@@ -214,7 +214,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool /* check_config */) -> DictionarySourcePtr
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };

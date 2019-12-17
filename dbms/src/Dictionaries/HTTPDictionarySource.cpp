@@ -23,7 +23,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    const Context & context_)
+    const Context & context_,
+    bool check_config)
     : log(&Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -34,6 +35,10 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
+
+    if (check_config)
+        context.getRemoteHostFilter().checkURL(Poco::URI(url));
+
     const auto & credentials_prefix = config_prefix + ".credentials";
 
     if (config.has(credentials_prefix))
@@ -188,12 +193,15 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
+        return std::make_unique<HTTPDictionarySource>(
+            dict_struct, config, config_prefix + ".http",
+            sample_block, context, check_config);
     };
     factory.registerSource("http", createTableSource);
 }

@@ -1231,7 +1231,7 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
     if (previous_version)
         return previous_version->clone();
 
-    return create(name, *config.config, config.key_in_config);
+    return create(name, *config.config, config.key_in_config, config.repository_name);
 }
 
 std::vector<std::pair<String, Int8>> ExternalLoader::getStatusEnumAllPossibleValues()

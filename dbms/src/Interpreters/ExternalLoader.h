@@ -161,7 +161,7 @@ public:
     void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false) const;
 
 protected:
-    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
+    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
     /// Reload object with already parsed configuration
     void addObjectAndLoad(
