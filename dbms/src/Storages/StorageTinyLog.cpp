@@ -425,6 +425,12 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
         addFiles(column.name, *column.type);
 }
 
+void StorageTinyLog::drop(TableStructureWriteLockHolder &)
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+    disk->clearDirectory(table_path);
+    files.clear();
+}
 
 void registerStorageTinyLog(StorageFactory & factory)
 {
