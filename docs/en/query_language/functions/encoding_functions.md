@@ -1,7 +1,62 @@
 # Encoding functions
 
-## char
-Accepts multiple arguments of numberic types. Returns a string with the length as the number of passed arguments and each byte has the value of corresponding argument.
+## char {#char}
+
+Accepts multiple arguments of numeric types. Returns a string with the length as the number of passed arguments and each byte has the value of corresponding argument.
+
+**Syntax**
+
+```sql
+char(number_1, [number_2, ..., number_n]);
+```
+
+**Parameters**
+
+- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../data_types/int_uint.md), [Float](../../data_types/float.md).
+
+**Returned value**
+
+- UTF-8 string consisting of the characters given by the code values of corresponding argument.
+
+Type: `String`.
+
+**Example**
+
+Query:
+```sql
+SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
+```
+
+Result:
+```text
+┌─hello─┐
+│ hello │
+└───────┘
+```
+
+Query:
+```sql
+SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
+```
+
+Result:
+```text
+┌─hello──┐
+│ привет │
+└────────┘
+```
+
+Query:
+```sql
+SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
+```
+
+Result:
+```text
+┌─hello─┐
+│ 你好  │
+└───────┘
+```
 
 ## hex
 
