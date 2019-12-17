@@ -30,7 +30,6 @@ struct User
     Authentication authentication;
 
     String profile;
-    String quota;
 
     AllowedClientHosts allowed_client_hosts;
 
@@ -47,6 +46,8 @@ struct User
     using TableMap = std::unordered_map<std::string /* table */, PropertyMap /* properties */>;
     using DatabaseMap = std::unordered_map<std::string /* database */, TableMap /* tables */>;
     DatabaseMap table_props;
+
+    bool is_quota_management_allowed = false;
 
     User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };

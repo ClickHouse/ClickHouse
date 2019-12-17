@@ -63,6 +63,17 @@ namespace DB
         return res;
     }
 
+    void ParquetBlockInputFormat::resetParser()
+    {
+        IInputFormat::resetParser();
+
+        file_reader.reset();
+        file_data.clear();
+        buffer.reset();
+        row_group_total = 0;
+        row_group_current = 0;
+    }
+
     void registerInputFormatProcessorParquet(FormatFactory &factory)
     {
         factory.registerInputFormatProcessor(

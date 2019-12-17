@@ -31,7 +31,14 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources libcxxabi/cxa_thread_atexit.cpp)
     endif()
 
+    # Need to omit frame pointers to match the performance of glibc
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
+
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
+
+    if (COMPILER_CLANG)
+        target_compile_options(glibc-compatibility PRIVATE -Wno-unused-command-line-argument)
+    endif ()
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 

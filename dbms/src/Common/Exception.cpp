@@ -10,7 +10,7 @@
 #include <common/demangle.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 
 namespace DB
@@ -84,16 +84,16 @@ void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
     while (!std::filesystem::exists(path) && path.has_relative_path())
         path = path.parent_path();
 
-    auto fs = DiskSpace::getStatVFS(path);
+    auto fs = getStatVFS(path);
     msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
          + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
          + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
          + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
 
-    auto mount_point = DiskSpace::getMountPoint(path).string();
+    auto mount_point = getMountPoint(path).string();
     msg += "\nMount point: " + mount_point;
 #if defined(__linux__)
-    msg += "\nFilesystem: " + DiskSpace::getFilesystemName(mount_point);
+    msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
 
@@ -261,7 +261,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
         stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTrace().toString();
     }
     catch (...) {}
 

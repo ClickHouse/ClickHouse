@@ -69,10 +69,13 @@ public:
     BlockIO execute() override;
 
     /// Execute the query and return multuple streams for parallel processing.
-    BlockInputStreams executeWithMultipleStreams();
+    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
 
     QueryPipeline executeWithProcessors() override;
     bool canExecuteWithProcessors() const override { return true; }
+
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
 
     Block getSampleBlock();
 
@@ -137,7 +140,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage);
 
     struct AnalysisResult
     {
@@ -199,7 +202,8 @@ private:
     template <typename TPipeline>
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
         const InputSortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere);
+        const Names & columns_to_remove_after_prewhere,
+        QueryPipeline & save_context_and_storage);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -259,9 +263,9 @@ private:
       */
     void initSettings();
 
-    const SelectQueryOptions options;
+    SelectQueryOptions options;
     ASTPtr query_ptr;
-    Context context;
+    std::shared_ptr<Context> context;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;

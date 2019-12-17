@@ -44,6 +44,16 @@ struct WithFlags<T, true> : T
     mutable std::atomic<bool> used {};
     void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
     bool getUsed() const { return used; }
+
+    bool setUsedOnce() const
+    {
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (used.load(std::memory_order_relaxed))
+            return false;
+
+        bool expected = false;
+        return used.compare_exchange_strong(expected, true);
+    }
 };
 
 template <typename T>
@@ -54,13 +64,14 @@ struct WithFlags<T, false> : T
 
     void setUsed() const {}
     bool getUsed() const { return true; }
+    bool setUsedOnce() const { return true; }
 };
 
-using MappedAny =       WithFlags<RowRef, false>;
-using MappedAll =       WithFlags<RowRefList, false>;
-using MappedAnyFull =   WithFlags<RowRef, true>;
-using MappedAllFull =   WithFlags<RowRefList, true>;
-using MappedAsof =      WithFlags<AsofRowRefs, false>;
+using MappedOne =        WithFlags<RowRef, false>;
+using MappedAll =        WithFlags<RowRefList, false>;
+using MappedOneFlagged = WithFlags<RowRef, true>;
+using MappedAllFlagged = WithFlags<RowRefList, true>;
+using MappedAsof =       WithFlags<AsofRowRefs, false>;
 
 }
 
@@ -68,11 +79,23 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
   * It is just a hash table: keys -> rows of joined ("right") table.
   * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
   *
-  * JOIN-s could be of nine types: ANY/ALL × LEFT/INNER/RIGHT/FULL, and also CROSS.
+  * JOIN-s could be of these types:
+  * - ALL × LEFT/INNER/RIGHT/FULL
+  * - ANY × LEFT/INNER/RIGHT
+  * - SEMI/ANTI x LEFT/RIGHT
+  * - ASOF x LEFT/INNER
+  * - CROSS
   *
-  * If ANY is specified - then select only one row from the "right" table, (first encountered row), even if there was more matching rows.
-  * If ALL is specified - usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
-  * ANY is more efficient.
+  * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
+  * ANY uses one line per unique key from right talbe. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
+  * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
+  * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
+  * ANTI JOIN is the same as SEMI JOIN but returns rows with joining keys that are NOT present in another table.
+  * SEMI/ANTI JOINs allow to get values from both tables. For filter table it gets any row with joining same key. For ANTI JOIN it returns
+  * defaults other table columns.
+  * ASOF JOIN is not-equi join. For one key column it finds nearest value to join according to join inequality.
+  * It's expected that ANY|SEMI LEFT JOIN is more efficient that ALL one.
   *
   * If INNER is specified - leave only rows that have matching rows from "right" table.
   * If LEFT is specified - in case when there is no matching row in "right" table, fill it with default values instead.
@@ -264,13 +287,13 @@ public:
         }
     };
 
-    using MapsAny =             MapsTemplate<JoinStuff::MappedAny>;
+    using MapsOne =             MapsTemplate<JoinStuff::MappedOne>;
     using MapsAll =             MapsTemplate<JoinStuff::MappedAll>;
-    using MapsAnyFull =         MapsTemplate<JoinStuff::MappedAnyFull>;
-    using MapsAllFull =         MapsTemplate<JoinStuff::MappedAllFull>;
+    using MapsOneFlagged =      MapsTemplate<JoinStuff::MappedOneFlagged>;
+    using MapsAllFlagged =      MapsTemplate<JoinStuff::MappedAllFlagged>;
     using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
-    using MapsVariant = std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsOneFlagged, MapsAllFlagged, MapsAsof>;
 
 private:
     friend class NonJoinedBlockInputStream;
@@ -341,8 +364,8 @@ private:
       */
     void setSampleBlock(const Block & block);
 
-    /// Modify (structure) and save right block, @returns pointer to saved block
-    Block * storeRightBlock(const Block & stored_block);
+    /// Modify (structure) right block to save it in block list
+    Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure();
     void initRequiredRightKeys();
 

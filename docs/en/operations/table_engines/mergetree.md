@@ -72,7 +72,7 @@ For a description of parameters, see the [CREATE query description](../../query_
 
 - `TTL` — An expression for setting storage time for rows.
 
-    It must depend on the `Date` or `DateTime` column and have one `Date` or `DateTime` column as a result. Example:
+    It must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
@@ -373,7 +373,7 @@ Determines the lifetime of values.
 
 The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which expires earlier.
 
-The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
+To define the lifetime of data, use expression evaluating to [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type, for example:
 
 ```sql
 TTL time_column

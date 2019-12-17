@@ -48,7 +48,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
-    bool isCached() const override { return true; }
+    bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
