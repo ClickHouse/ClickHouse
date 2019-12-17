@@ -16,7 +16,8 @@ namespace DB
                                      const Poco::Util::AbstractConfiguration & config,
                                      const String & config_prefix,
                                      Block & sample_block,
-                                     const Context & /* context */) -> DictionarySourcePtr {
+                                     const Context & /* context */,
+                                     bool /* check_config */) -> DictionarySourcePtr {
 #if USE_POCO_REDIS
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
 #else
