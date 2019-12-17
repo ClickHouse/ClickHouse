@@ -37,8 +37,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual bool isCached() const = 0;
-
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -47,7 +45,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    bool supportUpdates() const override { return !isCached(); }
+    bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {

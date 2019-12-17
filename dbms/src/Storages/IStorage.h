@@ -5,6 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
@@ -425,7 +426,7 @@ public:
     virtual Names getSortingKeyColumns() const { return {}; }
 
     /// Returns storage policy if storage supports it
-    virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
+    virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
      */
@@ -433,6 +434,8 @@ public:
     {
         return {};
     }
+
+    static DB::CompressionMethod chooseCompressionMethod(const String & uri, const String & compression_method);
 
 private:
     /// You always need to take the next three locks in this order.

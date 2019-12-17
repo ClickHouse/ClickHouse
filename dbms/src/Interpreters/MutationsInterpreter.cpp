@@ -173,7 +173,7 @@ MutationsInterpreter::MutationsInterpreter(
     , can_execute(can_execute_)
 {
     mutation_ast = prepare(!can_execute);
-    auto limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
+    SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
 
@@ -418,7 +418,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 

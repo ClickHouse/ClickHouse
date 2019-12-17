@@ -2,13 +2,14 @@
 
 ClickHouse uses the "documentation as code" approach, so you can edit Markdown files in this folder from the GitHub web interface. Alternatively, fork the ClickHouse repository, edit, commit, push, and open a pull request.
 
-At the moment documentation is bilingual in English and Russian. Try to keep all languages in sync if you can, but this is not strictly required. There are people who are responsible for monitoring language versions and syncing them. If you add a new article, you should also add it to `toc_{en,ru,zh,fa}.yaml` files with the pages index.
+At the moment documentation is bilingual in English and Russian. Try to keep all languages in sync if you can, but this is not strictly required. There are people who are responsible for monitoring language versions and syncing them. If you add a new article, you should also add it to `toc_{en,ru,zh,ja,fa}.yaml` files with the pages index.
 
 The master branch is then asynchronously published to the ClickHouse official website:
 
 * In English: https://clickhouse.yandex/docs/en/
 * In Russian: https://clickhouse.yandex/docs/ru/
 * In Chinese: https://clickhouse.yandex/docs/zh/
+* In Japanese: https://clickhouse.yandex/docs/ja/
 * In Farsi: https://clickhouse.yandex/docs/fa/
 
 The infrastructure to build Markdown for publishing on the documentation website resides in the [tools](tools) folder. It has its own [README.md](tools/README.md) file with more details.

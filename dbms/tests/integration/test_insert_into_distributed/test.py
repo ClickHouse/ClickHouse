@@ -68,6 +68,14 @@ CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE
         shard1.query('''
 CREATE TABLE low_cardinality_all (d Date, x UInt32, s LowCardinality(String)) ENGINE = Distributed('shard_with_low_cardinality', 'default', 'low_cardinality', sipHash64(s))''')
 
+        node1.query('''
+CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
+
+        node2.query('''
+CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
+
+
+
         yield cluster
 
     finally:
@@ -138,11 +146,11 @@ def test_inserts_batching(started_cluster):
     # 4. Full batch of inserts after ALTER (that have different block structure).
     # 5. What was left to insert with the column structure before ALTER.
     expected = '''\
-20000101_20000101_1_1_0\t[1]
-20000101_20000101_2_2_0\t[2,3,4]
-20000101_20000101_3_3_0\t[5,6,7]
-20000101_20000101_4_4_0\t[10,11,12]
-20000101_20000101_5_5_0\t[8,9]
+20000101_20000101_1_1_0_1\t[1]
+20000101_20000101_2_2_0_2\t[2,3,4]
+20000101_20000101_3_3_0_3\t[5,6,7]
+20000101_20000101_4_4_0_4\t[10,11,12]
+20000101_20000101_5_5_0_5\t[8,9]
 '''
     assert TSV(result) == TSV(expected)
 
@@ -189,3 +197,7 @@ def test_inserts_low_cardinality(started_cluster):
     instance.query("INSERT INTO low_cardinality_all (d,x,s) VALUES ('2018-11-12',1,'123')")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
+
+def test_table_function(started_cluster):
+    node1.query("insert into table function cluster('shard_with_local_replica', 'default', 'table_function') select number, concat('str_', toString(number)) from numbers(100000)")
+    assert node1.query("select count() from cluster('shard_with_local_replica', 'default', 'table_function')").rstrip() == '100000'

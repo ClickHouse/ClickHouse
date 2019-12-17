@@ -53,6 +53,7 @@ add_library (common
     include/common/phdr_cache.h
 
     include/ext/bit_cast.h
+    include/ext/chrono_io.h
     include/ext/collection_cast.h
     include/ext/enumerate.h
     include/ext/function_traits.h

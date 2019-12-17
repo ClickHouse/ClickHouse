@@ -18,7 +18,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Poco/DirectoryIterator.h>
@@ -99,7 +99,8 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
-    moving_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
+    if (areBackgroundMovesNeeded())
+        moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
 
 
@@ -115,7 +116,7 @@ void StorageMergeTree::shutdown()
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
     if (moving_task_handle)
-        global_context.getBackgroundPool().removeTask(moving_task_handle);
+        global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 }
 
 
@@ -334,7 +335,7 @@ void StorageMergeTree::alter(
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
-    DiskSpace::ReservationPtr reserved_space;
+    ReservationPtr reserved_space;
 
     bool is_successful = false;
     String exception_message;
@@ -342,16 +343,22 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
 
         /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
-            reserved_space = future_part_.parts[0]->disk->reserve(total_size);
+            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
         else
-            reserved_space = storage.reserveSpace(total_size);
+        {
+            MergeTreeDataPart::TTLInfos ttl_infos;
+            for (auto & part_ptr : future_part_.parts)
+                ttl_infos.update(part_ptr->ttl_infos);
+
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
+        }
         if (!reserved_space)
         {
             if (is_mutation)
@@ -359,6 +366,8 @@ public:
             else
                 throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
         }
+
+        future_part_.updatePath(storage, reserved_space);
 
         for (const auto & part : future_part.parts)
         {
@@ -437,26 +446,49 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     merging_mutating_task_handle->wake();
 }
 
+namespace
+{
+
+struct PartVersionWithName
+{
+    Int64 version;
+    String name;
+};
+
+bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
+{
+    return f.version < s.version;
+}
+
+}
+
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<Int64> part_data_versions;
+    std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVector();
-    part_data_versions.reserve(data_parts.size());
+    part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_data_versions.push_back(part->info.getDataVersion());
-    std::sort(part_data_versions.begin(), part_data_versions.end());
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
+
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-
+        const PartVersionWithName needle{mutation_version, ""};
         auto versions_it = std::lower_bound(
-            part_data_versions.begin(), part_data_versions.end(), mutation_version);
-        Int64 parts_to_do = versions_it - part_data_versions.begin();
+            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+
+        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        Names parts_to_do_names;
+        parts_to_do_names.reserve(parts_to_do);
+        for (size_t i = 0; i < parts_to_do; ++i)
+            parts_to_do_names.push_back(part_versions_with_names[i].name);
+
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         for (const MutationCommand & command : entry.commands)
@@ -469,8 +501,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 ss.str(),
                 entry.create_time,
                 block_numbers_map,
-                parts_to_do,
-                (parts_to_do == 0),
+                parts_to_do_names,
+                parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
@@ -613,7 +645,7 @@ bool StorageMergeTree::merge(
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate, force_ttl);
+            merging_tagger->reserved_space, deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
         removeEmptyColumnsFromPart(new_part);
 
@@ -734,7 +766,7 @@ bool StorageMergeTree::tryMutatePart()
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
-            tagger->reserved_space.get(), table_lock_holder);
+            tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;

@@ -405,6 +405,14 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     }
 }
 
+void CSVRowInputFormat::resetParser()
+{
+    RowInputFormatWithDiagnosticInfo::resetParser();
+    column_indexes_for_input_fields.clear();
+    read_columns.clear();
+    have_always_default_columns = false;
+}
+
 
 void registerInputFormatProcessorCSV(FormatFactory & factory)
 {
@@ -420,6 +428,66 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
             return std::make_shared<CSVRowInputFormat>(sample, buf, params, with_names, settings);
         });
     }
+}
+
+bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+{
+    char * pos = in.position();
+    bool quotes = false;
+    bool need_more_data = true;
+
+    while (loadAtPosition(in, memory, pos) && need_more_data)
+    {
+        if (quotes)
+        {
+            pos = find_first_symbols<'"'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '"')
+            {
+                ++pos;
+                if (loadAtPosition(in, memory, pos) && *pos == '"')
+                    ++pos;
+                else
+                    quotes = false;
+            }
+        }
+        else
+        {
+            pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '"')
+            {
+                quotes = true;
+                ++pos;
+            }
+            else if (*pos == '\n')
+            {
+                if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+                    need_more_data = false;
+                ++pos;
+                if (loadAtPosition(in, memory, pos) && *pos == '\r')
+                    ++pos;
+            }
+            else if (*pos == '\r')
+            {
+                if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+                    need_more_data = false;
+                ++pos;
+                if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                    ++pos;
+            }
+        }
+    }
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
+}
+
+void registerFileSegmentationEngineCSV(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine("CSV", &fileSegmentationEngineCSVImpl);
 }
 
 }

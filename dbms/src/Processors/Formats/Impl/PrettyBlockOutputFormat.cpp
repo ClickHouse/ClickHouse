@@ -8,7 +8,6 @@
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 
-
 namespace DB
 {
 

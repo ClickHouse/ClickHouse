@@ -14,7 +14,9 @@ struct ArraySinkCreator<Type, Types...>
 {
     static std::unique_ptr<IArraySink> create(ColumnArray & col, NullMap * null_map, size_t column_size)
     {
-        if (typeid_cast<ColumnVector<Type> *>(&col.getData()))
+        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
+
+        if (typeid_cast<ColVecType *>(&col.getData()))
         {
             if (null_map)
                 return std::make_unique<NullableArraySink<NumericArraySink<Type>>>(col, *null_map, column_size);
