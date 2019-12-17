@@ -21,6 +21,10 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
+/// 'LegacyRTDyldObjectLinkingLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use ORCv2
+/// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/Analysis/TargetTransformInfo.h>
 //#include </home/milovidov/work/llvm-project/llvm/include/llvm/Config/llvm-config.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/BasicBlock.h>
