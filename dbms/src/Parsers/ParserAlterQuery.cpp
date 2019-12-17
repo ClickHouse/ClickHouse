@@ -250,7 +250,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else
                 return false;
 
-            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -279,7 +279,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else
                 return false;
 
-            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::TABLE)
+            if (command->move_destination_type != PartDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))

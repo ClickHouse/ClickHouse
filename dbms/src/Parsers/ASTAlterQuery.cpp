@@ -182,7 +182,7 @@ void ASTAlterCommand::formatImpl(
             case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case MoveDestinationType::TABLE:
+            case PartDestinationType::TABLE:
                 settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
@@ -196,7 +196,7 @@ void ASTAlterCommand::formatImpl(
             default:
                 break;
         }
-        if (move_destination_type != MoveDestinationType::TABLE)
+        if (move_destination_type != PartDestinationType::TABLE)
         {
             settings.ostr << quoteString(move_destination_name);
         }
