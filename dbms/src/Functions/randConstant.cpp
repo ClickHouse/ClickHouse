@@ -19,6 +19,8 @@ protected:
         block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
 private:
     ToType value;
 };
@@ -99,6 +101,8 @@ protected:
 
         return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types);
     }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
 };
 
 
