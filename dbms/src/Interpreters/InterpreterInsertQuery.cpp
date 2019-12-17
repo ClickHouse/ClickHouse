@@ -99,6 +99,7 @@ BlockIO InterpreterInsertQuery::execute()
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
 
+    BlockIO res;
     StoragePtr table = getTable(query);
 
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
@@ -176,9 +177,6 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in_streams, out_streams);
 
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
-
         if (!allow_materialized)
         {
             for (const auto & column : table->getColumns())
@@ -190,7 +188,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.out = std::move(out_streams.at(0));
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
     }
     else
         res.out = std::move(out_streams.at(0));
