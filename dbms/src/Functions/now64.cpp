@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static DateTime64::NativeType nowSubsecond(UInt32 scale)
+static Field nowSubsecond(UInt32 scale)
 {
     const Int32 fractional_scale = 9;
     timespec spec;
@@ -36,7 +36,8 @@ static DateTime64::NativeType nowSubsecond(UInt32 scale)
     else if (adjust_scale > 0)
         components.fractional /= intExp10(adjust_scale);
 
-    return DecimalUtils::decimalFromComponents<DateTime64>(components, scale).value;
+    return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, scale),
+                        scale);
 }
 
 class FunctionNow64 : public IFunction
