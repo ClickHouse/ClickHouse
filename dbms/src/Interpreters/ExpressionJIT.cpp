@@ -21,30 +21,30 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
-#include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/Config/llvm-config.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Mangler.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Type.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/JITSymbol.h>
-#include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/MC/SubtargetFeature.h>
-#include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
-#include <llvm/Support/TargetRegistry.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Analysis/TargetTransformInfo.h>
+//#include </home/milovidov/work/llvm-project/llvm/include/llvm/Config/llvm-config.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/BasicBlock.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/DataLayout.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/DerivedTypes.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Function.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/IRBuilder.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/LLVMContext.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Mangler.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Module.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Type.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/ExecutionEngine.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/JITSymbol.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/SectionMemoryManager.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Target/TargetMachine.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/MC/SubtargetFeature.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/DynamicLibrary.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/Host.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/TargetRegistry.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/TargetSelect.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
 
@@ -128,36 +128,6 @@ static llvm::TargetMachine * getNativeMachine()
     );
 }
 
-auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
-{
-    // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
-    auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
-    {
-        llvm::orc::SymbolFlagsMap flags_map;
-        for (const auto & symbol : symbols)
-        {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags_map.emplace(symbol, resolved->begin()->second);
-        }
-        return flags_map;
-    };
-
-    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols_set)
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols_set)
-        {
-            auto resolved = jsr.lookup({*symbol});
-            if (resolved && resolved->size())
-                query->resolve(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
-        }
-        return missing;
-    };
-    return llvm::orc::createSymbolResolver(flags, symbols);
-}
 
 using ModulePtr = std::unique_ptr<llvm::Module>;
 
@@ -181,7 +151,7 @@ struct LLVMContext
         , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
+            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, std::dynamic_pointer_cast<llvm::orc::SymbolResolver>(memory_manager)};
         })
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
