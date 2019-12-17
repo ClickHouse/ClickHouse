@@ -28,6 +28,7 @@ At the moment documentation exists in:
 We store the documentation with the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs). Each language lays in the corresponding folder. Files in language folders that are not translated from English are created as symbolic links from the English ones.
 
 <a name="how-to-contribute"/>
+
 ## How to Contribute to ClickHouse Documentation
 
 You can edit the docs in some ways:
