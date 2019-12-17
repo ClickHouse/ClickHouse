@@ -1,4 +1,4 @@
-configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
+configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions .)
