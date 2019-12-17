@@ -270,6 +270,11 @@ protected:
       */
     bool checkTimeLimit();
 
+#ifndef NDEBUG
+    bool read_prefix_is_called = false;
+    bool read_suffix_is_called = false;
+#endif
+
 private:
     bool enabled_extremes = false;
 
@@ -322,10 +327,6 @@ private:
                 return;
     }
 
-#ifndef NDEBUG
-    bool read_prefix_is_called = false;
-    bool read_suffix_is_called = false;
-#endif
 };
 
 }
