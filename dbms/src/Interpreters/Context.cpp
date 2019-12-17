@@ -127,6 +127,7 @@ struct ContextShared
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
+    String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
@@ -544,6 +545,12 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+String Context::getDictionariesLibPath() const
+{
+    auto lock = getLock();
+    return shared->dictionaries_lib_path;
+}
+
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
@@ -558,6 +565,9 @@ void Context::setPath(const String & path)
 
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
+
+    if (shared->dictionaries_lib_path.empty())
+        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
 void Context::setTemporaryPath(const String & path)
@@ -576,6 +586,12 @@ void Context::setUserFilesPath(const String & path)
 {
     auto lock = getLock();
     shared->user_files_path = path;
+}
+
+void Context::setDictionariesLibPath(const String & path)
+{
+    auto lock = getLock();
+    shared->dictionaries_lib_path = path;
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
