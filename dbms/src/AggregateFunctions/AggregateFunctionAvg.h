@@ -17,11 +17,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename T>
+template <typename T, typename Denominator>
 struct AggregateFunctionAvgData
 {
     T numerator = 0;
-    T denominator = 0;
+    Denominator denominator = 0;
 
     template <typename ResultT>
     ResultT NO_SANITIZE_UNDEFINED result() const
