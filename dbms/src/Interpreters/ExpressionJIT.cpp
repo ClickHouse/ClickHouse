@@ -124,33 +124,12 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::TargetOptions options;
     return target->createTargetMachine(
         triple, cpu, features.getString(), options, llvm::None,
-#if LLVM_VERSION_MAJOR >= 6
         llvm::None, llvm::CodeGenOpt::Default, /*jit=*/true
-#else
-        llvm::CodeModel::Default, llvm::CodeGenOpt::Default
-#endif
     );
 }
 
-#if LLVM_VERSION_MAJOR >= 7
 auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 {
-#if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
-    // REMOVE AFTER contrib/llvm upgrade
-    auto flags = [&](llvm::orc::SymbolFlagsMap & flags_internal, const llvm::orc::SymbolNameSet & symbols)
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols)
-        {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags_internal.emplace(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
-        }
-        return missing;
-    };
-#else
     // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
     auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
     {
@@ -163,7 +142,6 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
         }
         return flags_map;
     };
-#endif
 
     auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols_set)
     {
@@ -180,20 +158,13 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
     };
     return llvm::orc::createSymbolResolver(flags, symbols);
 }
-#endif
 
-#if LLVM_VERSION_MAJOR >= 7
 using ModulePtr = std::unique_ptr<llvm::Module>;
-#else
-using ModulePtr = std::shared_ptr<llvm::Module>;
-#endif
 
 struct LLVMContext
 {
     std::shared_ptr<llvm::LLVMContext> context;
-#if LLVM_VERSION_MAJOR >= 7
     llvm::orc::ExecutionSession execution_session;
-#endif
     ModulePtr module;
     std::unique_ptr<llvm::TargetMachine> machine;
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
@@ -205,21 +176,13 @@ struct LLVMContext
 
     LLVMContext()
         : context(std::make_shared<llvm::LLVMContext>())
-#if LLVM_VERSION_MAJOR >= 7
         , module(std::make_unique<llvm::Module>("jit", *context))
-#else
-        , module(std::make_shared<llvm::Module>("jit", *context))
-#endif
         , machine(getNativeMachine())
         , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
-#if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
             return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
         })
-#else
-        , object_layer([this]() { return memory_manager; })
-#endif
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(*context)
@@ -258,14 +221,9 @@ struct LLVMContext
         for (const auto & function : *module)
             functions.emplace_back(function.getName());
 
-#if LLVM_VERSION_MAJOR >= 7
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#else
-        if (!compile_layer.addModule(module, memory_manager))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#endif
 
         for (const auto & name : functions)
         {
