@@ -10,6 +10,8 @@
 #include <Common/setThreadName.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 
 
 namespace DB
@@ -39,10 +41,10 @@ struct LoadingGuardForAsyncLoad
 
 struct ExternalLoader::ObjectConfig
 {
-    String config_path;
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
     String key_in_config;
     String repository_name;
+    String path;
 };
 
 
@@ -57,226 +59,258 @@ public:
     }
     ~LoadablesConfigReader() = default;
 
-    void addConfigRepository(
-        const String & name,
-        std::unique_ptr<IExternalLoaderConfigRepository> repository,
-        const ExternalLoaderConfigSettings & settings)
+    using RepositoryPtr = std::unique_ptr<IExternalLoaderConfigRepository>;
+
+    void addConfigRepository(const String & repository_name, RepositoryPtr repository, const ExternalLoaderConfigSettings & settings)
     {
         std::lock_guard lock{mutex};
-        repositories.emplace(name, std::make_pair(std::move(repository), settings));
+        RepositoryInfo repository_info{std::move(repository), settings, {}};
+        repositories.emplace(repository_name, std::move(repository_info));
+        need_collect_object_configs = true;
     }
 
-    void removeConfigRepository(const String & name)
+    RepositoryPtr removeConfigRepository(const String & repository_name)
     {
         std::lock_guard lock{mutex};
-        repositories.erase(name);
+        auto it = repositories.find(repository_name);
+        if (it == repositories.end())
+            return nullptr;
+        auto repository = std::move(it->second.repository);
+        repositories.erase(it);
+        need_collect_object_configs = true;
+        return repository;
     }
 
     using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
 
-
-    /// Reads configurations.
+    /// Reads all repositories.
     ObjectConfigsPtr read()
     {
         std::lock_guard lock(mutex);
-        // Check last modification times of files and read those files which are new or changed.
-        if (!readLoadablesInfos())
-            return configs; // Nothing changed, so we can return the previous result.
-
-        return collectConfigs();
+        readRepositories();
+        collectObjectConfigs();
+        return object_configs;
     }
 
-    ObjectConfig updateLoadableInfo(
-        const String & external_name,
-        const String & object_name,
-        const String & repo_name,
-        const Poco::AutoPtr<Poco::Util::AbstractConfiguration> & config,
-        const String & key)
+    /// Reads only a specified repository.
+    /// This functions checks only a specified repository but returns configs from all repositories.
+    ObjectConfigsPtr read(const String & repository_name)
     {
         std::lock_guard lock(mutex);
+        readRepositories(repository_name);
+        collectObjectConfigs();
+        return object_configs;
+    }
 
-        auto it = loadables_infos.find(object_name);
-        if (it == loadables_infos.end())
-        {
-            LoadablesInfos loadable_info;
-            loadables_infos[object_name] = loadable_info;
-        }
-        auto & loadable_info = loadables_infos[object_name];
-        ObjectConfig object_config{object_name, config, key, repo_name};
-        bool found = false;
-        for (auto iter = loadable_info.configs.begin(); iter != loadable_info.configs.end(); ++iter)
-        {
-            if (iter->first == external_name)
-            {
-                iter->second = object_config;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            loadable_info.configs.emplace_back(external_name, object_config);
-        loadable_info.last_update_time = Poco::Timestamp{}; /// now
-        loadable_info.in_use = true;
-        return object_config;
+    /// Reads only a specified path from a specified repository.
+    /// This functions checks only a specified repository but returns configs from all repositories.
+    ObjectConfigsPtr read(const String & repository_name, const String & path)
+    {
+        std::lock_guard lock(mutex);
+        readRepositories(repository_name, path);
+        collectObjectConfigs();
+        return object_configs;
     }
 
 private:
-    struct LoadablesInfos
+    struct FileInfo
     {
         Poco::Timestamp last_update_time = 0;
-        std::vector<std::pair<String, ObjectConfig>> configs; // Parsed loadable's contents.
-        bool in_use = true; // Whether the `LoadablesInfos` should be destroyed because the correspondent loadable is deleted.
+        std::vector<std::pair<String, ObjectConfig>> objects; // Parsed contents of the file.
+        bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
     };
 
-    /// Collect current configurations
-    ObjectConfigsPtr collectConfigs()
+    struct RepositoryInfo
     {
-        // Generate new result.
-        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, ObjectConfig>>();
-        for (const auto & [path, loadable_info] : loadables_infos)
+        RepositoryPtr repository;
+        ExternalLoaderConfigSettings settings;
+        std::unordered_map<String /* path */, FileInfo> files;
+    };
+
+    /// Reads the repositories.
+    /// Checks last modification times of files and read those files which are new or changed.
+    void readRepositories(const std::optional<String> & only_repository_name = {}, const std::optional<String> & only_path = {})
+    {
+        Strings repository_names;
+        if (only_repository_name)
         {
-            for (const auto & [name, config] : loadable_info.configs)
+            if (repositories.count(*only_repository_name))
+                repository_names.push_back(*only_repository_name);
+        }
+        else
+            boost::copy(repositories | boost::adaptors::map_keys, std::back_inserter(repository_names));
+
+        for (const auto & repository_name : repository_names)
+        {
+            auto & repository_info = repositories[repository_name];
+
+            for (auto & file_info : repository_info.files | boost::adaptors::map_values)
+                file_info.in_use = false;
+
+            Strings existing_paths;
+            if (only_path)
             {
-                auto already_added_it = new_configs->find(name);
-                if (already_added_it != new_configs->end())
-                {
-                    const auto & already_added = already_added_it->second;
-                    LOG_WARNING(log, path << ": " << type_name << " '" << name << "' is found "
-                                          << ((path == already_added.config_path)
-                                                  ? ("twice in the same file")
-                                                  : ("both in file '" + already_added.config_path + "' and '" + path + "'")));
-                    continue;
-                }
-                new_configs->emplace(name, config);
+                if (repository_info.repository->exists(*only_path))
+                    existing_paths.push_back(*only_path);
             }
-        }
+            else
+                boost::copy(repository_info.repository->getAllLoadablesDefinitionNames(), std::back_inserter(existing_paths));
 
-        configs = new_configs;
-        return configs;
-    }
-
-    /// Read files and store them to the map ` loadables_infos`.
-    bool readLoadablesInfos()
-    {
-        bool changed = false;
-
-        for (auto & name_and_loadable_info : loadables_infos)
-        {
-            LoadablesInfos & loadable_info = name_and_loadable_info.second;
-            loadable_info.in_use = false;
-        }
-
-        for (const auto & [repo_name, repo_with_settings] : repositories)
-        {
-            const auto names = repo_with_settings.first->getAllLoadablesDefinitionNames();
-            for (const auto & loadable_name : names)
+            for (const auto & path : existing_paths)
             {
-                auto it = loadables_infos.find(loadable_name);
-                if (it != loadables_infos.end())
+                auto it = repository_info.files.find(path);
+                if (it != repository_info.files.end())
                 {
-                    LoadablesInfos & loadable_info = it->second;
-                    if (readLoadablesInfo(repo_name, *repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
-                        changed = true;
+                    FileInfo & file_info = it->second;
+                    if (readFileInfo(file_info, *repository_info.repository, path, repository_info.settings))
+                        need_collect_object_configs = true;
                 }
                 else
                 {
-                    LoadablesInfos loadable_info;
-                    if (readLoadablesInfo(repo_name, *repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
+                    FileInfo file_info;
+                    if (readFileInfo(file_info, *repository_info.repository, path, repository_info.settings))
                     {
-                        loadables_infos.emplace(loadable_name, std::move(loadable_info));
-                        changed = true;
+                        repository_info.files.emplace(path, std::move(file_info));
+                        need_collect_object_configs = true;
                     }
                 }
             }
-        }
 
-        std::vector<String> deleted_names;
-        for (auto & [path, loadable_info] : loadables_infos)
-            if (!loadable_info.in_use)
-                deleted_names.emplace_back(path);
-        if (!deleted_names.empty())
-        {
-            for (const String & deleted_name : deleted_names)
-                loadables_infos.erase(deleted_name);
-            changed = true;
+            Strings deleted_paths;
+            for (auto & [path, file_info] : repository_info.files)
+            {
+                if (file_info.in_use)
+                    continue;
+
+                if (only_path && (*only_path != path))
+                    continue;
+
+                deleted_paths.emplace_back(path);
+            }
+
+            if (!deleted_paths.empty())
+            {
+                for (const String & deleted_path : deleted_paths)
+                    repository_info.files.erase(deleted_path);
+                need_collect_object_configs = true;
+            }
         }
-        return changed;
     }
 
-    bool readLoadablesInfo(
-        const String & repo_name,
+    /// Reads a file, returns true if the file is new or changed.
+    bool readFileInfo(
+        FileInfo & file_info,
         IExternalLoaderConfigRepository & repository,
-        const String & object_name,
-        const ExternalLoaderConfigSettings & settings,
-        LoadablesInfos & loadable_info) const
+        const String & path,
+        const ExternalLoaderConfigSettings & settings) const
     {
         try
         {
-            if (object_name.empty() || !repository.exists(object_name))
+            if (path.empty() || !repository.exists(path))
             {
-                LOG_WARNING(log, "Config file '" + object_name + "' does not exist");
+                LOG_WARNING(log, "Config file '" + path + "' does not exist");
                 return false;
             }
 
-            auto update_time_from_repository = repository.getUpdateTime(object_name);
+            auto update_time_from_repository = repository.getUpdateTime(path);
 
             /// Actually it can't be less, but for sure we check less or equal
-            if (update_time_from_repository <= loadable_info.last_update_time)
+            if (update_time_from_repository <= file_info.last_update_time)
             {
-                loadable_info.in_use = true;
+                file_info.in_use = true;
                 return false;
             }
 
-            auto file_contents = repository.load(object_name);
+            auto file_contents = repository.load(path);
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
             file_contents->keys(keys);
 
             /// for each object defined in repositories
-            std::vector<std::pair<String, ObjectConfig>> configs_from_file;
+            std::vector<std::pair<String, ObjectConfig>> object_configs_from_file;
             for (const auto & key : keys)
             {
                 if (!startsWith(key, settings.external_config))
                 {
                     if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING(log, object_name << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
+                        LOG_WARNING(log, path << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
                     continue;
                 }
 
-                String external_name = file_contents->getString(key + "." + settings.external_name);
-                if (external_name.empty())
+                String object_name = file_contents->getString(key + "." + settings.external_name);
+                if (object_name.empty())
                 {
-                    LOG_WARNING(log, object_name << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
+                    LOG_WARNING(log, path << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
                     continue;
                 }
 
-                configs_from_file.emplace_back(external_name, ObjectConfig{object_name, file_contents, key, repo_name});
+                object_configs_from_file.emplace_back(object_name, ObjectConfig{file_contents, key, {}, {}});
             }
 
-            loadable_info.configs = std::move(configs_from_file);
-            loadable_info.last_update_time = update_time_from_repository;
-            loadable_info.in_use = true;
+            file_info.objects = std::move(object_configs_from_file);
+            file_info.last_update_time = update_time_from_repository;
+            file_info.in_use = true;
             return true;
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to load config for dictionary '" + object_name + "'");
+            tryLogCurrentException(log, "Failed to load config file '" + path + "'");
             return false;
         }
     }
 
+    /// Builds a map of current configurations of objects.
+    void collectObjectConfigs()
+    {
+        if (!need_collect_object_configs)
+            return;
+        need_collect_object_configs = false;
+
+        // Generate new result.
+        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, ObjectConfig>>();
+
+        for (const auto & [repository_name, repository_info] : repositories)
+        {
+            for (const auto & [path, file_info] : repository_info.files)
+            {
+                for (const auto & [object_name, object_config] : file_info.objects)
+                {
+                    auto already_added_it = new_configs->find(object_name);
+                    if (already_added_it == new_configs->end())
+                    {
+                        auto & new_config = new_configs->emplace(object_name, object_config).first->second;
+                        new_config.repository_name = repository_name;
+                        new_config.path = path;
+                    }
+                    else
+                    {
+                        const auto & already_added = already_added_it->second;
+                        if (!startsWith(repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX) &&
+                            !startsWith(already_added.repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX))
+                        {
+                            LOG_WARNING(
+                                log,
+                                type_name << " '" << object_name << "' is found "
+                                          << (((path == already_added.path) && repository_name == already_added.repository_name)
+                                                  ? ("twice in the same file '" + path + "'")
+                                                  : ("both in file '" + already_added.path + "' and '" + path + "'")));
+                        }
+                    }
+                }
+            }
+        }
+
+        object_configs = new_configs;
+    }
 
     const String type_name;
     Logger * log;
 
     std::mutex mutex;
-    using RepositoryPtr = std::unique_ptr<IExternalLoaderConfigRepository>;
-    using RepositoryWithSettings = std::pair<RepositoryPtr, ExternalLoaderConfigSettings>;
-    std::unordered_map<String, RepositoryWithSettings> repositories;
-    ObjectConfigsPtr configs;
-    std::unordered_map<String /* config path */, LoadablesInfos>  loadables_infos;
+    std::unordered_map<String, RepositoryInfo> repositories;
+    ObjectConfigsPtr object_configs;
+    bool need_collect_object_configs = false;
 };
 
 
@@ -338,10 +372,11 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                if (!isSameConfiguration(*info.object_config.config, info.object_config.key_in_config, *new_config.config, new_config.key_in_config))
+                bool config_is_same = isSameConfiguration(*info.object_config.config, info.object_config.key_in_config, *new_config.config, new_config.key_in_config);
+                info.object_config = new_config;
+                if (!config_is_same)
                 {
                     /// Configuration has been changed.
-                    info.object_config = new_config;
                     info.config_changed = true;
 
                     if (info.wasLoading())
@@ -374,12 +409,6 @@ public:
         /// or maybe we have just removed object which were been loaded,
         /// so we should notify `event` to recheck conditions in load() and loadAll() now.
         event.notify_all();
-    }
-
-    void setSingleObjectConfigurationWithoutLoading(const String & external_name, const ObjectConfig & config)
-    {
-        std::lock_guard lock{mutex};
-        infos.emplace(external_name, Info{config});
     }
 
     /// Sets whether all the objects from the configuration should be always loaded (even if they aren't used).
@@ -662,7 +691,7 @@ private:
             result.exception = exception;
             result.loading_start_time = loading_start_time;
             result.loading_duration = loadingDuration();
-            result.origin = object_config.config_path;
+            result.origin = object_config.path;
             result.repository_name = object_config.repository_name;
             return result;
         }
@@ -1091,12 +1120,14 @@ void ExternalLoader::addConfigRepository(
     const ExternalLoaderConfigSettings & config_settings)
 {
     config_files_reader->addConfigRepository(repository_name, std::move(config_repository), config_settings);
-    loading_dispatcher->setConfiguration(config_files_reader->read());
+    reloadConfig(repository_name);
 }
 
-void ExternalLoader::removeConfigRepository(const std::string & repository_name)
+std::unique_ptr<IExternalLoaderConfigRepository> ExternalLoader::removeConfigRepository(const std::string & repository_name)
 {
-    config_files_reader->removeConfigRepository(repository_name);
+    auto repository = config_files_reader->removeConfigRepository(repository_name);
+    reloadConfig(repository_name);
+    return repository;
 }
 
 void ExternalLoader::enableAlwaysLoadEverything(bool enable)
@@ -1189,40 +1220,36 @@ void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
 
 void ExternalLoader::reload(const String & name, bool load_never_loading) const
 {
-    auto configs = config_files_reader->read();
-    loading_dispatcher->setConfiguration(configs);
+    reloadConfig();
     loading_dispatcher->reload(name, load_never_loading);
 }
 
 void ExternalLoader::reload(bool load_never_loading) const
 {
-    loading_dispatcher->setConfiguration(config_files_reader->read());
+    reloadConfig();
     loading_dispatcher->reload(load_never_loading);
 }
 
 void ExternalLoader::reload(const FilterByNameFunction & filter_by_name, bool load_never_loading) const
 {
-    loading_dispatcher->setConfiguration(config_files_reader->read());
+    reloadConfig();
     loading_dispatcher->reload(filter_by_name, load_never_loading);
 }
 
-void ExternalLoader::addObjectAndLoad(
-    const String & name,
-    const String & external_name,
-    const String & repo_name,
-    const Poco::AutoPtr<Poco::Util::AbstractConfiguration> & config,
-    const String & key,
-    bool load_never_loading) const
+void ExternalLoader::reloadConfig() const
 {
-    auto object_config = config_files_reader->updateLoadableInfo(external_name, name, repo_name, config, key);
-    loading_dispatcher->setSingleObjectConfigurationWithoutLoading(external_name, object_config);
-    LoadablePtr loaded_object;
-    if (load_never_loading)
-        loading_dispatcher->loadStrict(name, loaded_object);
-    else
-        loading_dispatcher->load(name, loaded_object, Duration::zero());
+    loading_dispatcher->setConfiguration(config_files_reader->read());
 }
 
+void ExternalLoader::reloadConfig(const String & repository_name) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read(repository_name));
+}
+
+void ExternalLoader::reloadConfig(const String & repository_name, const String & path) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
+}
 
 ExternalLoader::LoadablePtr ExternalLoader::createObject(
     const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const

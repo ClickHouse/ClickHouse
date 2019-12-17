@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename T>
+template <typename T, typename SFINAE = void>
 struct NearestFieldTypeImpl;
 
 template <typename T>
@@ -149,6 +149,54 @@ public:
 private:
     T dec;
     UInt32 scale;
+};
+
+/// char may be signed or unsigned, and behave identically to signed char or unsigned char,
+///  but they are always three different types.
+/// signedness of char is different in Linux on x86 and Linux on ARM.
+template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
+template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
+
+template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
+
+template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
+template <> struct NearestFieldTypeImpl<UUID> { using Type = UInt128; };
+template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
+
+/// long and long long are always different types that may behave identically or not.
+/// This is different on Linux and Mac.
+template <> struct NearestFieldTypeImpl<long> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; };
+template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
+
+template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
+template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
+template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
+template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
+template <> struct NearestFieldTypeImpl<String> { using Type = String; };
+template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
+template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
+template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
+
+template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
+
+// For enum types, use the field type that corresponds to their underlying type.
+template <typename T>
+struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
+{
+    using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
@@ -314,18 +362,24 @@ public:
     bool isNull() const { return which == Types::Null; }
 
 
-    template <typename T> T & get()
+    template <typename T>
+    T & get();
+
+    template <typename T>
+    const T & get() const
     {
-        using TWithoutRef = std::remove_reference_t<T>;
-        TWithoutRef * MAY_ALIAS ptr = reinterpret_cast<TWithoutRef*>(&storage);
-        return *ptr;
+        auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
+        return mutable_this->get<T>();
     }
 
-    template <typename T> const T & get() const
+    template <typename T>
+    T & reinterpret();
+
+    template <typename T>
+    const T & reinterpret() const
     {
-        using TWithoutRef = std::remove_reference_t<T>;
-        const TWithoutRef * MAY_ALIAS ptr = reinterpret_cast<const TWithoutRef*>(&storage);
-        return *ptr;
+        auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
+        return mutable_this->reinterpret<T>();
     }
 
     template <typename T> bool tryGet(T & result)
@@ -427,6 +481,8 @@ public:
         return rhs <= *this;
     }
 
+    // More like bitwise equality as opposed to semantic equality:
+    // Null equals Null and NaN equals NaN.
     bool operator== (const Field & rhs) const
     {
         if (which != rhs.which)
@@ -435,9 +491,13 @@ public:
         switch (which)
         {
             case Types::Null:    return true;
-            case Types::UInt64:
-            case Types::Int64:
-            case Types::Float64: return get<UInt64>()  == rhs.get<UInt64>();
+            case Types::UInt64:  return get<UInt64>() == rhs.get<UInt64>();
+            case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
+            case Types::Float64:
+            {
+                // Compare as UInt64 so that NaNs compare as equal.
+                return reinterpret<UInt64>() == rhs.reinterpret<UInt64>();
+            }
             case Types::String:  return get<String>()  == rhs.get<String>();
             case Types::Array:   return get<Array>()   == rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
@@ -456,6 +516,50 @@ public:
     {
         return !(*this == rhs);
     }
+
+    /// Field is template parameter, to allow universal reference for field,
+    /// that is useful for const and non-const .
+    template <typename F, typename FieldRef>
+    static auto dispatch(F && f, FieldRef && field)
+    {
+        switch (field.which)
+        {
+            case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+            case Types::UInt64:  return f(field.template get<UInt64>());
+            case Types::UInt128: return f(field.template get<UInt128>());
+            case Types::Int64:   return f(field.template get<Int64>());
+            case Types::Float64: return f(field.template get<Float64>());
+            case Types::String:  return f(field.template get<String>());
+            case Types::Array:   return f(field.template get<Array>());
+            case Types::Tuple:   return f(field.template get<Tuple>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+            case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
+            case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
+            case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
+            case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
+            case Types::Int128:
+                // TODO: investigate where we need Int128 Fields. There are no
+                // field visitors that support them, and they only arise indirectly
+                // in some functions that use Decimal columns: they get the
+                // underlying Field value with get<Int128>(). Probably should be
+                // switched to DecimalField, but this is a whole endeavor in itself.
+                throw Exception("Unexpected Int128 in Field::dispatch()", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        // GCC 9 complains that control reaches the end, despite that we handle
+        // all the cases above (maybe because of throw?). Return something to
+        // silence it.
+        Null null{};
+        return f(null);
+    }
+
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
@@ -490,37 +594,6 @@ private:
         assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
-    }
-
-
-    template <typename F, typename Field>    /// Field template parameter may be const or non-const Field.
-    static void dispatch(F && f, Field & field)
-    {
-        switch (field.which)
-        {
-            case Types::Null:    f(field.template get<Null>());    return;
-
-// gcc 7.3.0
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-            case Types::UInt64:  f(field.template get<UInt64>());  return;
-            case Types::UInt128: f(field.template get<UInt128>()); return;
-            case Types::Int64:   f(field.template get<Int64>());   return;
-            case Types::Int128:  f(field.template get<Int128>());  return;
-            case Types::Float64: f(field.template get<Float64>()); return;
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
-            case Types::String:  f(field.template get<String>());  return;
-            case Types::Array:   f(field.template get<Array>());   return;
-            case Types::Tuple:   f(field.template get<Tuple>());   return;
-            case Types::Decimal32:  f(field.template get<DecimalField<Decimal32>>()); return;
-            case Types::Decimal64:  f(field.template get<DecimalField<Decimal64>>()); return;
-            case Types::Decimal128: f(field.template get<DecimalField<Decimal128>>()); return;
-            case Types::AggregateFunctionState: f(field.template get<AggregateFunctionStateData>()); return;
-        }
     }
 
 
@@ -621,6 +694,22 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 
+template <typename T>
+T & Field::get()
+{
+    using ValueType = std::decay_t<T>;
+    //assert(TypeToEnum<NearestFieldType<ValueType>>::value == which);
+    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
+    return *ptr;
+}
+
+template <typename T>
+T & Field::reinterpret()
+{
+    using ValueType = std::decay_t<T>;
+    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
+    return *ptr;
+}
 
 template <typename T>
 T get(const Field & field)
@@ -650,49 +739,6 @@ T safeGet(Field & field)
 template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
 template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
 template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
-
-
-
-/// char may be signed or unsigned, and behave identically to signed char or unsigned char,
-///  but they are always three different types.
-/// signedness of char is different in Linux on x86 and Linux on ARM.
-template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
-template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
-template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
-
-template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
-
-template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
-template <> struct NearestFieldTypeImpl<UUID> { using Type = UInt128; };
-template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
-template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
-
-/// long and long long are always different types that may behave identically or not.
-/// This is different on Linux and Mac.
-template <> struct NearestFieldTypeImpl<long> { using Type = Int64; };
-template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; };
-template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
-
-template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
-template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
-template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
-template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<Decimal128>; };
-template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
-template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
-template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
-template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
-template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
-template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
-template <> struct NearestFieldTypeImpl<String> { using Type = String; };
-template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
-template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
-template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
-
-template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
 decltype(auto) castToNearestFieldType(T && x)

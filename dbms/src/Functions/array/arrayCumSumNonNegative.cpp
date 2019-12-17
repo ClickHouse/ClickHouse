@@ -39,7 +39,7 @@ struct ArrayCumSumNonNegativeImpl
         if (which.isDecimal())
         {
             UInt32 scale = getDecimalScale(*expression_return);
-            DataTypePtr nested = std::make_shared<DataTypeDecimal<Decimal128>>(maxDecimalPrecision<Decimal128>(), scale);
+            DataTypePtr nested = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::maxPrecision<Decimal128>(), scale);
             return std::make_shared<DataTypeArray>(nested);
         }
 
