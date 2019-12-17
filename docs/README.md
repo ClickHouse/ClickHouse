@@ -66,11 +66,11 @@ You can edit the docs in some ways:
 - Inline code: `\`in backticks\``.
 - Multiline code blocks: 
 
-<pre lang="no-highlight"><code>```lang_name
-in
-triple backtick
-quotes
-```</code></pre>.
+    <pre lang="no-highlight"><code>```lang_name
+    in
+    triple backtick
+    quotes
+    ```</code></pre>.
 
 - Note:
 
