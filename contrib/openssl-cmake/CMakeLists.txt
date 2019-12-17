@@ -21,8 +21,7 @@ set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default
 add_definitions(-DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}")
 
 if(ARCH_AMD64)
-    # -DSHA256_ASM was removed because it doesn't work with asynchronous unwind (query profiler) for unknown reason.
-    add_definitions(-DAES_ASM -DBSAES_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DPOLY1305_ASM -DSHA1_ASM -DSHA512_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DOPENSSL_USE_NODELETE -DL_ENDIAN)
+    add_definitions(-DAES_ASM -DBSAES_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DPOLY1305_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DOPENSSL_USE_NODELETE -DL_ENDIAN)
 elseif(ARCH_AARCH64)
     add_definitions(-DECP_NISTZ256_ASM -DKECCAK1600_ASM -DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DPOLY1305_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DOPENSSL_USE_NODELETE -DL_ENDIAN)
 endif()
@@ -35,7 +34,11 @@ endif ()
 if (ARCH_AMD64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
-            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT})
+            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT}
+            # ASM code has broken unwind tables (CFI), strip them.
+            # Otherwise asynchronous unwind (that we use for query profiler)
+            #  will lead to segfault while trying to interpret wrong "CFA expression".
+            COMMAND sed -i -e '/^\.cfi_/d' ${FILE_OUT})
     endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s)
@@ -71,6 +74,7 @@ elseif (ARCH_AARCH64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
+            # Hope that the ASM code for AArch64 doesn't have broken CFI. Otherwise, add the same sed as for x86_64.
     endmacro()
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
@@ -911,10 +915,7 @@ if (ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-mb-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-mb-x86_64.s
-
-        #${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s
-        ${OPENSSL_SOURCE_DIR}/crypto/sha/sha256.c
-
+        ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
 elseif (ARCH_AARCH64)

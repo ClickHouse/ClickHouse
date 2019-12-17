@@ -109,6 +109,8 @@ def test_table_function(started_cluster):
                        " UNION ALL SELECT count() as c FROM {} WHERE id % 3 == 2)".format(table_function, table_function,
                                                                                           table_function)).rstrip() == '10000'
     assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '30000'
+    node1.query("INSERT INTO {} SELECT id + 100000, name, age, money FROM {}".format('TABLE FUNCTION ' + table_function, table_function))
+    assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '60000'
     conn.close()
 
 
