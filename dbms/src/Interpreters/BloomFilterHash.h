@@ -85,7 +85,7 @@ struct BloomFilterHash
                 throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
             const auto & offsets = array_col->getOffsets();
-            limit = offsets[pos + limit - 1] - ((pos == 0) ? 0 : offsets[pos - 1]);
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
 
             if (limit == 0)
             {
