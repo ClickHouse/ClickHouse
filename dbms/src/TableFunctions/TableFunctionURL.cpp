@@ -3,6 +3,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionURL.h>
 #include <Poco/URI.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

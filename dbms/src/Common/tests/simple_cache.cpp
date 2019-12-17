@@ -2,7 +2,7 @@
 #include <common/SimpleCache.h>
 
 
-int func(int x, int y)
+static int func(int x, int y)
 {
     std::cerr << x << " + " << y << "\n";
     return x + y;
