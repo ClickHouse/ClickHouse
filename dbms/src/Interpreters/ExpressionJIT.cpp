@@ -32,6 +32,7 @@
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Mangler.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Module.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Type.h>
+#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/LegacyPassManager.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/ExecutionEngine.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/JITSymbol.h>
 #include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/SectionMemoryManager.h>
