@@ -2057,7 +2057,8 @@ void MergeTreeData::renameTempPartAndReplace(
       */
     if (increment)
     {
-        part_info.min_block = part_info.max_block = part_info.mutation = increment->get();
+        part_info.min_block = part_info.max_block = increment->get();
+        part_info.mutation = 0; /// it's equal to min_block by default
         part_name = part->getNewName(part_info);
     }
     else

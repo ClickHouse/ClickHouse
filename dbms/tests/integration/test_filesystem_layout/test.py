@@ -24,6 +24,5 @@ def test_file_path_escaping(started_cluster):
     node.query('''INSERT INTO test.`T.a_b,l-e!` VALUES (1);''')
     node.query('''ALTER TABLE test.`T.a_b,l-e!` FREEZE;''')
 
-    node.exec_in_container(["bash", "-c", "test -f /var/lib/clickhouse/data/test/T%2Ea_b%2Cl%2De%21/1_1_1_0_1/%7EId.bin"])
-    node.exec_in_container(["bash", "-c", "test -f /var/lib/clickhouse/shadow/1/data/test/T%2Ea_b%2Cl%2De%21/1_1_1_0_1/%7EId.bin"])
-
+    node.exec_in_container(["bash", "-c", "test -f /var/lib/clickhouse/data/test/T%2Ea_b%2Cl%2De%21/1_1_1_0/%7EId.bin"])
+    node.exec_in_container(["bash", "-c", "test -f /var/lib/clickhouse/shadow/1/data/test/T%2Ea_b%2Cl%2De%21/1_1_1_0/%7EId.bin"])
