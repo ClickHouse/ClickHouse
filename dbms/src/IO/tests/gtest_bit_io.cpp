@@ -83,6 +83,30 @@ std::string dumpContents(const T& container,
     return sstr.str();
 }
 
+template <typename ValueLeft, typename ValueRight>
+::testing::AssertionResult BinaryEqual(const ValueLeft & left, const ValueRight & right)
+{
+//    ::testing::AssertionResult result = ::testing::AssertionSuccess();
+    if (sizeof(left) != sizeof(right))
+        return ::testing::AssertionFailure()
+                << "Sizes do not match, expected: " << sizeof(left) << " actual: " << sizeof(right);
+
+    const auto size = std::min(sizeof(left), sizeof(right));
+    if (memcmp(&left, &right, size) != 0)
+    {
+        const auto l_bits = left ? static_cast<size_t>(std::log2(left)) : 0;
+        const auto r_bits = right ? static_cast<size_t>(std::log2(right)) : 0;
+        const size_t bits = std::max(l_bits, r_bits) + 1;
+
+        return ::testing::AssertionFailure()
+                << "Values are binary different,\n"
+                << "\texpected: 0b" << bin(left, bits) << " (" << std::hex << left << "),\n"
+                << "\tactual  : 0b" << bin(right, bits) << " (" <<std::hex << right << ").";
+    }
+
+    return ::testing::AssertionSuccess();
+}
+
 struct TestCaseParameter
 {
     std::vector<std::pair<UInt8, UInt64>> bits_and_vals;
@@ -139,13 +163,13 @@ TEST_P(BitIO, WriteAndRead)
         for (const auto & bv : bits_and_vals)
         {
             SCOPED_TRACE(::testing::Message()
-                         << "item #" << item << ", width: " << static_cast<UInt32>(bv.first)
+                         << "item #" << item << " of " << bits_and_vals.size() << ", width: " << static_cast<UInt32>(bv.first)
                          << ", value: " << bv.second << "(" << bin(bv.second) << ")"
-                         << ", at bit position: " << std::dec << bitpos
+                         << ", at bit position: " << std::dec << reader.count()
                          << ".\nBuffer memory:\n" << dumpContents(data));
 
 //            const UInt8 next_byte = getBits(bv.first, bv.second) &
-            EXPECT_EQ(getBits(bv.first, bv.second), reader.readBits(bv.first));
+            ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
             bitpos += bv.first;
@@ -188,11 +212,11 @@ INSTANTIATE_TEST_CASE_P(Simple,
             "10101001 10111010 11101111 10101111 10111010 11101011 10101001 00000000 " // 256
         },
         {
-            {{64, BIT_PATTERN}, {56, BIT_PATTERN} , {4, 0b1111}, {4, 0}, // 128
+            {{64, BIT_PATTERN}, {56, BIT_PATTERN} , {5, 0b11111}, {3, 0}, // 128
              {8, 0b11111111}, {64, BIT_PATTERN}, {48, BIT_PATTERN}, {8, 0}, //256
              {32, BIT_PATTERN}, {12, 0xff}, {8, 0}, {12, 0xAEff}},
             "11101011 11101111 10111010 11101111 10101111 10111010 11101011 10101001 " // 64
-            "11101111 10111010 11101111 10101111 10111010 11101011 10101001 11110000 " // 128
+            "11101111 10111010 11101111 10101111 10111010 11101011 10101001 11111000 " // 128
             "11111111 11101011 11101111 10111010 11101111 10101111 10111010 11101011 " // 192
             "10101001 10111010 11101111 10101111 10111010 11101011 10101001 00000000 " // 256
             "10101111 10111010 11101011 10101001 00001111 11110000 00001110 11111111 " // 320

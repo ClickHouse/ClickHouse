@@ -42,7 +42,7 @@ extern const int ATTEMPT_TO_READ_AFTER_EOF;
 
 class BitReader
 {
-    using BufferType = UInt64;
+    using BufferType = unsigned __int128;
 
     const char * source_begin;
     const char * source_current;
@@ -50,7 +50,6 @@ class BitReader
 
     BufferType bits_buffer;
     UInt8 bits_count;
-    static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
     BitReader(const char * begin, size_t size)
@@ -64,48 +63,28 @@ public:
     ~BitReader()
     {}
 
-    inline UInt64 readBits(UInt8 bits)
+    // reads bits_to_read high-bits from bits_buffer
+    inline UInt64 readBits(UInt8 bits_to_read)
     {
-        UInt64 result = 0;
+        if (bits_to_read > bits_count)
+            fillBuffer();
 
-        while (bits != 0)
-        {
-            if (bits_count == 0)
-            {
-                if (fillBuffer() == 0)
-                {
-                    // EOF.
-                    break;
-                }
-            }
+        // push down the high-bits
+        UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
 
-            const auto to_read = std::min(bits, bits_count);
-
-            const UInt64 v = bits_buffer >> (bits_count - to_read);
-            const UInt64 mask = maskLowBits<UInt64>(to_read);
-            const UInt64 value = v & mask;
-            result |= value;
-
-            // unset bits that were read
-            bits_buffer &= ~(mask << (bits_count - to_read));
-            bits_count -= to_read;
-            bits -= to_read;
-
-            result <<= std::min(bits, BIT_BUFFER_SIZE);
-        }
+        // shift high-bits that were read
+        bits_buffer <<= bits_to_read;
+        bits_count -= bits_to_read;
 
         return result;
     }
 
-    inline UInt8 peekByte() const
+    inline UInt8 peekByte()
     {
-        UInt8 result = 0;
-        const UInt64 v = bits_buffer >> (bits_count - 8);
-        const UInt64 mask = maskLowBits<UInt64>(8);
-        const UInt64 value = v & mask;
-        result |= value;
+        if (bits_count < 8)
+            fillBuffer();
 
-        return result;
+        return bits_buffer >> (sizeof(bits_buffer) * 8 - 8);
     }
 
     inline UInt8 readBit()
@@ -118,13 +97,19 @@ public:
         return bits_count == 0 && source_current >= source_end;
     }
 
+    // number of bits that was already read by clients with readBits()
     inline UInt64 count() const
     {
-        return (source_current - source_begin) * 8 + bits_count;
+        return (source_current - source_begin) * 8 - bits_count;
+    }
+
+    inline UInt64 remaining() const
+    {
+        return (source_end - source_current) * 8 + bits_count;
     }
 
 private:
-    size_t fillBuffer(UInt8 to_read = BIT_BUFFER_SIZE / 8)
+    size_t fillBuffer()
     {
         const size_t available = source_end - source_current;
         if (available == 0)
@@ -134,17 +119,18 @@ private:
 //                            + std::to_string(to_read) + " more bytes.",
 //                            ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
         }
-        to_read = std::min(static_cast<size_t>(to_read), available);
+        const auto bytes_to_read = std::min<size_t>(64 / 8, available);
 
-        memcpy(&bits_buffer, source_current, to_read);
-        source_current += to_read;
+        UInt64 tmp_buffer = 0;
+        memcpy(&tmp_buffer, source_current, bytes_to_read);
+        source_current += bytes_to_read;
 
-        bits_buffer = be64toh(bits_buffer);
-        bits_buffer >>= BIT_BUFFER_SIZE - to_read * 8;
+        tmp_buffer = be64toh(tmp_buffer);
 
-        bits_count = static_cast<UInt8>(to_read) * 8;
+        bits_buffer |= BufferType(tmp_buffer) << ((sizeof(BufferType) - sizeof(tmp_buffer)) * 8 - bits_count);
+        bits_count += static_cast<UInt8>(bytes_to_read) * 8;
 
-        return to_read;
+        return bytes_to_read;
     }
 };
 
