@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -204,10 +204,13 @@ private:
             tmp_arguments.push_back(i);
         }
 
+        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
+                    .build(tmp_block.getColumnsWithTypeAndName());
+
         tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
-        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
+        impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }

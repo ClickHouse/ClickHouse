@@ -176,7 +176,7 @@ void buildSingleAttribute(
      AutoPtr<Element> null_value_element(doc->createElement("null_value"));
      String null_value_str;
      if (dict_attr->default_value)
-         null_value_str = queryToString(dict_attr->default_value);
+         null_value_str = getUnescapedFieldString(dict_attr->default_value->as<ASTLiteral>()->value);
      AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
      null_value_element->appendChild(null_value);
      attribute_element->appendChild(null_value_element);
@@ -184,7 +184,19 @@ void buildSingleAttribute(
     if (dict_attr->expression != nullptr)
     {
         AutoPtr<Element> expression_element(doc->createElement("expression"));
-        AutoPtr<Text> expression(doc->createTextNode(queryToString(dict_attr->expression)));
+
+        /// EXPRESSION PROPERTY should be expression or string
+        String expression_str;
+        if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
+                literal && literal->value.getType() == Field::Types::String)
+        {
+            expression_str = getUnescapedFieldString(literal->value);
+        }
+        else
+            expression_str = queryToString(dict_attr->expression);
+
+
+        AutoPtr<Text> expression(doc->createTextNode(expression_str));
         expression_element->appendChild(expression);
         attribute_element->appendChild(expression_element);
     }
@@ -402,7 +414,7 @@ void checkPrimaryKey(const std::unordered_set<std::string> & all_attrs, const Na
 }
 
 
-DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const String & database_name)
 {
     checkAST(query);
 
@@ -415,7 +427,8 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.database + "." + query.table));
+    String full_name = (!database_name.empty() ? database_name : query.database) + "." + query.table;
+    AutoPtr<Text> name(xml_document->createTextNode(full_name));
     name_element->appendChild(name);
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));

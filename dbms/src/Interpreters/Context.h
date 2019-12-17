@@ -13,7 +13,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -505,15 +505,16 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSpace::DiskSelector & getDiskSelector() const;
+    DiskSelector & getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
 
-    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelector & getStoragePolicySelector() const;
 
     /// Provides storage politics schemes
-    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

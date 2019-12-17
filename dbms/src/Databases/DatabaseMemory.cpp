@@ -35,7 +35,7 @@ void DatabaseMemory::createTable(
 }
 
 
-void DatabaseMemory::attachDictionary(const String & /*name*/, const Context & /*context*/, bool /*reload*/)
+void DatabaseMemory::attachDictionary(const String & /*name*/, const Context & /*context*/)
 {
     throw Exception("There is no ATTACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }
@@ -57,7 +57,7 @@ void DatabaseMemory::removeTable(
 }
 
 
-void DatabaseMemory::detachDictionary(const String & /*name*/, const Context & /*context*/, bool /*reload*/)
+void DatabaseMemory::detachDictionary(const String & /*name*/, const Context & /*context*/)
 {
     throw Exception("There is no DETACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }

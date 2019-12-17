@@ -1,17 +1,14 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Interpreters/ExternalLoader.h>
-#include <common/logger_useful.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <memory>
 
 
 namespace DB
 {
-
 class Context;
+class IExternalLoaderConfigRepository;
 
 /// Manages user-defined dictionaries.
 class ExternalDictionariesLoader : public ExternalLoader
@@ -36,14 +33,6 @@ public:
         const std::string & repository_name,
         std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
 
-    /// Starts reloading of a specified object.
-    void addDictionaryWithConfig(
-        const String & dictionary_name,
-        const String & repo_name,
-        const ASTCreateQuery & query,
-        bool load_never_loading = false) const;
-
-
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
                        const std::string & key_in_config) const override;
@@ -52,7 +41,6 @@ protected:
     friend class DatabaseDictionary;
 
 private:
-
     Context & context;
 };
 

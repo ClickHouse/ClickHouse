@@ -3,23 +3,23 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <ext/range.h>
 #include <cmath>
-#include <array>
 
 
 namespace DB
 {
 
 /** Calculates the distance between two geographical locations.
-  * There are two variants:
-  * greatCircleDistance: calculates the distance on a sphere: https://en.wikipedia.org/wiki/Great-circle_distance
-  * geoDistance: calculates the distance on WGS-84 ellipsoid.
+  * There are three variants:
+  * greatCircleAngle: calculates the distance on a sphere in degrees: https://en.wikipedia.org/wiki/Great-circle_distance
+  * greatCircleDistance: calculates the distance on a sphere in meters.
+  * geoDistance: calculates the distance on WGS-84 ellipsoid in meters.
   *
-  * The function calculates distance in meters between two points on Earth specified by longitude and latitude in degrees.
+  * The function calculates distance between two points on Earth specified by longitude and latitude in degrees.
   *
   * Latitude must be in [-90, 90], longitude must be [-180, 180].
   *
@@ -42,36 +42,19 @@ constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
-/** We use "WGS-84 ellipsoidal quadratic mean radius of Earth" as the approximation to calculate distances on sphere.
-  * The motivation for it is explained here: https://math.wikia.org/wiki/Ellipsoidal_quadratic_mean_radius
-  *
-  * Brief explanation:
-  * - the radius of sphere is choosen to minimize the difference between distance on that sphere and distance on WGS-84 ellipsoid between two points,
-  *   averaged uniformly (?) by all angles (?) between points.
-  * This sounds not clear enough for me: what set we are averaging and by what measure?
-  *
-  * The value should be calculated this way:
-  * WITH 6378137.0 AS a, 6356752.314245 AS b SELECT sqrt(3 * a * a + b * b) / 2
-  *
-  * But for unknown reason, slightly different value is used.
-  * This constant may be changed in future with a note about backward incompatible change in the changelog.
-  *
-  * See also:
-  * https://github.com/Project-OSRM/osrm-backend/blob/bb1f4a025a3cefd3598a38b9d3e55485d1080ec5/third_party/libosmium/include/osmium/geom/haversine.hpp#L58-L59
-  * https://github.com/Project-OSRM/osrm-backend/issues/5051
-  * https://github.com/mapbox/turf-swift/issues/26
-  * https://github.com/Project-OSRM/osrm-backend/pull/5041
-  * https://en.wikipedia.org/wiki/Talk:Great-circle_distance/Archive_1
+/** Earth radius in meters using WGS84 authalic radius.
+  * We use this value to be consistent with H3 library.
   */
-constexpr float EARTH_RADIUS = 6372797.560856;
+constexpr float EARTH_RADIUS = 6371007.180918475;
 constexpr float EARTH_DIAMETER = 2 * EARTH_RADIUS;
 
 
 float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
 float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
 
-float sphere_metric_lut[METRIC_LUT_SIZE + 1];    /// sphere metric: the distance for one degree across longitude depending on latitude
-float wgs84_metric_lut[2 * (METRIC_LUT_SIZE + 1)];  /// ellipsoid metric: the distance across one degree latitude/longitude depending on latitude
+float sphere_metric_lut[METRIC_LUT_SIZE + 1]; /// sphere metric, unitless: the distance in degrees for one degree across longitude depending on latitude
+float sphere_metric_meters_lut[METRIC_LUT_SIZE + 1]; /// sphere metric: the distance in meters for one degree across longitude depending on latitude
+float wgs84_metric_meters_lut[2 * (METRIC_LUT_SIZE + 1)]; /// ellipsoid metric: the distance in meters across one degree latitude/longitude depending on latitude
 
 
 inline double sqr(double v)
@@ -90,7 +73,7 @@ void geodistInit()
         cos_lut[i] = static_cast<float>(cos(2 * PI * i / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
 
     for (size_t i = 0; i <= ASIN_SQRT_LUT_SIZE; ++i)
-        asin_sqrt_lut[i] = static_cast<float>(EARTH_DIAMETER * asin(
+        asin_sqrt_lut[i] = static_cast<float>(asin(
             sqrt(static_cast<double>(i) / ASIN_SQRT_LUT_SIZE))); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
 
     for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
@@ -100,10 +83,13 @@ void geodistInit()
         /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
         /// depending on the latitude (in radians).
 
-        wgs84_metric_lut[i * 2] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
-        wgs84_metric_lut[i * 2 + 1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
+        /// https://github.com/mapbox/cheap-ruler/blob/master/index.js#L67
+        wgs84_metric_meters_lut[i * 2] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
+        wgs84_metric_meters_lut[i * 2 + 1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
 
-        sphere_metric_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
+        sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
+
+        sphere_metric_lut[i] = cosf(latitude);
     }
 }
 
@@ -143,7 +129,7 @@ inline float geodistFastAsinSqrt(float x)
     {
         // distance under 4546 km, Taylor error under 0.00072%
         float y = sqrtf(x);
-        return EARTH_DIAMETER * (y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f);
+        return y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f;
     }
     if (x < 0.948f)
     {
@@ -158,8 +144,9 @@ inline float geodistFastAsinSqrt(float x)
 
 enum class Method
 {
-    SPHERE,
-    WGS84
+    SPHERE_DEGREES,
+    SPHERE_METERS,
+    WGS84_METERS,
 };
 
 
@@ -187,20 +174,27 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         float k_lat;
         float k_lon;
 
-        if constexpr (method == Method::SPHERE)
+        if constexpr (method == Method::SPHERE_DEGREES)
         {
-            k_lat = sqr(EARTH_DIAMETER * PI / 360);
+            k_lat = 1;
 
             k_lon = sphere_metric_lut[latitude_midpoint_index]
                 + (sphere_metric_lut[latitude_midpoint_index + 1] - sphere_metric_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
         }
-        else if constexpr (method == Method::WGS84)
+        else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = wgs84_metric_lut[latitude_midpoint_index * 2]
-                + (wgs84_metric_lut[(latitude_midpoint_index + 1) * 2] - wgs84_metric_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lat = sqr(EARTH_DIAMETER * PI / 360);
 
-            k_lon = wgs84_metric_lut[latitude_midpoint_index * 2 + 1]
-                + (wgs84_metric_lut[(latitude_midpoint_index + 1) * 2 + 1] - wgs84_metric_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
+            k_lon = sphere_metric_meters_lut[latitude_midpoint_index]
+                + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
+        }
+        else if constexpr (method == Method::WGS84_METERS)
+        {
+            k_lat = wgs84_metric_meters_lut[latitude_midpoint_index * 2]
+                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2] - wgs84_metric_meters_lut[latitude_midpoint_index * 2]) * (latitude_midpoint - latitude_midpoint_index);
+
+            k_lon = wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]
+                + (wgs84_metric_meters_lut[(latitude_midpoint_index + 1) * 2 + 1] - wgs84_metric_meters_lut[latitude_midpoint_index * 2 + 1]) * (latitude_midpoint - latitude_midpoint_index);
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
@@ -213,7 +207,10 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         float a = sqrf(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
             + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqrf(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
-        return geodistFastAsinSqrt(a);
+        if constexpr (method == Method::SPHERE_DEGREES)
+            return (360.0f / PI) * geodistFastAsinSqrt(a);
+        else
+            return EARTH_DIAMETER * geodistFastAsinSqrt(a);
     }
 }
 
@@ -224,7 +221,11 @@ template <Method method>
 class FunctionGeoDistance : public IFunction
 {
 public:
-    static constexpr auto name = (method == Method::SPHERE) ? "greatCircleDistance" : "geoDistance";
+    static constexpr auto name =
+        (method == Method::SPHERE_DEGREES) ? "greatCircleAngle"
+        : ((method == Method::SPHERE_METERS) ? "greatCircleDistance"
+            : "geoDistance");
+
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeoDistance<method>>(); }
 
 private:
@@ -271,8 +272,9 @@ private:
 void registerFunctionGeoDistance(FunctionFactory & factory)
 {
     geodistInit();
-    factory.registerFunction<FunctionGeoDistance<Method::SPHERE>>();
-    factory.registerFunction<FunctionGeoDistance<Method::WGS84>>();
+    factory.registerFunction<FunctionGeoDistance<Method::SPHERE_DEGREES>>();
+    factory.registerFunction<FunctionGeoDistance<Method::SPHERE_METERS>>();
+    factory.registerFunction<FunctionGeoDistance<Method::WGS84_METERS>>();
 }
 
 }

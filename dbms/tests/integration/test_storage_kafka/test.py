@@ -356,6 +356,43 @@ def test_kafka_materialized_view(kafka_cluster):
 
 
 @pytest.mark.timeout(180)
+def test_kafka_materialized_view_with_subquery(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'mvsq',
+                     kafka_group_name = 'mvsq',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM (SELECT * FROM test.kafka);
+    ''')
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    kafka_produce('mvsq', messages)
+
+    while True:
+        result = instance.query('SELECT * FROM test.view')
+        if kafka_check_result(result):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    kafka_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
 def test_kafka_many_materialized_views(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view1;

@@ -25,6 +25,7 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -86,7 +87,8 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     /// split predicate with `and`
     std::vector<ASTPtr> outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(*ast_select, context);
+    std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*ast_select);
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
 
     bool is_rewrite_subquery = false;
     for (auto & outer_predicate : outer_predicate_expressions)
@@ -359,7 +361,7 @@ PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsO
 {
     SubqueriesProjectionColumns projection_columns;
 
-    for (const auto & table_expression : getSelectTablesExpression(*ast_select))
+    for (const auto & table_expression : getTableExpressions(*ast_select))
         if (table_expression->subquery)
             getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
 
@@ -442,7 +444,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     if (!select_query->tables() || select_query->tables()->children.empty())
         return {};
 
-    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
+    std::vector<const ASTTableExpression *> tables_expression = getTableExpressions(*select_query);
 
     if (const auto * qualified_asterisk = asterisk->as<ASTQualifiedAsterisk>())
     {

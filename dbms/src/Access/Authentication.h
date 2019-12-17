@@ -49,6 +49,10 @@ public:
     void setPasswordHashBinary(const Digest & hash);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
+    /// Returns SHA1(SHA1(password)) used by MySQL compatibility server for authentication.
+    /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
+    Digest getPasswordDoubleSHA1() const;
+
     /// Checks if the provided password is correct. Returns false if not.
     bool isCorrectPassword(const String & password) const;
 
