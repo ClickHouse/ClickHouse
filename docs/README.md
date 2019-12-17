@@ -64,14 +64,12 @@ You can edit the docs in some ways:
     The list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
 
 - Inline code: `\`in backticks\``.
-- Multiline code blocks: 
-
+- Multiline code blocks:
     <pre lang="no-highlight"><code>```lang_name
     in
     triple backtick
     quotes
-    ```</code></pre>.
-
+    ```</code></pre>
 - Note:
 
     ```
