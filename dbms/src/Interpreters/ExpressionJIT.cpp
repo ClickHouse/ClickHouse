@@ -138,8 +138,8 @@ struct LLVMContext
     ModulePtr module;
     std::unique_ptr<llvm::TargetMachine> machine;
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
-    llvm::orc::RTDyldObjectLinkingLayer object_layer;
-    llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
+    llvm::orc::LegacyRTDyldObjectLinkingLayer object_layer;
+    llvm::orc::LegacyIRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
     std::unordered_map<std::string, void *> symbols;
@@ -151,7 +151,7 @@ struct LLVMContext
         , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, std::dynamic_pointer_cast<llvm::orc::SymbolResolver>(memory_manager)};
+            return llvm::orc::LegacyRTDyldObjectLinkingLayer::Resources{memory_manager, std::dynamic_pointer_cast<llvm::orc::SymbolResolver>(memory_manager)};
         })
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
