@@ -697,6 +697,10 @@ class ClickHouseInstance:
             time.sleep(0.5)
             local_counter += 1
 
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
+
         if callback_onstop:
             callback_onstop(self)
         self.exec_in_container(
