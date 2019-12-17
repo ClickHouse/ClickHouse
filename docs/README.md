@@ -6,9 +6,9 @@ The main reason is that ClickHouse is an open source project and if you don't wr
 
 Many developers can say that the code is best docs by itself and they are right, but ClickHouse is not a project for C++ developers. The most of it's users don't know C++ and they don't search through the code. If you contribute into the code, your contribution is not complete if you don't add the docs. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in docs.
 
-You say: "I don't know how to write.". We prepared some recommendations for you.
-You say: "I know what I want to write, but I don't know how to contribute in docs.". Here is some [tips](#how-to-contribute).
-You say: "I don't know what to describe." Ask us and we will provide you a choice.
+- You say: "I don't know how to write.". We prepared some [recommendations](#what-to-write) for you.
+- You say: "I know what I want to write, but I don't know how to contribute in docs.". Here is some [tips](#how-to-contribute).
+- You say: "I don't know what to describe." Ask us and we will provide you a choice.
 
 It's easy, extremely useful for ClickHouse users, and grows your carma :-)
 
@@ -55,7 +55,7 @@ You can edit the docs in some ways:
     - External link: `[ClickHouse repo](https://github.com/ClickHouse/ClickHouse)`
     - Cross link: `[How to build docs](tools/README.md)`
 
-- Images: `![Exclamation sign](uri)`. You can point to local images as well as remote in internet.
+- Images: `![Exclamation sign](uri)`. You can refer to local images as well as remote in internet.
 - Lists: Lists can be of two types:
     
     - `- unordered`: Each item starts from the `-`.
@@ -112,15 +112,17 @@ When adding a new file:
 Some additional configuration has to be done to actually make a new language live on the official website, but it's not automated or documented yet, so we'll do it on our own after the pull request with the content is merged.
 
 
-# How to Write Content for ClickHouse Documentation
+<a name="what-to-write"/>
 
-## Target Audience
+## How to Write Content for ClickHouse Documentation
+
+### Target Audience
 
 When you write pretty much any text, the first thing you should think about is who will read it and which terms you should use for communicating with them.
 
 ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use technical language and concepts.
 
-## Specific Recommendations
+### Specific Recommendations
 
 * Documentation should make sense when you read it through from beginning to end. If you add new content, try to place it where the necessary concepts have already been explained.
 * If a documentation section consists of many similar items, like functions or operators, try to order them from more generic (usable by a wide audience) to more specific (for specific use cases or application types). If several items are intended to be mostly used together, group them together in the documentation.
@@ -129,3 +131,18 @@ ClickHouse can be directly used by all sorts of analysts and engineers. For gene
 * Sensitive topics like politics, religion, race, and so on are strictly prohibited in documentation, examples, comments, and code.
 * Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
 * Try to avoid addressing the reader directly, although this is not strictly prohibited.
+
+
+### Templates
+
+When writing docs, you can use prepared templates for the following entities:
+
+- [Function](dscr-templates/template-function.md)
+- [Setting](dscr-templates/template-setting.md)
+- [Table engine](dscr-templates/template-table-engines.md)
+
+## How to Build Documentation
+
+There is no need to build the documentation for contributing, because when opening a pull request there is a continuous integration tests, that build docs. 
+
+However, if you want to build documentation locally, use the instructions in [docs/tools/README.md](docs/tools/README.md).
