@@ -15,7 +15,7 @@
 
 namespace
 {
-const std::pair<LogsLevel, Message::Priority> & ConvertLogLevel(Aws::Utils::Logging::LogLevel log_level)
+const std::pair<LogsLevel, Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<LogsLevel, Message::Priority>> mapping = {
         {Aws::Utils::Logging::LogLevel::Off, {LogsLevel::none, Message::PRIO_FATAL}},
@@ -38,20 +38,20 @@ public:
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final
     {
-        auto & [level, prio] = ConvertLogLevel(log_level);
+        auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
-        auto & [level, prio] = ConvertLogLevel(log_level);
+        auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + message_stream.str(), level, prio);
     }
 
     void Flush() final {}
 
 private:
-    Poco::Logger * log = &Poco::Logger::get("AwsClient");
+    Poco::Logger * log = &Poco::Logger::get("AWSClient");
 };
 }
 
