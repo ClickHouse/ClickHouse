@@ -254,7 +254,7 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_INTERNAL_LLVM_LIBRARY)
+if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
     add_library(LLVM0 ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp) # silly cmake bug fix
     add_library(LLVMOFF ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp)
