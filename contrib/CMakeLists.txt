@@ -340,7 +340,11 @@ if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
 
     # The library is large - avoid bloat.
-    target_compile_options (hs PRIVATE -g0)
+    if (USE_STATIC_LIBRARIES)
+        target_compile_options (hs PRIVATE -g0)
+    else ()
+        target_compile_options (hs_shared PRIVATE -g0)
+    endif ()
 endif()
 
 if (USE_SIMDJSON)
