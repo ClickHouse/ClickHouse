@@ -1132,7 +1132,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInParallelogram", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
