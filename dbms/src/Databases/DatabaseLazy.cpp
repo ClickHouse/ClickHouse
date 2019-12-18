@@ -123,13 +123,12 @@ DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
 
 void DatabaseLazy::attachDictionary(
     const String & /*dictionary_name*/,
-    const Context & /*context*/,
-    bool /*load*/)
+    const Context & /*context*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
+void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
@@ -361,9 +360,8 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
     }
     catch (const Exception & e)
     {
-        throw Exception("Cannot create table from metadata file " + table_metadata_path + ", error: " + e.displayText() +
-            ", stack trace:\n" + e.getStackTrace().toString(),
-            ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        throw Exception("Cannot create table from metadata file " + table_metadata_path + ". Error: " + DB::getCurrentExceptionMessage(true),
+                e, DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
     }
 }
 

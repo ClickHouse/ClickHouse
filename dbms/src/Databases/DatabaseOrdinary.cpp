@@ -27,6 +27,7 @@
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -51,51 +52,66 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
+
 namespace
 {
-
-
-void loadObject(
-    Context & context,
-    const ASTCreateQuery & query,
-    DatabaseOrdinary & database,
-    const String database_data_path,
-    const String & database_name,
-    bool has_force_restore_data_flag)
-try
-{
-    if (query.is_dictionary)
+    void tryAttachTable(
+        Context & context,
+        const ASTCreateQuery & query,
+        DatabaseOrdinary & database,
+        const String database_data_path,
+        const String & database_name,
+        bool has_force_restore_data_flag)
     {
-        String dictionary_name = query.table;
-        database.attachDictionary(dictionary_name, context, false);
+        assert(!query.is_dictionary);
+        try
+        {
+            String table_name;
+            StoragePtr table;
+            std::tie(table_name, table)
+                = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
+            database.attachTable(table_name, table);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                "Cannot attach table '" + query.table + "' from query " + serializeAST(query)
+                    + ". Error: " + DB::getCurrentExceptionMessage(true),
+                e,
+                DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        }
     }
-    else
+
+
+    void tryAttachDictionary(
+        Context & context,
+        const ASTCreateQuery & query,
+        DatabaseOrdinary & database)
     {
-        String table_name;
-        StoragePtr table;
-        std::tie(table_name, table)
-            = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
-        database.attachTable(table_name, table);
+        assert(query.is_dictionary);
+        try
+        {
+            database.attachDictionary(query.table, context);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                "Cannot create dictionary '" + query.table + "' from query " + serializeAST(query)
+                    + ". Error: " + DB::getCurrentExceptionMessage(true),
+                e,
+                DB::ErrorCodes::CANNOT_CREATE_DICTIONARY_FROM_METADATA);
+        }
     }
-}
-catch (const Exception & e)
-{
-    throw Exception(
-        "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ", error: " + e.displayText() + ", stack trace:\n"
-            + e.getStackTrace().toString(),
-        ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
-}
 
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
-{
-    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+    void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
     {
-        LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
-        watch.restart();
+        if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+        {
+            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+            watch.restart();
+        }
     }
-}
-
 }
 
 
@@ -138,8 +154,7 @@ void DatabaseOrdinary::loadStoredObjects(
         catch (const Exception & e)
         {
             throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ", error: " + e.displayText() + ", stack trace:\n"
-                    + e.getStackTrace().toString(), ErrorCodes::CANNOT_PARSE_TEXT);
+                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
         }
 
     });
@@ -152,22 +167,20 @@ void DatabaseOrdinary::loadStoredObjects(
     std::atomic<size_t> tables_processed{0};
     std::atomic<size_t> dictionaries_processed{0};
 
-    auto loadOneObject = [&](const ASTCreateQuery & query)
-    {
-        loadObject(context, query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
-
-        /// Messages, so that it's not boring to wait for the server to load for a long time.
-        if (query.is_dictionary)
-            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
-        else
-            logAboutProgress(log, ++tables_processed, total_tables, watch);
-    };
-
     ThreadPool pool(SettingMaxThreads().getAutoValue());
 
+    /// Attach tables.
     for (const auto & name_with_query : file_names)
     {
-        pool.scheduleOrThrowOnError([&]() { loadOneObject(name_with_query.second->as<const ASTCreateQuery &>()); });
+        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
+        if (!create_query.is_dictionary)
+            pool.scheduleOrThrowOnError([&]()
+            {
+                tryAttachTable(context, create_query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
     }
 
     pool.wait();
@@ -179,8 +192,19 @@ void DatabaseOrdinary::loadStoredObjects(
     auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
     auto & external_loader = context.getExternalDictionariesLoader();
     external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
-    bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-    external_loader.reload(!lazy_load);
+
+    /// Attach dictionaries.
+    for (const auto & name_with_query : file_names)
+    {
+        auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
+        if (create_query.is_dictionary)
+        {
+            tryAttachDictionary(context, create_query, *this);
+
+            /// Messages, so that it's not boring to wait for the server to load for a long time.
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
+        }
+    }
 }
 
 

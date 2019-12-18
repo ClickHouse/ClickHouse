@@ -3,6 +3,7 @@ import pytest
 import random
 import re
 import string
+import threading
 import time
 from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
@@ -15,6 +16,7 @@ node1 = cluster.add_instance('node1',
             config_dir='configs',
             main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
+            stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 1} )
 
@@ -22,6 +24,7 @@ node2 = cluster.add_instance('node2',
             config_dir='configs',
             main_configs=['configs/logs_config.xml'],
             with_zookeeper=True,
+            stay_alive=True,
             tmpfs=['/jbod1:size=40M', '/jbod2:size=40M', '/external:size=200M'],
             macros={"shard": 0, "replica": 2} )
 
@@ -769,11 +772,41 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
 
 @pytest.mark.parametrize("name,engine", [
+    ("detach_attach_mt","MergeTree()"),
+    ("replicated_detach_attach_mt","ReplicatedMergeTree('/clickhouse/replicated_detach_attach_mt', '1')",),
+])
+def test_detach_attach(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            SETTINGS storage_policy='moving_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        data = [] # 5MB in total
+        for i in range(5):
+            data.append(get_random_string(1024 * 1024)) # 1MB row
+        node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+
+        node1.query("ALTER TABLE {} DETACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "0"
+
+        assert node1.query("SELECT disk FROM system.detached_parts WHERE table = '{}'".format(name)).strip() == "jbod1"
+
+        node1.query("ALTER TABLE {} ATTACH PARTITION tuple()".format(name))
+        assert node1.query("SELECT count() FROM {}".format(name)).strip() == "5"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,engine", [
     ("mutating_mt","MergeTree()"),
     ("replicated_mutating_mt","ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
 ])
 def test_mutate_to_another_disk(start_cluster, name, engine):
-
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -998,6 +1031,7 @@ def test_rename(start_cluster):
         node1.query("DROP TABLE IF EXISTS default.renaming_table1")
         node1.query("DROP TABLE IF EXISTS test.renaming_table2")
 
+
 def test_freeze(start_cluster):
     try:
         node1.query("""
@@ -1027,6 +1061,109 @@ def test_freeze(start_cluster):
         node1.exec_in_container(["bash", "-c", "find /jbod1/shadow -name '*.mrk2' | grep '.*'"])
         node1.exec_in_container(["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"])
 
-
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table")
+
+
+def test_kill_while_insert(start_cluster):
+    try:
+        name = "test_kill_while_insert"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        data = []
+        dates = []
+        for i in range(10):
+            data.append(get_random_string(1024 * 1024)) # 1MB value
+        node1.query("INSERT INTO {name} VALUES {}".format(','.join(["('" + s + "')" for s in data]), name=name))
+
+        disks = get_used_disks_for_table(node1, name)
+        assert set(disks) == {"jbod1"}
+
+        start_time = time.time()
+        long_select = threading.Thread(target=node1.query, args=("SELECT sleep(3) FROM {name}".format(name=name),))
+        long_select.start()
+
+        time.sleep(0.5)
+
+        node1.query("ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'external'".format(name=name))
+        assert time.time() - start_time < 2
+        node1.restart_clickhouse(kill=True)
+
+        try:
+            long_select.join()
+        except:
+            """"""
+
+        time.sleep(0.5)
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["10"]
+
+    finally:
+        try:
+            node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        except:
+            """ClickHouse may be inactive at this moment and we don't want to mask a meaningful exception."""
+
+
+def test_move_while_merge(start_cluster):
+    try:
+        name = "test_move_while_merge"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY sleep(2)
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        node1.query("INSERT INTO {name} VALUES (1)".format(name=name))
+        node1.query("INSERT INTO {name} VALUES (2)".format(name=name))
+
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        assert len(parts) == 2
+
+        def optimize():
+            node1.query("OPTIMIZE TABLE {name}".format(name=name))
+
+        optimize = threading.Thread(target=optimize)
+        optimize.start()
+
+        time.sleep(0.5)
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+
+        exiting = False
+        no_exception = {}
+
+        def alter():
+            while not exiting:
+                try:
+                    node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+                    no_exception['missing'] = 'exception'
+                    break
+                except QueryRuntimeException:
+                    """"""
+
+        alter_thread = threading.Thread(target=alter)
+        alter_thread.start()
+
+        optimize.join()
+
+        time.sleep(0.5)
+
+        exiting = True
+        alter_thread.join()
+        assert len(no_exception) == 0
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["2"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))

@@ -1131,7 +1131,7 @@ TestEntries entries =
 };
 
 
-bool run()
+static bool run()
 {
     unsigned int count = 0;
     unsigned int i = 1;

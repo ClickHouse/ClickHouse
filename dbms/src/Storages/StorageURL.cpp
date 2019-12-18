@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNACCEPTABLE_URL;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -37,6 +38,7 @@ IStorageURLBase::IStorageURLBase(
     const String & compression_method_)
     : uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -58,7 +60,18 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(compression_method, uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects);
+            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(
+                compression_method,
+                uri,
+                method,
+                callback,
+                timeouts,
+                context.getSettingsRef().max_http_get_redirects,
+                Poco::Net::HTTPBasicCredentials{},
+                DBMS_DEFAULT_BUFFER_SIZE,
+                ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                context.getRemoteHostFilter());
+
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 

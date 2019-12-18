@@ -107,6 +107,19 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         result_header = getCommonHeaderForUnion(headers);
     }
+
+    /// InterpreterSelectWithUnionQuery ignores limits if all nested interpreters ignore limits.
+    bool all_nested_ignore_limits = true;
+    bool all_nested_ignore_quota = true;
+    for (auto & interpreter : nested_interpreters)
+    {
+        if (!interpreter->ignoreLimits())
+            all_nested_ignore_limits = false;
+        if (!interpreter->ignoreQuota())
+            all_nested_ignore_quota = false;
+    }
+    options.ignore_limits |= all_nested_ignore_limits;
+    options.ignore_quota |= all_nested_ignore_quota;
 }
 
 
@@ -124,17 +137,17 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
                             + "\nand\n"
                             + headers[query_num].dumpNames() + "\n",
                             ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+    }
 
-        for (size_t column_num = 0; column_num < num_columns; ++column_num)
-        {
-            std::vector<const ColumnWithTypeAndName *> columns;
-            columns.reserve(num_selects);
-            for (size_t i = 0; i < num_selects; ++i)
-                columns.push_back(&headers[i].getByPosition(column_num));
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
 
-            ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-            result_elem = getLeastSuperColumn(columns);
-        }
+    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    {
+        for (size_t i = 0; i < num_selects; ++i)
+            columns[i] = &headers[i].getByPosition(column_num);
+
+        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
+        result_elem = getLeastSuperColumn(columns);
     }
 
     return common_header;

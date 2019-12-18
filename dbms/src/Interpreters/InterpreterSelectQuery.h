@@ -74,6 +74,9 @@ public:
     QueryPipeline executeWithProcessors() override;
     bool canExecuteWithProcessors() const override { return true; }
 
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
+
     Block getSampleBlock();
 
     void ignoreWithTotals();
@@ -260,7 +263,7 @@ private:
       */
     void initSettings();
 
-    const SelectQueryOptions options;
+    SelectQueryOptions options;
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;

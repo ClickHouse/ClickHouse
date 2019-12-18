@@ -50,7 +50,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
 {
     return std::find_if(cols.begin(), cols.end(),
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
@@ -366,7 +366,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ? data.context.getQueryContext()
         : data.context;
 
-    FunctionBuilderPtr function_builder;
+    FunctionOverloadResolverPtr function_builder;
     try
     {
         function_builder = FunctionFactory::instance().get(node.name, function_context);
@@ -502,9 +502,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
                 String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
 
-                auto function_capture = std::make_shared<FunctionCapture>(
+                auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
-                data.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
+                auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
+                data.addAction(ExpressionAction::applyFunction(function_capture_adapter, captured, lambda_name));
 
                 argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                 argument_names[i] = lambda_name;

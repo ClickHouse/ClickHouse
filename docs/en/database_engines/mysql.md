@@ -6,8 +6,6 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
-- `ATTACH`/`DETACH`
-- `DROP`
 - `RENAME`
 - `CREATE TABLE`
 - `ALTER`
