@@ -218,6 +218,11 @@ else()
     endif()
 
     add_subdirectory(arrow-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
+    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
+    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 endif()
 
@@ -349,7 +354,3 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
-
-#if (USE_INTERNAL_ORC_LIBRARY)
-#    add_subdirectory(orc-cmake)
-#endif ()
