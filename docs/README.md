@@ -1,23 +1,48 @@
 # ClickHouse Docs
 
-## Why Do You Need to Document ClickHouse?
+## Why You Need to Document ClickHouse
 
-The main reason is that ClickHouse is an open source project and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top compliant about open source software by the results of a [2017 Github Open Source Survey](http://opensourcesurvey.org/2017/). Documentation is highly valued, but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
+The main reason is that ClickHouse is an open source project and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top compliant about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued, but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
 
-Many developers can say that the code is best docs by itself and they are right, but ClickHouse is not a project for C++ developers. The most of it's users don't know C++ and they don't search through the code. If you contribute into the code, your contribution is not complete if you don't add the docs. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in docs.
+Many developers can say that the code is best docs by itself and they are right, but ClickHouse is not a project for C++ developers. The most of it's users don't know C++ and they don't search through the code. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in docs.
 
-- You say: "I don't know how to write.". We prepared some [recommendations](#what-to-write) for you.
-- You say: "I know what I want to write, but I don't know how to contribute in docs.". Here is some [tips](#how-to-contribute).
-- You say: "I don't know what to describe." Ask us and we will provide you a choice.
+If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
-It's easy, extremely useful for ClickHouse users, and grows your carma :-)
+- "I don't know how to write."
+    
+    We prepared some [recommendations](#what-to-write) for you.
 
+- "I know what I want to write, but I don't know how to contribute in docs."
+
+    Here is some [tips](#how-to-contribute).
+
+- "I don't know what to describe."
+
+    Ask us and we will provide you a choice.
+
+Writing the docs is extremely useful for project's users and developers, and grows your carma :-)
+
+**Contents**
+
+- [What is the ClickHouse Documentation](#clickhouse-docs)
+- [How to Contribute to ClickHouse Documentation](#how-to-contribute)
+    - [Markdown Dialect Cheatsheet](#markdown-cheatsheet)
+    - [Adding a New File](#adding-a-new-file)
+    - [Adding a New Language](#adding-a-new-language)
+-  [How to Write Content for ClickHouse Documentation](#what-to-write)
+    - [Target Audience](#target-audience)
+    - [Common Recommendations](#common-recommendations)
+    - [Description Templates](#templates)
+- [How to Build Documentation](#how-to-build-docs)
+
+
+<a name="clickhouse-docs"/>
 
 ## What is the ClickHouse Documentation
 
-The documentation contains information about all the aspects of ClickHouse lifecycle: developing, testing, installing, operating and using. The source language of the documentation is English. English version is the most actual. All other languages are supported by contributors from different countries.
+The documentation contains information about all the aspects of ClickHouse lifecycle: developing, testing, installing, operating and using. The base language of the documentation is English. English version is the most actual. All other languages are supported by contributors from different countries.
 
-At the moment documentation exists in:
+At the moment, documentation exists in:
 
 * English: https://clickhouse.yandex/docs/en/
 * Russian: https://clickhouse.yandex/docs/ru/
@@ -31,7 +56,11 @@ We store the documentation with the ClickHouse source code in the [GitHub reposi
 
 ## How to Contribute to ClickHouse Documentation
 
-You can edit the docs in some ways:
+You can contribute to the documentation by many ways, for example:
+
+- Fork the ClickHouse repository, edit, commit, push, and open a pull request.
+
+    Add the `documentation` label to this pull request for proper checks applying.
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
@@ -39,12 +68,14 @@ You can edit the docs in some ways:
 
     When you saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper checks applying.
 
-- Fork the ClickHouse repository, edit, commit, push, and open a pull request.
+- Open GitHub issue and place your docs there with the `documentation` label.
 
-    Add the `documentation` label to this pull request for proper checks applying.
+    We surely will find it and adopt to the documentation.
 
-- Open GitHub issue and place your docs there with the `documentation` label, if you don't know the proper position for your contribution.
+Preferable language for contribution is English, also, we can take contributions in Russian.
 
+
+<a name="markdown-cheatsheet"/>
 
 ### Markdown Dialect Cheatsheet
 
@@ -63,28 +94,34 @@ You can edit the docs in some ways:
     
     The list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
 
-- Inline code: `\`in backticks\``.
+- Inline code: `` `in backticks` ``.
 - Multiline code blocks:
     <pre lang="no-highlight"><code>```lang_name
-    in
-    triple backtick
-    quotes
+    SELECT 1 FORMAT TSV
+    
+    1
     ```</code></pre>
 - Note:
 
-    ```
+    ```text
     !!! info "Header"
         4 spaces indented text.
     ```
 
 - Warning:
 
-    ```
+    ```text
     !!! warning "Header"
         4 spaces indented text.
     ```
 
-- Text hidden behind a cut (single sting that opens on click): `<details markdown="1"> <summary>Header</summary> hidden content</details>`.
+- Text hidden behind a cut (single sting that opens on click):
+
+    ```text
+    <details markdown="1"> <summary>Visible text</summary> 
+        Hidden content.
+    </details>`.
+    ```
 - Colored text: `<span style="color: red;">text</span>`.
 - Heading anchor to be linked to: `# Title {#anchor-name}`.
 - Table:
@@ -96,12 +133,17 @@ You can edit the docs in some ways:
     | Cell     C1 | Cell     C2 | Cell     C3 |
     ```
 
+<a name="adding-a-new-file"/>
+
 ### Adding a New File
 
 When adding a new file:
 
 - Make symbolic links for all other languages.
 - Reference the file from `toc_{en,ru,zh,ja,fa}.yaml` files with the pages index.
+
+
+<a name="adding-a-new-language"/>
 
 ### Adding a New Language
 
@@ -116,24 +158,46 @@ Some additional configuration has to be done to actually make a new language liv
 
 ## How to Write Content for ClickHouse Documentation
 
+
+<a name="target-audience"/>
+
 ### Target Audience
 
-When you write pretty much any text, the first thing you should think about is who will read it and which terms you should use for communicating with them.
+When writing documentation think about people who will read it. Each audience has special requirements for terms they use in communications.
 
-ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use technical language and concepts.
+ClickHouse documentation can be divided by audience for the following parts:
 
-### Specific Recommendations
+- Conceptual topics in [Introduction](https://clickhouse.yandex/docs/en/), tutorials and overviews, changelog.
 
-* Documentation should make sense when you read it through from beginning to end. If you add new content, try to place it where the necessary concepts have already been explained.
-* If a documentation section consists of many similar items, like functions or operators, try to order them from more generic (usable by a wide audience) to more specific (for specific use cases or application types). If several items are intended to be mostly used together, group them together in the documentation.
-* Try to avoid slang. Use the most common and specific terms possible for everything. If some terms are used as synonyms, state this explicitly.
-* All descriptions of functionality should be accompanied by examples. Basic examples are acceptable, but real world examples are welcome, too.
-* Sensitive topics like politics, religion, race, and so on are strictly prohibited in documentation, examples, comments, and code.
-* Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
-* Try to avoid addressing the reader directly, although this is not strictly prohibited.
+    These topics are the most common through all the documentation. When editing text in them, use the most common terms that is comfortable for audience with basic technical skills. Everybody should understand advantages and disadvantages of a product.
+
+- Query language reference and related topics.
+
+    These parts of documentation are dedicated for those, who use ClickHouse for data analysis. Carefully describe syntax, input and output data for expressions. Don't forget of examples.
+
+- Description of table engines and operation details.
+
+    Operation engineers, who help data analysts to solve their tasks should know how to install/update a ClickHouse server, maintain ClickHouse cluster, how integrate it with other tools and systems, how to get the maximum performance of their entire environment.
+
+- Developer's guides.
+
+    The documentation provides code writers with information about how to write code for ClickHouse and how to build it in different environments.
+
+<a name="common-recommendations"/>
+
+### Common Recommendations
+
+- When searching a position for your text try to place it in the most anticipated place.
+- Group entities. For example, if several functions solve similar tasks or belong to specific group by use case or an application type, place them together.
+- Try to avoid slang. Use the most common and specific terms possible. If some terms are used as synonyms, state this explicitly.
+- Add examples for all the functionality. Add basic examples to show, how the function works by itself. Add use case examples to show how the function participate in solving specific tasks.
+- Any text concerning politics, religion or other social related themes are strictly prohibited in a documentation, examples, comments, and code.
+- Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
 
 
-### Templates
+<a name="templates"/>
+
+### Description Templates
 
 When writing docs, you can use prepared templates for the following entities:
 
@@ -141,8 +205,11 @@ When writing docs, you can use prepared templates for the following entities:
 - [Setting](dscr-templates/template-setting.md)
 - [Table engine](dscr-templates/template-table-engines.md)
 
+
+<a name="how-to-build-docs"/>
+
 ## How to Build Documentation
 
-There is no need to build the documentation for contributing, because when opening a pull request there is a continuous integration tests, that build docs. 
+You don't need to build documentation locally. Add the `documentation` label to your PR's and CI tool will build docs and show you errors.
 
 However, if you want to build documentation locally, use the instructions in [docs/tools/README.md](docs/tools/README.md).
