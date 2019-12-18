@@ -36,14 +36,20 @@ if (ENABLE_EMBEDDED_COMPILER)
             set (USE_EMBEDDED_COMPILER 0)
         endif ()
     else()
-        set (LLVM_FOUND 1)
-        set (USE_EMBEDDED_COMPILER 1)
-        set (LLVM_VERSION "9.0.0bundled")
-        set (LLVM_INCLUDE_DIRS
-            ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
-            ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
-        )
-        set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
+        if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
+            message(WARNING "Option ENABLE_EMBEDDED_COMPILER is set but LLVM library cannot build if build directory is the same as source directory.")
+            set (LLVM_FOUND 0)
+            set (USE_EMBEDDED_COMPILER 0)
+        else()
+            set (LLVM_FOUND 1)
+            set (USE_EMBEDDED_COMPILER 1)
+            set (LLVM_VERSION "9.0.0bundled")
+            set (LLVM_INCLUDE_DIRS
+                ${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/include
+                ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm/include
+            )
+            set (LLVM_LIBRARY_DIRS ${ClickHouse_BINARY_DIR}/contrib/llvm/llvm)
+        endif()
     endif()
 
     if (LLVM_FOUND)
