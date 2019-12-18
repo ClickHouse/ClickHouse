@@ -13,7 +13,7 @@ cd build/build_docker
 ccache --show-stats ||:
 ccache --zero-stats ||:
 rm -f CMakeCache.txt
-cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
+cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
 ninja
 ccache --show-stats ||:
 mv ./dbms/programs/clickhouse* /output
