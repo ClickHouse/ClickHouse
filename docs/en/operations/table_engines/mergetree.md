@@ -41,7 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
 ```
 
@@ -70,10 +70,12 @@ For a description of parameters, see the [CREATE query description](../../query_
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — An expression for setting storage time for rows.
+- `TTL` — A list of rules specifying durations of storage of rows and defining logic of automatic moving parts between disks and volumes.
 
-    It must have one `Date` or `DateTime` column as a result. Example:
+    Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
+
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specified an action which is to be done with the part if expression is satisfied (reaches current time): deletion of expired rows, moving of part (if expression satisfies for all rows of a part) to specified disk (`TO DISK 'xxx'`) or volume (`TO VOLUME 'xxx'`). Default type of the rule is deletion (`DELETE`). Only one `DELETE` expression can be specified in the list of rules.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
@@ -371,9 +373,11 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. If both `TTL` are set, ClickHouse uses that `TTL` which expires earlier.
+The `TTL` clause can be set for the whole table and for each individual column. Table-level TTL can also specify logic of automatic move of data between disks and volumes.
 
-To define the lifetime of data, use expression evaluating to [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type, for example:
+Expressions must evaluate to [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type.
+
+To define the lifetime of data in a column, for example:
 
 ```sql
 TTL time_column
@@ -430,6 +434,18 @@ ALTER TABLE example_table
 
 When data in a table expires, ClickHouse deletes all corresponding rows.
 
+For a table one can set an expression for deletion of expired rows, and expressions which if satisfied will trigger automatic move of part to [another disk or volume](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows.
+
+```sql
+TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+```
+
+Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
+
+- `DELETE` - delete expired rows (default action);
+- `TO DISK 'aaa'` - move part to the disk `aaa`;
+- `TO VOLUME 'bbb'` - move part to the disk `bbb`.
+
 Examples:
 
 Creating a table with TTL
@@ -443,7 +459,9 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH;
+TTL d + INTERVAL 1 MONTH [DELETE],
+    d + INTERVAL 1 WEEK TO VOLUME 'aaa',
+    d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
 Altering TTL of the table
