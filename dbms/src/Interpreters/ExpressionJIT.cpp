@@ -133,33 +133,63 @@ static llvm::TargetMachine * getNativeMachine()
 }
 
 
-using ModulePtr = std::unique_ptr<llvm::Module>;
+struct SymbolResolver : public llvm::orc::SymbolResolver
+{
+    llvm::LegacyJITSymbolResolver & impl;
+
+    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+
+    llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
+    {
+        return symbols;
+    }
+
+    llvm::orc::SymbolNameSet lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols) final
+    {
+        llvm::orc::SymbolNameSet missing;
+        for (const auto & symbol : symbols)
+        {
+            bool has_resolved = false;
+            impl.lookup({*symbol}, [&](llvm::Expected<llvm::JITSymbolResolver::LookupResult> resolved)
+            {
+                if (resolved && resolved->size())
+                {
+                    query->notifySymbolMetRequiredState(symbol, resolved->begin()->second);
+                    has_resolved = true;
+                }
+            });
+
+            if (!has_resolved)
+                missing.insert(symbol);
+        }
+        return missing;
+    }
+};
+
 
 struct LLVMContext
 {
-    std::shared_ptr<llvm::LLVMContext> context;
+    std::shared_ptr<llvm::LLVMContext> context {std::make_shared<llvm::LLVMContext>()};
+    std::unique_ptr<llvm::Module> module {std::make_unique<llvm::Module>("jit", *context)};
+    std::unique_ptr<llvm::TargetMachine> machine {getNativeMachine()};
+    llvm::DataLayout layout {machine->createDataLayout()};
+    llvm::IRBuilder<> builder {*context};
+
     llvm::orc::ExecutionSession execution_session;
-    ModulePtr module;
-    std::unique_ptr<llvm::TargetMachine> machine;
+
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
     llvm::orc::LegacyRTDyldObjectLinkingLayer object_layer;
     llvm::orc::LegacyIRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
-    llvm::DataLayout layout;
-    llvm::IRBuilder<> builder;
+
     std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
-        : context(std::make_shared<llvm::LLVMContext>())
-        , module(std::make_unique<llvm::Module>("jit", *context))
-        , machine(getNativeMachine())
-        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
+        : memory_manager(std::make_shared<llvm::SectionMemoryManager>())
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::LegacyRTDyldObjectLinkingLayer::Resources{memory_manager, std::dynamic_pointer_cast<llvm::orc::SymbolResolver>(memory_manager)};
+            return llvm::orc::LegacyRTDyldObjectLinkingLayer::Resources{memory_manager, std::make_shared<SymbolResolver>(*memory_manager)};
         })
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
-        , layout(machine->createDataLayout())
-        , builder(*context)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
