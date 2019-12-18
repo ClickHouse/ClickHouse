@@ -8,6 +8,7 @@ namespace DB
 ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
     : expression(expression_)
 {
+    std::cerr << "expression: " << expression->dumpActions();
     children.push_back(input);
     cached_header = children.back()->getHeader();
     expression->execute(cached_header, true);

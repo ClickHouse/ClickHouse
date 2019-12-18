@@ -314,6 +314,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &p
 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
+        else if (!commands.additional_columns.empty())
+            prepared_stages[i].output_columns.insert(commands.additional_columns.begin(), commands.additional_columns.end());
 
         if (prepared_stages[i].output_columns.size() < all_columns.size())
         {

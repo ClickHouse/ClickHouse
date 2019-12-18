@@ -18,7 +18,7 @@ class Context;
 class MutationsInterpreter
 {
 public:
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_)
+    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_)
         : storage(std::move(storage_))
         , commands(std::move(commands_))
         , context(context_)
@@ -48,7 +48,7 @@ private:
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
     StoragePtr storage;
-    std::vector<MutationCommand> commands;
+    MutationCommands commands;
     const Context & context;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several

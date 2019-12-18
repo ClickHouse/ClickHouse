@@ -20,8 +20,9 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
     if (!marks)
         loadMarks();
     if (column_index >= columns_num)
-        throw Exception("", ErrorCodes::LOGICAL_ERROR); /// FIXME better exception
-
+        throw Exception("Column index: " + toString(column_index) 
+            + " is out of range (" + toString(columns_num) + ")", ErrorCodes::LOGICAL_ERROR);
+    
     return (*marks)[row_index * columns_num + column_index];
 }
 

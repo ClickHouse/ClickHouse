@@ -847,4 +847,14 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr
     cloning_directory.copyTo(path_to_clone);
 }
 
+bool isCompactPart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
+}
+
+bool isWidePart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::WIDE);
+}
+
 }

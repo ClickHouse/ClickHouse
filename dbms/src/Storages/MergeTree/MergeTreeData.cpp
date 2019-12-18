@@ -2599,9 +2599,11 @@ void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
 {
     String full_part_path = part->getFullPath();
 
-    /// Earlier the list of columns was written incorrectly. Delete it and re-create.
-    if (Poco::File(full_part_path + "columns.txt").exists())
-        Poco::File(full_part_path + "columns.txt").remove();
+    /// Earlier the list of  columns was written incorrectly. Delete it and re-create.
+    /// FIXME looks not right
+    if (isWidePart(part))
+        if (Poco::File(full_part_path + "columns.txt").exists())
+            Poco::File(full_part_path + "columns.txt").remove();
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();

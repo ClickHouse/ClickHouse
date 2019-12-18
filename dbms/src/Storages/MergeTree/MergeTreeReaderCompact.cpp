@@ -216,7 +216,7 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {
     MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
 
-    // std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
+    std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
 
     try
     {

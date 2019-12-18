@@ -909,7 +909,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FutureMergedMutatedPart & future_part,
-    const std::vector<MutationCommand> & commands,
+    const MutationCommands & commands,
     MergeListEntry & merge_entry,
     const Context & context,
     DiskSpace::Reservation * space_reservation,
@@ -931,13 +931,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
     const auto & source_part = future_part.parts[0];
-    auto storage_from_source_part = StorageFroIMergeTreeDataPart::create(source_part);
+    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
-    context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    std::vector<MutationCommand> commands_for_part;
+    MutationCommands commands_for_part;
     std::copy_if(
             std::cbegin(commands), std::cend(commands),
             std::back_inserter(commands_for_part),
@@ -947,6 +946,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                     future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
                             command.partition, context_for_reading);
             });
+    
+    if (isCompactPart(source_part))
+        commands_for_part.additional_columns = source_part->columns.getNames();
 
     MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
 
