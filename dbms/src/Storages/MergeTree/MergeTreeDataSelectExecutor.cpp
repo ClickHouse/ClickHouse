@@ -567,7 +567,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     BlockInputStreams res;
 
-    ReaderSettings reader_settings = 
+    MergeTreeReaderSettings reader_settings = 
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .max_read_buffer_size = settings.max_read_buffer_size,
@@ -677,7 +677,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const SelectQueryInfo & query_info,
     const Names & virt_columns,
     const Settings & settings,
-    const ReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings) const
 {
     std::cerr << "marks to read: ";
     for (const auto & part : parts)
@@ -844,7 +844,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
     const ExpressionActionsPtr & sorting_key_prefix_expr,
     const Names & virt_columns,
     const Settings & settings,
-    const ReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings) const
 {
     size_t sum_marks = 0;
     SortingInfoPtr sorting_info = query_info.sorting_info;
@@ -1052,7 +1052,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const SelectQueryInfo & query_info,
     const Names & virt_columns,
     const Settings & settings,
-    const ReaderSettings & reader_settings) const
+    const MergeTreeReaderSettings & reader_settings) const
 {
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;

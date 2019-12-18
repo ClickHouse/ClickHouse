@@ -14,16 +14,10 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
-// #include <Storages/MergeTree/IMergeTreeDataPart_fwd.h>
-// #include <Storages/MergeTree/IMergeTreeReader.h>
-// #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-// #include <Storages/MergeTree/MergeTreeWriter.h>
-// #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Columns/IColumn.h>
-
-#include <Storages/MergeTree/MergeTreeReaderSettings.h>
 
 #include <Poco/Path.h>
 
@@ -60,7 +54,7 @@ public:
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
-        const ReaderSettings & reader_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
 
@@ -68,7 +62,7 @@ public:
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const WriterSettings & writer_settings,
+        const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
      
     virtual bool isStoredOnDisk() const = 0;

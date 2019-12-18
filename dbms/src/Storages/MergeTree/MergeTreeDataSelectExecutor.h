@@ -55,7 +55,7 @@ private:
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const ReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings) const;
 
     BlockInputStreams spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
@@ -67,7 +67,7 @@ private:
         const ExpressionActionsPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings,
-        const ReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings) const;
 
     BlockInputStreams spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -77,7 +77,7 @@ private:
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const ReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(

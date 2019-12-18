@@ -5,16 +5,16 @@
 namespace DB
 {
 
-struct ReaderSettings
+struct MergeTreeReaderSettings
 {
     size_t min_bytes_to_use_direct_io = 0;
     size_t max_read_buffer_size = 0;
     bool save_marks_in_cache = false;
 };
 
-struct WriterSettings
+struct MergeTreeWriterSettings
 {
-    WriterSettings(const Settings & global_settings, bool can_use_adaptive_granularity_, bool blocks_are_granules_size_ = false)
+    MergeTreeWriterSettings(const Settings & global_settings, bool can_use_adaptive_granularity_, bool blocks_are_granules_size_ = false)
         : min_compress_block_size(global_settings.min_compress_block_size)
         , max_compress_block_size(global_settings.min_compress_block_size)
         , aio_threshold(global_settings.min_bytes_to_use_direct_io)

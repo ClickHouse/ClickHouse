@@ -354,7 +354,6 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
         /// In case of exception, also clean accumulated data - to avoid locking.
         data.clear();
     }
-
     if (reason == EntryType::FORCE_FLUSH)
     {
         std::lock_guard lock(condvar_mutex);

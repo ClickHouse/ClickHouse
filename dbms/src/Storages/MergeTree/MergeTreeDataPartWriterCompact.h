@@ -14,7 +14,7 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        const WriterSettings & settings,
+        const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
     void write(const Block & block, const IColumn::Permutation * permutation = nullptr,

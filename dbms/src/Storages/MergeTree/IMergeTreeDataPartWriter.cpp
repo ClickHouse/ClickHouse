@@ -65,7 +65,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const WriterSettings & settings_,
+    const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_,
     bool need_finish_last_granule_)
     : part_path(part_path_)

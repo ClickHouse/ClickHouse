@@ -27,7 +27,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 { 
-    WriterSettings writer_settings(data_part->storage.global_context.getSettings(),
+    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
     writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
     init();
@@ -43,7 +43,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 {
-    WriterSettings writer_settings(data_part->storage.global_context.getSettings(),
+    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
     writer_settings.aio_threshold = aio_threshold;
 

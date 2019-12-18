@@ -19,7 +19,7 @@ public:
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & mark_ranges_,
-        const ReaderSettings & settings_,
+        const MergeTreeReaderSettings & settings_,
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
         clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);

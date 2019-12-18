@@ -201,7 +201,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         ReadBufferFromFile buf(path + "columns.txt");
         columns.readText(buf);
         assertEOF(buf);
-    }
+    }   
 
     /// Checksums from file checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     MergeTreeData::DataPart::Checksums checksums_txt;

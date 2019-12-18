@@ -20,7 +20,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     // if (index_granularity_info_)
     //     std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
 
-    WriterSettings writer_settings(
+    MergeTreeWriterSettings writer_settings(
         data_part->storage.global_context.getSettings(),
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity());
     writer_settings.filename_suffix = filename_suffix;

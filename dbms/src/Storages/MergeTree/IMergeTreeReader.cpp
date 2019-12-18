@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & all_mark_ranges_, const ReaderSettings & settings_,
+    const MarkRanges & all_mark_ranges_, const MergeTreeReaderSettings & settings_,
     const ValueSizeMap & avg_value_size_hints_)
     : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_), path(data_part_->getFullPath())
     , columns(columns_), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)

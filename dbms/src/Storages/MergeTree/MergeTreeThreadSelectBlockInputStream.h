@@ -24,7 +24,7 @@ public:
         const MergeTreeData & storage_,
         const bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
-        const ReaderSettings & reader_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         const Names & virt_column_names_);
 
     String getName() const override { return "MergeTreeThread"; }

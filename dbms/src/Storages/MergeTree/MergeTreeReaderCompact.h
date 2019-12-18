@@ -10,7 +10,7 @@ namespace DB
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
-/// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
+/// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).ca
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
 public:
@@ -19,7 +19,7 @@ public:
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & mark_ranges_,
-        const ReaderSettings & settings_,
+        const MergeTreeReaderSettings & settings_,
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
 
     /// Return the number of rows has been read or zero if there is no columns to read.

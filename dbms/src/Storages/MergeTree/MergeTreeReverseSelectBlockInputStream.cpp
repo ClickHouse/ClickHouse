@@ -24,7 +24,7 @@ MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns,
-    const ReaderSettings & reader_settings_,
+    const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
     bool quiet)
