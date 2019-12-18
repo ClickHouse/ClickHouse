@@ -123,9 +123,6 @@ public:
     friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
 
-struct ASTTableExpression;
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
-
 bool isMergeJoin(const JoinPtr &);
 
 }

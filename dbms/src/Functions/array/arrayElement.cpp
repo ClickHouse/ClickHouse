@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +12,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

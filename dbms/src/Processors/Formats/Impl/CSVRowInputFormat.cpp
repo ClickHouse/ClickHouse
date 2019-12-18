@@ -430,7 +430,7 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool quotes = false;
