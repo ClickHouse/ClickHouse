@@ -187,7 +187,7 @@ public:
         const MergeTreePartInfo & part_info,const DiskSpace::DiskPtr & disk,
         const NamesAndTypesList & columns,
         size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
-    
+
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
         const DiskSpace::DiskPtr & disk, const String & relative_path) const;
@@ -196,7 +196,7 @@ public:
     /// FIXME make this inside this function
     MutableDataPartPtr createPart(const String & name,
         const DiskSpace::DiskPtr & disk, const String & relative_path) const;
-    
+
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
         const DiskSpace::DiskPtr & disk, const String & relative_path) const;
 
@@ -910,7 +910,7 @@ protected:
         const NamesAndTypesList & new_columns,
         const IndicesASTs & old_indices,
         const IndicesASTs & new_indices) const;
-    
+
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
     /// out_rename_map maps column files for the out_expression onto new table files.

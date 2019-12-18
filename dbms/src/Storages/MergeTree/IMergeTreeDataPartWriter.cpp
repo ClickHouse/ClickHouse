@@ -61,7 +61,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -81,7 +81,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
-    
+
     Poco::File part_dir(part_path);
     if (!part_dir.exists())
         part_dir.createDirectories();
@@ -126,12 +126,12 @@ void fillIndexGranularityImpl(
 
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-    
+
     size_t current_row;
     for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
     {
         size_t rows_left_in_block = rows_in_block - current_row;
-        
+
         // if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block)
         // {
         //     /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
@@ -342,7 +342,7 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::Da
         }
 
 
-        std::cerr << "(finishPrimaryIndexSerialization) marks_count: " << index_granularity.getMarksCount() << "\n"; 
+        std::cerr << "(finishPrimaryIndexSerialization) marks_count: " << index_granularity.getMarksCount() << "\n";
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();

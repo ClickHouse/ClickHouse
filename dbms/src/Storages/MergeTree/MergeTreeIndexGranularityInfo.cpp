@@ -21,7 +21,7 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
         for (Poco::DirectoryIterator part_it(path_to_part); part_it != end; ++part_it)
         {
             const auto & ext = "." + part_it.path().getExtension();
-            if (ext == getNonAdaptiveMrkExtension() 
+            if (ext == getNonAdaptiveMrkExtension()
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::WIDE)
                 || ext == getAdaptiveMrkExtension(MergeTreeDataPartType::COMPACT))
                 return ext;
@@ -83,7 +83,7 @@ void MergeTreeIndexGranularityInfo::setNonAdaptive()
 
 std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
 {
-    switch(part_type)
+    switch (part_type)
     {
         case MergeTreeDataPartType::WIDE:
             return ".mrk2";
@@ -96,7 +96,7 @@ std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
 
 size_t getAdaptiveMrkSize(MergeTreeDataPartType part_type, size_t columns_num)
 {
-    switch(part_type)
+    switch (part_type)
     {
         case MergeTreeDataPartType::WIDE:
             return sizeof(UInt64) * 3;

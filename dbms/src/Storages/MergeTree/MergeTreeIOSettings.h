@@ -1,5 +1,5 @@
 #pragma once
-#include <cstddef>  
+#include <cstddef>
 #include <Core/Settings.h>
 
 namespace DB

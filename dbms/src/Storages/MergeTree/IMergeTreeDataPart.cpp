@@ -184,8 +184,8 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 {
     if (!sample_block.has(column_name))
         return {};
-    return sample_block.getPositionByName(column_name);  
-}   
+    return sample_block.getPositionByName(column_name);
+}
 
 DayNum IMergeTreeDataPart::getMinDate() const
 {
@@ -583,7 +583,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         is_frozen = !poco_file_path.canWrite();
         ReadBufferFromFile file = openForReading(path);
-        columns.readText(file);    
+        columns.readText(file);
     }
 
     index_granularity_info.initialize(storage, getType(), columns.size());
@@ -597,7 +597,7 @@ void IMergeTreeDataPart::loadColumnSizes()
 
     if (columns_num == 0)
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-    
+
     auto column_sizes_path = getFullPath() + "columns_sizes.txt";
     auto columns_sizes_file = Poco::File(column_sizes_path);
     if (!columns_sizes_file.exists())
@@ -772,7 +772,7 @@ void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) cons
 
 String IMergeTreeDataPart::typeToString(Type type)
 {
-    switch(type)
+    switch (type)
     {
         case Type::WIDE:
             return "Wide";

@@ -63,7 +63,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader, 
+    reader = data_part->getReader(columns_for_reader,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }

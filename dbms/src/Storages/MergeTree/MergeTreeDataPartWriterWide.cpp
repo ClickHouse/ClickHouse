@@ -12,7 +12,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -80,7 +80,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, 
+void MergeTreeDataPartWriterWide::write(const Block & block,
     const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {

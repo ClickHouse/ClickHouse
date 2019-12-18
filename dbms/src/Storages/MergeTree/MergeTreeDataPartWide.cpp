@@ -49,7 +49,7 @@ namespace ErrorCodes
 //     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 // }
 
-MergeTreeDataPartWide::MergeTreeDataPartWide( 
+MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,
         const String & name_,
         const DiskSpace::DiskPtr & disk_,
@@ -92,7 +92,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
         getFullPath(), storage, columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
-}        
+}
 
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.

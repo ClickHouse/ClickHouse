@@ -117,11 +117,11 @@ void MergeTreeReaderStream::initMarksLoader()
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-        std::cerr << "data_file_extension: " << data_file_extension << '\n'; 
+        std::cerr << "data_file_extension: " << data_file_extension << '\n';
 
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t mark_size = mode == ReadingMode::INDEX
-            ? index_granularity_info->skip_index_mark_size_in_bytes 
+            ? index_granularity_info->skip_index_mark_size_in_bytes
             : index_granularity_info->mark_size_in_bytes;
 
         size_t expected_file_size = mark_size * marks_count;

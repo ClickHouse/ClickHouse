@@ -36,7 +36,7 @@ private:
     FileStreams streams;
 
     /// Columns that are read.
-    
+
     void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 

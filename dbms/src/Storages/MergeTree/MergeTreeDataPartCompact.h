@@ -44,7 +44,7 @@ public:
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_ = {});
 
-    MergeTreeDataPartCompact( 
+    MergeTreeDataPartCompact(
         MergeTreeData & storage_,
         const String & name_,
         const DiskSpace::DiskPtr & disk_,
@@ -58,7 +58,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{}) const override;
-    
+
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
