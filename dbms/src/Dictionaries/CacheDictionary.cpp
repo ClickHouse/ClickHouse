@@ -2,18 +2,14 @@
 
 #include <functional>
 #include <memory>
-#include <sstream>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
-#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include "CacheDictionary.inc.h"
