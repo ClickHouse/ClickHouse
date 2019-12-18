@@ -70,7 +70,7 @@ For a description of parameters, see the [CREATE query description](../../query_
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement between disks and volumes.
+- `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes).
 
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
