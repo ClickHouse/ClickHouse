@@ -1,3 +1,4 @@
+#include "registerFunctions.h"
 #if 0
 
 #include <Functions/IFunction.h>

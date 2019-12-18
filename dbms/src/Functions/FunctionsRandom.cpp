@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
+#include "registerFunctions.h"
 
 
 namespace DB

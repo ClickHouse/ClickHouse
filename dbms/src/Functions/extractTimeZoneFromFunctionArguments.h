@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>

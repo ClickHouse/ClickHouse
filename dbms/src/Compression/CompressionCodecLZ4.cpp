@@ -37,12 +37,18 @@ String CompressionCodecLZ4::getCodecDesc() const
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
     return LZ4_COMPRESSBOUND(uncompressed_size);
+#pragma GCC diagnostic pop
 }
 
 UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
     return LZ4_compress_default(source, dest, source_size, LZ4_COMPRESSBOUND(source_size));
+#pragma GCC diagnostic pop
 }
 
 void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
@@ -66,7 +72,10 @@ String CompressionCodecLZ4HC::getCodecDesc() const
 
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
+#pragma GCC diagnostic pop
 
     if (!success)
         throw Exception("Cannot LZ4_compress_HC", ErrorCodes::CANNOT_COMPRESS);
