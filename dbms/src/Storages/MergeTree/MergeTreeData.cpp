@@ -818,7 +818,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
-            
+
             auto part = createPart(part_name, part_info, part_disk_ptr, part_name);
             bool broken = false;
 
@@ -1485,7 +1485,7 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
     const auto settings = getSettings();
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
-    
+
     return MergeTreeDataPartType::WIDE;
 }
 
@@ -1497,7 +1497,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     if (type == MergeTreeDataPartType::COMPACT)
         return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
     else if (type == MergeTreeDataPartType::WIDE)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);        
+        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);
     else
         throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
 }
@@ -1513,7 +1513,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 {
     auto part = createPart(name, choosePartType(bytes_uncompressed, rows_count), part_info, disk, relative_path);
     part->setColumns(columns_list);
-    /// Don't save rows_count count here as it can change later 
+    /// Don't save rows_count count here as it can change later
     return part;
 }
 
@@ -1552,7 +1552,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     }
 
     return createPart(name, type, part_info, disk, relative_path);
-}   
+}
 
 void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
@@ -1639,7 +1639,7 @@ void MergeTreeData::alterDataPart(
     }
 
     DataPart::Checksums add_checksums;
- 
+
     if (transaction->rename_map.empty() && !res.force_update_metadata)
     {
         transaction->clear();

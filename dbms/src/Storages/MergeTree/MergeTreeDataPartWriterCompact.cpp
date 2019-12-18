@@ -14,7 +14,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
@@ -78,7 +78,7 @@ void MergeTreeDataPartWriterCompact::write(
     auto result = squashing.add(result_block.mutateColumns());
     if (!result.ready)
         return;
-    
+
     result_block = header.cloneWithColumns(std::move(result.columns));
 
     writeBlock(result_block);
@@ -86,7 +86,7 @@ void MergeTreeDataPartWriterCompact::write(
 
 void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 {
-    size_t total_rows = block.rows();  
+    size_t total_rows = block.rows();
     size_t from_mark = current_mark;
     size_t current_row = 0;
 
@@ -100,7 +100,7 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         /// There could already be enough data to compress into the new block.
         if (stream->compressed.offset() >= settings.min_compress_block_size)
              stream->compressed.next();
-        
+
         size_t next_row = 0;
         writeIntBinary(rows_to_write, stream->marks);
         for (const auto & it : columns_list)
@@ -139,13 +139,13 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
 
     /// We can't calculate compressed size by single column in compact format.
     size_t uncompressed_size = stream->compressed.count();
-    columns_sizes[column.name].add(ColumnSize{0, 0, uncompressed_size - old_uncompressed_size}); 
+    columns_sizes[column.name].add(ColumnSize{0, 0, uncompressed_size - old_uncompressed_size});
 
     return from_row + number_of_rows;
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
-{   
+{
     auto result = squashing.add({});
     if (result.ready && !result.columns.empty())
         writeBlock(header.cloneWithColumns(std::move(result.columns)));

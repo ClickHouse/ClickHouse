@@ -568,7 +568,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t estimated_bytes_uncompressed = 0;
     for (const auto & part : parts)
         estimated_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
-    
+
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name,
         future_part.part_info,
@@ -622,7 +622,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         for (const MergeTreeData::DataPartPtr & part : parts)
             part->accumulateColumnSizes(merged_column_to_size);
-        
+
         column_sizes = ColumnSizeEstimator(merged_column_to_size, merging_column_names, gathering_column_names);
     }
     else
@@ -946,7 +946,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                     future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
                             command.partition, context_for_reading);
             });
-    
+
     if (isCompactPart(source_part))
         commands_for_part.additional_columns = source_part->columns.getNames();
 
@@ -959,7 +959,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     }
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
-    
+
     auto in = mutations_interpreter.execute(table_lock_holder);
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 
@@ -980,7 +980,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         source_part->bytes_on_disk,
         source_part->rows_count,
         "tmp_mut_" + future_part.name);
-    
+
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
 

@@ -483,7 +483,7 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
     size_t from_mark = current_mark;
     while (result < rows_num && from_mark < last_mark)
         result += index_granularity->getMarkRows(from_mark++);
-    
+
     return result;
 }
 

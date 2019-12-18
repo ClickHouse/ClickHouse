@@ -52,7 +52,7 @@ namespace ErrorCodes
 //     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 // }
 
-MergeTreeDataPartCompact::MergeTreeDataPartCompact( 
+MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
         const DiskSpace::DiskPtr & disk_,
@@ -154,7 +154,7 @@ String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
 
     if (!minimum_size_column)
         throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
-    
+
     return *minimum_size_column;
 }
 
@@ -192,7 +192,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (index_granularity.getMarksCount() * index_granularity_info.mark_size_in_bytes != marks_file_size)
         throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
-    index_granularity.setInitialized();    
+    index_granularity.setInitialized();
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const IDataType &) const
@@ -246,9 +246,9 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
                 projection.emplace_back(column.name, "");
             }
         }
-        
+
         analysis_result.expression->add(ExpressionAction::project(projection));
-        
+
         String data_temp_name = String(DATA_FILE_NAME) + "_converting";
         rename_map[data_temp_name + DATA_FILE_EXTENSION] = String(DATA_FILE_NAME) + DATA_FILE_EXTENSION;
         rename_map[data_temp_name + part_mrk_file_extension] = DATA_FILE_NAME + part_mrk_file_extension;

@@ -60,7 +60,7 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -78,7 +78,7 @@ public:
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
 
     /// Shift mark and offset to prepare read next mark.
-    /// You must call it after calling write method and optionally 
+    /// You must call it after calling write method and optionally
     ///  calling calculations of primary and skip indices.
     void next();
 
@@ -102,8 +102,8 @@ public:
 
     void initSkipIndices();
     void initPrimaryIndex();
-   
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;    
+
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 

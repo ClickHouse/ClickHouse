@@ -44,7 +44,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!rows)
         return;
 
-    std::cerr << "(MergedColumnOnlyOutputStream::write) writing rows: " << rows << "\n";    
+    std::cerr << "(MergedColumnOnlyOutputStream::write) writing rows: " << rows << "\n";
 
     writer->write(block);
     writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);

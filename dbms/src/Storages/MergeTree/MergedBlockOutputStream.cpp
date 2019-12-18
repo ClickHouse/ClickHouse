@@ -26,7 +26,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
-{ 
+{
     MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
     writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
@@ -168,8 +168,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->columns_sizes = columns_sizes;
-    std::cerr << "(writeSuffixAndFinalizePart) part: " << new_part->getFullPath() << "\n";
-    std::cerr << "(writeSuffixAndFinalizePart) marks_count: " << new_part->index_granularity.getMarksCount() << "\n"; 
 }
 
 void MergedBlockOutputStream::init()

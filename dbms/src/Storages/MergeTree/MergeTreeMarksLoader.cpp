@@ -20,9 +20,9 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
     if (!marks)
         loadMarks();
     if (column_index >= columns_num)
-        throw Exception("Column index: " + toString(column_index) 
+        throw Exception("Column index: " + toString(column_index)
             + " is out of range [0, " + toString(columns_num) + ")", ErrorCodes::LOGICAL_ERROR);
-    
+
     return (*marks)[row_index * columns_num + column_index];
 }
 
@@ -47,7 +47,7 @@ void MergeTreeMarksLoader::loadMarks()
         marks = load();
 
     if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);   
+        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
 }
 
 }

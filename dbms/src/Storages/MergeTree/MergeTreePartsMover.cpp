@@ -109,7 +109,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         /// Don't report message to log, because logging is excessive
         if (!can_move(part, &reason))
             continue;
-        
+
         auto to_insert = need_to_move.find(part->disk);
         if (to_insert != need_to_move.end())
             to_insert->second.add(part);

@@ -567,7 +567,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     BlockInputStreams res;
 
-    MergeTreeReaderSettings reader_settings = 
+    MergeTreeReaderSettings reader_settings =
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .max_read_buffer_size = settings.max_read_buffer_size,

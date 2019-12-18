@@ -206,7 +206,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
 
     auto new_data_part = data.createPart(
-        part_name, new_part_info, 
+        part_name, new_part_info,
         reservation->getDisk(),
         columns,
         expected_size,

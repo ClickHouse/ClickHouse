@@ -158,10 +158,10 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
           */
         if (!data_file_exists)
             return;
-        
+
         std::cerr << "(addStreams) part: " << path << '\n';
         std::cerr << "(addStreams) marks count: " << data_part->getMarksCount() << "\n";
- 
+
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, settings, mark_cache,

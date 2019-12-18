@@ -13,7 +13,7 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -55,7 +55,7 @@ private:
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows,
         DB::IDataType::SubstreamPath & path);
-    
+
     void writeFinalMark(
         const std::string & column_name,
         const DataTypePtr column_type,

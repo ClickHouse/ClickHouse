@@ -95,7 +95,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
 
                 if (read_rows_in_column < rows_to_read)
-                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) + 
+                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
                         ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
@@ -142,7 +142,7 @@ void MergeTreeReaderCompact::readData(
 
     /// FIXME seek only if needed
     seekToMark(from_mark, column_position);
-    
+
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return data_buffer; };
     // deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
