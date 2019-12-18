@@ -25,31 +25,30 @@
 /// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Analysis/TargetTransformInfo.h>
-//#include </home/milovidov/work/llvm-project/llvm/include/llvm/Config/llvm-config.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/BasicBlock.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/DataLayout.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/DerivedTypes.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Function.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/IRBuilder.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/LLVMContext.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Mangler.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Module.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/Type.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/IR/LegacyPassManager.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/ExecutionEngine.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/JITSymbol.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/SectionMemoryManager.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Target/TargetMachine.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/MC/SubtargetFeature.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/DynamicLibrary.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/Host.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/TargetRegistry.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Support/TargetSelect.h>
-#include </home/milovidov/work/llvm-project/llvm/include/llvm/Transforms/IPO/PassManagerBuilder.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Mangler.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITSymbol.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/DynamicLibrary.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
 
