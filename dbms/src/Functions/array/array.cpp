@@ -4,6 +4,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/castColumn.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

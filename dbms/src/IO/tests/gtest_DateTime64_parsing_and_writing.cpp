@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <IO/ReadHelpers.h>
@@ -20,7 +21,7 @@ struct DateTime64StringsTestParam
     const DateLUTImpl & timezone = DateLUT::instance();
 };
 
-std::ostream & operator << (std::ostream & ostr, const DateTime64StringsTestParam & param)
+static std::ostream & operator << (std::ostream & ostr, const DateTime64StringsTestParam & param)
 {
     return ostr << param.comment;
 }

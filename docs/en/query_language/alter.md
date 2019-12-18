@@ -26,10 +26,10 @@ These actions are described in detail below.
 #### ADD COLUMN {#alter_add-column}
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](create.md#codecs) and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 

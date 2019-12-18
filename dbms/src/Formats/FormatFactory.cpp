@@ -262,61 +262,6 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
     target = file_segmentation_engine;
 }
 
-/// Formats for both input/output.
-
-void registerInputFormatNative(FormatFactory & factory);
-void registerOutputFormatNative(FormatFactory & factory);
-
-void registerInputFormatProcessorNative(FormatFactory & factory);
-void registerOutputFormatProcessorNative(FormatFactory & factory);
-void registerInputFormatProcessorRowBinary(FormatFactory & factory);
-void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerInputFormatProcessorValues(FormatFactory & factory);
-void registerOutputFormatProcessorValues(FormatFactory & factory);
-void registerInputFormatProcessorCSV(FormatFactory & factory);
-void registerOutputFormatProcessorCSV(FormatFactory & factory);
-void registerInputFormatProcessorTSKV(FormatFactory & factory);
-void registerOutputFormatProcessorTSKV(FormatFactory & factory);
-void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
-void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
-void registerOutputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorProtobuf(FormatFactory & factory);
-void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
-void registerInputFormatProcessorTemplate(FormatFactory & factory);
-void registerOutputFormatProcessorTemplate(FormatFactory &factory);
-
-/// File Segmentation Engines for parallel reading
-
-void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
-void registerFileSegmentationEngineCSV(FormatFactory & factory);
-void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
-
-/// Output only (presentational) formats.
-
-void registerOutputFormatNull(FormatFactory & factory);
-
-void registerOutputFormatProcessorPretty(FormatFactory & factory);
-void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
-void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
-void registerOutputFormatProcessorVertical(FormatFactory & factory);
-void registerOutputFormatProcessorJSON(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
-void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
-void registerOutputFormatProcessorNull(FormatFactory & factory);
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
-
-/// Input only formats.
-void registerInputFormatProcessorCapnProto(FormatFactory & factory);
-
 FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);

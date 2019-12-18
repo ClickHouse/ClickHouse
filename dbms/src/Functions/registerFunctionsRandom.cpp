@@ -1,13 +1,6 @@
+#include "registerFunctions.h"
 namespace DB
 {
-
-class FunctionFactory;
-
-void registerFunctionRand(FunctionFactory & factory);
-void registerFunctionRand64(FunctionFactory & factory);
-void registerFunctionRandConstant(FunctionFactory & factory);
-void registerFunctionGenerateUUIDv4(FunctionFactory & factory);
-
 void registerFunctionsRandom(FunctionFactory & factory)
 {
     registerFunctionRand(factory);
@@ -17,5 +10,3 @@ void registerFunctionsRandom(FunctionFactory & factory)
 }
 
 }
-
-

@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

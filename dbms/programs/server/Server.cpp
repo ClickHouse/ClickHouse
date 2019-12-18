@@ -375,6 +375,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(user_files_path).createDirectories();
     }
 
+    {
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -973,6 +979,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {

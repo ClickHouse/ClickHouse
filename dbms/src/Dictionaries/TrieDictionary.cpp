@@ -509,7 +509,10 @@ void TrieDictionary::getItemsImpl(
         {
             auto addr = Int32(first_column->get64(i));
             uintptr_t slot = btrie_find(trie, addr);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
             set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
+#pragma GCC diagnostic pop
         }
     }
     else
@@ -521,7 +524,10 @@ void TrieDictionary::getItemsImpl(
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
             set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
+#pragma GCC diagnostic pop
         }
     }
 
@@ -637,7 +643,10 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
         {
             auto addr = Int32(first_column->get64(i));
             uintptr_t slot = btrie_find(trie, addr);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
             out[i] = (slot != BTRIE_NULL);
+#pragma GCC diagnostic pop
         }
     }
     else
@@ -649,7 +658,10 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
             out[i] = (slot != BTRIE_NULL);
+#pragma GCC diagnostic pop
         }
     }
 
@@ -678,8 +690,10 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
     {
         node = stack.top();
         stack.pop();
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
         if (node && node->value != BTRIE_NULL)
+#pragma GCC diagnostic pop
             getter(key, stack.size());
 
         if (node && node->right)

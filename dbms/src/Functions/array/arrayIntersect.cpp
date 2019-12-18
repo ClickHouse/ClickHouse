@@ -22,6 +22,7 @@
 #include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
 #include <ext/range.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

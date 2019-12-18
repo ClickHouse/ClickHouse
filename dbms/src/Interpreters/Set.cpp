@@ -84,8 +84,16 @@ void NO_INLINE Set::insertFromBlockImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (has_null_map)
+        {
             if ((*null_map)[i])
+            {
+                if constexpr (build_filter)
+                {
+                    (*out_filter)[i] = false;
+                }
                 continue;
+            }
+        }
 
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
