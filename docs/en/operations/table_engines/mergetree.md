@@ -377,7 +377,7 @@ The `TTL` clause can be set for the whole table and for each individual column. 
 
 Expressions must evaluate to [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type.
 
-To define the lifetime of data in a column, for example:
+Example:
 
 ```sql
 TTL time_column
