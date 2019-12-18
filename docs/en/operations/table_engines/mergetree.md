@@ -75,7 +75,7 @@ For a description of parameters, see the [CREATE query description](../../query_
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specified an action which is to be done with the part if expression is satisfied (reaches current time): deletion of expired rows, moving of part (if expression satisfies for all rows of a part) to specified disk (`TO DISK 'xxx'`) or volume (`TO VOLUME 'xxx'`). Default type of the rule is deletion (`DELETE`). Only one `DELETE` expression can be specified in the list of rules.
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`). Default type of the rule is deletion (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
