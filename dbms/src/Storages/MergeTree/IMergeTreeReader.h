@@ -24,7 +24,7 @@ public:
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
-        const ReaderSettings & settings_,
+        const MergeTreeReaderSettings & settings_,
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
 
     /// Return the number of rows has been read or zero if there is no columns to read.
@@ -73,14 +73,12 @@ protected:
     MarkCache * mark_cache;
     /// If save_marks_in_cache is false, then, if marks are not in cache, we will load them but won't save in the cache, to avoid evicting other data.
 
-    ReaderSettings settings;
+    MergeTreeReaderSettings settings;
 
     const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
 
     friend class MergeTreeRangeReader::DelayedStream;
 };
-
-using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
 }

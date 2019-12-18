@@ -15,7 +15,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const WriterSettings & settings_,
+    const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(part_path_,
         storage_, columns_list_, indices_to_recalc_,
@@ -207,9 +207,8 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     return from_row + number_of_rows;
 }
 
-/// column must not be empty. (column.size() !== 0)
-
-std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
+/// Column must not be empty. (column.size() !== 0)
+void MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
@@ -288,8 +287,6 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
 
     next_mark = current_column_mark;
     next_index_offset = current_row - total_rows;
-
-    return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)

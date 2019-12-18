@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
-#include <Storages/MergeTree/MergeTreeReaderSettings.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 
 
@@ -25,7 +25,7 @@ public:
     MergeTreeReaderStream(
             const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
             const MarkRanges & all_mark_ranges,
-            const ReaderSettings & settings_,
+            const MergeTreeReaderSettings & settings_,
             MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
             size_t file_size, const MergeTreeIndexGranularityInfo * index_granularity_info_,
             ReadingMode mode_,

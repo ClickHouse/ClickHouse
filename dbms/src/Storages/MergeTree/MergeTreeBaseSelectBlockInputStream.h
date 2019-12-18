@@ -23,7 +23,7 @@ public:
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
-        const ReaderSettings & reader_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {});
 
@@ -59,7 +59,7 @@ protected:
     UInt64 preferred_block_size_bytes;
     UInt64 preferred_max_column_in_block_size_bytes;
 
-    ReaderSettings reader_settings;
+    MergeTreeReaderSettings reader_settings;
 
     bool use_uncompressed_cache;
 

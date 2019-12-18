@@ -76,10 +76,11 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
-    const ReaderSettings & reader_settings,
+    const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
 {
+    /// FIXME maybe avoid shared_from_this
     return std::make_unique<MergeTreeReaderCompact>(
         shared_from_this(), columns_to_read, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings, avg_value_size_hints);
@@ -89,7 +90,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const CompressionCodecPtr & default_codec,
-    const WriterSettings & writer_settings,
+    const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     NamesAndTypesList ordered_columns_list;

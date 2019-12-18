@@ -36,7 +36,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     {
         if (force || isTTLExpired(ttl_info.min))
         {
-            new_ttl_infos.columns_ttl.emplace(name,IMergeTreeDataPart::TTLInfo{});
+            new_ttl_infos.columns_ttl.emplace(name, IMergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
 
             auto it = column_defaults.find(name);

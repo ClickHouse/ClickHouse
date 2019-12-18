@@ -17,7 +17,7 @@ namespace ErrorCodes
 MergeTreeReaderStream::MergeTreeReaderStream(
         const String & path_prefix_,const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
-        const ReaderSettings & settings,
+        const MergeTreeReaderSettings & settings,
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,

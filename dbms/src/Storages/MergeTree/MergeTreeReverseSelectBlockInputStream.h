@@ -27,7 +27,7 @@ public:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         bool check_columns,
-        const ReaderSettings & reader_settings,
+        const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query = 0,
         bool quiet = false);

@@ -39,8 +39,8 @@ private:
     time_t current_time;
     bool force;
 
-   IMergeTreeDataPart::TTLInfos old_ttl_infos;
-   IMergeTreeDataPart::TTLInfos new_ttl_infos;
+    IMergeTreeDataPart::TTLInfos old_ttl_infos;
+    IMergeTreeDataPart::TTLInfos new_ttl_infos;
     NameSet empty_columns;
 
     size_t rows_removed = 0;

@@ -55,7 +55,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     std::cerr << "(MergeTreeSequentialBlockInputStream) part: " << data_part_->getFullPath() << "\n";
     std::cerr << "(MergeTreeSequentialBlockInputStream) columns_for_reader: " << columns_for_reader.toString() << "\n";
 
-    ReaderSettings reader_settings =
+    MergeTreeReaderSettings reader_settings =
     {
         /// This is hack
         .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),

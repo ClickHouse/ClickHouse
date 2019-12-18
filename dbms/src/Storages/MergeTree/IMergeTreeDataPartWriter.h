@@ -19,7 +19,6 @@ class IMergeTreeDataPartWriter
 {
 public:
     using WrittenOffsetColumns = std::set<std::string>;
-    using MarkWithOffset = std::pair<size_t, size_t>;
 
     struct ColumnStream
     {
@@ -65,18 +64,24 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        const WriterSettings & settings,
+        const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity,
         bool need_finish_last_granule);
+
+    virtual ~IMergeTreeDataPartWriter();
 
     virtual void write(
         const Block & block, const IColumn::Permutation * permutation = nullptr,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
 
-    virtual ~IMergeTreeDataPartWriter();
+    /// Shift mark and offset to prepare read next mark.
+    /// You must call it after calling write method and optionally 
+    ///  calling calculations of primary and skip indices.
+    void next();
 
     /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
@@ -88,10 +93,7 @@ public:
         return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     }
 
-    const MergeTreeData::ColumnSizeByName & getColumnsSizes() const
-    {
-        return columns_sizes;
-    }
+    const MergeTreeData::ColumnSizeByName & getColumnsSizes() const { return columns_sizes; }
 
     void setOffsetColumns(WrittenOffsetColumns * written_offset_columns_, bool skip_offsets_)
     {
@@ -101,11 +103,10 @@ public:
 
     void initSkipIndices();
     void initPrimaryIndex();
-    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
-    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
+   
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;    
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
-    void next();
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -122,13 +123,15 @@ protected:
 
     std::vector<MergeTreeIndexPtr> skip_indices;
 
-    WriterSettings settings;
+    MergeTreeWriterSettings settings;
 
     bool compute_granularity;
     bool with_final_mark;
     bool need_finish_last_granule;
 
     size_t current_mark = 0;
+
+    /// The offset to the first row of the block for which you want to write the index.
     size_t index_offset = 0;
 
     size_t next_mark = 0;
@@ -161,7 +164,5 @@ protected:
     bool skip_offsets = false;
 
 };
-
-using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
 }
