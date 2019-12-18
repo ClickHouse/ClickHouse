@@ -21,6 +21,8 @@ public:
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
+    void resetParser() override;
+
 protected:
     Chunk generate() override;
 

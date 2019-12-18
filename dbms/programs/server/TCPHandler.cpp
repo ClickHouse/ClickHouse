@@ -19,7 +19,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
@@ -201,6 +200,8 @@ void TCPHandler::runImpl()
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+
+                state.temporary_tables_read = true;
             });
 
             /// Send structure of columns to client for function input()
@@ -342,6 +343,18 @@ void TCPHandler::runImpl()
 
         try
         {
+            if (exception && !state.temporary_tables_read)
+                query_context->initializeExternalTablesIfSet();
+        }
+        catch (...)
+        {
+            network_error = true;
+            LOG_WARNING(log, "Can't read external tables after query failure.");
+        }
+
+
+        try
+        {
             query_scope.reset();
             state.reset();
         }
@@ -471,79 +484,62 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
-        /// Send header-block, to allow client to prepare output format for data to send.
-        {
-            Block header = state.io.in->getHeader();
+        /// This allows the client to prepare output format
+        if (Block header = state.io.in->getHeader())
+            sendData(header);
 
-            if (header)
-                sendData(header);
-        }
-
+        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
         AsynchronousBlockInputStream async_in(state.io.in);
-        async_in.readPrefix();
 
+        async_in.readPrefix();
         while (true)
         {
-            Block block;
-
-            while (true)
+            if (isQueryCancelled())
             {
-                if (isQueryCancelled())
-                {
-                    /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel(false);
-                    break;
-                }
-                else
-                {
-                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
-                    {
-                        /// Some time passed and there is a progress.
-                        after_send_progress.restart();
-                        sendProgress();
-                    }
-
-                    sendLogs();
-
-                    if (async_in.poll(query_context->getSettingsRef().interactive_delay / 1000))
-                    {
-                        /// There is the following result block.
-                        block = async_in.read();
-                        break;
-                    }
-                }
-            }
-
-            /** If data has run out, we will send the profiling data and total values to
-              * the last zero block to be able to use
-              * this information in the suffix output of stream.
-              * If the request was interrupted, then `sendTotals` and other methods could not be called,
-              *  because we have not read all the data yet,
-              *  and there could be ongoing calculations in other threads at the same time.
-              */
-            if (!block && !isQueryCancelled())
-            {
-                /// Wait till inner thread finish to avoid possible race with getTotals.
-                async_in.waitInnerThread();
-
-                sendTotals(state.io.in->getTotals());
-                sendExtremes(state.io.in->getExtremes());
-                sendProfileInfo(state.io.in->getProfileInfo());
-                sendProgress();
-                sendLogs();
-            }
-
-            if (!block || !state.io.null_format)
-                sendData(block);
-            if (!block)
+                async_in.cancel(false);
                 break;
+            }
+
+            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+            {
+                /// Some time passed and there is a progress.
+                after_send_progress.restart();
+                sendProgress();
+            }
+
+            sendLogs();
+
+            if (async_in.poll(query_context->getSettingsRef().interactive_delay / 1000))
+            {
+                const auto block = async_in.read();
+                if (!block)
+                    break;
+
+                if (!state.io.null_format)
+                    sendData(block);
+            }
+        }
+        async_in.readSuffix();
+
+        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
+          * so that this information can be used in the suffix output of stream.
+          * If the request has been interrupted, then sendTotals and other methods should not be called,
+          * because we have not read all the data.
+          */
+        if (!isQueryCancelled())
+        {
+            sendTotals(state.io.in->getTotals());
+            sendExtremes(state.io.in->getExtremes());
+            sendProfileInfo(state.io.in->getProfileInfo());
+            sendProgress();
         }
 
-        async_in.readSuffix();
+        sendData({});
     }
 
     state.io.onFinish();
 }
+
 
 void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
@@ -923,10 +919,15 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
-    Settings & settings = query_context->getSettingsRef();
+    Settings custom_settings{};
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
-    settings.deserialize(*in, settings_format);
+    custom_settings.deserialize(*in, settings_format);
+    auto settings_changes = custom_settings.changes();
+    query_context->checkSettingsConstraints(settings_changes);
+    query_context->applySettingsChanges(settings_changes);
+
+    Settings & settings = query_context->getSettingsRef();
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),

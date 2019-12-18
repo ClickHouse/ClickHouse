@@ -104,7 +104,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs
+## Column Compression Codecs {#codecs}
 
 By default, ClickHouse applies to columns the compression method, defined in [server settings](../operations/server_settings/settings.md#compression). Also, you can define compression method for each individual column in the `CREATE TABLE` query.
 

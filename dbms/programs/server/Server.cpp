@@ -50,6 +50,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
@@ -187,6 +188,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -242,6 +244,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 #endif
+
+    global_context->setRemoteHostFilter(config());
 
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
@@ -371,6 +375,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(user_files_path).createDirectories();
     }
 
+    {
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -438,6 +448,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -468,13 +485,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 
@@ -668,6 +678,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                return address;
         };
 
+        /// This object will periodically calculate some metrics.
+        AsynchronousMetrics async_metrics(*global_context);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+
         for (const auto & listen_host : listen_hosts)
         {
             auto create_server = [&](const char * port_name, auto && func)
@@ -707,13 +721,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening http://" + address.toString());
+                LOG_INFO(log, "Listening for http://" + address.toString());
             });
 
             /// HTTPS
@@ -725,12 +743,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening https://" + address.toString());
+                LOG_INFO(log, "Listening for https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -783,12 +801,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
+                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -799,12 +817,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
+                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -825,6 +843,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+            });
+
+            /// Prometheus (if defined and not setup yet with http_port)
+            create_server("prometheus.port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });
         }
 
@@ -928,10 +964,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             throw;
         }
 
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
-
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
@@ -947,6 +979,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {

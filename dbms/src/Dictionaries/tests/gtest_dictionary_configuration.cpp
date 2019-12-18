@@ -22,7 +22,8 @@ using namespace DB;
 
 static bool registered = false;
 /// For debug
-std::string configurationToString(const DictionaryConfigurationPtr & config)
+#pragma GCC diagnostic ignored "-Wunused-function"
+static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
     const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
     std::ostringstream oss;

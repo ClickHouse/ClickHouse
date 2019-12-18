@@ -1,5 +1,4 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
-#include "ParallelParsingBlockInputStream.h"
 
 namespace DB
 {
@@ -15,7 +14,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             auto & unit = processing_units[current_unit_number];
 
             {
-                std::unique_lock lock(mutex);
+                std::unique_lock<std::mutex> lock(mutex);
                 segmentator_condvar.wait(lock,
                     [&]{ return unit.status == READY_TO_INSERT || finished; });
             }
@@ -85,7 +84,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
         // except at the end of file. Also see a matching assert in readImpl().
         assert(unit.is_last || unit.block_ext.block.size() > 0);
 
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         unit.status = READY_TO_READ;
         reader_condvar.notify_all();
     }
@@ -99,7 +98,7 @@ void ParallelParsingBlockInputStream::onBackgroundException()
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
 
-    std::unique_lock lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
@@ -116,7 +115,7 @@ Block ParallelParsingBlockInputStream::readImpl()
         /**
           * Check for background exception and rethrow it before we return.
           */
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         if (background_exception)
         {
             lock.unlock();
@@ -134,7 +133,7 @@ Block ParallelParsingBlockInputStream::readImpl()
     {
         // We have read out all the Blocks from the previous Processing Unit,
         // wait for the current one to become ready.
-        std::unique_lock lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || finished; });
 
         if (finished)
@@ -190,7 +189,7 @@ Block ParallelParsingBlockInputStream::readImpl()
         else
         {
             // Pass the unit back to the segmentator.
-            std::unique_lock lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

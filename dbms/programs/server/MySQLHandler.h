@@ -11,7 +11,6 @@
 
 namespace DB
 {
-
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
@@ -59,6 +58,9 @@ protected:
     std::shared_ptr<WriteBuffer> out;
 
     bool secure_connection = false;
+
+private:
+    static const String show_table_status_replacement_query;
 };
 
 #if USE_SSL && USE_POCO_NETSSL
