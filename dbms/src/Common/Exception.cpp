@@ -76,7 +76,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -97,7 +97,7 @@ void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 #endif
 }
 
-std::string getExtraExceptionInfo(const std::exception & e)
+static std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try
