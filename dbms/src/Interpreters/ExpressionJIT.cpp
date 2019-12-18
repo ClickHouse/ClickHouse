@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -132,7 +133,7 @@ static llvm::TargetMachine * getNativeMachine()
 }
 
 #if LLVM_VERSION_MAJOR >= 7
-auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
+static auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 {
 #if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
     // REMOVE AFTER contrib/llvm upgrade
@@ -283,13 +284,13 @@ struct LLVMContext
     }
 };
 
-class LLVMPreparedFunction : public PreparedFunctionImpl
+class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
     std::string name;
     void * function;
 
 public:
-    LLVMPreparedFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
+    LLVMExecutableFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
         : name(name_)
     {
         auto it = symbols.find(name);
@@ -304,7 +305,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
         auto col_res = block.getByPosition(result).type->createColumn()->cloneResized(block_size);
         if (block_size)
@@ -324,7 +325,7 @@ public:
     }
 };
 
-static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBase & f)
+static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBaseImpl & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
@@ -505,7 +506,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return it->second(builder, values);
 }
 
-PreparedFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -586,7 +587,7 @@ static bool isCompilable(const IFunctionBase & function)
     return function.isCompilable();
 }
 
-std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
+static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
 {
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).
@@ -684,14 +685,14 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                     continue;
             }
 
-            std::shared_ptr<LLVMFunction> fn;
+            FunctionBasePtr fn;
             if (compilation_cache)
             {
                 std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
                 {
                     Stopwatch watch;
-                    std::shared_ptr<LLVMFunction> result_fn;
-                    result_fn = std::make_shared<LLVMFunction>(inlined_func, sample_block);
+                    FunctionBasePtr result_fn;
+                    result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(inlined_func, sample_block));
                     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
                     return result_fn;
                 });
@@ -699,12 +700,12 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             else
             {
                 Stopwatch watch;
-                fn = std::make_shared<LLVMFunction>(fused[i], sample_block);
+                fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(fused[i], sample_block));
                 ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
 
             actions[i].function_base = fn;
-            actions[i].argument_names = fn->getArgumentNames();
+            actions[i].argument_names = typeid_cast<const LLVMFunction *>(typeid_cast<const FunctionBaseAdaptor *>(fn.get())->getImpl())->getArgumentNames();
             actions[i].is_function_compiled = true;
 
             continue;

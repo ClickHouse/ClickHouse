@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -12,6 +12,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include "registerFunctionsArray.h"
 
 #include <ext/scope_guard.h>
 
@@ -55,7 +56,7 @@ public:
 
 private:
     /// lazy initialization in getReturnTypeImpl
-    /// TODO: init in FunctionBuilder
+    /// TODO: init in OverloadResolver
     mutable AggregateFunctionPtr aggregate_function;
 };
 

@@ -16,6 +16,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
