@@ -51,6 +51,11 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeIntText(msg_ext.thread_number, wb);
     writeCString(" ] ", wb);
 
+    writeCString("(", wb);
+    DB::writeIntText(msg_ext.os_thread_number, wb);
+    writeCString(") ", wb);
+
+
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
     writeCString("{", wb);

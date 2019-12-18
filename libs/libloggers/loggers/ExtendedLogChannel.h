@@ -25,6 +25,7 @@ public:
     uint32_t time_microseconds = 0;
 
     uint32_t thread_number = 0;
+    uint32_t os_thread_number = 0;
     std::string query_id;
 };
 

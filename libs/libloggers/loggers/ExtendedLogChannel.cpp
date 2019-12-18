@@ -3,6 +3,7 @@
 #include <sys/time.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <common/getThreadNumber.h>
 
 
@@ -32,6 +33,7 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
     }
 
     msg_ext.thread_number = getThreadNumber();
+    msg_ext.os_thread_number = TaskStatsInfoGetter::getCurrentTID();
 
     return msg_ext;
 }
