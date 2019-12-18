@@ -432,8 +432,6 @@ ALTER TABLE example_table
 
 **Table TTL**
 
-When data in a table expires, ClickHouse deletes all corresponding rows.
-
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ```sql
