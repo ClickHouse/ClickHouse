@@ -143,11 +143,10 @@ namespace
         Poco::Net::SocketAddress sock_addr(address, 0);
 
         /// Resolve by hand, because Poco library doesn't have such functionality.
-        char host_buf[1024];
-        int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host_buf, sizeof(host_buf), nullptr, 0, NI_NAMEREQD);
+        char host[1024];
+        int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host, sizeof(host), nullptr, 0, NI_NAMEREQD);
         if (err)
             throw Exception("Cannot getnameinfo(" + address.toString() + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
-        String host = host_buf;
 
         /// Check that PTR record is resolved back to client address
         if (!isAddressOfHost(address, host))
