@@ -23,7 +23,6 @@
 
 /// 'LegacyRTDyldObjectLinkingLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use ORCv2
 /// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
@@ -51,6 +50,8 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
+
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 
 namespace ProfileEvents
