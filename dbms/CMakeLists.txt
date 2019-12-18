@@ -291,7 +291,6 @@ macro (dbms_target_link_libraries)
 endmacro ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
