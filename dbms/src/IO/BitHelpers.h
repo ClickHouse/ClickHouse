@@ -67,30 +67,31 @@ public:
     inline UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
-            fillBuffer();
+            fillBitBuffer();
 
-        // push down the high-bits
-        UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
-
-        // shift high-bits that were read
-        bits_buffer <<= bits_to_read;
-        bits_count -= bits_to_read;
-
-        return result;
+        return getBitsFromBitBuffer<CONSUME>(bits_to_read);
     }
 
     inline UInt8 peekByte()
     {
         if (bits_count < 8)
-            fillBuffer();
+            fillBitBuffer();
 
-        return bits_buffer >> (sizeof(bits_buffer) * 8 - 8);
+        return getBitsFromBitBuffer<PEEK>(8);
     }
 
     inline UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
+
+    // skip bits from bits_buffer
+    inline void skipBufferedBits(UInt8 bits)
+    {
+        bits_buffer <<= bits;
+        bits_count -= bits;
+    }
+
 
     inline bool eof() const
     {
@@ -109,17 +110,38 @@ public:
     }
 
 private:
-    size_t fillBuffer()
+    enum GetBitsMode {CONSUME, PEEK};
+    // read data from internal buffer, if it has not enough bits, result is undefined.
+    template <GetBitsMode mode>
+    inline UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
+    {
+        // push down the high-bits
+        const UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
+
+        if constexpr (mode == CONSUME)
+        {
+            // 'erase' high-bits that were have read
+            skipBufferedBits(bits_to_read);
+        }
+
+        return result;
+    }
+
+
+    // Fills internal bits_buffer with data from source, reads at most 64 bits
+    size_t fillBitBuffer()
     {
         const size_t available = source_end - source_current;
+        const auto bytes_to_read = std::min<size_t>(64 / 8, available);
         if (available == 0)
         {
-            return 0;
-//            throw Exception("Buffer is empty, but requested to read "
-//                            + std::to_string(to_read) + " more bytes.",
-//                            ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            if (bytes_to_read == 0)
+                return 0;
+
+            throw Exception("Buffer is empty, but requested to read "
+                            + std::to_string(bytes_to_read) + " more bytes.",
+                            ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
         }
-        const auto bytes_to_read = std::min<size_t>(64 / 8, available);
 
         UInt64 tmp_buffer = 0;
         memcpy(&tmp_buffer, source_current, bytes_to_read);
@@ -136,7 +158,7 @@ private:
 
 class BitWriter
 {
-    using BufferType = UInt64;
+    using BufferType = unsigned __int128;
 
     char * dest_begin;
     char * dest_current;
@@ -161,42 +183,31 @@ public:
         flush();
     }
 
-    inline void writeBits(UInt8 bits, UInt64 value)
+    // write `bits_to_write` low-bits of `value` to the buffer
+    inline void writeBits(UInt8 bits_to_write, UInt64 value)
     {
-        while (bits > 0)
+        UInt32 capacity = BIT_BUFFER_SIZE - bits_count;
+        if (capacity < bits_to_write)
         {
-            auto v = value;
-            auto to_write = bits;
-
-            const UInt8 capacity = BIT_BUFFER_SIZE - bits_count;
-            if (capacity < bits)
-            {
-                v >>= bits - capacity;
-                to_write = capacity;
-            }
-
-            const UInt64 mask = maskLowBits<UInt64>(to_write);
-            v &= mask;
-
-            bits_buffer <<= to_write;
-            bits_buffer |= v;
-            bits_count += to_write;
-
-            if (bits_count < BIT_BUFFER_SIZE)
-                break;
-
             doFlush();
-            bits -= to_write;
+            capacity = BIT_BUFFER_SIZE - bits_count;
         }
+
+//      write low bits of value as high bits of bits_buffer
+        const UInt64 mask = maskLowBits<UInt64>(bits_to_write);
+        BufferType v = value & mask;
+        v <<= capacity - bits_to_write;
+
+        bits_buffer |= v;
+        bits_count += bits_to_write;
     }
 
+    // flush contents of bits_buffer to the dest_current, partial bytes are completed with zeroes.
     inline void flush()
     {
-        if (bits_count != 0)
-        {
-            bits_buffer <<= (BIT_BUFFER_SIZE - bits_count);
+        bits_count = (bits_count + 8 - 1) & ~(8 - 1); // align UP to 8-bytes, so doFlush will write ALL data from bits_buffer
+        while (bits_count != 0)
             doFlush();
-        }
     }
 
     inline UInt64 count() const
@@ -207,9 +218,9 @@ public:
 private:
     void doFlush()
     {
-        bits_buffer = htobe64(bits_buffer);
+        // write whole bytes to the dest_current, leaving partial bits in bits_buffer
         const size_t available = dest_end - dest_current;
-        const size_t to_write = (bits_count + 7) / 8;
+        const size_t to_write = std::min<size_t>(sizeof(UInt64), bits_count / 8); // align to 8-bit boundary
 
         if (available < to_write)
         {
@@ -219,11 +230,12 @@ private:
                             ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
         }
 
-        memcpy(dest_current, &bits_buffer, to_write);
+        const auto tmp_buffer = htobe64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
+        memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 
-        bits_count = 0;
-        bits_buffer = 0;
+        bits_buffer <<= to_write * 8;
+        bits_count -= to_write * 8;
     }
 };
 
