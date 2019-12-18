@@ -1,7 +1,7 @@
 # Broken in macos. TODO: update clang, re-test, enable
 if (NOT APPLE)
     option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile_expressions' option for query execution" ${ENABLE_LIBRARIES})
-    option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library." 1)
+    option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library." ${NOT_UNBUNDLED})
 endif ()
 
 if (ENABLE_EMBEDDED_COMPILER)
