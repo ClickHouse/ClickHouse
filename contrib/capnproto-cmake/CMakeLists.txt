@@ -49,6 +49,9 @@ set (CAPNP_SRCS
 )
 
 add_library(capnp ${CAPNP_SRCS})
+set_target_properties(capnp
+                      PROPERTIES LINKER_LANGUAGE CXX
+                      )
 target_link_libraries(capnp PUBLIC kj)
 
 # The library has substandard code

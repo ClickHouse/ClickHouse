@@ -119,9 +119,8 @@ struct IntegerRoundingComputation
             }
             case RoundingMode::Round:
             {
-                bool negative = x < 0;
-                if (negative)
-                    x = -x;
+                if (x < 0)
+                    x -= scale;
                 switch (tie_breaking_mode)
                 {
                     case TieBreakingMode::Auto:
@@ -131,14 +130,14 @@ struct IntegerRoundingComputation
                     {
                         T quotient = (x + scale / 2) / scale;
                         if (quotient * scale == x + scale / 2)
-                            x = (quotient & ~1) * scale;
+                            // round half to even
+                            x = ((quotient + (x < 0)) & ~1) * scale;
                         else
+                            // round the others as usual
                             x = quotient * scale;
                         break;
                     }
                 }
-                if (negative)
-                    x = -x;
                 return x;
             }
         }

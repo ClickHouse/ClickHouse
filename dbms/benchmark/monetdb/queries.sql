@@ -92,20 +92,20 @@ SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIM
 
 SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMIT 10;
  
-SELECT  URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND URL <> '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+SELECT  URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND URL <> '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
 
 
-SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND Title <> '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND Title <> '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
 
 
-SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
 
 
-SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
 
 
-SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
 
-SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
 
-SELECT EventTime - extract (SECOND from EventTime) AS M, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= '2013-07-01'                         AND EventDate <= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY M ORDER BY M; 
+SELECT EventTime - extract (SECOND from EventTime) AS M, count(*) AS PageViews FROM hits_10m WHERE CounterID = 62 AND EventDate >= '2013-07-01'                         AND EventDate <= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY M ORDER BY M; 
