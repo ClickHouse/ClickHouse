@@ -18,6 +18,7 @@
 #include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
+#include <common/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -938,6 +939,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// (they are effectively dangling objects, but they use global thread pool
                 ///  and global thread pool destructor will wait for threads, preventing server shutdown).
 
+                /// Dump coverage here, because std::atexit callback would not be called.
+                dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
                 _exit(Application::EXIT_OK);
             }
