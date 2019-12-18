@@ -49,11 +49,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
     {
-        for (const auto & it : columns_list)
+        for (const auto & column : columns_list)
         {
-            auto it2 = merged_column_to_size.find(it.name);
-            if (it2 != merged_column_to_size.end())
-                writer_settings.estimated_size += it2->second;
+            auto size_it = merged_column_to_size.find(column.name);
+            if (size_it != merged_column_to_size.end())
+                writer_settings.estimated_size += size_it->second;
         }
     }
 

@@ -102,7 +102,7 @@ public:
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        const std::vector<MutationCommand> & commands,
+        const MutationCommands & commands,
         MergeListEntry & merge_entry, const Context & context,
         DiskSpace::Reservation * disk_reservation,
         TableStructureReadLockHolder & table_lock_holder);

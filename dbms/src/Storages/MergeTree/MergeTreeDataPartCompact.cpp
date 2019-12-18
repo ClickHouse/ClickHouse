@@ -93,7 +93,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     NamesAndTypesList ordered_columns_list;
-    std::copy_if(columns_list.begin(), columns_list.end(),std::back_inserter(ordered_columns_list),
+    std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
         [this](const auto & column) { return getColumnPosition(column.name) != std::nullopt; });
 
     /// Order of writing is important in compact format
@@ -198,7 +198,7 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const 
 {
     if (!getColumnPosition(column_name))
         return false;
-    /// FIXME replace everywhere hardcoded "data"
+
     auto bin_checksum = checksums.files.find(String(DATA_FILE_NAME) + DATA_FILE_EXTENSION);
     auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);
 

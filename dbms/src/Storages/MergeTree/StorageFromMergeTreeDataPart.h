@@ -12,11 +12,11 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFroIMergeTreeDataPart : public ext::shared_ptr_helper<StorageFroIMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFroIMergeTreeDataPart>;
+    friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
-    String getName() const override { return "FroIMergeTreeDataPart"; }
+    String getName() const override { return "FromMergeTreeDataPart"; }
     String getTableName() const override { return part->storage.getTableName() + " (part " + part->name + ")"; }
     String getDatabaseName() const override { return part->storage.getDatabaseName(); }
 
@@ -40,7 +40,7 @@ public:
     }
 
 protected:
-    StorageFroIMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(part_->storage.getVirtuals()), part(part_)
     {
         setColumns(part_->storage.getColumns());
