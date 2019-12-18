@@ -41,8 +41,7 @@ private:
 
     void initMarksLoader();
     void seekToStart();
-    void seekToMark(size_t row, size_t col);
-    const MarkInCompressedFile & getMark(size_t row, size_t col);
+    void seekToMark(size_t row_index, size_t column_index);
 
     void readData(const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, size_t column_position, size_t rows_to_read);

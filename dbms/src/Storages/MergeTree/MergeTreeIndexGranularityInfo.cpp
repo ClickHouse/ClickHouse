@@ -81,4 +81,30 @@ void MergeTreeIndexGranularityInfo::setNonAdaptive()
     index_granularity_bytes = 0;
 }
 
+std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
+{
+    switch(part_type)
+    {
+        case MergeTreeDataPartType::WIDE:
+            return ".mrk2";
+        case MergeTreeDataPartType::COMPACT:
+            return ".mrk3";
+        default:
+            throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+    }
+}
+
+size_t getAdaptiveMrkSize(MergeTreeDataPartType part_type, size_t columns_num)
+{
+    switch(part_type)
+    {
+        case MergeTreeDataPartType::WIDE:
+            return sizeof(UInt64) * 3;
+        case MergeTreeDataPartType::COMPACT:
+            return sizeof(UInt64) * (columns_num * 2 + 1);
+        default:
+            throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+    }
+}
+
 }

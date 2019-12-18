@@ -77,7 +77,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     const AllowedMovingPredicate & can_move,
     const std::lock_guard<std::mutex> & /* moving_parts_lock */)
 {
-    auto data_parts = data->getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
 
     if (data_parts.empty())
         return false;

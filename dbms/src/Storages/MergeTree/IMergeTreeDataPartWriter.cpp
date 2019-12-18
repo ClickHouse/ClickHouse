@@ -7,7 +7,6 @@ namespace DB
 
 namespace
 {
-    // constexpr auto DATA_FILE_EXTENSION = ".bin";
     constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
