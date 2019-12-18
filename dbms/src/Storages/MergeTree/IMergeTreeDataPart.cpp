@@ -224,6 +224,7 @@ time_t IMergeTreeDataPart::getMaxTime() const
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & columns_)
 {
     columns = columns_;
+    sample_block.clear();
     for (const auto & column : columns)
         sample_block.insert({column.type, column.name});
     index_granularity_info.initialize(storage, getType(), columns.size());
