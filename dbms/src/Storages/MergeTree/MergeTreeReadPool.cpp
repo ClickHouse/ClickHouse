@@ -33,7 +33,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     for (auto & part_ranges : parts_ranges)
         std::reverse(std::begin(part_ranges.ranges), std::end(part_ranges.ranges));
 
-    /// parts don't contain duplicateIMergeTreeDataPart's.
+    /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts_, check_columns_);
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_, min_marks_for_concurrent_read_);
 }
