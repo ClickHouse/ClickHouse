@@ -117,4 +117,7 @@ private:
     CurrentMetrics::Increment metric_increment;
 };
 
+class DiskFactory;
+void registerDiskLocal(DiskFactory & factory);
+
 }

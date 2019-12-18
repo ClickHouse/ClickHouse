@@ -1,6 +1,5 @@
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
-#include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
@@ -11,7 +10,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
-
+#include "registerDictionaries.h"
 
 namespace DB
 {

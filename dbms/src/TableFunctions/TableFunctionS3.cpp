@@ -9,6 +9,7 @@
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {

@@ -2513,6 +2513,8 @@ int ClusterCopierApp::main(const std::vector<std::string> &)
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClusterCopier(int argc, char ** argv)
 {

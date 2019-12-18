@@ -4,6 +4,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Functions/array/FunctionArrayMapped.h>
 #include <Functions/FunctionFactory.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
