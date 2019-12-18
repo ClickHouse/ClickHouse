@@ -936,7 +936,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
         /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);
