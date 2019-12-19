@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/AutoPtr.h>
+#include <Client/Connection.h>
 
 #include "StopConditionsSet.h"
 #include "TestStopConditions.h"
@@ -26,7 +27,7 @@ using StringToVector = std::map<std::string, Strings>;
 class PerformanceTestInfo
 {
 public:
-    PerformanceTestInfo(XMLConfigurationPtr config, const std::string & profiles_file_, const Settings & global_settings_);
+    PerformanceTestInfo(XMLConfigurationPtr config, const std::string & profiles_file_, const Settings & global_settings_, const Connections & connections_);
 
     std::string test_name;
     std::string path;
@@ -40,6 +41,7 @@ public:
     StringToVector substitutions;
     size_t times_to_run;
 
+    Connections connections;
     std::vector<TestStopConditions> stop_conditions_by_run;
 
     Strings create_and_fill_queries;

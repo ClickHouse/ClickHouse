@@ -8,7 +8,7 @@ namespace
 const std::string FOUR_SPACES = "    ";
 }
 
-std::string TestStats::getStatisticByName(const std::string & statistic_name)
+std::string ConnectionTestStats::getStatisticByName(const std::string & statistic_name)
 {
     if (statistic_name == "min_time")
         return std::to_string(min_time) + "ms";
@@ -16,10 +16,9 @@ std::string TestStats::getStatisticByName(const std::string & statistic_name)
     if (statistic_name == "quantiles")
     {
         std::string result = "\n";
-
-        for (double percent = 10; percent <= 90; percent += 10)
+        for (int percent = 10; percent <= 90; percent += 10)
         {
-            result += FOUR_SPACES + std::to_string((percent / 100));
+            result += FOUR_SPACES + std::to_string(percent / 100.0).substr(0, 3);
             result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
             result += "\n";
         }
@@ -58,16 +57,19 @@ std::string TestStats::getStatisticByName(const std::string & statistic_name)
 }
 
 
-void TestStats::update_min_time(UInt64 min_time_candidate)
+void ConnectionTestStats::updateMinTime(UInt64 min_time_candidate)
 {
     if (min_time_candidate < min_time)
     {
+        /// We restart watch only when difference is more than a millisecond
+        if ((min_time_candidate / 1000UL) < (min_time / 1000UL))
+            min_time_watch.restart();
+
         min_time = min_time_candidate;
-        min_time_watch.restart();
     }
 }
 
-void TestStats::update_max_speed(
+void ConnectionTestStats::updateMaxSpeed(
     size_t max_speed_candidate,
     Stopwatch & max_speed_watch,
     UInt64 & max_speed)
@@ -80,7 +82,7 @@ void TestStats::update_max_speed(
 }
 
 
-void TestStats::update_average_speed(
+void ConnectionTestStats::updateAverageSpeed(
     double new_speed_info,
     Stopwatch & avg_speed_watch,
     size_t & number_of_info_batches,
@@ -103,7 +105,7 @@ void TestStats::update_average_speed(
     }
 }
 
-void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
+void ConnectionTestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
 {
     total_rows_read += rows_read_inc;
     total_bytes_read += bytes_read_inc;
@@ -114,32 +116,32 @@ void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
     double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
 
     /// Update rows speed
-    update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
-    update_average_speed(new_rows_speed,
-        avg_rows_speed_watch,
-        number_of_rows_speed_info_batches,
-        avg_rows_speed_precision,
-        avg_rows_speed_first,
-        avg_rows_speed_value);
+    updateMaxSpeed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
+    updateAverageSpeed(new_rows_speed,
+                       avg_rows_speed_watch,
+                       number_of_rows_speed_info_batches,
+                       avg_rows_speed_precision,
+                       avg_rows_speed_first,
+                       avg_rows_speed_value);
     /// Update bytes speed
-    update_max_speed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
-    update_average_speed(new_bytes_speed,
-        avg_bytes_speed_watch,
-        number_of_bytes_speed_info_batches,
-        avg_bytes_speed_precision,
-        avg_bytes_speed_first,
-        avg_bytes_speed_value);
+    updateMaxSpeed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
+    updateAverageSpeed(new_bytes_speed,
+                       avg_bytes_speed_watch,
+                       number_of_bytes_speed_info_batches,
+                       avg_bytes_speed_precision,
+                       avg_bytes_speed_first,
+                       avg_bytes_speed_value);
 }
 
-void TestStats::updateQueryInfo()
+void ConnectionTestStats::updateQueryInfo()
 {
     ++queries;
     sampler.insert(watch_per_query.elapsedSeconds());
-    update_min_time(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
+    updateMinTime(watch_per_query.elapsedMicroseconds());
 }
 
 
-TestStats::TestStats()
+ConnectionTestStats::ConnectionTestStats()
 {
     watch.reset();
     watch_per_query.reset();
@@ -150,16 +152,5 @@ TestStats::TestStats()
     avg_bytes_speed_watch.reset();
 }
 
-
-void TestStats::startWatches()
-{
-    watch.start();
-    watch_per_query.start();
-    min_time_watch.start();
-    max_rows_speed_watch.start();
-    max_bytes_speed_watch.start();
-    avg_rows_speed_watch.start();
-    avg_bytes_speed_watch.start();
-}
 
 }

@@ -117,12 +117,18 @@ namespace
 
     const double confidence_level[6] = { 80, 90, 95, 98, 99, 99.5 };
 }
-
+bool StudentTTest::empty() const
+{
+    return data[0].size == 0 || data[1].size == 0;
+}
 
 void StudentTTest::clear()
 {
     data[0].clear();
     data[1].clear();
+
+    mean_difference = 0;
+    mean_confidence_interval = 0;
 }
 
 void StudentTTest::add(size_t distribution, double value)
@@ -132,38 +138,50 @@ void StudentTTest::add(size_t distribution, double value)
     data[distribution].add(value);
 }
 
-/// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
-std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_level_index) const
+void StudentTTest::updateResults(size_t confidence_level_index)
 {
     if (confidence_level_index > 5)
         confidence_level_index = 5;
-
-    if (data[0].size == 0 || data[1].size == 0)
-        return {true, ""};
 
     size_t degrees_of_freedom = (data[0].size - 1) + (data[1].size - 1);
 
     double table_value = students_table[degrees_of_freedom > 100 ? 0 : degrees_of_freedom][confidence_level_index];
 
-    double pooled_standard_deviation = sqrt(((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var()) / degrees_of_freedom);
+    double pooled_standard_deviation = sqrt(((data[0].size - 1.0) * data[0].var() + (data[1].size - 1.0) * data[1].var()) / degrees_of_freedom);
 
     double t_statistic = pooled_standard_deviation * sqrt(1.0 / data[0].size + 1.0 / data[1].size);
 
-    double mean_difference = fabs(data[0].avg() - data[1].avg());
+    mean_difference = fabs(data[0].avg() - data[1].avg());
 
-    double mean_confidence_interval = table_value * t_statistic;
+    mean_confidence_interval = table_value * t_statistic;
+}
 
+
+/// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
+bool StudentTTest::distributionsDiffer(size_t confidence_level_index, double comparison_precision)
+{
+    if (empty())
+        return false;
+
+    updateResults(confidence_level_index);
+
+    /// Difference must be more than comparison_precision, to take into account connection latency.
+    return mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > comparison_precision);
+}
+
+std::string StudentTTest::reportResults(size_t confidence_level_index, double comparison_precision)
+{
     std::stringstream ss;
-    if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
+    if (distributionsDiffer(confidence_level_index, comparison_precision))
     {
-        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
+        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
         ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
-        return {false, ss.str()};
+        return ss.str();
     }
     else
     {
         ss << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
-        return {true, ss.str()};
+        return ss.str();
     }
 }
 

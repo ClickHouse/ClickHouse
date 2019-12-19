@@ -11,7 +11,7 @@
  *
  * Usage:
  * It's it used to assume with some level of confidence that two distributions don't differ.
- * Values can be added with t_test.add(0/1, value) and after compared and reported with compareAndReport().
+ * Values can be added with t_test.add(0/1, value) and after compared and reported.
  */
 class StudentTTest
 {
@@ -47,13 +47,21 @@ private:
         }
     };
 
+    double mean_difference = 0;
+    double mean_confidence_interval = 0;
+
     std::array<DistributionData, 2> data {};
+
+    void updateResults(size_t confidence_level_index = 5);
 
 public:
     void clear();
 
     void add(size_t distribution, double value);
 
-    /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above. TODO: Trash - no separation of concepts in code.
-    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
+    bool empty() const;
+
+    bool distributionsDiffer(size_t confidence_level_index = 5, double comparison_precision = 0.001);
+
+    std::string reportResults(size_t confidence_level_index = 5, double comparison_precision = 0.001);
 };

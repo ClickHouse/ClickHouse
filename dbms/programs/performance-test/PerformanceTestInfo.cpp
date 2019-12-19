@@ -27,7 +27,10 @@ void extractSettings(
 {
     for (const std::string & setup : settings_list)
     {
-        if (setup == "profile")
+        if (setup == "profile" ||
+            setup == "average_rows_speed_precision" ||
+            setup == "average_bytes_speed_precision" ||
+            setup == "t_test_comparison_precision")
             continue;
 
         std::string value = config->getString(key + "." + setup);
@@ -46,9 +49,11 @@ namespace fs = std::filesystem;
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
     const std::string & profiles_file_,
-    const Settings & global_settings_)
+    const Settings & global_settings_,
+    const Connections & connections_)
     : profiles_file(profiles_file_)
     , settings(global_settings_)
+    , connections(connections_)
 {
     path = config->getString("path");
     test_name = fs::path(path).stem().string();
@@ -56,7 +61,7 @@ PerformanceTestInfo::PerformanceTestInfo(
     {
         Strings main_metrics;
         config->keys("main_metric", main_metrics);
-        if (main_metrics.size())
+        if (!main_metrics.empty())
             main_metric = main_metrics[0];
     }
 
@@ -101,12 +106,16 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         settings.applyChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
-            TestStats::avg_rows_speed_precision =
+            ConnectionTestStats::avg_rows_speed_precision =
                 config->getDouble("settings.average_rows_speed_precision");
 
         if (settings_contain("average_bytes_speed_precision"))
-            TestStats::avg_bytes_speed_precision =
+            ConnectionTestStats::avg_bytes_speed_precision =
                 config->getDouble("settings.average_bytes_speed_precision");
+
+        if (settings_contain("t_test_comparison_precision"))
+            ConnectionTestStats::t_test_comparison_precision =
+                    config->getDouble("settings.t_test_comparison_precision");
     }
 }
 
@@ -200,7 +209,7 @@ void PerformanceTestInfo::getExecutionType(XMLConfigurationPtr config)
 
 void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
 {
-    TestStopConditions stop_conditions_template;
+    ConnectionTestStopConditions stop_conditions_template;
     if (config->has("stop_conditions"))
     {
         ConfigurationPtr stop_conditions_config(config->createView("stop_conditions"));
@@ -208,14 +217,18 @@ void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
     }
 
     if (stop_conditions_template.empty())
-        throw Exception("No termination conditions were found in config",
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("No termination conditions were found in config", ErrorCodes::BAD_ARGUMENTS);
 
     times_to_run = config->getUInt("times_to_run", 1);
 
-    for (size_t i = 0; i < times_to_run * queries.size(); ++i)
-        stop_conditions_by_run.push_back(stop_conditions_template);
-
+    for (size_t run_index = 0; run_index < times_to_run * queries.size(); ++run_index)
+    {
+        stop_conditions_by_run.emplace_back(std::vector<ConnectionTestStopConditions>());
+        for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
+        {
+            stop_conditions_by_run[run_index].push_back(stop_conditions_template);
+        }
+    }
 }
 
 void PerformanceTestInfo::extractAuxiliaryQueries(XMLConfigurationPtr config)

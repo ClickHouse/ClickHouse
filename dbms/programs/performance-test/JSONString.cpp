@@ -2,17 +2,19 @@
 
 #include <regex>
 #include <sstream>
+
+
 namespace DB
 {
 
 namespace
 {
+
 std::string pad(size_t padding)
 {
     return std::string(padding * 4, ' ');
 }
 
-const std::regex NEW_LINE{"\n"};
 }
 
 void JSONString::set(const std::string & key, std::string value, bool wrap)
@@ -22,7 +24,7 @@ void JSONString::set(const std::string & key, std::string value, bool wrap)
 
     bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
     if (!reserved && wrap)
-        value = '"' + std::regex_replace(value, NEW_LINE, "\\n") + '"';
+        value = '"' + std::regex_replace(value, std::regex{"\n"}, "\\n") + '"';
 
     content[key] = value;
 }
@@ -34,7 +36,7 @@ void JSONString::set(const std::string & key, const std::vector<JSONString> & ru
 
     for (size_t i = 0; i < run_infos.size(); ++i)
     {
-        value << pad(padding + 1) + run_infos[i].asString(padding + 2);
+        value << pad(padding) + run_infos[i].asString(padding + 1);
         if (i != run_infos.size() - 1)
             value << ',';
 

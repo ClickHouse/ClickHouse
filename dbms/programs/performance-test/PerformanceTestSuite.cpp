@@ -11,6 +11,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <Poco/Util/Application.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -29,8 +30,8 @@
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 #include <Common/TerminalSize.h>
+#include <Common/StudentTTest.h>
 
-#include "TestStopConditions.h"
 #include "TestStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
@@ -42,9 +43,11 @@ namespace po = boost::program_options;
 
 namespace DB
 {
+
+using Ports = std::vector<UInt16>;
+
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
 
@@ -56,8 +59,9 @@ class PerformanceTestSuite
 {
 public:
 
-    PerformanceTestSuite(const std::string & host_,
-        const UInt16 port_,
+    PerformanceTestSuite(
+        Strings && hosts_,
+        Ports && ports_,
         const bool secure_,
         const std::string & default_database_,
         const std::string & user_,
@@ -72,12 +76,9 @@ public:
         Strings && skip_names_,
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
-        const std::unordered_map<std::string, std::vector<size_t>> query_indexes_,
+        std::unordered_map<std::string, std::vector<size_t>> && query_indexes_,
         const ConnectionTimeouts & timeouts_)
-        : connection(host_, port_, default_database_, user_,
-            password_, "performance-test", Protocol::Compression::Enable,
-            secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable)
-        , timeouts(timeouts_)
+        : timeouts(timeouts_)
         , tests_tags(std::move(tests_tags_))
         , tests_names(std::move(tests_names_))
         , tests_names_regexp(std::move(tests_names_regexp_))
@@ -92,34 +93,32 @@ public:
     {
         global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
-        if (input_files.size() < 1)
+        if (input_files.empty())
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
+
+        size_t connections_cnt = std::max(ports_.size(), hosts_.size());
+        connections.reserve(connections_cnt);
+
+        for (size_t i = 0; i < connections_cnt; ++i)
+        {
+            UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
+            std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
+            connections.emplace_back(std::make_shared<Connection>(cur_host, cur_port, default_database_, user_, password_,
+                    "performance-test-" + toString(i + 1),Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable));
+        }
+        report_builder = std::make_shared<ReportBuilder>();
     }
 
     int run()
     {
-        std::string name;
-        UInt64 version_major;
-        UInt64 version_minor;
-        UInt64 version_patch;
-        UInt64 version_revision;
-        connection.getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
-
-        std::stringstream ss;
-        ss << version_major << "." << version_minor << "." << version_patch;
-        server_version = ss.str();
-
-        report_builder = std::make_shared<ReportBuilder>(server_version);
-
-        processTestsConfigurations(input_files);
-
+        processTestsConfigurations();
+        runTests();
         return 0;
     }
 
 private:
-    Connection connection;
+    Connections connections;
     const ConnectionTimeouts & timeouts;
-
     const Strings & tests_tags;
     const Strings & tests_names;
     const Strings & tests_names_regexp;
@@ -130,8 +129,6 @@ private:
 
     Context global_context = Context::createGlobal();
     std::shared_ptr<ReportBuilder> report_builder;
-
-    std::string server_version;
 
     InterruptListener interrupt_listener;
 
@@ -145,10 +142,12 @@ private:
     std::vector<XMLConfigurationPtr> tests_configurations;
     Poco::Logger * log;
 
-    void processTestsConfigurations(const Strings & paths)
+    StudentTTest t_test;
+
+    void processTestsConfigurations()
     {
         LOG_INFO(log, "Preparing test configurations");
-        ConfigPreprocessor config_prep(paths);
+        ConfigPreprocessor config_prep(input_files);
         tests_configurations = config_prep.processConfig(
             tests_tags,
             tests_names,
@@ -156,10 +155,12 @@ private:
             skip_tags,
             skip_names,
             skip_names_regexp);
-
         LOG_INFO(log, "Test configurations prepared");
+    }
 
-        if (tests_configurations.size())
+    void runTests()
+    {
+        if (!tests_configurations.empty())
         {
             Strings outputs;
 
@@ -177,7 +178,7 @@ private:
                     break;
             }
 
-            if (!lite_output && outputs.size())
+            if (!lite_output && !outputs.empty())
             {
                 std::cout << "[" << std::endl;
 
@@ -197,34 +198,31 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
+        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef(), connections);
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
+        PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path], t_test);
 
-        if (current.checkPreconditions())
+        if (!current.checkPreconditions())
         {
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
-            LOG_INFO(
-                log,
-                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
-            current.prepare();
-            LOG_INFO(log, "Prepared");
-            LOG_INFO(log, "Running test '" << info.test_name << "'");
-            auto result = current.execute();
-            LOG_INFO(log, "Test '" << info.test_name << "' finished");
-
-            LOG_INFO(log, "Running post run queries");
-            current.finish();
-            LOG_INFO(log, "Postqueries finished");
-            if (lite_output)
-                return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
-            else
-                return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fulfilled, skip run");
+            return {"", current.checkSIGINT()};
         }
-        else
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
-        return {"", current.checkSIGINT()};
+        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
+        LOG_INFO(log, "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
+        current.prepare();
+        LOG_INFO(log, "Prepared");
+        LOG_INFO(log, "Running test '" << info.test_name << "'");
+        std::vector<TestStats> result = current.execute();
+        LOG_INFO(log, "Test '" << info.test_name << "' finished");
+        LOG_INFO(log, "Running post run queries");
+        current.finish();
+        LOG_INFO(log, "Post run queries finished");
+
+        if (lite_output)
+            return {report_builder->buildCompactReport(info, result, query_indexes[info.path], connections), current.checkSIGINT()};
+
+        return {report_builder->buildFullReport(info, result, query_indexes[info.path], connections, timeouts, t_test), current.checkSIGINT()};
     }
 };
 
@@ -240,6 +238,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<std::string> & inp
     for (fs::directory_iterator it(dir); it != end; ++it)
     {
         const fs::path file = (*it);
+
         if (recursive && fs::is_directory(file))
             getFilesFromDir(file, input_files, recursive);
         else if (!fs::is_directory(file) && file.extension().string() == ".xml")
@@ -275,13 +274,12 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
                 throw DB::Exception("File '" + filename + "' does not exist", DB::ErrorCodes::FILE_DOESNT_EXIST);
 
             if (fs::is_directory(file))
-            {
                 getFilesFromDir(file, collected_files, recursive);
-            }
             else
             {
                 if (file.extension().string() != ".xml")
                     throw DB::Exception("File '" + filename + "' does not have .xml extension", DB::ErrorCodes::BAD_ARGUMENTS);
+
                 collected_files.push_back(filename);
             }
         }
@@ -298,21 +296,16 @@ static std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryInd
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
-    if (options.empty())
-        return result;
-    for (size_t i = 0; i < options.size() - 1; ++i)
+
+    for (size_t i = 0; i + 1 < options.size(); ++i)
     {
-        const auto & opt = options[i];
-        if (opt.string_key == "input-files")
+        if (options[i].string_key == "input-files" && options[i + 1].string_key == "query-indexes")
         {
-            if (options[i + 1].string_key == "query-indexes")
+            const std::string & test_path = Poco::Path(options[i].value[0]).absolute().toString();
+            for (const auto & query_num_str : options[i + 1].value)
             {
-                const std::string & test_path = Poco::Path(opt.value[0]).absolute().toString();
-                for (const auto & query_num_str : options[i + 1].value)
-                {
-                    size_t query_num = std::stoul(query_num_str);
-                    result[test_path].push_back(query_num);
-                }
+                size_t query_num = std::stoul(query_num_str);
+                result[test_path].push_back(query_num);
             }
         }
     }
@@ -327,14 +320,15 @@ try
 {
     using po::value;
     using Strings = DB::Strings;
+    using Ports = DB::Ports;
 
     po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")
         ("profiles-file", value<std::string>()->default_value(""), "Specify a file with global profiles")
-        ("host,h", value<std::string>()->default_value("localhost"), "")
-        ("port", value<UInt16>()->default_value(9000), "")
+        ("host,h", value<Strings>()->multitoken(), "")
+        ("port,p", value<Ports>()->multitoken(), "")
         ("secure,s", "Use TLS connection")
         ("database", value<std::string>()->default_value("default"), "")
         ("user", value<std::string>()->default_value("default"), "")
@@ -381,6 +375,9 @@ try
 
     Strings input_files = getInputFiles(options, log);
 
+    Ports ports = options.count("port") ? options["port"].as<Ports>() : Ports({9000});
+    Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
+
     Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
     Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
     Strings tests_names = options.count("names") ? options["names"].as<Strings>() : Strings({});
@@ -393,14 +390,14 @@ try
     DB::UseSSL use_ssl;
 
     DB::PerformanceTestSuite performance_test_suite(
-        options["host"].as<std::string>(),
-        options["port"].as<UInt16>(),
+        std::move(hosts),
+        std::move(ports),
         options.count("secure"),
         options["database"].as<std::string>(),
         options["user"].as<std::string>(),
         options["password"].as<std::string>(),
         cmd_settings,
-        options.count("lite") > 0,
+        options.count("lite"),
         options["profiles-file"].as<std::string>(),
         std::move(input_files),
         std::move(tests_tags),
@@ -409,7 +406,7 @@ try
         std::move(skip_names),
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
-        queries_with_indexes,
+        std::move(queries_with_indexes),
         timeouts);
     return performance_test_suite.run();
 }

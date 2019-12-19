@@ -2,6 +2,7 @@
 
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
+#include <Common/StudentTTest.h>
 #include <common/logger_useful.h>
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -20,12 +21,13 @@ class PerformanceTest
 public:
     PerformanceTest(
         const XMLConfigurationPtr & config_,
-        Connection & connection_,
+        const Connections & connection_,
         const ConnectionTimeouts & timeouts_,
         InterruptListener & interrupt_listener_,
         const PerformanceTestInfo & test_info_,
         Context & context_,
-        const std::vector<size_t> & queries_to_run_);
+        const std::vector<size_t> & queries_to_run_,
+        StudentTTest & t_test_);
 
     bool checkPreconditions() const;
     void prepare() const;
@@ -46,7 +48,7 @@ private:
 
 private:
     XMLConfigurationPtr config;
-    Connection & connection;
+    const Connections & connections;
     const ConnectionTimeouts & timeouts;
     InterruptListener & interrupt_listener;
 
@@ -54,6 +56,7 @@ private:
     Context & context;
 
     std::vector<size_t> queries_to_run;
+    StudentTTest & t_test;
     Poco::Logger * log;
 
     bool got_SIGINT = false;

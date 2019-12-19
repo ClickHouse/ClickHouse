@@ -43,7 +43,7 @@ void waitQuery(Connection & connection)
                 finished = true;
                 break;
             case Protocol::Server::Exception:
-                throw *packet.exception;
+                packet.exception->rethrow();
         }
 
         if (finished)
@@ -56,19 +56,21 @@ namespace fs = std::filesystem;
 
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
-    Connection & connection_,
+    const Connections & connections_,
     const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
     Context & context_,
-    const std::vector<size_t> & queries_to_run_)
+    const std::vector<size_t> & queries_to_run_,
+    StudentTTest & t_test_)
     : config(config_)
-    , connection(connection_)
+    , connections(connections_)
     , timeouts(timeouts_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
     , context(context_)
     , queries_to_run(queries_to_run_)
+    , t_test(t_test_)
     , log(&Poco::Logger::get("PerformanceTest"))
 {
 }
@@ -87,8 +89,7 @@ bool PerformanceTest::checkPreconditions() const
     {
         if (precondition == "flush_disk_cache")
         {
-            if (system(
-                    "(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+            if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
             {
                 LOG_WARNING(log, "Failed to flush disk cache");
                 return false;
@@ -119,22 +120,22 @@ bool PerformanceTest::checkPreconditions() const
 
             connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
 
-            while (true)
-            {
-                Packet packet = connection.receivePacket();
-
-                if (packet.type == Protocol::Server::Data)
+                while (true)
                 {
-                    for (const ColumnWithTypeAndName & column : packet.block)
+                    Connection::Packet packet = connection->receivePacket();
+
+                    if (packet.type == Protocol::Server::Data)
                     {
-                        if (column.name == "result" && column.column->size() > 0)
+                        for (const ColumnWithTypeAndName & column : packet.block)
                         {
-                            exist = column.column->get64(0);
-                            if (exist)
-                                break;
+                            if (column.name == "result" && !column.column->empty())
+                            {
+                                exist = column.column->get64(0);
+                                if (exist)
+                                    break;
+                            }
                         }
                     }
-                }
 
                 if (packet.type == Protocol::Server::Exception
                     || packet.type == Protocol::Server::EndOfStream)
@@ -143,7 +144,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (!exist)
             {
-                LOG_WARNING(log, "Table " << backQuote(table_to_check) << " doesn't exist");
+                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist on " << connection.getDescription());
                 return false;
             }
         }
@@ -183,10 +184,14 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
     UInt64 result = 0;
     for (const auto & stop_conditions : test_info.stop_conditions_by_run)
     {
-        UInt64 condition_max_time = stop_conditions.getMaxExecTime();
-        if (condition_max_time == 0)
-            return 0;
-        result += condition_max_time;
+        for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
+        {
+            UInt64 condition_max_time = stop_conditions[connection_index].getMaxExecTime();
+            if (condition_max_time == 0)
+                return 0;
+
+            result += condition_max_time;
+        }
     }
     return result;
 }
@@ -197,8 +202,14 @@ void PerformanceTest::prepare() const
     for (const auto & query : test_info.create_and_fill_queries)
     {
         LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
-        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
+
+        for (auto & connection : connections)
+        {
+            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                    &test_info.settings, nullptr, false);
+            waitQuery(*connection);
+        }
+
         LOG_INFO(log, "Query finished");
     }
 
@@ -209,22 +220,34 @@ void PerformanceTest::finish() const
     for (const auto & query : test_info.drop_queries)
     {
         LOG_INFO(log, "Executing drop query \"" << query << '\"');
-        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
+
+        for (auto & connection : connections)
+        {
+            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                    &test_info.settings, nullptr, false);
+            waitQuery(*connection);
+        }
+
         LOG_INFO(log, "Query finished");
     }
 }
 
 std::vector<TestStats> PerformanceTest::execute()
 {
-    std::vector<TestStats> statistics_by_run;
     size_t query_count;
     if (queries_to_run.empty())
         query_count = test_info.queries.size();
     else
         query_count = queries_to_run.size();
+
     size_t total_runs = test_info.times_to_run * test_info.queries.size();
-    statistics_by_run.resize(total_runs);
+
+    std::vector<TestStats> statistics_by_run;
+    statistics_by_run.reserve(total_runs);
+
+    for (size_t i = 0; i < total_runs; ++i)
+        statistics_by_run.emplace_back(TestStats(connections.size()));
+
     LOG_INFO(log, "Totally will run cases " << test_info.times_to_run * query_count << " times");
     UInt64 max_exec_time = calculateMaxExecTime();
     if (max_exec_time != 0)
@@ -258,90 +281,139 @@ std::vector<TestStats> PerformanceTest::execute()
         return statistics_by_run;
     }
 
-    // Pull memory usage data from query log. The log is normally filled in
-    // background, so we have to flush it synchronously here to see all the
-    // previous queries.
+    for (auto & connection : connections)
     {
-        NullBlockOutputStream null_output(Block{});
-        RemoteBlockInputStream flush_log(connection, "system flush logs",
-            {} /* header */, context);
-        copyData(flush_log, null_output);
+        // Pull memory usage data from query log. The log is normally filled in
+        // background, so we have to flush it synchronously here to see all the
+        // previous queries.
+        {
+            NullBlockOutputStream null_output(Block{});
+            RemoteBlockInputStream flush_log(*connection, "system flush logs", {} /* header */, context);
+            copyData(flush_log, null_output);
+        }
     }
 
-    for (auto & statistics : statistics_by_run)
+    for (auto & statistics_by_connections : statistics_by_run)
     {
-        if (statistics.query_id.empty())
+        for (size_t i = 0; i != statistics_by_connections.size(); ++i)
         {
-            // We have statistics structs for skipped queries as well, so we
-            // have to filter them out.
-            continue;
+            auto & connection = *connections[i];
+            auto & statistics = statistics_by_connections[i];
+
+            if (statistics.query_id.empty())
+            {
+                // We have statistics structs for skipped queries as well, so we
+                // have to filter them out.
+                continue;
+            }
+
+            // We run some test queries several times, specifying the same query id,
+            // so this query to the log may return several records. Choose the
+            // last one, because this is when the query performance has stabilized.
+            RemoteBlockInputStream log_reader(connection,
+                "select memory_usage, query_start_time from system.query_log "
+                "where type = 2 and query_id = '" + statistics.query_id + "' "
+                "order by query_start_time desc",
+                {} /* header */, context);
+
+            log_reader.readPrefix();
+            Block block = log_reader.read();
+            if (block.columns() == 0)
+            {
+                LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+                continue;
+            }
+
+            auto column = block.getByName("memory_usage").column;
+            statistics.memory_usage = column->get64(0);
+
+            log_reader.readSuffix();
         }
-
-        // We run some test queries several times, specifying the same query id,
-        // so this query to the log may return several records. Choose the
-        // last one, because this is when the query performance has stabilized.
-        RemoteBlockInputStream log_reader(connection,
-            "select memory_usage, query_start_time from system.query_log "
-            "where type = 2 and query_id = '" + statistics.query_id + "' "
-            "order by query_start_time desc",
-            {} /* header */, context);
-
-        log_reader.readPrefix();
-        Block block = log_reader.read();
-        if (block.columns() == 0)
-        {
-            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
-            continue;
-        }
-
-        auto column = block.getByName("memory_usage").column;
-        statistics.memory_usage = column->get64(0);
-
-        log_reader.readSuffix();
     }
 
     return statistics_by_run;
 }
 
-void PerformanceTest::runQueries(
-    const QueriesWithIndexes & queries_with_indexes,
-    std::vector<TestStats> & statistics_by_run)
+bool gotSIGINTOnAnyConnection(TestStats & statistics_by_connections)
 {
+    for (const auto & statistics : statistics_by_connections)
+    {
+        if (statistics.got_SIGINT)
+            return true;
+    }
+    return false;
+}
+
+bool conditionsFulfilledOnEveryConnection(TestStopConditions & stop_conditions_by_connections)
+{
+    for (const auto & stop_conditions : stop_conditions_by_connections)
+    {
+        if (!stop_conditions.areFulfilled())
+            return false;
+    }
+    return true;
+};
+
+void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes, std::vector<TestStats> & statistics_by_run)
+{
+    pcg64 generator(randomSeed());
+    std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
+
     for (const auto & [query, run_index] : queries_with_indexes)
     {
-        LOG_INFO(log, "[" << run_index<< "] Run query '" << query << "'");
-        TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
-        TestStats & statistics = statistics_by_run[run_index];
-        statistics.startWatches();
+        LOG_INFO(log, "[" << run_index << "] Run query '" << query << "'");
+
+        TestStopConditions & stop_conditions_by_connections = test_info.stop_conditions_by_run[run_index];
+        TestStats & statistics_by_connections = statistics_by_run[run_index];
+        t_test.clear();
+
+        size_t connection_index = distribution(generator);
+
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
+            /// Executes once on every connection and than continues randomly if execution type is loop
+            for (size_t i = 0; i < connections.size(); ++i)
+            {
+                executeQuery(connections, query, statistics_by_connections, t_test,
+                        stop_conditions_by_connections, interrupt_listener, context, test_info.settings, i);
+                stop_conditions_by_connections[i].reportIterations(statistics_by_connections[i].queries);
+            }
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 LOG_INFO(log, "Will run query in loop");
-                for (size_t iteration = 1; !statistics.got_SIGINT; ++iteration)
+                for (size_t iteration = 1; !gotSIGINTOnAnyConnection(statistics_by_connections); ++iteration)
                 {
-                    stop_conditions.reportIterations(iteration);
-                    if (stop_conditions.areFulfilled())
+                    if (conditionsFulfilledOnEveryConnection(stop_conditions_by_connections))
                     {
-                        LOG_INFO(log, "Stop conditions fullfilled");
+                        LOG_INFO(log, "Stop conditions fulfilled");
                         break;
                     }
+                    connection_index = distribution(generator);
+                    if (stop_conditions_by_connections[connection_index].areFulfilled())
+                        continue;
 
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
+                    executeQuery(connections, query, statistics_by_connections, t_test,
+                            stop_conditions_by_connections,interrupt_listener, context, test_info.settings, connection_index);
+                    stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
+
+                    if (stop_conditions_by_connections[connection_index].isInitializedTTestWithConfidenceLevel())
+                        for (size_t i = 0; i < connections.size(); ++i)
+                            stop_conditions_by_connections[i].reportTTest(t_test);
                 }
             }
         }
         catch (const Exception & e)
         {
-            statistics.exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
+            statistics_by_connections[connection_index].exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
         }
-
-        if (!statistics.got_SIGINT)
-            statistics.ready = true;
+        if (!gotSIGINTOnAnyConnection(statistics_by_connections))
+        {
+            for (auto & statistics : statistics_by_connections)
+                statistics.ready = true;
+        }
         else
         {
             got_SIGINT = true;
