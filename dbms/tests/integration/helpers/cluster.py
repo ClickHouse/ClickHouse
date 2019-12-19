@@ -481,6 +481,8 @@ services:
             {app_net}
                 {ipv4_address}
                 {ipv6_address}
+                {net_aliases}
+                    {net_alias1}
 '''
 
 
@@ -817,17 +819,17 @@ class ClickHouseInstance:
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
 
-        ipv4_address = ipv6_address = ""
-        if self.ipv4_address is None and self.ipv6_address is None:
-            networks = ""
-            app_net = ""
-        else:
+        networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
+        if self.ipv4_address is not None or self.ipv6_address is not None or self.hostname != self.name:
             networks = "networks:"
             app_net = "default:"
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
                 ipv6_address = "ipv6_address: " + self.ipv6_address
+            if self.hostname != self.name:
+                net_aliases = "aliases:"
+                net_alias1 = "- " + self.hostname
 
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
@@ -858,6 +860,8 @@ class ClickHouseInstance:
                 app_net=app_net,
                 ipv4_address=ipv4_address,
                 ipv6_address=ipv6_address,
+                net_aliases = net_aliases,
+                net_alias1 = net_alias1,
             ))
 
 
