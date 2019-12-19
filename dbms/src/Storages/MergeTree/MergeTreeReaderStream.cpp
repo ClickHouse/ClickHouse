@@ -112,12 +112,8 @@ void MergeTreeReaderStream::initMarksLoader()
 
     auto load = [this](const String & mrk_path) -> MarkCache::MappedPtr
     {
-        std::cerr << "reading marks from path: " << mrk_path << "\n";
-        std::cerr << "marks: " << marks_count << "\n";
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-        std::cerr << "data_file_extension: " << data_file_extension << '\n';
 
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t mark_size = mode == ReadingMode::INDEX

@@ -296,15 +296,12 @@ void MergeTreeData::setProperties(
 
     Names new_primary_key_columns;
     Names new_sorting_key_columns;
-    NameSet sorting_key_columns_set;
+    NameSet primary_key_columns_set;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         String sorting_key_column = new_sorting_key_expr_list->children[i]->getColumnName();
         new_sorting_key_columns.push_back(sorting_key_column);
-
-        if (!sorting_key_columns_set.emplace(sorting_key_column).second)
-            throw Exception("Sorting key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
         if (i < primary_key_size)
         {
@@ -313,6 +310,9 @@ void MergeTreeData::setProperties(
                 throw Exception("Primary key must be a prefix of the sorting key, but in position "
                     + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
                     ErrorCodes::BAD_ARGUMENTS);
+
+            if (!primary_key_columns_set.emplace(pk_column).second)
+                throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
             new_primary_key_columns.push_back(pk_column);
         }
@@ -839,8 +839,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             const auto & part_name = part_names_with_disks[i].first;
             const auto part_disk_ptr = part_names_with_disks[i].second;
-
-            std::cerr << "(loadDataParts) loading part: " << part_name << "\n";
 
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
@@ -1678,7 +1676,6 @@ void MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (res.expression)
     {
-        std::cerr << "(alterDataPart) expression: " << res.expression->dumpActions() << "\n";
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
                 *this, part, res.expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
@@ -1687,8 +1684,6 @@ void MergeTreeData::alterDataPart(
             static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, res.expression);
 
-        std::cerr << "im.header: " << in.getHeader().dumpStructure() << "\n";
-
         /** Don't write offsets for arrays, because ALTER never change them
          *  (MODIFY COLUMN could only change types of elements but never modify array sizes).
           * Also note that they does not participate in 'rename_map'.
@@ -1696,7 +1691,6 @@ void MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
 
         MergedColumnOnlyOutputStream out(
             part,

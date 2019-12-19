@@ -69,9 +69,7 @@ private:
         size_t estimated_size);
 
     SerializationStates serialization_states;
-    bool can_use_adaptive_granularity;
     ColumnStreams column_streams;
-
 };
 
 }

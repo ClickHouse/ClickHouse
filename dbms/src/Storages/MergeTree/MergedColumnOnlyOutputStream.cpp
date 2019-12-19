@@ -14,26 +14,21 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     : IMergedBlockOutputStream(data_part),
     header(header_), sync(sync_)
 {
-    // std::cerr << "(MergedColumnOnlyOutputStream) storage: " << storage.getTableName() << "\n";
-    // std::cerr << "(MergedColumnOnlyOutputStream) can_use_adaptive_granularity: " << can_use_adaptive_granularity << "\n";
-    // std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info: " << !!index_granularity_info_ << "\n";
-    // if (index_granularity_info_)
-    //     std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
-
     MergeTreeWriterSettings writer_settings(
         data_part->storage.global_context.getSettings(),
         index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity());
     writer_settings.filename_suffix = filename_suffix;
+    writer_settings.skip_offsets = skip_offsets_;
 
     writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc, default_codec, writer_settings, index_granularity);
-    writer->setOffsetColumns(offset_columns_, skip_offsets_);
+    writer->setWrittenOffsetColumns(offset_columns_);
     writer->initSkipIndices();
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
     std::set<String> skip_indexes_column_names_set;
-    for (const auto & index : storage.skip_indices) /// FIXME save local indices
+    for (const auto & index : writer->getSkipIndices())
         std::copy(index->columns.cbegin(), index->columns.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
@@ -43,8 +38,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     size_t rows = block.rows();
     if (!rows)
         return;
-
-    std::cerr << "(MergedColumnOnlyOutputStream::write) writing rows: " << rows << "\n";
 
     writer->write(block);
     writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);

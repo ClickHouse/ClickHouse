@@ -90,7 +90,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 
-void fillIndexGranularityImpl(
+static void fillIndexGranularityImpl(
     const Block & block,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,
@@ -98,7 +98,7 @@ void fillIndexGranularityImpl(
     size_t index_offset,
     MergeTreeIndexGranularity & index_granularity,
     bool can_use_adaptive_index_granularity,
-    bool need_finish_last_granule)
+    bool need_finish_last_granule = false)
 {
     /// FIXME correct index granularity for compact
     size_t rows_in_block = block.rows();
@@ -151,9 +151,6 @@ void fillIndexGranularityImpl(
         else
             index_granularity.appendMark(index_granularity_for_block);
     }
-
-    for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
-        std::cerr << "marks: " << index_granularity.getMarkRows(i) << "\n";
 }
 
 void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
@@ -226,7 +223,6 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
-    std::cerr << "writing index...\n";
     for (size_t i = index_offset; i < rows;)
     {
         if (storage.hasPrimaryKey())
@@ -238,10 +234,6 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
                 primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
             }
         }
-
-        std::cerr << "(index) i: " << i << "\n";
-        std::cerr << "(index) current_mark: " << current_mark << "\n";
-        std::cerr << "(index) rows in mark: " << index_granularity.getMarkRows(current_mark) << "\n";
 
         i += index_granularity.getMarkRows(current_mark++);
         if (current_mark >= index_granularity.getMarksCount())
@@ -322,8 +314,6 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
 
 void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
 {
-    std::cerr << "finishPrimaryIndexSerialization called...\n";
-
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
         index_granularity.appendMark(0);
@@ -340,9 +330,6 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::Da
 
             last_index_row.clear();
         }
-
-
-        std::cerr << "(finishPrimaryIndexSerialization) marks_count: " << index_granularity.getMarksCount() << "\n";
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
