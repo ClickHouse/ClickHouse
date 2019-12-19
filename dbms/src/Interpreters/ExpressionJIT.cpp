@@ -22,7 +22,6 @@
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
 #include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/Config/llvm-config.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -32,6 +31,7 @@
 #include <llvm/IR/Mangler.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
@@ -47,6 +47,10 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
+
+/// 'LegacyRTDyldObjectLinkingLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use ORCv2
+/// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 
 namespace ProfileEvents
@@ -124,105 +128,68 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::TargetOptions options;
     return target->createTargetMachine(
         triple, cpu, features.getString(), options, llvm::None,
-#if LLVM_VERSION_MAJOR >= 6
         llvm::None, llvm::CodeGenOpt::Default, /*jit=*/true
-#else
-        llvm::CodeModel::Default, llvm::CodeGenOpt::Default
-#endif
     );
 }
 
-#if LLVM_VERSION_MAJOR >= 7
-static auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
+
+struct SymbolResolver : public llvm::orc::SymbolResolver
 {
-#if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
-    // REMOVE AFTER contrib/llvm upgrade
-    auto flags = [&](llvm::orc::SymbolFlagsMap & flags_internal, const llvm::orc::SymbolNameSet & symbols)
+    llvm::LegacyJITSymbolResolver & impl;
+
+    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+
+    llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
+    {
+        return symbols;
+    }
+
+    llvm::orc::SymbolNameSet lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols) final
     {
         llvm::orc::SymbolNameSet missing;
         for (const auto & symbol : symbols)
         {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags_internal.emplace(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
+            bool has_resolved = false;
+            impl.lookup({*symbol}, [&](llvm::Expected<llvm::JITSymbolResolver::LookupResult> resolved)
+            {
+                if (resolved && resolved->size())
+                {
+                    query->notifySymbolMetRequiredState(symbol, resolved->begin()->second);
+                    has_resolved = true;
+                }
+            });
+
+            if (!has_resolved)
+                missing.insert(symbol);
         }
         return missing;
-    };
-#else
-    // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
-    auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
-    {
-        llvm::orc::SymbolFlagsMap flags_map;
-        for (const auto & symbol : symbols)
-        {
-            auto resolved = jsr.lookupFlags({*symbol});
-            if (resolved && resolved->size())
-                flags_map.emplace(symbol, resolved->begin()->second);
-        }
-        return flags_map;
-    };
-#endif
+    }
+};
 
-    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols_set)
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols_set)
-        {
-            auto resolved = jsr.lookup({*symbol});
-            if (resolved && resolved->size())
-                query->resolve(symbol, resolved->begin()->second);
-            else
-                missing.emplace(symbol);
-        }
-        return missing;
-    };
-    return llvm::orc::createSymbolResolver(flags, symbols);
-}
-#endif
-
-#if LLVM_VERSION_MAJOR >= 7
-using ModulePtr = std::unique_ptr<llvm::Module>;
-#else
-using ModulePtr = std::shared_ptr<llvm::Module>;
-#endif
 
 struct LLVMContext
 {
-    std::shared_ptr<llvm::LLVMContext> context;
-#if LLVM_VERSION_MAJOR >= 7
+    std::shared_ptr<llvm::LLVMContext> context {std::make_shared<llvm::LLVMContext>()};
+    std::unique_ptr<llvm::Module> module {std::make_unique<llvm::Module>("jit", *context)};
+    std::unique_ptr<llvm::TargetMachine> machine {getNativeMachine()};
+    llvm::DataLayout layout {machine->createDataLayout()};
+    llvm::IRBuilder<> builder {*context};
+
     llvm::orc::ExecutionSession execution_session;
-#endif
-    ModulePtr module;
-    std::unique_ptr<llvm::TargetMachine> machine;
+
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
-    llvm::orc::RTDyldObjectLinkingLayer object_layer;
-    llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
-    llvm::DataLayout layout;
-    llvm::IRBuilder<> builder;
+    llvm::orc::LegacyRTDyldObjectLinkingLayer object_layer;
+    llvm::orc::LegacyIRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
+
     std::unordered_map<std::string, void *> symbols;
 
     LLVMContext()
-        : context(std::make_shared<llvm::LLVMContext>())
-#if LLVM_VERSION_MAJOR >= 7
-        , module(std::make_unique<llvm::Module>("jit", *context))
-#else
-        , module(std::make_shared<llvm::Module>("jit", *context))
-#endif
-        , machine(getNativeMachine())
-        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
-#if LLVM_VERSION_MAJOR >= 7
+        : memory_manager(std::make_shared<llvm::SectionMemoryManager>())
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
-            return llvm::orc::RTDyldObjectLinkingLayer::Resources{memory_manager, wrapJITSymbolResolver(*memory_manager)};
+            return llvm::orc::LegacyRTDyldObjectLinkingLayer::Resources{memory_manager, std::make_shared<SymbolResolver>(*memory_manager)};
         })
-#else
-        , object_layer([this]() { return memory_manager; })
-#endif
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
-        , layout(machine->createDataLayout())
-        , builder(*context)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
@@ -258,14 +225,9 @@ struct LLVMContext
         for (const auto & function : *module)
             functions.emplace_back(function.getName());
 
-#if LLVM_VERSION_MAJOR >= 7
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
             throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#else
-        if (!compile_layer.addModule(module, memory_manager))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-#endif
 
         for (const auto & name : functions)
         {
@@ -283,6 +245,13 @@ struct LLVMContext
         }
     }
 };
+
+
+template <typename... Ts, typename F>
+static bool castToEither(IColumn * column, F && f)
+{
+    return ((typeid_cast<Ts *>(column) ? f(*typeid_cast<Ts *>(column)) : false) || ...);
+}
 
 class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
@@ -307,9 +276,16 @@ public:
 
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
-        auto col_res = block.getByPosition(result).type->createColumn()->cloneResized(block_size);
+        auto col_res = block.getByPosition(result).type->createColumn();
+
         if (block_size)
         {
+            if (!castToEither<
+                ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
+                ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+                ColumnFloat32, ColumnFloat64>(col_res.get(), [block_size](auto & col) { col.getData().resize(block_size); return true; }))
+                throw Exception("Unexpected column in LLVMExecutableFunction: " + col_res->getName(), ErrorCodes::LOGICAL_ERROR);
+
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -321,6 +297,7 @@ public:
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
+
         block.getByPosition(result).column = std::move(col_res);
     }
 };
