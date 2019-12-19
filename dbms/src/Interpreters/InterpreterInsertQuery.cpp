@@ -108,12 +108,12 @@ BlockIO InterpreterInsertQuery::execute()
 
     BlockInputStreams in_streams;
     size_t out_streams_size = 1;
-    if (query.select && settings.max_insert_threads > 0)
+    if (query.select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
         InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
-        if (table->supportsParallelInsert())
+        if (table->supportsParallelInsert() && settings.max_insert_threads > 0)
         {
             in_streams = interpreter_select.executeWithMultipleStreams(res.pipeline);
             out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
@@ -187,9 +187,9 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        res.out = std::move(out_streams.at(0));
+        // res.out = std::move(out_streams.at(0));
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out_streams.at(0));
     }
     else
         res.out = std::move(out_streams.at(0));
