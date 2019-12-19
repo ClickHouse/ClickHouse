@@ -1050,6 +1050,8 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
 
 /// Read something from text format, but expect complete parse of given text
 /// For example: 723145 -- ok, 213MB -- not ok
+/// Integral values parsing with suffix (k, ki, M, Mi, G, Gi, T, Ti)
+/// For example: 133M = 133000000
 template <typename T>
 inline T completeParse(const char * data, size_t size)
 {
