@@ -74,6 +74,9 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) co
 
     /// TODO: check key columns
 
+    /// Some HACK to remove wrong names qualifiers: table.column -> column.
+    analyzed_join->setRightKeys(key_names);
+
     HashJoinPtr join_clone = std::make_shared<Join>(analyzed_join, getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
     return join_clone;
