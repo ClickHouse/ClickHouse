@@ -57,7 +57,7 @@ public:
 
     String target_dictionary;
     String database;
-    String target_table;
+    String table;
 
     String getID(char) const override { return "SYSTEM query"; }
 

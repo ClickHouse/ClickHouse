@@ -103,7 +103,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                           << (settings.hilite ? hilite_none : "") << ".";
         }
 
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_table)
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
                       << (settings.hilite ? hilite_none : "");
     };
 
@@ -124,7 +124,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
-        if (!target_table.empty())
+        if (!table.empty())
             print_database_table();
     }
     else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
