@@ -13,6 +13,7 @@ void registerAggregateFunctions()
         auto & factory = AggregateFunctionFactory::instance();
 
         registerAggregateFunctionAvg(factory);
+        registerAggregateFunctionAvgWeighted(factory);
         registerAggregateFunctionCount(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupUniqArray(factory);
