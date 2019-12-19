@@ -789,14 +789,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             RangesInDataPart & part = parts[part_index];
 
-            auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
+            auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
                 query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
                 virt_columns, part.part_index_in_query);
 
             Pipe pipe(std::move(source));
-            pipes.emplace_back(std::move(source));
+            res.emplace_back(std::move(source));
         }
     }
 
