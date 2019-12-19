@@ -132,9 +132,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
-    {
         settings.ostr << " " << backQuoteIfNeed(target_dictionary);
-    }
 }
 
 
