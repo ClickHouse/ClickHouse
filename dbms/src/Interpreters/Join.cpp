@@ -333,7 +333,7 @@ void Join::setSampleBlock(const Block & block)
         asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
         if (!asof_type)
         {
-            std::string msg = "ASOF join not supported for type";
+            std::string msg = "ASOF join not supported for type: ";
             msg += asof_column->getFamilyName();
             throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
         }
@@ -501,15 +501,12 @@ void Join::initRightBlockStructure()
         JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
 }
 
-Block Join::structureRightBlock(const Block & source_block) const
+Block Join::structureRightBlock(const Block & block) const
 {
-    /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    Block block = materializeBlock(source_block);
-
     Block structured_block;
     for (auto & sample_column : saved_block_sample.getColumnsWithTypeAndName())
     {
-        auto & column = block.getByName(sample_column.name);
+        ColumnWithTypeAndName column = block.getByName(sample_column.name);
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
         structured_block.insert(column);
@@ -518,14 +515,16 @@ Block Join::structureRightBlock(const Block & source_block) const
     return structured_block;
 }
 
-bool Join::addJoinedBlock(const Block & block)
+bool Join::addJoinedBlock(const Block & source_block)
 {
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
-    Columns materialized_columns;
-    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_right, materialized_columns);
+    /// There's no optimization for right side const columns. Remove constness if any.
+    Block block = materializeBlock(source_block);
+    size_t rows = block.rows();
+
+    ColumnRawPtrs key_columns = JoinCommon::materializeColumnsInplace(block, key_names_right);
 
     /// We will insert to the map only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -549,7 +548,6 @@ bool Join::addJoinedBlock(const Block & block)
         blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &blocks.back();
 
-        size_t rows = block.rows();
         if (rows)
             has_no_rows_in_maps = false;
 
@@ -886,9 +884,9 @@ void Join::joinBlockImpl(
     constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
     constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 
-    /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
-    Columns materialized_columns;
-    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_left, materialized_columns);
+    /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
+    ColumnRawPtrs key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.
     ConstNullMapPtr null_map{};

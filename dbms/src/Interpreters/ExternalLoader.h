@@ -87,7 +87,7 @@ public:
         const ExternalLoaderConfigSettings & config_settings);
 
     /// Removes a repository which were used to read configurations.
-    void removeConfigRepository(const std::string & repository_name);
+    std::unique_ptr<IExternalLoaderConfigRepository> removeConfigRepository(const std::string & repository_name);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
@@ -128,15 +128,18 @@ public:
     /// Tries to finish loading of a specified object during the timeout.
     /// Returns nullptr if the loading is unsuccessful or if there is no such object.
     void load(const String & name, LoadablePtr & loaded_object, Duration timeout = NO_TIMEOUT) const;
+    void load(const String & name) const { LoadablePtr object; load(name, object, Duration::zero()); }
     LoadablePtr loadAndGet(const String & name, Duration timeout = NO_TIMEOUT) const { LoadablePtr object; load(name, object, timeout); return object; }
     LoadablePtr tryGetLoadable(const String & name) const { return loadAndGet(name); }
 
     /// Tries to finish loading of a specified object during the timeout.
     /// Throws an exception if the loading is unsuccessful or if there is no such object.
     void loadStrict(const String & name, LoadablePtr & loaded_object) const;
+    void loadStrict(const String & name) const { LoadablePtr object; loadStrict(name, object); }
     LoadablePtr getLoadable(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
 
     /// Tries to finish loading of the objects for which the specified function returns true.
+    void load(const FilterByNameFunction & filter_by_name) const { Loadables objects; load(filter_by_name, objects, Duration::zero()); }
     void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
     void load(const FilterByNameFunction & filter_by_name, LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
     Loadables loadAndGet(const FilterByNameFunction & filter_by_name, Duration timeout = NO_TIMEOUT) const { Loadables loaded_objects; load(filter_by_name, loaded_objects, timeout); return loaded_objects; }
@@ -160,17 +163,17 @@ public:
     /// The function can either skip them (false) or load for the first time (true).
     void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false) const;
 
-protected:
-    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
+    /// Reloads all config repositories.
+    void reloadConfig() const;
 
-    /// Reload object with already parsed configuration
-    void addObjectAndLoad(
-        const String & name, /// name of dictionary
-        const String & external_name, /// name of source (example xml-file, may contain more than dictionary)
-        const String & repo_name, /// name of repository (database name, or all xml files)
-        const Poco::AutoPtr<Poco::Util::AbstractConfiguration> & config,
-        const String & key_in_config, /// key where we can start search of loadables (<dictionary>, <model>, etc)
-        bool load_never_loading = false) const;
+    /// Reloads only a specified config repository.
+    void reloadConfig(const String & repository_name) const;
+
+    /// Reload only a specified path in a specified config repository.
+    void reloadConfig(const String & repository_name, const String & path) const;
+
+protected:
+    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
 private:
     struct ObjectConfig;

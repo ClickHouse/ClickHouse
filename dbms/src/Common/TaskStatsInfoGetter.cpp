@@ -287,10 +287,13 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 }
 
 
+static thread_local pid_t current_tid = 0;
 pid_t TaskStatsInfoGetter::getCurrentTID()
 {
-    /// This call is always successful. - man gettid
-    return static_cast<pid_t>(syscall(SYS_gettid));
+    if (!current_tid)
+        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
+
+    return current_tid;
 }
 
 

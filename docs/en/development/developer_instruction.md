@@ -117,7 +117,7 @@ To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
 Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9.
 
-To install GCC on Mac OS X run: `brew install gcc`.
+Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
 If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
@@ -131,11 +131,20 @@ cd build
 ```
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+While inside the `build` directory, configure your build by running CMake. Before the first run you need to define environment variables that specify compiler (version 9 gcc compiler in this example). 
+
+Linux:
 ```
 export CC=gcc-9 CXX=g++-9
 cmake ..
 ```
+
+Mac OS X:
+```
+export CC=clang CXX=clang++
+cmake ..
+```
+
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
 For a faster build you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
