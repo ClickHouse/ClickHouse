@@ -218,6 +218,11 @@ else()
     endif()
 
     add_subdirectory(arrow-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
+    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
+    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 endif()
 
@@ -320,6 +325,11 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
     set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
     set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
     add_subdirectory(aws-s3-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (aws_s3 PRIVATE -g0)
+    target_compile_options (aws_s3_checksums PRIVATE -g0)
+    target_compile_options (libcurl PRIVATE -g0)
 endif ()
 
 if (USE_BASE64)
@@ -328,6 +338,13 @@ endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
+
+    # The library is large - avoid bloat.
+    if (USE_STATIC_LIBRARIES)
+        target_compile_options (hs PRIVATE -g0)
+    else ()
+        target_compile_options (hs_shared PRIVATE -g0)
+    endif ()
 endif()
 
 if (USE_SIMDJSON)
@@ -341,7 +358,3 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
-
-#if (USE_INTERNAL_ORC_LIBRARY)
-#    add_subdirectory(orc-cmake)
-#endif ()

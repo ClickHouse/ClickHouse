@@ -6,7 +6,15 @@ SELECT CAST(1 as DateTime64('abc')); -- { serverError 43 } # Invalid scale param
 SELECT CAST(1 as DateTime64(100)); -- { serverError 69 } # too big scale
 SELECT CAST(1 as DateTime64(-1)); -- { serverError 43 } # signed scale parameter type
 SELECT CAST(1 as DateTime64(3, 'qqq')); -- { serverError 1000 } # invalid timezone
+
+SELECT toDateTime64('2019-09-16 19:20:11.234', 'abc'); -- { serverError 43 } # invalid scale
+SELECT toDateTime64('2019-09-16 19:20:11.234', 100); -- { serverError 69 } # too big scale
 SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'qqq'); -- { serverError 1000 } # invalid timezone
+
+SELECT ignore(now64(gccMurmurHash())); -- { serverError 43 } # Illegal argument type
+SELECT ignore(now64('abcd')); -- { serverError 43 } # Illegal argument type
+SELECT ignore(now64(number)) FROM system.numbers LIMIT 10; -- { serverError 43 } # Illegal argument type
+
 SELECT toDateTime64('2019-09-16 19:20:11', 3, 'UTC'); -- this now works OK and produces timestamp with no subsecond part
 
 CREATE TABLE A(t DateTime64(3, 'UTC')) ENGINE = MergeTree() ORDER BY t;
