@@ -43,6 +43,9 @@ def test_dictionary_ddl_on_cluster(started_cluster):
         assert node.query("SELECT count() from sometbl") == "1\n"
         assert node.query("SELECT dictGetString('default.somedict', 'value', toUInt64({}))".format(num)) == node.name + '\n'
 
+    instance = started_cluster.instances['ch1']
+    started_cluster.ddl_check_query(instance, "SYSTEM RELOAD DICTIONARY ON CLUSTER 'cluster' default.somedict")
+
     ch1.query("DETACH DICTIONARY default.somedict ON CLUSTER 'cluster'")
 
     for node in [ch1, ch2, ch3, ch4]:
