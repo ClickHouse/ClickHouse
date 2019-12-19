@@ -17,26 +17,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-
-/// Allow to use __uint128_t as a template parameter for boost::rational.
-// https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
-#if !defined(__GLIBCXX_BITSIZE_INT_N_0) && defined(__SIZEOF_INT128__)
-namespace std
-{
-    template <>
-    struct numeric_limits<__uint128_t>
-    {
-        static constexpr bool is_specialized = true;
-        static constexpr bool is_signed = false;
-        static constexpr bool is_integer = true;
-        static constexpr int radix = 2;
-        static constexpr int digits = 128;
-        static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
-        static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
-    };
-}
-#endif
-
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
@@ -60,6 +40,7 @@ namespace std
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+
 
 namespace ProfileEvents
 {
