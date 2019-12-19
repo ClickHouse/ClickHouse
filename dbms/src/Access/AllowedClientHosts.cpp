@@ -67,22 +67,22 @@ namespace
         if (err)
             throw Exception("Cannot getaddrinfo(" + host + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
 
-        for (addrinfo * ai = ai_begin; ai; ai = ai->ai_next)
+        for (const addrinfo * ai = ai_begin; ai; ai = ai->ai_next)
         {
             if (ai->ai_addrlen && ai->ai_addr)
             {
-                if (ai->ai_family == AF_INET6)
+                if (ai->ai_family == AF_INET)
                 {
-                    if (addr_v6 == IPAddress(
-                        &reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_addr, sizeof(in6_addr),
-                        reinterpret_cast<sockaddr_in6*>(ai->ai_addr)->sin6_scope_id))
+                    const auto & sin = *reinterpret_cast<const sockaddr_in *>(ai->ai_addr);
+                    if (addr_v6 == toIPv6(IPAddress(&sin.sin_addr, sizeof(sin.sin_addr))))
                     {
                         return true;
                     }
                 }
-                else if (ai->ai_family == AF_INET)
+                else if (ai->ai_family == AF_INET6)
                 {
-                    if (addr_v6 == toIPv6(IPAddress(&reinterpret_cast<sockaddr_in *>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
+                    const auto & sin = *reinterpret_cast<const sockaddr_in6*>(ai->ai_addr);
+                    if (addr_v6 == IPAddress(&sin.sin6_addr, sizeof(sin.sin6_addr), sin.sin6_scope_id))
                     {
                         return true;
                     }
@@ -116,15 +116,20 @@ namespace
         if (err)
             return {IPAddress{"127.0.0.1"}, IPAddress{"::1"}};
 
-        for (ifaddrs * ifa = ifa_begin; ifa; ifa = ifa->ifa_next)
+        for (const ifaddrs * ifa = ifa_begin; ifa; ifa = ifa->ifa_next)
         {
             if (!ifa->ifa_addr)
                 continue;
             if (ifa->ifa_addr->sa_family == AF_INET)
-                addresses.push_back(toIPv6(IPAddress(&reinterpret_cast<sockaddr_in *>(ifa->ifa_addr)->sin_addr, sizeof(in_addr))));
+            {
+                const auto & sin = *reinterpret_cast<const sockaddr_in *>(ifa->ifa_addr);
+                addresses.push_back(toIPv6(IPAddress(&sin.sin_addr, sizeof(sin.sin_addr))));
+            }
             else if (ifa->ifa_addr->sa_family == AF_INET6)
-                addresses.push_back(IPAddress(&reinterpret_cast<sockaddr_in6*>(ifa->ifa_addr)->sin6_addr, sizeof(in6_addr),
-                          reinterpret_cast<sockaddr_in6*>(ifa->ifa_addr)->sin6_scope_id));
+            {
+                const auto & sin = *reinterpret_cast<const sockaddr_in6 *>(ifa->ifa_addr);
+                addresses.push_back(IPAddress(&sin.sin6_addr, sizeof(sin.sin6_addr), sin.sin6_scope_id));
+            }
         }
         return addresses;
     }
@@ -133,7 +138,7 @@ namespace
     /// Checks if a specified address pointers to the localhost.
     bool isLocalAddress(const IPAddress & address)
     {
-        static const std::vector<IPAddress> local_addresses = [] { return getAddressesOfLocalhostImpl(); }();
+        static const std::vector<IPAddress> local_addresses = getAddressesOfLocalhostImpl();
         return boost::range::find(local_addresses, address) != local_addresses.end();
     }
 
@@ -371,10 +376,10 @@ bool AllowedClientHosts::contains(const IPAddress & address) const
             if (isAddressOfHost(addr_v6, host_name))
                 return true;
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
             if (e.code() != ErrorCodes::DNS_ERROR)
-                e.rethrow();
+                throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
             LOG_WARNING(
                 &Logger::get("AddressPatterns"),
@@ -398,10 +403,10 @@ bool AllowedClientHosts::contains(const IPAddress & address) const
             }
         }
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::DNS_ERROR)
-            e.rethrow();
+            throw;
         /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
         LOG_WARNING(
             &Logger::get("AddressPatterns"),
