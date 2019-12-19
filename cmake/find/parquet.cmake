@@ -1,8 +1,10 @@
-option (ENABLE_PARQUET "Enable parquet" ON)
+if (Protobuf_PROTOC_EXECUTABLE)
+    option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
+endif()
 
 if (ENABLE_PARQUET)
 
-if (NOT OS_FREEBSD AND NOT APPLE) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
+if (NOT OS_FREEBSD AND NOT OS_DARWIN) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
     option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 endif()
 
@@ -22,7 +24,10 @@ endif()
 if(ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
 elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     include(cmake/find/snappy.cmake)
-    set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
+    if(SNAPPY_LIBRARY)
+        set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
+    endif()
+
     include(CheckCXXSourceCompiles)
     if(NOT USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
         set(CMAKE_REQUIRED_LIBRARIES ${DOUBLE_CONVERSION_LIBRARIES})

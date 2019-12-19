@@ -3,7 +3,6 @@
 #include <memory>
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -19,6 +18,8 @@ struct FormatSettings;
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
+
+class Field;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -510,7 +511,8 @@ struct WhichDataType
 
     bool isDate() const { return idx == TypeIndex::Date; }
     bool isDateTime() const { return idx == TypeIndex::DateTime; }
-    bool isDateOrDateTime() const { return isDate() || isDateTime(); }
+    bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
+    bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
 
     bool isString() const { return idx == TypeIndex::String; }
     bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -532,6 +534,7 @@ struct WhichDataType
 
 inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
 inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDateTime64(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime64(); }
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
@@ -564,6 +567,14 @@ inline bool isFloat(const T & data_type)
 }
 
 template <typename T>
+inline bool isNativeInteger(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeInt() || which.isNativeUInt();
+}
+
+
+template <typename T>
 inline bool isNativeNumber(const T & data_type)
 {
     WhichDataType which(data_type);
@@ -582,6 +593,13 @@ inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
+}
+
+template <typename T>
+inline bool isColumnedAsDecimal(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isDecimal() || which.isDateTime64();
 }
 
 template <typename T>
@@ -614,6 +632,30 @@ inline bool isCompilableType(const DataTypePtr & data_type)
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
+template <typename DataType> constexpr bool IsDataTypeDecimal = false;
+template <typename DataType> constexpr bool IsDataTypeNumber = false;
+template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+
+template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
+
+template <typename T>
+class DataTypeDecimal;
+
+template <typename T>
+class DataTypeNumber;
+
+class DataTypeDate;
+class DataTypeDateTime;
+class DataTypeDateTime64;
+
+template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+
+template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
+
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 
 }
 

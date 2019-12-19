@@ -1,4 +1,6 @@
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Common/quoteString.h>
+
 
 namespace DB
 {

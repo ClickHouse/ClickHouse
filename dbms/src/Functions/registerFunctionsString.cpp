@@ -1,38 +1,9 @@
+#include <Functions/array/registerFunctionsArray.h>
 #include "config_functions.h"
+#include "registerFunctions.h"
 
 namespace DB
 {
-class FunctionFactory;
-
-void registerFunctionRepeat(FunctionFactory &);
-void registerFunctionEmpty(FunctionFactory &);
-void registerFunctionNotEmpty(FunctionFactory &);
-void registerFunctionLength(FunctionFactory &);
-void registerFunctionLengthUTF8(FunctionFactory &);
-void registerFunctionIsValidUTF8(FunctionFactory &);
-void registerFunctionToValidUTF8(FunctionFactory &);
-void registerFunctionLower(FunctionFactory &);
-void registerFunctionUpper(FunctionFactory &);
-void registerFunctionLowerUTF8(FunctionFactory &);
-void registerFunctionUpperUTF8(FunctionFactory &);
-void registerFunctionReverse(FunctionFactory &);
-void registerFunctionReverseUTF8(FunctionFactory &);
-void registerFunctionsConcat(FunctionFactory &);
-void registerFunctionFormat(FunctionFactory &);
-void registerFunctionSubstring(FunctionFactory &);
-void registerFunctionCRC32(FunctionFactory &);
-void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
-void registerFunctionStartsWith(FunctionFactory &);
-void registerFunctionEndsWith(FunctionFactory &);
-void registerFunctionTrim(FunctionFactory &);
-void registerFunctionRegexpQuoteMeta(FunctionFactory &);
-
-#if USE_BASE64
-void registerFunctionBase64Encode(FunctionFactory &);
-void registerFunctionBase64Decode(FunctionFactory &);
-void registerFunctionTryBase64Decode(FunctionFactory &);
-#endif
-
 void registerFunctionsString(FunctionFactory & factory)
 {
     registerFunctionRepeat(factory);
@@ -47,7 +18,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionLowerUTF8(factory);
     registerFunctionUpperUTF8(factory);
     registerFunctionReverse(factory);
-    registerFunctionCRC32(factory);
+    registerFunctionCRC(factory);
     registerFunctionReverseUTF8(factory);
     registerFunctionsConcat(factory);
     registerFunctionFormat(factory);

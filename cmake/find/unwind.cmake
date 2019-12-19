@@ -1,6 +1,11 @@
-option (USE_UNWIND "Enable libunwind (better stacktraces)" ON)
+option (USE_UNWIND "Enable libunwind (better stacktraces)" ${ENABLE_LIBRARIES})
 
 if (NOT CMAKE_SYSTEM MATCHES "Linux" OR ARCH_ARM OR ARCH_32)
+    set (USE_UNWIND OFF)
+endif ()
+
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libunwind/CMakeLists.txt")
+    message(WARNING "submodule contrib/libunwind is missing. to fix try run: \n git submodule update --init --recursive")
     set (USE_UNWIND OFF)
 endif ()
 

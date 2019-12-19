@@ -86,7 +86,7 @@ struct MergeTreeBlockSizePredictor
     void startBlock();
 
     /// Updates statistic for more accurate prediction
-    void update(const Block & block, double decay = DECAY());
+    void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = DECAY());
 
     /// Return current block size (after update())
     inline size_t getBlockSize() const
@@ -149,7 +149,7 @@ protected:
 
     bool is_initialized_in_update = false;
 
-    void initialize(const Block & sample_block, const Names & columns, bool from_update = false);
+    void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 
 public:
 

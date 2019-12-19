@@ -11,6 +11,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/quoteString.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

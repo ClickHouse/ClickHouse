@@ -54,7 +54,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
 
@@ -233,8 +233,15 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
+
     if (prepared_sets.count(set_key))
         return; /// Already prepared.
+
+    if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
+    {
+        prepared_sets.insert({set_key, set_ptr_from_storage_set});
+        return;
+    }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
     BlockIO res = interpreter_subquery->execute();
@@ -249,9 +256,24 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         if (!set->insertFromBlock(block))
             return;
     }
+
+    set->finishInsert();
     res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
+}
+
+SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)
+{
+    const auto * table = subquery_or_table_name->as<ASTIdentifier>();
+    if (!table)
+        return nullptr;
+    const DatabaseAndTableWithAlias database_table(*table);
+    const auto storage = context.getTable(database_table.database, database_table.table);
+    if (storage->getName() != "Set")
+        return nullptr;
+    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    return storage_set->getSet();
 }
 
 
@@ -587,6 +609,19 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     }
 
     return true;
+}
+
+void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name)
+{
+    initChain(chain, sourceColumns());
+    ExpressionActionsChain::Step & step = chain.steps.back();
+
+    // FIXME: assert(filter_info);
+    step.actions = std::move(actions);
+    step.required_output.push_back(std::move(column_name));
+    step.can_remove_required_output = {true};
+
+    chain.addStep();
 }
 
 bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)

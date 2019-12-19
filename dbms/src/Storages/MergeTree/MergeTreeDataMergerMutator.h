@@ -17,6 +17,7 @@ class MergeProgressCallback;
 struct FutureMergedMutatedPart
 {
     String name;
+    String path;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
 
@@ -29,6 +30,7 @@ struct FutureMergedMutatedPart
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
+    void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
 };
 
 
@@ -97,14 +99,14 @@ public:
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
-        DiskSpace::Reservation * disk_reservation, bool deduplication, bool force_ttl);
+        const ReservationPtr & disk_reservation, bool deduplication, bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const MutationCommands & commands,
         MergeListEntry & merge_entry, const Context & context,
-        DiskSpace::Reservation * disk_reservation,
+        const ReservationPtr & disk_reservation,
         TableStructureReadLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(

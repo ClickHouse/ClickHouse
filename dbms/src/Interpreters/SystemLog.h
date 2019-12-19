@@ -15,6 +15,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>

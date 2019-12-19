@@ -122,7 +122,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
     }
 
-    if (new_part->ttl_infos.part_min_ttl)
+    if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
         WriteBufferFromFile out(part_path + "ttl.txt", 4096);

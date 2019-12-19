@@ -1,6 +1,7 @@
 #include "iostream_debug_helpers.h"
 
 #include <iostream>
+#include <Client/Connection.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
@@ -18,15 +19,17 @@
 
 namespace DB
 {
-std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
+
+template <>
+std::ostream & operator<< <Field>(std::ostream & stream, const Field & what)
 {
-    stream << "IBlockInputStream(name = " << what.getName() << ")";
+    stream << applyVisitor(FieldVisitorDump(), what);
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const Field & what)
+std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
-    stream << applyVisitor(FieldVisitorDump(), what);
+    stream << "IBlockInputStream(name = " << what.getName() << ")";
     return stream;
 }
 
@@ -55,7 +58,7 @@ std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const IFunctionBuilder & what)
+std::ostream & operator<<(std::ostream & stream, const IFunctionOverloadResolver & what)
 {
     stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
            << ")";
@@ -90,23 +93,15 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what)
+std::ostream & operator<<(std::ostream & stream, const Packet & what)
 {
-    stream << "Connection::Packet("
+    stream << "Packet("
            << "type = " << what.type;
     // types description: Core/Protocol.h
     if (what.exception)
         stream << "exception = " << what.exception.get();
     // TODO: profile_info
     stream << ") {" << what.block << "}";
-    return stream;
-}
-
-std::ostream & operator<<(std::ostream & stream, const IAST & what)
-{
-    stream << "IAST{";
-    what.dumpTree(stream);
-    stream << "}";
     return stream;
 }
 

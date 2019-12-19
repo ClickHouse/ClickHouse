@@ -60,7 +60,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#show-databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/show.md#show-databases).
 
 **Пример**
 
@@ -130,7 +130,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## graphite {#server_settings-graphite}
 
-Отправка даных в [Graphite](https://github.com/graphite-project).
+Отправка данных в [Graphite](https://github.com/graphite-project).
 
 Настройки:
 
@@ -139,10 +139,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - interval - Период отправки в секундах.
 - timeout - Таймаут отправки данных в секундах.
 - root_path - Префикс для ключей.
-- metrics - Отправка данных из таблицы :ref:`system_tables-system.metrics`.
-- events - Отправка дельты данных, накопленной за промежуток времени из таблицы :ref:`system_tables-system.events`
-- events_cumulative - Отправка суммарных данных из таблицы :ref:`system_tables-system.events`
-- asynchronous_metrics - Отправка данных из таблицы :ref:`system_tables-system.asynchronous_metrics`.
+- metrics - Отправка данных из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
+- events - Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../system_tables.md#system_tables-events).
+- events_cumulative - Отправка суммарных данных из таблицы [system.events](../system_tables.md#system_tables-events).
+- asynchronous_metrics - Отправка данных из таблицы [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics).
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
 
@@ -213,7 +213,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 **Пример**
 
-Показывает `https://tabix.io/` при обращенинии к `http://localhost:http_port`.
+Показывает `https://tabix.io/` при обращении к `http://localhost:http_port`.
 
 ```xml
 <http_server_default_response>
@@ -305,11 +305,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## logger {#server_settings-logger}
 
-Настройки логгирования.
+Настройки логирования.
 
 Ключи:
 
-- level - Уровень логгирования. Допустимые значения: ``trace``, ``debug``, ``information``, ``warning``, ``error``.
+- level - Уровень логирования. Допустимые значения: ``trace``, ``debug``, ``information``, ``warning``, ``error``.
 - log - Файл лога. Содержит все записи согласно ``level``.
 - errorlog - Файл лога ошибок.
 - size - Размер файла. Действует для ``log`` и ``errorlog``. Как только файл достиг размера ``size``, ClickHouse архивирует и переименовывает его, а на его месте создает новый файл лога.
@@ -366,11 +366,14 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## mark_cache_size
+## mark_cache_size {#server-mark-cache-size}
 
-Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
+Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
-Кеш общий для сервера, память выделяется по мере необходимости. Кеш не может быть меньше, чем 5368709120.
+Кэш общий для сервера, память выделяется по мере необходимости. Кэш не может быть меньше, чем 5368709120.
+
+!!! warning "Внимание"
+    Этот параметр может быть превышен при большом значении настройки [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime).
 
 **Пример**
 
@@ -407,7 +410,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 По умолчанию - `maximum`.
 
-Рекомендуется использовать в Mac OS X, поскольу функция `getrlimit()` возвращает некорректное значение.
+Рекомендуется использовать в Mac OS X, поскольку функция `getrlimit()` возвращает некорректное значение.
 
 **Пример**
 
@@ -458,25 +461,25 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Ключи настроек сервера/клиента:
 
-- privateKeyFile - Путь к файлу с секретным ключем сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
+- privateKeyFile - Путь к файлу с секретным ключом сертификата в формате PEM. Файл может содержать ключ и сертификат одновременно.
 - certificateFile - Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если ``privateKeyFile`` содержит сертификат.
 - caConfig - Путь к файлу или каталогу, которые содержат доверенные корневые сертификаты.
 - verificationMode - Способ проверки сертификатов узла. Подробности находятся в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Допустимые значения: ``none``, ``relaxed``, ``strict``, ``once``.
-- verificationDepth - Максимальная длина верификационой цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
+- verificationDepth - Максимальная длина верификационной цепи. Верификация завершится ошибкой, если длина цепи сертификатов превысит установленное значение.
 - loadDefaultCAFile - Признак того, что будут использоваться встроенные CA-сертификаты для OpenSSL. Допустимые значения: ``true``, ``false``.  |
 - cipherList - Поддерживаемые OpenSSL-шифры. Например, ``ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
 - cacheSessions - Включение/выключение кеширования сессии. Использовать обязательно вместе с ``sessionIdContext``. Допустимые значения: ``true``, ``false``.
 - sessionIdContext - Уникальный набор произвольных символов, которые сервер добавляет к каждому сгенерированному идентификатору. Длина строки не должна превышать ``SSL_MAX_SSL_SESSION_ID_LENGTH``. Рекомендуется к использованию всегда, поскольку позволяет избежать проблем как в случае, если сервер кеширует сессию, так и если клиент затребовал кеширование. По умолчанию ``${application.name}``.
 - sessionCacheSize - Максимальное количество сессий, которые кэширует сервер. По умолчанию - 1024\*20. 0 - неограниченное количество сессий.
-- sessionTimeout - Время кеширования сессии на севрере.
+- sessionTimeout - Время кеширования сессии на сервере.
 - extendedVerification - Автоматическая расширенная проверка сертификатов после завершении сессии. Допустимые значения: ``true``, ``false``.
 - requireTLSv1 - Требование соединения TLSv1. Допустимые значения: ``true``, ``false``.
 - requireTLSv1_1 - Требование соединения TLSv1.1. Допустимые значения: ``true``, ``false``.
 - requireTLSv1_2 - Требование соединения TLSv1.2. Допустимые значения: ``true``, ``false``.
 - fips - Активация режима OpenSSL FIPS. Поддерживается, если версия OpenSSL, с которой собрана библиотека поддерживает fips.
 - privateKeyPassphraseHandler - Класс (подкласс PrivateKeyPassphraseHandler)запрашивающий кодовую фразу доступа к секретному ключу. Например, ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтвеждения невалидных сертификатов. Например, ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
-- disableProtocols - Запрещенные к искользованию протоколы.
+- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтверждения не валидных сертификатов. Например, ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
+- disableProtocols - Запрещенные к использованию протоколы.
 - preferServerCiphers - Предпочтение серверных шифров на клиенте.
 
 **Пример настройки:**
@@ -512,11 +515,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## part_log {#server_settings-part-log}
 
-Логгирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
-Запросы логгируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
-При настройке логгирования используются следующие параметры:
+При настройке логирования используются следующие параметры:
 
 - `database` — имя базы данных;
 - `table` — имя таблицы;
@@ -577,11 +580,36 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## remote_servers
+## query_thread_log {#server_settings-query-thread-log}
 
-Конфигурация кластеров, которые использует движок таблиц Distributed.
+Настройка логирования потоков выполнения запросов, принятых с настройкой [log_query_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../operations/table_engines/distributed.md)".
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query_thread_log](../system_tables.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+
+При настройке логирования используются следующие параметры:
+
+- `database` — имя базы данных;
+- `table` — имя таблицы, куда будет записываться лог;
+- `partition_by` — [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md) для таблицы с логами;
+- `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
+
+Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
+
+**Пример**
+
+```xml
+<query_thread_log>
+    <database>system</database>
+    <table>query_thread_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_thread_log>
+```
+
+
+## remote_servers {#server_settings_remote_servers}
+
+Конфигурация кластеров, которые использует движок таблиц [Distributed](../../operations/table_engines/distributed.md) и табличная функция `cluster`.
 
 **Пример**
 
@@ -592,6 +620,9 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
 
+**Смотрите также**
+
+ - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 
@@ -650,7 +681,7 @@ TCP порт для защищённого обмена данными с кли
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
-Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
+Кеш единый для сервера. Память выделяется по требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 
 Несжатый кеш выгодно использовать для очень коротких запросов в отдельных случаях.
 
@@ -698,12 +729,12 @@ ClickHouse использует ZooKeeper для хранения метадан
 
     Например:
 
-    ```xml
+```xml
     <node index="1">
         <host>example_host</host>
         <port>2181</port>
     </node>
-    ```
+```
 
     Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
 

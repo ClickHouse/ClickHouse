@@ -85,6 +85,8 @@ Block TTLBlockInputStream::readImpl()
 
     removeValuesWithExpiredColumnTTL(block);
 
+    updateMovesTTL(block);
+
     return block;
 }
 
@@ -145,7 +147,8 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         defaults_expression->execute(block_with_defaults);
     }
 
-    for (const auto & [name, ttl_entry] : storage.ttl_entries_by_name)
+    std::vector<String> columns_to_remove;
+    for (const auto & [name, ttl_entry] : storage.column_ttl_entries_by_name)
     {
         const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
         auto & new_ttl_info = new_ttl_infos.columns_ttl[name];
@@ -159,7 +162,10 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
             continue;
 
         if (!block.has(ttl_entry.result_column))
+        {
+            columns_to_remove.push_back(ttl_entry.result_column);
             ttl_entry.expression->execute(block);
+        }
 
         ColumnPtr default_column = nullptr;
         if (block_with_defaults.has(name))
@@ -192,9 +198,34 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         column_with_type.column = std::move(result_column);
     }
 
-    for (const auto & elem : storage.ttl_entries_by_name)
-        if (block.has(elem.second.result_column))
-            block.erase(elem.second.result_column);
+    for (const String & column : columns_to_remove)
+        block.erase(column);
+}
+
+void TTLBlockInputStream::updateMovesTTL(Block & block)
+{
+    std::vector<String> columns_to_remove;
+    for (const auto & ttl_entry : storage.move_ttl_entries)
+    {
+        auto & new_ttl_info = new_ttl_infos.moves_ttl[ttl_entry.result_column];
+
+        if (!block.has(ttl_entry.result_column))
+        {
+            columns_to_remove.push_back(ttl_entry.result_column);
+            ttl_entry.expression->execute(block);
+        }
+
+        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
+
+        for (size_t i = 0; i < block.rows(); ++i)
+        {
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+            new_ttl_info.update(cur_ttl);
+        }
+    }
+
+    for (const String & column : columns_to_remove)
+        block.erase(column);
 }
 
 UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)
@@ -203,8 +234,15 @@ UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t i
         return date_lut.fromDayNum(DayNum(column_date->getData()[ind]));
     else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
         return column_date_time->getData()[ind];
-    else
-        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+    else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+    {
+        if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
+            return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
+        else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+            return column_const->getValue<UInt32>();
+    }
+
+    throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
 }
 
 }

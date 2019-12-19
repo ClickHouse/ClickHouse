@@ -43,6 +43,8 @@ public:
     using MacroMap = std::map<String, String>;
     const MacroMap getMacroMap() const { return macros; }
 
+    String getValue(const String & key) const;
+
 private:
     MacroMap macros;
 };

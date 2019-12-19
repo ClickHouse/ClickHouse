@@ -2,11 +2,7 @@
 #if USE_MYSQL
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -18,10 +14,10 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
-#include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include "registerTableFunctions.h"
 
 #include <mysqlxx/Pool.h>
 

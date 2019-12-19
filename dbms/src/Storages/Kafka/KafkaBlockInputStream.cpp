@@ -4,13 +4,20 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace DB
 {
-
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_)
-    : storage(storage_), context(context_), column_names(columns), max_block_size(max_block_size_)
+    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    : storage(storage_)
+    , context(context_)
+    , column_names(columns)
+    , max_block_size(max_block_size_)
+    , commit_in_suffix(commit_in_suffix_)
+    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
+
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -18,8 +25,6 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
-
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -57,83 +62,118 @@ Block KafkaBlockInputStream::readImpl()
     if (!buffer)
         return Block();
 
-    auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
-    auto read_callback = [this]
-    {
-        virtual_columns[0]->insert(buffer->currentTopic());     // "topic"
-        virtual_columns[1]->insert(buffer->currentKey());       // "key"
-        virtual_columns[2]->insert(buffer->currentOffset());    // "offset"
-        virtual_columns[3]->insert(buffer->currentPartition()); // "partition"
+    MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
+    MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-        auto timestamp = buffer->currentTimestamp();
-        if (timestamp)
-            virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
+    auto input_format = FormatFactory::instance().getInputFormat(
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+
+    InputPort port(input_format->getPort().getHeader(), input_format.get());
+    connect(input_format->getPort(), port);
+    port.setNeeded();
+
+    auto read_kafka_message = [&]
+    {
+        size_t new_rows = 0;
+
+        while (true)
+        {
+            auto status = input_format->prepare();
+
+            switch (status)
+            {
+                case IProcessor::Status::Ready:
+                    input_format->work();
+                    break;
+
+                case IProcessor::Status::Finished:
+                    input_format->resetParser();
+                    return new_rows;
+
+                case IProcessor::Status::PortFull:
+                {
+                    auto chunk = port.pull();
+
+                    // that was returning bad value before https://github.com/ClickHouse/ClickHouse/pull/8005
+                    // if will be backported should go together with #8005
+                    auto chunk_rows = chunk.getNumRows();
+                    new_rows += chunk_rows;
+
+                    auto columns = chunk.detachColumns();
+                    for (size_t i = 0, s = columns.size(); i < s; ++i)
+                    {
+                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                    }
+                    break;
+                }
+                case IProcessor::Status::NeedData:
+                case IProcessor::Status::Async:
+                case IProcessor::Status::Wait:
+                case IProcessor::Status::ExpandPipeline:
+                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
+            }
+        }
     };
 
-    auto merge_blocks = [] (Block & block1, Block && block2)
+    size_t total_rows = 0;
+
+    while (true)
     {
-        if (!block1)
+        // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
+        // throw an exception from readPrefix when buffer in empty
+        if (buffer->eof())
+            break;
+
+        auto new_rows = read_kafka_message();
+
+        auto _topic         = buffer->currentTopic();
+        auto _key           = buffer->currentKey();
+        auto _offset        = buffer->currentOffset();
+        auto _partition     = buffer->currentPartition();
+        auto _timestamp_raw = buffer->currentTimestamp();
+        auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
+                                                : 0;
+        for (size_t i = 0; i < new_rows; ++i)
         {
-            // Need to make sure that resulting block has the same structure
-            block1 = std::move(block2);
-            return;
+            virtual_columns[0]->insert(_topic);
+            virtual_columns[1]->insert(_key);
+            virtual_columns[2]->insert(_offset);
+            virtual_columns[3]->insert(_partition);
+            if (_timestamp_raw)
+            {
+                virtual_columns[4]->insert(_timestamp);
+            }
+            else
+            {
+                virtual_columns[4]->insertDefault();
+            }
         }
 
-        if (!block2)
-            return;
-
-        auto columns1 = block1.mutateColumns();
-        auto columns2 = block2.mutateColumns();
-        for (size_t i = 0, s = columns1.size(); i < s; ++i)
-            columns1[i]->insertRangeFrom(*columns2[i], 0, columns2[i]->size());
-        block1.setColumns(std::move(columns1));
-    };
-
-    auto read_kafka_message = [&, this]
-    {
-        Block result;
-        auto child = FormatFactory::instance().getInput(
-            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
-        const auto virtual_header = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"});
-
-        while (auto block = child->read())
-        {
-            auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
-            virtual_columns = virtual_header.cloneEmptyColumns();
-
-            for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-                block.insert(column);
-
-            /// FIXME: materialize MATERIALIZED columns here.
-
-            merge_blocks(result, std::move(block));
-        }
-
-        return result;
-    };
-
-    Block single_block;
-
-    UInt64 total_rows = 0;
-    while (total_rows < max_block_size)
-    {
-        auto new_block = read_kafka_message();
-        auto new_rows = new_block.rows();
-        total_rows += new_rows;
-        merge_blocks(single_block, std::move(new_block));
-
+        total_rows = total_rows + new_rows;
         buffer->allowNext();
-
-        if (!new_rows || !checkTimeLimit())
+        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
             break;
     }
 
-    if (!single_block)
+    if (total_rows == 0)
         return Block();
+
+    /// MATERIALIZED columns can be added here, but I think
+    // they are not needed here:
+    // and it's misleading to use them here,
+    // as columns 'materialized' that way stays 'ephemeral'
+    // i.e. will not be stored anythere
+    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
+
+    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
+    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+
+    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+        result_block.insert(column);
 
     return ConvertingBlockInputStream(
                context,
-               std::make_shared<OneBlockInputStream>(single_block),
+               std::make_shared<OneBlockInputStream>(result_block),
                getHeader(),
                ConvertingBlockInputStream::MatchColumnsMode::Name)
         .read();
@@ -141,12 +181,18 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
+    broken = false;
+
+    if (commit_in_suffix)
+        commit();
+}
+
+void KafkaBlockInputStream::commit()
+{
     if (!buffer)
         return;
 
     buffer->commit();
-
-    broken = false;
 }
 
 }

@@ -5,13 +5,13 @@ namespace DB
 {
 
 ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
-        ReadBuffer & in_,
+        std::unique_ptr<ReadBuffer> in_,
         CompressionMethod compression_method,
         size_t buf_size,
         char * existing_memory,
         size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-    , in(in_)
+    , in(std::move(in_))
     , eof(false)
 {
     zstr.zalloc = nullptr;
@@ -49,21 +49,21 @@ bool ZlibInflatingReadBuffer::nextImpl()
 
     if (!zstr.avail_in)
     {
-        in.nextIfAtEnd();
-        zstr.next_in = reinterpret_cast<unsigned char *>(in.position());
-        zstr.avail_in = in.buffer().end() - in.position();
+        in->nextIfAtEnd();
+        zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
+        zstr.avail_in = in->buffer().end() - in->position();
     }
     zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
     zstr.avail_out = internal_buffer.size();
 
     int rc = inflate(&zstr, Z_NO_FLUSH);
 
-    in.position() = in.buffer().end() - zstr.avail_in;
+    in->position() = in->buffer().end() - zstr.avail_in;
     working_buffer.resize(internal_buffer.size() - zstr.avail_out);
 
     if (rc == Z_STREAM_END)
     {
-        if (in.eof())
+        if (in->eof())
         {
             eof = true;
             return working_buffer.size() != 0;

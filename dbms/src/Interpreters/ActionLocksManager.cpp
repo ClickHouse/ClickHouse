@@ -23,7 +23,7 @@ template <typename F>
 inline void forEachTable(Context & context, F && f)
 {
     for (auto & elem : context.getDatabases())
-        for (auto iterator = elem.second->getIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             f(iterator->table());
 
 }

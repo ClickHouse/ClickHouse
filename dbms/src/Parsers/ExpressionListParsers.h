@@ -19,8 +19,11 @@ using Operators_t = const char **;
 class ParserList : public IParserBase
 {
 public:
-    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true)
-        : elem_parser(std::move(elem_parser_)), separator_parser(std::move(separator_parser_)), allow_empty(allow_empty_)
+    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true, char result_separator_ = ',')
+        : elem_parser(std::move(elem_parser_))
+        , separator_parser(std::move(separator_parser_))
+        , allow_empty(allow_empty_)
+        , result_separator(result_separator_)
     {
     }
 protected:
@@ -30,6 +33,7 @@ private:
     ParserPtr elem_parser;
     ParserPtr separator_parser;
     bool allow_empty;
+    char result_separator;
 };
 
 
@@ -111,18 +115,6 @@ protected:
 };
 
 
-class ParserTupleElementExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-
-protected:
-    const char * getName() const { return "tuple element expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
-
 class ParserArrayElementExpression : public IParserBase
 {
 private:
@@ -130,6 +122,18 @@ private:
 
 protected:
     const char * getName() const { return "array element expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
+class ParserTupleElementExpression : public IParserBase
+{
+private:
+    static const char * operators[];
+
+protected:
+    const char * getName() const { return "tuple element expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
@@ -237,6 +241,9 @@ protected:
   */
 class ParserNullityChecking : public IParserBase
 {
+private:
+    ParserComparisonExpression elem_parser;
+
 protected:
     const char * getName() const override { return "nullity checking"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -370,5 +377,30 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+
+/// Parser for key-value pair, where value can be list of pairs.
+class ParserKeyValuePair : public IParserBase
+{
+protected:
+    const char * getName() const override { return "key-value pair"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/// Parser for list of key-value pairs.
+class ParserKeyValuePairsList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of pairs"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserTTLExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const { return "ttl expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
 
 }

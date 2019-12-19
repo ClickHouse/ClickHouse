@@ -21,6 +21,8 @@
     #include <sys/mman.h>
 #endif
 
+#include <Common/PODArray_fwd.h>
+
 
 namespace DB
 {
@@ -28,11 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
-}
-
-inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
-{
-    return ((value + dividend - 1) / dividend) * dividend;
 }
 
 /** A dynamic array for POD types.
@@ -74,6 +71,9 @@ extern const char EmptyPODArray[EmptyPODArraySize];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
@@ -258,7 +258,7 @@ public:
     }
 };
 
-template <typename T, size_t initial_bytes = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
 protected:
@@ -433,10 +433,10 @@ public:
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        insertPrepare(from_begin, from_end);
-
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = (end() - it) * sizeof(T);
+
+        insertPrepare(from_begin, from_end);
 
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
@@ -624,18 +624,6 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, 
 {
     lhs.swap(rhs);
 }
-
-/** For columns. Padding is enough to read and write xmm-register at the address of the last element. */
-template <typename T, size_t initial_bytes = 4096, typename TAllocator = Allocator<false>>
-using PaddedPODArray = PODArray<T, initial_bytes, TAllocator, 15, 16>;
-
-/** A helper for declaring PODArray that uses inline memory.
-  * The initial size is set to use all the inline bytes, since using less would
-  * only add some extra allocation calls.
-  */
-template <typename T, size_t inline_bytes,
-          size_t rounded_bytes = integerRoundUp(inline_bytes, sizeof(T))>
-using PODArrayWithStackMemory = PODArray<T, rounded_bytes,
-    AllocatorWithStackMemory<Allocator<false>, rounded_bytes, alignof(T)>>;
+#pragma GCC diagnostic pop
 
 }

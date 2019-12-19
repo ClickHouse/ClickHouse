@@ -4,6 +4,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 from helpers.test_tools import assert_eq_with_retry
+from helpers.network import PartitionManager
+from multiprocessing.dummy import Pool
+import random
 
 """
 Both ssl_conf.xml and no_ssl_conf.xml have the same port
@@ -45,6 +48,35 @@ def test_both_https(both_https_cluster):
 
     assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '111\n222')
     assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '111\n222')
+
+
+def test_replication_after_partition(both_https_cluster):
+    node1.query("truncate table test_table")
+    node2.query("truncate table test_table")
+
+    manager = PartitionManager()
+
+    def close(num):
+        manager.partition_instances(node1, node2, port=9010)
+        time.sleep(1)
+        manager.heal_all()
+
+    def insert_data_and_check(num):
+        node1.query("insert into test_table values('2019-10-15', {}, 888)".format(num))
+        time.sleep(0.5)
+
+    closing_pool = Pool(1)
+    inserting_pool = Pool(5)
+    cres = closing_pool.map_async(close, [random.randint(1, 3) for _ in range(10)])
+    ires = inserting_pool.map_async(insert_data_and_check, range(100))
+
+    cres.wait()
+    ires.wait()
+
+    assert_eq_with_retry(node1, "SELECT count() FROM test_table", '100')
+    assert_eq_with_retry(node2, "SELECT count() FROM test_table", '100')
+
+
 
 node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
 node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)

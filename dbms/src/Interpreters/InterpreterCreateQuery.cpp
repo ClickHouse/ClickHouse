@@ -12,6 +12,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -68,6 +69,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
+    extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
 
@@ -125,8 +127,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// Create directories for tables metadata.
     String path = context.getPath();
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
-    Poco::File(metadata_path).createDirectory();
-
     DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
 
     /// Will write file with database metadata, if needed.
@@ -162,7 +162,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
-        database->loadTables(context, has_force_restore_data_flag);
+        database->loadStoredObjects(context, has_force_restore_data_flag);
     }
     catch (...)
     {
@@ -202,6 +202,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
+        /// Do not include virtual columns
+        if (column.is_virtual)
+            continue;
+
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
@@ -625,6 +629,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
             if (database->isTableExist(context, table_name))
             {
+                /// TODO Check structure of table
                 if (create.if_not_exists)
                     return {};
                 else if (create.replace_view)
@@ -699,6 +704,42 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return {};
 }
 
+BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
+{
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
+    String dictionary_name = create.table;
+
+    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
+
+    auto guard = context.getDDLGuard(database_name, dictionary_name);
+    DatabasePtr database = context.getDatabase(database_name);
+
+    if (database->isDictionaryExist(context, dictionary_name))
+    {
+        /// TODO Check structure of dictionary
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception(
+                "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    }
+
+    if (create.attach)
+    {
+        auto query = context.getCreateDictionaryQuery(database_name, dictionary_name);
+        create = query->as<ASTCreateQuery &>();
+        create.attach = true;
+    }
+
+    if (create.attach)
+        database->attachDictionary(dictionary_name, context);
+    else
+        database->createDictionary(context, dictionary_name, query_ptr);
+
+    return {};
+}
 
 BlockIO InterpreterCreateQuery::execute()
 {
@@ -708,11 +749,11 @@ BlockIO InterpreterCreateQuery::execute()
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
-    {
         return createDatabase(create);
-    }
-    else
+    else if (!create.is_dictionary)
         return createTable(create);
+    else
+        return createDictionary(create);
 }
 
 
@@ -737,13 +778,22 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 
         throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
+    String object = "table";
+
+    if (create.is_dictionary)
+    {
+        if (readonly)
+            throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
+        object = "dictionary";
+    }
 
     if (create.temporary && readonly >= 2)
         return;
 
     if (readonly)
-        throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+        throw Exception("Cannot create table or dictionary in readonly mode", ErrorCodes::READONLY);
 
-    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    throw Exception("Cannot create " + object + ". DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
+
 }

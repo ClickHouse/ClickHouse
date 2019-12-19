@@ -25,7 +25,7 @@ public:
     RemoteBlockInputStream(
             Connection & connection,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
+            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
@@ -33,7 +33,7 @@ public:
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
+            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
@@ -41,7 +41,7 @@ public:
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
+            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteBlockInputStream() override;
@@ -71,6 +71,9 @@ public:
     Block getHeader() const override { return header; }
 
 protected:
+    /// Send all scalars to remote servers
+    void sendScalars();
+
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
@@ -103,6 +106,8 @@ private:
     String query_id = "";
     Context context;
 
+    /// Scalars needed to be sent to remote servers
+    Scalars scalars;
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;

@@ -42,7 +42,7 @@ struct AggregateIndependent
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
                 for (auto it = begin; it != end; ++it)
                 {
@@ -51,9 +51,9 @@ struct AggregateIndependent
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(*lookupResultGetMapped(place));
+                        creator(place->getMapped());
                     else
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getMapped());
                 }
             });
         }
@@ -85,7 +85,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
                 typename Map::LookupResult place = nullptr;
                 Key prev_key {};
@@ -93,7 +93,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getMapped());
                         continue;
                     }
                     prev_key = *it;
@@ -102,9 +102,9 @@ struct AggregateIndependentWithSequentialKeysOptimization
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(*lookupResultGetMapped(place));
+                        creator(place->getMapped());
                     else
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getMapped());
                 }
             });
         }
@@ -131,7 +131,7 @@ struct MergeSequential
             auto begin = source_maps[i]->begin();
             auto end = source_maps[i]->end();
             for (auto it = begin; it != end; ++it)
-                merger((*source_maps[0])[it->getFirst()], it->getSecond());
+                merger((*source_maps[0])[it->getKey()], it->getMapped());
         }
 
         result_map = source_maps[0];
@@ -161,7 +161,7 @@ struct MergeSequentialTransposed    /// In practice not better than usual.
                     continue;
 
                 finish = false;
-                merger((*result_map)[iterators[i]->getFirst()], iterators[i]->getSecond());
+                merger((*result_map)[iterators[i]->getKey()], iterators[i]->getMapped());
                 ++iterators[i];
             }
 
@@ -180,7 +180,7 @@ struct MergeParallelForTwoLevelTable
                         ThreadPool & pool)
     {
         for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
-            pool.schedule([&, bucket, num_maps]
+            pool.scheduleOrThrowOnError([&, bucket, num_maps]
             {
                 std::vector<typename Map::Impl *> section(num_maps);
                 for (size_t i = 0; i < num_maps; ++i)

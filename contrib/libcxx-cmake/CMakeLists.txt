@@ -44,7 +44,7 @@ target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_S
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
 target_compile_options(cxx PUBLIC -nostdinc++ -Wno-reserved-id-macro)
-if (OS_DARWIN)
+if (OS_DARWIN AND (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9) AND (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11))
     target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
 endif ()
 

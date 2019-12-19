@@ -9,9 +9,6 @@
 namespace DB
 {
 
-class WriteBufferToKafkaProducer;
-
-using ProducerBufferPtr = std::shared_ptr<WriteBufferToKafkaProducer>;
 using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
 
 class WriteBufferToKafkaProducer : public WriteBuffer

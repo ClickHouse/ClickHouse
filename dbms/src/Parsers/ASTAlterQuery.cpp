@@ -1,6 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <iomanip>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -176,16 +176,16 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case MoveDestinationType::DISK:
+            case PartDestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case MoveDestinationType::VOLUME:
+            case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
+            default:
+                break;
         }
-        WriteBufferFromOwnString move_destination_name_buf;
-        writeQuoted(move_destination_name, move_destination_name_buf);
-        settings.ostr << move_destination_name_buf.str();
+        settings.ostr << quoteString(move_destination_name);
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {

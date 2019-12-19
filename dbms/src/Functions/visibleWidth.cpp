@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatSettings.h>
@@ -25,6 +25,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     /// Get the name of the function.
     String getName() const override

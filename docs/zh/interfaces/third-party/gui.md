@@ -63,6 +63,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
 
 特征：
+
  - 自动完成。
  - 查询和数据输出的语法高亮显示。
  - 寻呼机支持数据输出。
@@ -73,6 +74,18 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
   [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
 ## 商业
+
+### Holistics Software
+
+[Holistics](https://www.holistics.io/) 在2019年被Gartner FrontRunners列为可用性最高排名第二的商业智能工具之一。 Holistics是一个基于SQL的全栈数据平台和商业智能工具，用于设置您的分析流程。
+
+特征：
+
+-自动化的电子邮件，Slack和Google表格报告时间表。
+-强大的SQL编辑器，具有版本控制，自动完成，可重用的查询组件和动态过滤器。
+-通过iframe在自己的网站或页面中嵌入仪表板。
+-数据准备和ETL功能。
+-SQL数据建模支持数据的关系映射。
 
 ### DataGrip
 

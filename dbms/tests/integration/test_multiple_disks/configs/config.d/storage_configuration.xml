@@ -45,7 +45,7 @@
             </volumes>
         </jbods_with_external>
 
-        <!-- Moving all parts jbod1 if accuired more than 70% -->
+        <!-- Moving all parts jbod1 if acquired more than 70% -->
         <moving_jbod_with_external>
             <volumes>
                 <main>
@@ -73,6 +73,27 @@
                 </big>
             </volumes>
         </default_disk_with_external>
+
+        <!-- special policy for checking validation of `max_data_part_size` -->
+        <special_warning_policy>
+            <volumes>
+                <special_warning_zero_volume>
+                    <disk>default</disk>
+                    <max_data_part_size_bytes>0</max_data_part_size_bytes>
+                </special_warning_zero_volume>
+                <special_warning_default_volume>
+                    <disk>external</disk>
+                </special_warning_default_volume>
+                <special_warning_small_volume>
+                    <disk>jbod1</disk>
+                    <max_data_part_size_bytes>1024</max_data_part_size_bytes>
+                </special_warning_small_volume>
+                <special_warning_big_volume>
+                    <disk>jbod2</disk>
+                    <max_data_part_size_bytes>1024000000</max_data_part_size_bytes>
+                </special_warning_big_volume>
+            </volumes>
+        </special_warning_policy>
 
     </policies>
 

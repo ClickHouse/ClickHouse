@@ -1,10 +1,10 @@
 #pragma once
 
 #include <queue>
-#include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
 
+#include <Common/filesystemHelpers.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
@@ -17,6 +17,8 @@
 
 namespace DB
 {
+
+struct TemporaryFileStream;
 
 namespace ErrorCodes
 {
@@ -33,7 +35,7 @@ class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
+    MergeSortingBlocksBlockInputStream(Blocks & blocks_, const SortDescription & description_,
         size_t max_merged_block_size_, UInt64 limit_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
@@ -114,19 +116,7 @@ private:
     Block header_without_constants;
 
     /// Everything below is for external sorting.
-    std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
-
-    /// For reading data from temporary file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        TemporaryFileStream(const std::string & path, const Block & header_)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header_, 0)) {}
-    };
-
+    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
     BlockInputStreams inputs_to_merge;

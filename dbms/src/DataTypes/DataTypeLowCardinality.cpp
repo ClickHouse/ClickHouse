@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -893,7 +894,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -931,6 +932,11 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+}
+
+Field DataTypeLowCardinality::getDefault() const
+{
+    return dictionary_type->getDefault();
 }
 
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const

@@ -509,7 +509,7 @@ FROM (
 ## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
 
 Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
-Также ряды должны быть отсотированы по возрастанию timestamp.
+Также ряды должны быть отсортированы по возрастанию timestamp.
 
 Для пример из описания timeSeriesGroupRateSum результат будет следующим:
 
@@ -556,6 +556,7 @@ uniq(x[, ...])
 **Смотрите также**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -567,7 +568,7 @@ uniq(x[, ...])
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-Функция `uniqCombined` — это хороший выбор для вычисления количества различных значений, однако стоит иметь в виду, что ошибка оценки для больших множеств (более 200 миллионов элементов) будет выше  теоретического значения из-за плохого выбора хэш-функции.
+Функция `uniqCombined` — это хороший выбор для вычисления количества различных значений.
 
 **Параметры**
 
@@ -583,13 +584,16 @@ uniqCombined(HLL_precision)(x[, ...])
 
 Функция:
 
-- Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
+- Вычисляет хэш (64-битный для `String` и 32-битный для всех остальных типов) для всех параметров агрегации, а затем использует его в вычислениях.
 
 - Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности.
 
     Для небольшого количества различных значений используется массив. Если размер набора больше, используется хэш-таблица. При дальнейшем увеличении количества значений, используется структура HyperLogLog, имеющая фиксированный размер в памяти.
 
 - Результат детерминирован (не зависит от порядка выполнения запроса).
+
+!!! note "Note"
+    Так как используется 32-битный хэш для не-`String` типов, результат будет иметь очень очень большую ошибку для количества разичных элементов существенно больше `UINT_MAX` (ошибка быстро растёт начиная с нескольких десятков миллиардов различных значений), таким образом в этом случае нужно использовать [uniqCombined64](#agg_function-uniqcombined64)
 
 По сравнению с функцией [uniq](#agg_function-uniq), `uniqCombined`:
 
@@ -600,8 +604,13 @@ uniqCombined(HLL_precision)(x[, ...])
 **Смотрите также**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
+
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Использует 64-битный хэш для всех типов, в отличие от [uniqCombined](#agg_function-uniqcombined).
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
@@ -889,7 +898,7 @@ quantileTiming(level)(expr)
 
 В противном случае, результат рассчетов округляется до ближайшего числа, кратного 16мс.
 
-!! note "Примечание"
+!!! note "Примечание"
     Для расчёта квантилей времени загрузки страниц, функция работает эффективней и с более высокой точностью, чем функция [quantile](#agg_function-quantile).
 
 **Возвращаемое значение**
@@ -1074,42 +1083,43 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 
 ### Использование {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` используется на двух этапах: постоение модели и предсказание новых данных. Чтобы постоить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
+`stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Построение модели
 
-    Пример запроса:
+**1.** Построение модели
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Пример запроса:
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
-    ```
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
+```
+
+Здесь нам также нужно вставить данные в таблицу `train_data`. Количество параметров не фиксировано, оно зависит только от количества аргументов, перешедших в `linearRegressionState`. Все они должны быть числовыми значениями.
 Обратите внимание, что столбец с целевым значением (которое мы хотели бы научиться предсказывать) вставляется в качестве первого аргумента.
 
-2. Прогнозирование
+**2.** Прогнозирование
 
-    После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
+После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
+Запрос возвращает столбец прогнозируемых значений. Обратите внимание, что первый аргумент `evalMLMethod` это объект `AggregateFunctionState`, далее идут столбцы свойств.
 
-    `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
+`test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
 ### Примечания {#agg_functions-stochasticlinearregression-notes}
 

@@ -1,5 +1,6 @@
 #include <sstream>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -8,6 +9,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -20,31 +23,64 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void replaceConstFunction(IAST & node, const Context & context, const NamesAndTypesList & all_columns)
+namespace
 {
-    for (size_t i = 0; i < node.children.size(); ++i)
-    {
-        auto child = node.children[i];
-        if (auto * exp_list = child->as<ASTExpressionList>())
-            replaceConstFunction(*exp_list, context, all_columns);
 
-        if (auto * function = child->as<ASTFunction>())
+class ReplacingConstantExpressionsMatcher
+{
+public:
+    using Data = Block;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Block & block_with_constants)
+    {
+        if (!node->as<ASTFunction>())
+            return;
+
+        std::string name = node->getColumnName();
+        if (block_with_constants.has(name))
         {
-            NamesAndTypesList source_columns = all_columns;
-            ASTPtr query = function->ptr();
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_columns);
-            auto result_block = KeyCondition::getBlockWithConstants(query, syntax_result, context);
-            if (!result_block.has(child->getColumnName()))
+            auto result = block_with_constants.getByName(name);
+            if (!isColumnConst(*result.column))
                 return;
 
-            auto result_column = result_block.getByName(child->getColumnName()).column;
+            if (result.column->isNullAt(0))
+            {
+                node = std::make_shared<ASTLiteral>(Field());
+            }
+            else if (isNumber(result.type))
+            {
+                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+            }
+            else
+            {
+                /// Everything except numbers is put as string literal. This is important for Date, DateTime, UUID.
 
-            node.children[i] = std::make_shared<ASTLiteral>((*result_column)[0]);
+                const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
+
+                WriteBufferFromOwnString out;
+                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
+                node = std::make_shared<ASTLiteral>(out.str());
+            }
         }
     }
+};
+
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
+{
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
+    Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    visitor.visit(node);
 }
 
-static bool isCompatible(const IAST & node)
+
+bool isCompatible(const IAST & node)
 {
     if (const auto * function = node.as<ASTFunction>())
     {
@@ -99,6 +135,8 @@ static bool isCompatible(const IAST & node)
     return false;
 }
 
+}
+
 
 String transformQueryForExternalDatabase(
     const IAST & query,
@@ -131,7 +169,8 @@ String transformQueryForExternalDatabase(
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
     if (original_where)
     {
-        replaceConstFunction(*original_where, context, available_columns);
+        replaceConstantExpressions(original_where, context, available_columns);
+
         if (isCompatible(*original_where))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));

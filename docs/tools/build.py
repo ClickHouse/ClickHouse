@@ -45,6 +45,9 @@ def build_for_lang(lang, args):
     os.environ['SINGLE_PAGE'] = '0'
 
     config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
+    if args.is_stable_release and not os.path.exists(config_path):
+        logging.warn('Skipping %s docs, because %s does not exist' % (lang, config_path))
+        return
 
     try:
         theme_cfg = {
@@ -74,6 +77,7 @@ def build_for_lang(lang, args):
             'en': 'ClickHouse %s Documentation',
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
+            'ja': 'ClickHouseドキュメント %s',
             'fa': 'مستندات  %sClickHouse'
         }
 
@@ -92,8 +96,8 @@ def build_for_lang(lang, args):
             theme=theme_cfg,
             copyright='©2016–2019 Yandex LLC',
             use_directory_urls=True,
-            repo_name='yandex/ClickHouse',
-            repo_url='https://github.com/yandex/ClickHouse/',
+            repo_name='ClickHouse/ClickHouse',
+            repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[
@@ -241,13 +245,14 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,ru,zh,fa')
+    arg_parser.add_argument('--lang', default='en,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--website-dir', default=os.path.join('..', 'website'))
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
     arg_parser.add_argument('--version-prefix', type=str, default='')
+    arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
@@ -259,8 +264,6 @@ if __name__ == '__main__':
     
     from github import choose_latest_releases
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
-    
-    
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

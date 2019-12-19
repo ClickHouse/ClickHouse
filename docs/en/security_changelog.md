@@ -1,3 +1,10 @@
+## Fixed in ClickHouse Release 19.13.6.1, 2019-09-20
+
+### CVE-2019-18657
+Table function `url` had the vulnerability allowed the attacker to inject arbitrary HTTP headers in the request.
+
+Credits: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
+
 ## Fixed in ClickHouse Release 18.12.13, 2018-09-10
 
 ### CVE-2018-14672

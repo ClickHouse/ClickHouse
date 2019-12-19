@@ -5,7 +5,7 @@
 ClickHouse поддерживает также:
 
 - [Параметрические агрегатные функции](parametric_functions.md#aggregate_functions_parametric), которые помимо столбцов принимаю и другие параметры.
-- [Комбинаторы](combinators.md#aggregate_functions_combinators), которые изменяют поведение агрегатных фунций.
+- [Комбинаторы](combinators.md#aggregate_functions_combinators), которые изменяют поведение агрегатных функций.
 
 ## Обработка NULL
 
@@ -40,7 +40,7 @@ SELECT sum(y) FROM t_null_big
 Функция `sum` работает с `NULL` как с `0`. В частности, это означает, что если на вход в функцию подать выборку, где все значения `NULL`, то результат будет `0`, а не `NULL`.
 
 
-Теперь с помощью фукции `groupArray` сформируем массив из стобца `y`:
+Теперь с помощью функции `groupArray` сформируем массив из столбца `y`:
 
 ```sql
 SELECT groupArray(y) FROM t_null_big

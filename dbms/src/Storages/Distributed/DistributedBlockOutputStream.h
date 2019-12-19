@@ -3,6 +3,7 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>

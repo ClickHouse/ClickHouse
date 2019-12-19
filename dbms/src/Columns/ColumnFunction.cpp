@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/PODArray.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 

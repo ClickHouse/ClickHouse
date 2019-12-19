@@ -30,6 +30,8 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
+#include <Common/Allocator_fwd.h>
+
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
@@ -84,7 +86,7 @@ namespace ErrorCodes
   * - random hint address for mmap
   * - mmap_threshold for using mmap less or more
   */
-template <bool clear_memory_, bool mmap_populate = false>
+template <bool clear_memory_, bool mmap_populate>
 class Allocator
 {
 public:
@@ -270,7 +272,7 @@ private:
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t N = 64, size_t Alignment = 1>
+template <typename Base, size_t N, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:

@@ -112,8 +112,20 @@ In contrast to standard SQL, a synonym does not need to be specified after a sub
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
-The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
+#### FINAL Modifier {#select-from-final}
+
+Appliable when selecting data from tables of the [MergeTree](../operations/table_engines/mergetree.md)-engine family, except `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges data before returning the result and thus performs all data transformations that are supposed to happen during merges for given table engine.
+
+Also supported for:
+- [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, if they created over `MergeTree`-engine tables.
+
+The queries that use `FINAL` are executed slower than similar queries that don't, because:
+
+- Query is executed in a single thread, and data is merged during query execution.
+- Queries with `FINAL` read primary key columns additionally to the columns specified in the query.
+
+In the most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
@@ -964,11 +976,11 @@ External sorting works much less effectively than sorting in RAM.
 
 ### SELECT Clause {#select-select}
 
-[Expressions](syntax.md#syntax-expressions) that specified in the `SELECT` clause are analyzed after the calculations for all the clauses listed above are completed. More specifically, expressions are analyzed that are above the aggregate functions, if there are any aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they are applied to separate rows in the result.
+[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](#select-group-by-clause) aggregation.
 
-If you want to get all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
+If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
-To match some columns in the result by a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
+To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
 ```sql
 COLUMNS('regexp')
@@ -991,7 +1003,9 @@ SELECT COLUMNS('a') FROM col_names
 └────┴────┘
 ```
 
-You can use multiple `COLUMNS` expressions in a query, also you can apply functions to it.
+The selected columns are returned not in the alphabetical order.
+
+You can use multiple `COLUMNS` expressions in a query and apply functions to them.
 
 For example:
 
@@ -1004,7 +1018,7 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Be careful when using functions because the `COLUMN` expression returns variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
+Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function doesn't support the number of arguments you have passed to it, ClickHouse throws an exception.
 
 For example:
 
@@ -1016,9 +1030,9 @@ Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2. 
 ```
 
-In this example, `COLUMNS('a')` returns two columns `aa`, `ab`, and `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the message about it.
+In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
-Columns that matched by the `COLUMNS` expression can be in different types. If `COLUMNS` doesn't match any columns and it is the single expression in `SELECT`, ClickHouse throws an exception.
+Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn't match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
 
 ### DISTINCT Clause {#select-distinct}

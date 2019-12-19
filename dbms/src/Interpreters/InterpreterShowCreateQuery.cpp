@@ -42,22 +42,30 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
-    /// FIXME: try to prettify this cast using `as<>()`
-    const auto & ast = dynamic_cast<const ASTQueryWithTableAndOutput &>(*query_ptr);
-
-    if (ast.temporary && !ast.database.empty())
-        throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-
     ASTPtr create_query;
-    if (ast.temporary)
-        create_query = context.getCreateExternalTableQuery(ast.table);
-    else if (ast.table.empty())
-        create_query = context.getCreateDatabaseQuery(ast.database);
-    else
-        create_query = context.getCreateTableQuery(ast.database, ast.table);
+    ASTQueryWithTableAndOutput * show_query;
+    if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
+    {
+        if (show_query->temporary)
+            create_query = context.getCreateExternalTableQuery(show_query->table);
+        else
+            create_query = context.getCreateTableQuery(show_query->database, show_query->table);
+    }
+    else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
+    {
+        if (show_query->temporary)
+            throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
+        create_query = context.getCreateDatabaseQuery(show_query->database);
+    }
+    else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
+    {
+        if (show_query->temporary)
+            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+        create_query = context.getCreateDictionaryQuery(show_query->database, show_query->table);
+    }
 
-    if (!create_query && ast.temporary)
-        throw Exception("Unable to show the create query of " + ast.table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
+    if (!create_query && show_query && show_query->temporary)
+        throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);

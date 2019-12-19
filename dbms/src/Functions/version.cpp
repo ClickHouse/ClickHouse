@@ -1,7 +1,8 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/config_version.h>
+#include <Core/Field.h>
 
 
 namespace DB

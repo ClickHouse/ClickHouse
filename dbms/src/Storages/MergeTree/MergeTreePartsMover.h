@@ -1,11 +1,11 @@
 #pragma once
 
 #include <functional>
-#include <vector>
 #include <optional>
+#include <vector>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/ActionBlocker.h>
-#include <Common/DiskSpaceMonitor.h>
 
 namespace DB
 {
@@ -15,10 +15,10 @@ namespace DB
 /// it have to be moved.
 struct MergeTreeMoveEntry
 {
-    std::shared_ptr<const IMergeTreeDataPart> part;
-    DiskSpace::ReservationPtr reserved_space;
+    std::shared_ptr<const MergeTreeDataPart> part;
+    ReservationPtr reserved_space;
 
-    MergeTreeMoveEntry(const std::shared_ptr<const IMergeTreeDataPart> & part_, DiskSpace::ReservationPtr reservation_)
+    MergeTreeMoveEntry(const std::shared_ptr<const MergeTreeDataPart> & part_, ReservationPtr reservation_)
         : part(part_), reserved_space(std::move(reservation_))
     {
     }
