@@ -65,7 +65,7 @@ public:
         if (arguments.size() >= 1)
         {
             const auto & argument = arguments[0];
-            if (!isInteger(argument.type) || !isColumnConst(*argument.column))
+            if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
                 throw Exception("Illegal type " + argument.type->getName() +
                                 " of 0" +
                                 " argument of function " + getName() +
@@ -81,13 +81,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result, size_t input_rows_count) override
     {
         auto & result_col = block.getByPosition(result);
-        UInt32 scale = DataTypeDateTime64::default_scale;
-        if (const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(result_col.type.get()))
-        {
-            scale = dt64->getScale();
-        }
+        const UInt32 scale = assert_cast<const DataTypeDateTime64 *>(result_col.type.get())->getScale();
 
-        result_col.column = DataTypeDateTime64(scale).createColumnConst(input_rows_count, nowSubsecond(scale));
+        result_col.column = result_col.type->createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
 
