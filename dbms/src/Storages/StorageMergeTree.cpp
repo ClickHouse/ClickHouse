@@ -447,15 +447,14 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     LOG_INFO(log, "Added mutation: " << file_name);
     merging_mutating_task_handle->wake();
 
-    size_t timeout = query_context.getSettingsRef().mutation_synchronous_wait_timeout;
-    /// If timeout is set, than we can wait
-    if (timeout != 0)
+    /// We have to wait mutation end
+    if (query_context.getSettingsRef().mutations_sync > 0)
     {
-        LOG_INFO(log, "Waiting mutation: " << file_name << " for " << timeout << " seconds");
+        LOG_INFO(log, "Waiting mutation: " << file_name);
         auto check = [version, this]() { return isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
-        if (!mutation_wait_event.wait_for(lock, std::chrono::seconds{timeout}, check))
-            throw Exception("Mutation " + file_name + " is not finished. Will be done asynchronously", ErrorCodes::UNFINISHED);
+        mutation_wait_event.wait(lock, check);
+
     }
 }
 
@@ -478,6 +477,10 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// Killed
+    if (!current_mutations_by_version.count(mutation_version))
+        return true;
 
     auto data_parts = getDataPartsVector();
     for (const auto & data_part : data_parts)
@@ -559,6 +562,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    mutation_wait_event.notify_all();
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
     merging_mutating_task_handle->wake();

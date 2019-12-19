@@ -18,11 +18,23 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.kill_mutation_r1 VALUES ('2001-01
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill a single invalid mutation ***'"
 
 # wrong mutation
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1 SETTINGS mutation_synchronous_wait_timeout=2" 2>/dev/null
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1 SETTINGS mutations_sync=2" 2>&1 | grep -o "Mutation 0000000000 was killed" &
 
-${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, latest_failed_part IN ('20000101_0_0_0', '20010101_0_0_0'), latest_fail_time != 0, substr(latest_fail_reason, 1, 8) FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1'"
+check_query1="SELECT mutation_id, latest_failed_part IN ('20000101_0_0_0', '20010101_0_0_0'), latest_fail_time != 0, substr(latest_fail_reason, 1, 8) FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1'"
+
+query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+
+while [ -z "$query_result" ]
+do
+    query_result=`$CLICKHOUSE_CLIENT --query="$check_query1" 2>&1`
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query="$check_query1"
 
 ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation_r1'"
+
+wait
 
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1'"
 
@@ -32,13 +44,24 @@ ${CLICKHOUSE_CLIENT} --query="SELECT '*** Create and kill invalid mutation that 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA test.kill_mutation_r1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE toUInt32(s) = 1"
 
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE x = 1 SETTINGS mutation_synchronous_wait_timeout=2" 2>/dev/null
+# good mutation, but blocked with wrong mutation
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.kill_mutation_r1 DELETE WHERE x = 1 SETTINGS mutations_sync=2" &
 
-${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, latest_failed_part IN ('20000101_0_0_0_1', '20010101_0_0_0_1'), latest_fail_time != 0, substr(latest_fail_reason, 1, 8) FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001'"
+check_query2="SELECT mutation_id, latest_failed_part IN ('20000101_0_0_0_1', '20010101_0_0_0_1'), latest_fail_time != 0, substr(latest_fail_reason, 1, 8) FROM system.mutations WHERE database = 'test' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001'"
+
+query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+
+while [ -z "$query_result" ]
+do
+    query_result=`$CLICKHOUSE_CLIENT --query="$check_query2" 2>&1`
+    sleep 0.1
+done
+
+$CLICKHOUSE_CLIENT --query="$check_query2"
 
 ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database = 'test' AND table = 'kill_mutation_r1' AND mutation_id = '0000000001'"
 
-wait_for_mutation "kill_mutation_r2" "0000000002" "test"
+wait
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.kill_mutation_r2"
 

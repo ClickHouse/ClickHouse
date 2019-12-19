@@ -11,14 +11,12 @@ INSERT INTO table_for_synchronous_mutations1 select number, number from numbers(
 
 SYSTEM SYNC REPLICA table_for_synchronous_mutations2;
 
-ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutation_synchronous_wait_timeout = 10;
+ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations1';
 
-ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = 1 WHERE ignore(sleep(3)) SETTINGS mutation_synchronous_wait_timeout = 2; --{serverError 341}
-
 -- Another mutation, just to be sure, that previous finished
-ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutation_synchronous_wait_timeout = 15;
+ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations1';
 
@@ -33,16 +31,13 @@ CREATE TABLE table_for_synchronous_mutations_no_replication(k UInt32, v1 UInt64)
 
 INSERT INTO table_for_synchronous_mutations_no_replication select number, number from numbers(100000);
 
-ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutation_synchronous_wait_timeout = 10;
+ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations_no_replication';
-
-ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = 1 WHERE ignore(sleep(3)) SETTINGS mutation_synchronous_wait_timeout = 2; --{serverError 341}
 
 -- Another mutation, just to be sure, that previous finished
-ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutation_synchronous_wait_timeout = 15;
+ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations_no_replication';
-
 
 DROP TABLE IF EXISTS table_for_synchronous_mutations_no_replication;

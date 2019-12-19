@@ -310,87 +310,73 @@ bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
 }
 
 
-void StorageReplicatedMergeTree::waitForAllReplicasToStatisfyNodeCondition(
-    size_t timeout, const String & name_for_logging,
-    const String & replica_relative_node_path, CheckNodeCallback callback) const
+void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
+    const Strings & replicas, const String & mutation_id) const
 {
-    const auto operation_start = std::chrono::system_clock::now();
-    std::chrono::milliseconds total_time{timeout * 1000};
+    if (replicas.empty())
+        return;
+
     zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
-    Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+
+
     std::set<String> inactive_replicas;
-    std::set<String> timed_out_replicas;
     for (const String & replica : replicas)
     {
-        LOG_DEBUG(log, "Waiting for " << replica << " to apply " + name_for_logging);
 
-        bool operation_is_processed_by_relica = false;
+        LOG_DEBUG(log, "Waiting for " << replica << " to apply mutation " + mutation_id);
+
         while (!partial_shutdown_called)
         {
+            /// Mutation maybe killed or whole replica was deleted.
+            /// Wait event will unblock at this moment.
+            Coordination::Stat exists_stat;
+            if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id, &exists_stat, wait_event))
+            {
+                LOG_WARNING(log, "Mutation " << mutation_id << " was killed or manually removed. Nothing to wait.");
+                return;
+            }
+
             auto zookeeper = getZooKeeper();
             /// Replica could be inactive.
             if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             {
-                LOG_WARNING(log, "Replica " << replica << " is not active during mutation query."
-                    << name_for_logging << " will be done asynchronously when replica becomes active.");
+                LOG_WARNING(log, "Replica " << replica << " is not active during mutation. "
+                    "Mutation will be done asynchronously when replica becomes active.");
 
                 inactive_replicas.emplace(replica);
                 break;
             }
 
-            String node_for_check = zookeeper_path + "/replicas/" + replica + "/" + replica_relative_node_path;
-            std::string node_for_check_value;
-            Coordination::Stat stat;
+            String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
+            std::string mutation_pointer_value;
+            Coordination::Stat get_stat;
             /// Replica could be removed
-            if (!zookeeper->tryGet(node_for_check, node_for_check_value, &stat, wait_event))
+            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
             {
                 LOG_WARNING(log, replica << " was removed");
-                operation_is_processed_by_relica = true;
                 break;
             }
-            else /// in other case check required node
-            {
-                if (callback(node_for_check_value))
-                {
-                    operation_is_processed_by_relica = true;
-                    break; /// operation is done
-                }
-            }
+            else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
+                break;                                      /// (numbers like 0000000000 and 0000000001)
 
-            std::chrono::milliseconds time_spent =
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - operation_start);
-            std::chrono::milliseconds time_left = total_time - time_spent;
-
-            /// We have some time to wait
-            if (time_left.count() > 0)
-                wait_event->tryWait(time_left.count());
-            else /// Otherwise time is up
-                break;
+            /// We wait without timeout.
+            wait_event->wait();
         }
 
         if (partial_shutdown_called)
-            throw Exception(name_for_logging + " is not finished because table shutdown was called. " + name_for_logging + " will be done after table restart.",
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
                 ErrorCodes::UNFINISHED);
-
-        if (!operation_is_processed_by_relica && !inactive_replicas.count(replica))
-            timed_out_replicas.emplace(replica);
     }
 
-    if (!inactive_replicas.empty() || !timed_out_replicas.empty())
+    if (!inactive_replicas.empty())
     {
         std::stringstream exception_message;
-        exception_message << name_for_logging << " is not finished because";
+        exception_message << "Mutation is not finished because";
 
         if (!inactive_replicas.empty())
             exception_message << " some replicas are inactive right now: " << boost::algorithm::join(inactive_replicas, ", ");
 
-        if (!timed_out_replicas.empty() && !inactive_replicas.empty())
-            exception_message << " and";
-
-        if (!timed_out_replicas.empty())
-            exception_message << " timeout when waiting for some replicas: " << boost::algorithm::join(timed_out_replicas, ", ");
-
-        exception_message << ". " << name_for_logging <<  " will be done asynchronously";
+        exception_message << ". Mutation will be done asynchronously";
 
         throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
     }
@@ -3382,7 +3368,7 @@ void StorageReplicatedMergeTree::alter(
 
     time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
 
-    /// This code is quite similar with waitForAllReplicasToStatisfyNodeCondition
+    /// This code is quite similar with waitMutationToFinishOnReplicas
     /// but contains more complicated details (versions manipulations, multiple nodes, etc.).
     /// It will be removed soon in favor of alter-modify implementation on top of mutations.
     /// TODO (alesap)
@@ -4603,17 +4589,21 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
 
-    if (query_context.getSettingsRef().mutation_synchronous_wait_timeout != 0) /// some timeout specified
+    /// we have to wait
+    if (query_context.getSettingsRef().mutations_sync != 0)
     {
         auto check_callback = [mutation_number = entry.znode_name](const String & zk_value)
         {
-            /// Maybe we already processed more fresh mutation
-            /// We can compare their znode names (numbers like 0000000000 and 0000000001).
             return zk_value >= mutation_number;
         };
 
-        waitForAllReplicasToStatisfyNodeCondition(
-            query_context.getSettingsRef().mutation_synchronous_wait_timeout, "Mutation", "mutation_pointer", check_callback);
+        Strings replicas;
+        if (query_context.getSettingsRef().mutations_sync == 2) /// wait for all replicas
+            replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+        else if (query_context.getSettingsRef().mutations_sync == 1) /// just wait for ourself
+            replicas.push_back(replica_path);
+
+        waitMutationToFinishOnReplicas(replicas, entry.znode_name);
     }
 
 }
