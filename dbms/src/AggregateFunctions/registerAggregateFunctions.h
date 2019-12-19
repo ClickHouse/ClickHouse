@@ -5,6 +5,7 @@ namespace DB
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
+void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
