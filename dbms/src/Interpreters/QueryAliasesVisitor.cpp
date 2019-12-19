@@ -8,7 +8,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {

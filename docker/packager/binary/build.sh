@@ -2,12 +2,18 @@
 
 set -x -e
 
+mkdir -p build/cmake/toolchain/darwin-x86_64
+tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+
+mkdir -p build/cmake/toolchain/linux-aarch64
+tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
+
 mkdir -p build/build_docker
 cd build/build_docker
 ccache --show-stats ||:
 ccache --zero-stats ||:
 rm -f CMakeCache.txt
-cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
+cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
 ninja
 ccache --show-stats ||:
 mv ./dbms/programs/clickhouse* /output

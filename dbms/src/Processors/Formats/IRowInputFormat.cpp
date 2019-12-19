@@ -20,8 +20,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-namespace
-{
 
 bool isParseError(int code)
 {
@@ -35,7 +33,6 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
 }
 
-}
 
 Chunk IRowInputFormat::generate()
 {
@@ -46,9 +43,9 @@ Chunk IRowInputFormat::generate()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
-    size_t prev_rows = total_rows;
 
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
+    block_missing_values.clear();
 
     try
     {
@@ -151,7 +148,8 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    Chunk chunk(std::move(columns), total_rows - prev_rows);
+    auto num_rows = columns.front()->size();
+    Chunk chunk(std::move(columns), num_rows);
     //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
@@ -160,5 +158,14 @@ void IRowInputFormat::syncAfterError()
 {
     throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
+
+void IRowInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    total_rows = 0;
+    num_errors = 0;
+    block_missing_values.clear();
+}
+
 
 }

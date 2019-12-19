@@ -17,6 +17,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -95,7 +96,8 @@ StorageKafka::StorageKafka(
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
     , table_name(table_name_)
     , database_name(database_name_)
-    , global_context(context_)
+    , global_context(context_.getGlobalContext())
+    , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
@@ -109,6 +111,8 @@ StorageKafka::StorageKafka(
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
 {
+    kafka_context.makeQueryContext();
+
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
@@ -366,7 +370,6 @@ bool StorageKafka::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->database = database_name;
     insert->table = table_name;
-    insert->no_destination = true; // Only insert into dependent views and expect that input blocks contain virtual columns
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -374,7 +377,8 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter(insert, global_context, false, true);
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -382,12 +386,13 @@ bool StorageKafka::streamToViews()
     streams.reserve(num_created_consumers);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size);
+        auto stream
+            = std::make_shared<KafkaBlockInputStream>(*this, kafka_context, block_io.out->getHeader().getNames(), block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
         IBlockInputStream::LocalLimits limits;
-        limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
     }
@@ -401,6 +406,8 @@ bool StorageKafka::streamToViews()
 
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+    for (auto & stream : streams)
+        stream->as<KafkaBlockInputStream>()->commit();
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

@@ -99,7 +99,7 @@ void registerStorageJoin(StorageFactory & factory)
         const String strictness_str = Poco::toLower(*opt_strictness_id);
         ASTTableJoin::Strictness strictness;
         if (strictness_str == "any")
-            strictness = ASTTableJoin::Strictness::Any;
+            strictness = ASTTableJoin::Strictness::RightAny;
         else if (strictness_str == "all")
             strictness = ASTTableJoin::Strictness::All;
         else
@@ -329,25 +329,32 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
+            if constexpr (STRICTNESS == ASTTableJoin::Strictness::RightAny)
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
-                        columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                        columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                     else
-                        columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
+                        columns[j]->insertFrom(*it->getMapped().block->getByPosition(column_indices[j]).column.get(), it->getMapped().row_num);
                 ++rows_added;
             }
-            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
             {
-                throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("New ANY join storage is not implemented yet (set any_join_distinct_right_table_keys=1 to use old one)",
+                                ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof ||
+                               STRICTNESS == ASTTableJoin::Strictness::Semi ||
+                               STRICTNESS == ASTTableJoin::Strictness::Anti)
+            {
+                throw Exception("ASOF|SEMI|ANTI join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
-                for (auto ref_it = it->getSecond().begin(); ref_it.ok(); ++ref_it)
+                for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
-                            columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                            columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                         else
                             columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
                     ++rows_added;

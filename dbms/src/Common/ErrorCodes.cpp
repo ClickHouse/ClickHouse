@@ -155,7 +155,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_FUNCTION_ELEMENT_FOR_AGGREGATE = 147;
     extern const int NOT_FOUND_RELATION_ELEMENT_FOR_CONDITION = 148;
     extern const int NOT_FOUND_RHS_ELEMENT_FOR_CONDITION = 149;
-    extern const int NO_ATTRIBUTES_LISTED = 150;
+    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 150;
     extern const int INDEX_OF_COLUMN_IN_SORT_CLAUSE_IS_OUT_OF_RANGE = 151;
     extern const int UNKNOWN_DIRECTION_OF_SORTING = 152;
     extern const int ILLEGAL_DIVISION = 153;
@@ -361,7 +361,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED = 384;
     extern const int MULTIPLE_STREAMS_REQUIRED = 385;
     extern const int NO_COMMON_TYPE = 386;
-    extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS = 387;
+    extern const int DICTIONARY_ALREADY_EXISTS = 387;
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
@@ -459,13 +459,29 @@ namespace ErrorCodes
     extern const int DICTIONARY_ACCESS_DENIED = 482;
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
-    extern const int UNKNOWN_PART_TYPE = 485;
+    extern const int SCALAR_ALREADY_EXISTS = 485;
+    extern const int UNKNOWN_SCALAR = 486;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
+    extern const int UNKNOWN_DICTIONARY = 488;
+    extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int CANNOT_FORMAT_DATETIME = 490;
+    extern const int UNACCEPTABLE_URL = 491;
+    extern const int ACCESS_ENTITY_NOT_FOUND = 492;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
+    extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
+    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
+    extern const int NOT_ENOUGH_PRIVILEGES = 497;
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
+    extern const int S3_ERROR = 499;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 500;
+    extern const int CANNOT_CREATE_DATABASE = 501;
+    extern const int UNKNOWN_PART_TYPE = 502;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
-    extern const int METRIKA_OTHER_ERROR = 1003;
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;

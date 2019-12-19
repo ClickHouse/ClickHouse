@@ -1,12 +1,17 @@
 #include <Storages/IndicesDescription.h>
 
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-
 namespace DB
 {
+
+bool IndicesDescription::empty() const
+{
+    return indices.empty();
+}
 
 bool IndicesDescription::has(const String & name) const
 {

@@ -121,7 +121,9 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
+        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery"))
+{
+}
 
 
 BlockIO InterpreterSystemQuery::execute()
@@ -315,7 +317,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         DatabasePtr & database = elem.second;
         const String & database_name = elem.first;
 
-        for (auto iterator = database->getIterator(system_context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(database_name, iterator->name());
@@ -327,7 +329,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
-        pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
 }
 

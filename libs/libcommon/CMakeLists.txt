@@ -53,6 +53,7 @@ add_library (common
     include/common/phdr_cache.h
 
     include/ext/bit_cast.h
+    include/ext/chrono_io.h
     include/ext/collection_cast.h
     include/ext/enumerate.h
     include/ext/function_traits.h
@@ -64,29 +65,6 @@ add_library (common
     include/ext/unlock_guard.h
 
     ${CONFIG_COMMON})
-
-# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
-
-if (USE_JEMALLOC)
-    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
-    endif ()
-
-    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
-    else ()
-        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
-    endif ()
-elseif (SANITIZE)
-    message (STATUS "Will use ${SANITIZE} sanitizer.")
-elseif (OS_LINUX)
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
 
 if (USE_INTERNAL_MEMCPY)
     set (MEMCPY_LIBRARIES memcpy)
@@ -120,7 +98,6 @@ target_link_libraries (common
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
-    ${MALLOC_LIBRARIES}
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

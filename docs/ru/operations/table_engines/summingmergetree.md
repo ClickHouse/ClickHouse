@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-При создании таблицы `SummingMergeTree` использутся те же [секции](mergetree.md) запроса, что и при создании таблицы `MergeTree`.
+При создании таблицы `SummingMergeTree` используются те же [секции](mergetree.md) запроса, что и при создании таблицы `MergeTree`.
 
 <details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 

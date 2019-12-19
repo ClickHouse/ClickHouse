@@ -3,6 +3,10 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
+
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
@@ -421,6 +425,42 @@ void IStorage::alter(
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
         setColumns(std::move(new_columns));
     }
+}
+
+BlockInputStreams IStorage::read(
+    const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    BlockInputStreams res;
+    res.reserve(pipes.size());
+
+    for (auto & pipe : pipes)
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+    return res;
+}
+
+DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
+{
+    if (compression_method == "auto" || compression_method == "")
+    {
+        if (endsWith(uri, ".gz"))
+            return DB::CompressionMethod::Gzip;
+        else
+            return DB::CompressionMethod::None;
+    }
+    else if (compression_method == "gzip")
+        return DB::CompressionMethod::Gzip;
+    else if (compression_method == "none")
+        return DB::CompressionMethod::None;
+    else
+        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

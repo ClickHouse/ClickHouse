@@ -52,6 +52,7 @@ if (USE_INTERNAL_BTRIE_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
+    unset (BUILD_SHARED_LIBS CACHE)
     set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
     set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
     set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
@@ -106,25 +107,15 @@ if (USE_INTERNAL_H3_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_SSL_LIBRARY)
-    if (NOT MAKE_STATIC_LIBRARIES)
-        set (BUILD_SHARED 1)
-    endif ()
+    add_subdirectory (openssl-cmake)
 
-    # By default, ${CMAKE_INSTALL_PREFIX}/etc/ssl is selected - that is not what we need.
-    # We need to use system wide ssl directory.
-    set (OPENSSLDIR "/etc/ssl")
-
-    set (LIBRESSL_SKIP_INSTALL 1 CACHE INTERNAL "")
-    add_subdirectory (ssl)
-    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
-    target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    # This is for Poco library
     set (POCO_SKIP_OPENSSL_FIND 1)
-
     add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
-if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
     set(CLIENT_PLUGIN_REMOTE_IO OFF)
@@ -136,7 +127,15 @@ if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
     if (GLIBC_COMPATIBILITY)
         set(LIBM glibc-compatibility)
     endif()
+    if (USE_INTERNAL_ZLIB_LIBRARY)
+        set(ZLIB_FOUND ON)
+        set(ZLIB_LIBRARY zlibstatic)
+        set(WITH_EXTERNAL_ZLIB ON)
+    endif()
     add_subdirectory (mariadb-connector-c)
+endfunction()
+if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+    mysql_support()
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -154,6 +153,10 @@ endif()
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
+endif ()
+
+if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
+    add_subdirectory (icu-cmake)
 endif ()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
@@ -215,6 +218,11 @@ else()
     endif()
 
     add_subdirectory(arrow-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
+    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
+    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 endif()
 
@@ -304,12 +312,39 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
+if (USE_INTERNAL_AWS_S3_LIBRARY)
+    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
+    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
+    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
+    add_subdirectory(curl-cmake)
+    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
+    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
+    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
+    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
+    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
+    add_subdirectory(aws-s3-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (aws_s3 PRIVATE -g0)
+    target_compile_options (aws_s3_checksums PRIVATE -g0)
+    target_compile_options (libcurl PRIVATE -g0)
+endif ()
+
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
+
+    # The library is large - avoid bloat.
+    if (USE_STATIC_LIBRARIES)
+        target_compile_options (hs PRIVATE -g0)
+    else ()
+        target_compile_options (hs_shared PRIVATE -g0)
+    endif ()
 endif()
 
 if (USE_SIMDJSON)
@@ -323,7 +358,3 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
-
-#if (USE_INTERNAL_ORC_LIBRARY)
-#    add_subdirectory(orc-cmake)
-#endif ()

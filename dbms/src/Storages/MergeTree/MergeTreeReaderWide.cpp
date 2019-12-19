@@ -6,7 +6,6 @@
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Common/typeid_cast.h>
-#include <Poco/File.h>
 
 
 namespace DB
@@ -26,6 +25,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReaderWide.cpp
 MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
     const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_,
@@ -34,6 +34,36 @@ MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data
     : IMergeTreeReader(data_part_, columns_
     , uncompressed_cache_, mark_cache_, mark_ranges_
     , settings_, avg_value_size_hints_)
+=======
+
+MergeTreeReader::~MergeTreeReader() = default;
+
+
+MergeTreeReader::MergeTreeReader(
+    String path_,
+    MergeTreeData::DataPartPtr data_part_,
+    NamesAndTypesList columns_,
+    UncompressedCache * uncompressed_cache_,
+    MarkCache * mark_cache_,
+    bool save_marks_in_cache_,
+    const MergeTreeData & storage_,
+    MarkRanges all_mark_ranges_,
+    size_t aio_threshold_,
+    size_t max_read_buffer_size_,
+    ValueSizeMap avg_value_size_hints_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+    clockid_t clock_type_)
+    : data_part(std::move(data_part_))
+    , avg_value_size_hints(std::move(avg_value_size_hints_))
+    , path(std::move(path_)), columns(std::move(columns_))
+    , uncompressed_cache(uncompressed_cache_)
+    , mark_cache(mark_cache_)
+    , save_marks_in_cache(save_marks_in_cache_)
+    , storage(storage_)
+    , all_mark_ranges(std::move(all_mark_ranges_))
+    , aio_threshold(aio_threshold_)
+    , max_read_buffer_size(max_read_buffer_size_)
+>>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReader.cpp
 {
     try
     {
@@ -52,32 +82,47 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     std::cerr << "(MergeTreeReaderWide::readRows) from_mark: " << from_mark << "\n";
     std::cerr << "(MergeTreeReaderWide::readRows) continue_reading: " << continue_reading << "\n";
 
+<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReaderWide.cpp
+=======
+size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+{
+>>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReader.cpp
     size_t read_rows = 0;
     try
     {
+        size_t num_columns = columns.size();
+
+        if (res_columns.size() != num_columns)
+            throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
+                            "Expected " + toString(num_columns) + ", "
+                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
         OffsetColumns offset_columns;
 
-        for (const NameAndTypePair & it : columns)
+        auto name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
+            auto & [name, type] = *name_and_type;
+
             /// The column is already present in the block so we will append the values to the end.
-            bool append = res.has(it.name);
+            bool append = res_columns[pos] != nullptr;
             if (!append)
-                res.insert(ColumnWithTypeAndName(it.type->createColumn(), it.type, it.name));
+                res_columns[pos] = name_and_type->type->createColumn();
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
-            MutableColumnPtr column = res.getByName(it.name).column->assumeMutable();
+            MutableColumnPtr column = res_columns[pos]->assumeMutable();
 
             bool read_offsets = true;
 
             /// For nested data structures collect pointers to offset columns.
-            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it.type.get()))
+            if (const auto * type_arr = typeid_cast<const DataTypeArray *>(type.get()))
             {
-                String name = Nested::extractTableName(it.name);
+                String table_name = Nested::extractTableName(name);
 
-                auto it_inserted = offset_columns.emplace(name, nullptr);
+                auto it_inserted = offset_columns.emplace(table_name, nullptr);
 
                 /// offsets have already been read on the previous iteration and we don't need to read it again
                 if (!it_inserted.second)
@@ -97,27 +142,28 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             {
                 size_t column_size_before_reading = column->size();
 
-                readData(it.name, *it.type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
+                readData(name, *type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
-                if (column->size())
+                if (!column->empty())
                     read_rows = std::max(read_rows, column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + it.name + ")");
+                e.addMessage("(while reading column " + name + ")");
                 throw;
             }
 
-            if (column->size())
-                res.getByName(it.name).column = std::move(column);
+            if (column->empty())
+                res_columns[pos] = nullptr;
             else
-                res.erase(it.name);
+                res_columns[pos] = std::move(column);
         }
 
-        /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
+        /// NOTE: positions for all streams must be kept in sync.
+        /// In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
     }
     catch (Exception & e)
@@ -126,7 +172,9 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             storage.reportBrokenPart(data_part->name);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + " from mark " + toString(from_mark) + " with max_rows_to_read = " + toString(max_rows_to_read) + ")");
+        e.addMessage("(while reading from part " + path + " "
+                     "from mark " + toString(from_mark) + " "
+                     "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
     }
     catch (...)

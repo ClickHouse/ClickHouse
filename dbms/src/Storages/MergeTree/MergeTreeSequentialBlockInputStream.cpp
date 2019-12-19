@@ -99,28 +99,36 @@ try
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
-        size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, res);
 
-        std::cerr << "(MergeTreeSequentialBlockInputStream) rows_to_read: " << rows_to_read << '\n';
-        std::cerr << "(MergeTreeSequentialBlockInputStream) current_mark: " << current_mark << '\n';
-        std::cerr << "(MergeTreeSequentialBlockInputStream) rows_readed: " << rows_readed << '\n';
+        auto & sample = reader->getColumns();
+        Columns columns(sample.size());
+        size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 
-
-        if (res)
+        if (rows_readed)
         {
-            res.checkNumberOfRows();
-
             current_row += rows_readed;
             current_mark += (rows_to_read == rows_readed);
 
-            bool should_reorder = false, should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(res, should_reorder, should_evaluate_missing_defaults, res.rows());
+            bool should_evaluate_missing_defaults = false;
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
 
             if (should_evaluate_missing_defaults)
-                reader->evaluateMissingDefaults(res);
+                reader->evaluateMissingDefaults({}, columns);
 
-            if (should_reorder)
-                reader->reorderColumns(res, header.getNames(), nullptr);
+            res = header.cloneEmpty();
+
+            /// Reorder columns and fill result block.
+            size_t num_columns = sample.size();
+            auto it = sample.begin();
+            for (size_t i = 0; i < num_columns; ++i)
+            {
+                if (res.has(it->name))
+                    res.getByName(it->name).column = std::move(columns[i]);
+
+                ++it;
+            }
+
+            res.checkNumberOfRows();
         }
     }
     else

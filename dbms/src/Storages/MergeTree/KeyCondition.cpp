@@ -4,7 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <cassert>
 
 
 namespace DB
@@ -1095,10 +1097,14 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
+            assert(!rpn_stack.empty());
+
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1106,6 +1112,8 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1124,7 +1132,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInParallelogram", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
@@ -1223,6 +1231,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1230,6 +1240,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1238,6 +1250,9 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         else
             throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::alwaysUnknownOrTrue", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0];
 }

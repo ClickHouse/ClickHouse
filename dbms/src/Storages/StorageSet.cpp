@@ -70,6 +70,7 @@ void SetOrJoinBlockOutputStream::write(const Block & block)
 
 void SetOrJoinBlockOutputStream::writeSuffix()
 {
+    table.finishInsert();
     backup_stream.flush();
     compressed_backup_buf.next();
     backup_buf.next();
@@ -123,6 +124,7 @@ StorageSet::StorageSet(
 
 
 void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
+void StorageSet::finishInsert() { set->finishInsert(); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
@@ -180,8 +182,11 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
 
     backup_stream.readPrefix();
+
     while (Block block = backup_stream.read())
         insertBlock(block);
+
+    finishInsert();
     backup_stream.readSuffix();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.

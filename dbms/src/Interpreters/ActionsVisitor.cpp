@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/PODArray.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
@@ -28,7 +30,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
@@ -36,6 +38,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {
@@ -49,7 +52,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
 {
     return std::find_if(cols.begin(), cols.end(),
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
@@ -327,10 +330,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_subqueries)
+        if ((prepared_set = makeSet(node, data, data.no_subqueries)))
         {
             /// Transform tuple or subquery into a set.
-            prepared_set = makeSet(node, data);
         }
         else
         {
@@ -366,7 +368,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         ? data.context.getQueryContext()
         : data.context;
 
-    FunctionBuilderPtr function_builder;
+    FunctionOverloadResolverPtr function_builder;
     try
     {
         function_builder = FunctionFactory::instance().get(node.name, function_context);
@@ -392,6 +394,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto child_column_name = child->getColumnName();
 
         const auto * lambda = child->as<ASTFunction>();
+        const auto * identifier = child->as<ASTIdentifier>();
         if (lambda && lambda->name == "lambda")
         {
             /// If the argument is a lambda expression, just remember its approximate type.
@@ -422,11 +425,33 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
             if (!data.hasColumn(column.name))
             {
-                column.column = ColumnSet::create(1, prepared_set);
-
+                auto column_set = ColumnSet::create(1, prepared_set);
+                /// If prepared_set is not empty, we have a set made with literals.
+                /// Create a const ColumnSet to make constant folding work
+                if (!prepared_set->empty())
+                    column.column = ColumnConst::create(std::move(column_set), 1);
+                else
+                    column.column = std::move(column_set);
                 data.addAction(ExpressionAction::addColumn(column));
             }
 
+            argument_types.push_back(column.type);
+            argument_names.push_back(column.name);
+        }
+        else if (identifier && node.name == "joinGet" && arg == 0)
+        {
+            String database_name;
+            String table_name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+            if (database_name.empty())
+                database_name = data.context.getCurrentDatabase();
+            auto column_string = ColumnString::create();
+            column_string->insert(database_name + "." + table_name);
+            ColumnWithTypeAndName column(
+                ColumnConst::create(std::move(column_string), 1),
+                std::make_shared<DataTypeString>(),
+                getUniqueName(data.getSampleBlock(), "__joinGet"));
+            data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
@@ -497,9 +522,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
                 String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
 
-                auto function_capture = std::make_shared<FunctionCapture>(
+                auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
-                data.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
+                auto function_capture_adapter = std::make_shared<FunctionOverloadResolverAdaptor>(std::move(function_capture));
+                data.addAction(ExpressionAction::applyFunction(function_capture_adapter, captured, lambda_name));
 
                 argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                 argument_names[i] = lambda_name;
@@ -541,21 +567,24 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data 
     data.addAction(ExpressionAction::addColumn(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
+SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
       * The enumeration of values is parsed as a function `tuple`.
       */
     const IAST & args = *node.arguments;
-    const ASTPtr & arg = args.children.at(1);
+    const ASTPtr & left_in_operand = args.children.at(0);
+    const ASTPtr & right_in_operand = args.children.at(1);
     const Block & sample_block = data.getSampleBlock();
 
     /// If the subquery or table name for SELECT.
-    const auto * identifier = arg->as<ASTIdentifier>();
-    if (arg->as<ASTSubquery>() || identifier)
+    const auto * identifier = right_in_operand->as<ASTIdentifier>();
+    if (right_in_operand->as<ASTSubquery>() || identifier)
     {
-        auto set_key = PreparedSetKey::forSubquery(*arg);
+        if (no_subqueries)
+            return {};
+        auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
         if (data.prepared_sets.count(set_key))
             return data.prepared_sets.at(set_key);
 
@@ -578,7 +607,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = arg->getColumnName();
+        String set_id = right_in_operand->getColumnName();
 
         SubqueryForSet & subquery_for_set = data.subqueries_for_sets[set_id];
 
@@ -598,7 +627,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
           */
         if (!subquery_for_set.source && data.no_storage_or_local)
         {
-            auto interpreter = interpretSubquery(arg, data.context, data.subquery_depth, {});
+            auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
                 interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
 
@@ -636,8 +665,11 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
     }
     else
     {
-        /// An explicit enumeration of values in parentheses.
-        return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+        if (sample_block.has(left_in_operand->getColumnName()))
+            /// An explicit enumeration of values in parentheses.
+            return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+        else
+            return {};
     }
 }
 

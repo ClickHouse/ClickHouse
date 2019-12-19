@@ -22,8 +22,7 @@ class MergeTreeRangeReader
 public:
     MergeTreeRangeReader(IMergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
                          ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
-                         const String * prewhere_column_name_, const Names * ordered_names_,
-                         bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_);
+                         const String * prewhere_column_name_, bool remove_prewhere_column_, bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
 
@@ -47,10 +46,10 @@ public:
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(Block & block, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(Block & block);
+        size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
 
@@ -69,7 +68,7 @@ public:
 
         /// Current position from the begging of file in rows
         size_t position() const;
-        size_t readRows(Block & block, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -81,8 +80,8 @@ public:
         Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(Block & block, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(Block & block);
+        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(Columns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -112,7 +111,7 @@ public:
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
-        size_t readRows(Block & block, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
@@ -144,7 +143,7 @@ public:
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnUInt8 * getFilter() const { return filter; }
 
-        void addGranule(size_t num_rows);
+        void addGranule(size_t num_rows_);
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
@@ -158,7 +157,8 @@ public:
 
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
-        Block block;
+        Columns columns;
+        size_t num_rows = 0;
 
     private:
         RangesInfo started_ranges;
@@ -185,25 +185,27 @@ public:
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
 
+    const Block & getSampleBlock() const { return sample_block; }
+
 private:
 
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
-    Block continueReadingChain(ReadResult & result);
+    Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
-    void filterBlock(Block & block, const IColumn::Filter & filter) const;
+    void filterColumns(Columns & columns, const IColumn::Filter & filter) const;
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 
     const String * prewhere_column_name = nullptr;
-    const Names * ordered_names = nullptr;
     ExpressionActionsPtr alias_actions = nullptr; /// If not nullptr, calculate aliases.
     ExpressionActionsPtr prewhere_actions = nullptr; /// If not nullptr, calculate filter.
 
     Stream stream;
 
-    bool always_reorder = true;
+    Block sample_block;
+
     bool remove_prewhere_column = false;
     bool last_reader_in_chain = false;
     bool is_initialized = false;

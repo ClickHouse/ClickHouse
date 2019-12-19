@@ -173,7 +173,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 ## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
-OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
 Запрос пытается запустить внеплановый мёрж кусков данных для таблиц семейства [MergeTree](../operations/table_engines/mergetree.md). Другие движки таблиц не поддерживаются.
@@ -181,8 +181,9 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 Если `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../operations/table_engines/replication.md), ClickHouse создаёт задачу на мёрж и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
 
 - Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop).
-- Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции.
+- Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter.md#alter-how-to-specify-part-expr).
 - Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
+- Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех колонках), имеет смысл только для движка MergeTree.
 
 !!! warning "Внимание"
     Запрос `OPTIMIZE` не может устранить причину появления ошибки "Too many parts".
@@ -212,72 +213,6 @@ SET profile = 'profile-name-from-the-settings-file'
 ```
 
 Подробности смотрите в разделе [Настройки](../operations/settings/settings.md).
-
-## SHOW CREATE TABLE
-
-```sql
-SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
-```
-
-Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
-
-## SHOW DATABASES {#show-databases}
-
-```sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
-```
-
-Выводит список всех баз данных.
-Запрос полностью аналогичен запросу `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
-
-Смотрите также раздел "Форматы".
-
-## SHOW PROCESSLIST
-
-```sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Выводит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
-
-Выдаёт таблицу, содержащую столбцы:
-
-**user** - пользователь, под которым был задан запрос. Следует иметь ввиду, что при распределённой обработке запроса на удалённые серверы запросы отправляются под пользователем 'default'. И SHOW PROCESSLIST показывает имя пользователя для конкретного запроса, а не для запроса, который данный запрос инициировал.
-
-**address** - имя хоста, с которого был отправлен запрос. При распределённой обработке запроса на удалённых серверах — это имя хоста-инициатора запроса. Чтобы проследить, откуда был задан распределённый запрос изначально, следует смотреть SHOW PROCESSLIST на сервере-инициаторе запроса.
-
-**elapsed** - время выполнения запроса, в секундах. Запросы выводятся в порядке убывания времени выполнения.
-
-**rows_read**, **bytes_read** - сколько было прочитано строк, байт несжатых данных при обработке запроса. При распределённой обработке запроса суммируются данные со всех удалённых серверов. Именно эти данные используются для ограничений и квот.
-
-**memory_usage** - текущее потребление оперативки в байтах. Смотрите настройку 'max_memory_usage'.
-
-**query** - сам запрос. В запросах INSERT данные для вставки не выводятся.
-
-**query_id** - идентификатор запроса. Непустой, только если был явно задан пользователем. При распределённой обработке запроса идентификатор запроса не передаётся на удалённые серверы.
-
-Этот запрос аналогичен запросу `SELECT * FROM system.processes` за тем исключением, что последний отображает список запросов, включая самого себя.
-
-Полезный совет (выполните в консоли):
-
-```bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
-
-## SHOW TABLES
-
-```sql
-SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
-```
-
-Выводит список таблиц:
-
-- из текущей базы данных или из базы db, если указано `FROM db`;
-- всех, или имя которых соответствует шаблону pattern, если указано `LIKE 'pattern'`;
-
-Запрос полностью аналогичен запросу: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
-
-Смотрите также раздел "Оператор LIKE".
 
 ## TRUNCATE
 

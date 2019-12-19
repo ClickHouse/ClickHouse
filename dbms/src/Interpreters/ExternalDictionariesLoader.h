@@ -2,14 +2,13 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ExternalLoader.h>
-#include <common/logger_useful.h>
 #include <memory>
 
 
 namespace DB
 {
-
 class Context;
+class IExternalLoaderConfigRepository;
 
 /// Manages user-defined dictionaries.
 class ExternalDictionariesLoader : public ExternalLoader
@@ -18,10 +17,7 @@ public:
     using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionariesLoader(
-        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
-        const Poco::Util::AbstractConfiguration & config,
-        Context & context_);
+    ExternalDictionariesLoader(Context & context_);
 
     DictPtr getDictionary(const std::string & name) const
     {
@@ -33,15 +29,18 @@ public:
         return std::static_pointer_cast<const IDictionaryBase>(tryGetLoadable(name));
     }
 
+    void addConfigRepository(
+        const std::string & repository_name,
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
+
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
-                       const std::string & key_in_config) const override;
+            const std::string & key_in_config, const std::string & repository_name) const override;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
 
 private:
-
     Context & context;
 };
 

@@ -1,9 +1,5 @@
 #pragma once
 
-#include "config_core.h"
-
-#if USE_SSL
-
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
@@ -41,8 +37,7 @@ private:
     const Context & context;
     MySQLProtocol::PacketSender packet_sender;
     FormatSettings format_settings;
+    DataTypes data_types;
 };
 
 }
-
-#endif

@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -58,7 +59,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 }
 
 
-void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
 {
     if (!ast)
         return;

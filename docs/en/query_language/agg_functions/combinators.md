@@ -10,7 +10,7 @@ Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTi
 
 With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, in Yandex.Metrica, conditional aggregate functions are used to implement the segment comparison functionality.
 
-## -Array
+## -Array {#agg-functions-combinator-array}
 
 The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
@@ -18,9 +18,9 @@ Example 1: `sumArray(arr)` - Totals all the elements of all 'arr' arrays. In thi
 
 Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
 
--If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument can't be an array.
+-If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
-## -State
+## -State {#agg-functions-combinator-state}
 
 If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the [uniq](reference.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
@@ -40,9 +40,50 @@ If you apply this combinator, the aggregate function takes the intermediate aggr
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn't return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
-## -ForEach
+## -ForEach {#agg-functions-combinator-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
+
+## -OrDefault {#agg-functions-combinator-ordefault}
+
+Fills the default value of the aggregate function's return type if there is nothing to aggregate.
+
+```sql
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+```text
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+## -OrNull {#agg-functions-combinator-ornull}
+
+Fills `null` if there is nothing to aggregate. The return column will be nullable.
+
+```sql
+SELECT avg(number), avgOrNull(number) FROM numbers(0)
+```
+```text
+┌─avg(number)─┬─avgOrNull(number)─┐
+│         nan │              ᴺᵁᴸᴸ │
+└─────────────┴───────────────────┘
+```
+
+-OrDefault and -OrNull can be combined with other combinators. It is useful when the aggregate function does not accept the empty input.
+
+```sql
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+```text
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
 
 ## -Resample {#agg_functions-combinator-resample}
 
@@ -54,7 +95,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Parameters**
 
-- `start` — Starting value of the whole required interval for `resampling_key` values. 
+- `start` — Starting value of the whole required interval for `resampling_key` values.
 - `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn't include the `stop` value `[start, stop)`.
 - `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
 - `resampling_key` — Column whose values are used for separating data into intervals.
@@ -85,7 +126,7 @@ Let's get the names of the people whose age lies in the intervals of `[30,60)` a
 To aggregate names in an array, we use the [groupArray](reference.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
 ```sql
-SELECT groupArrayResample(30, 75, 30)(name, age) from people
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 ```
 ```text
 ┌─groupArrayResample(30, 75, 30)(name, age)─────┐

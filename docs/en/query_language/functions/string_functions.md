@@ -85,6 +85,42 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
+## repeat {#repeat}
+
+Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+**Syntax**
+
+```sql
+repeat(s, n)
+```
+
+**Parameters**
+
+- `s` — The string to repeat. [String](../../data_types/string.md).
+- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+
+**Returned value**
+
+The single string, which contains the string  `s` repeated `n` times. If `n` < 1, the function returns empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT repeat('abc', 10)
+```
+
+Result:
+
+```text
+┌─repeat('abc', 10)──────────────┐
+│ abcabcabcabcabcabcabcabcabcabc │
+└────────────────────────────────┘
+```
 
 ## reverse
 
@@ -152,25 +188,165 @@ Similar to base64Decode, but in case of error an empty string would be returned.
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix) {#function-startswith}
+## startsWith(str, prefix) {#function-startswith}
 
-Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
+Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
 
-## trimLeft(s)
+```sql
+SELECT startsWith('Spider-Man', 'Spi');
+```
 
-Returns a string that removes the whitespace characters on left side.
+**Returned values**
 
-## trimRight(s)
+- 1, if the string starts with the specified prefix.
+- 0, if the string doesn't start with the specified prefix.
 
-Returns a string that removes the whitespace characters on right side.
+**Example**
 
-## trimBoth(s)
+Query:
 
-Returns a string that removes the whitespace characters on either side.
+```sql
+SELECT startsWith('Hello, world!', 'He');
+```
+
+Result:
+
+```text
+┌─startsWith('Hello, world!', 'He')─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
+
+## trimLeft {#trimleft}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimLeft()
+```
+
+Alias: `ltrim`.
+
+**Parameters** 
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimLeft('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimLeft('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
+
+## trimRight {#trimright}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimRight()
+```
+
+Alias: `rtrim`.
+
+**Parameters**
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimRight('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimRight('     Hello, world!     ')─┐
+│      Hello, world!                   │
+└──────────────────────────────────────┘
+```
+
+## trimBoth  {#trimboth}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimBoth()
+```
+
+Alias: `trim`.
+
+**Parameters**
+
+- `string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimBoth('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimBoth('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
 
 ## CRC32(s)
 
-Returns the CRC32 checksum of a string
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+
 The result type is UInt32.
+
+## CRC32IEEE(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
+
+The result type is UInt32.
+
+## CRC64(s)
+
+Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
+
+The result type is UInt64.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

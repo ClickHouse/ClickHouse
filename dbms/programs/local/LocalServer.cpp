@@ -19,8 +19,8 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
@@ -32,6 +32,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -152,6 +153,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -221,14 +223,6 @@ catch (const Exception & e)
 }
 
 
-inline String getQuotedString(const String & s)
-{
-    WriteBufferFromOwnString buf;
-    writeQuotedString(s, buf);
-    return buf.str();
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure"))
@@ -241,7 +235,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
         table_file = "stdin";
     else /// Use regular file
-        table_file = getQuotedString(config().getString("table-file"));
+        table_file = quoteString(config().getString("table-file"));
 
     return
     "CREATE TABLE " + table_name +
@@ -449,7 +443,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.count("help"))
+    if (options.empty() || options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
@@ -504,6 +498,9 @@ void LocalServer::applyCmdOptions()
 }
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

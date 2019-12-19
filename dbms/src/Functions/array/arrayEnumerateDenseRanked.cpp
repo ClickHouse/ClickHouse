@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include "arrayEnumerateRanked.h"
+#include "registerFunctionsArray.h"
 
 
 namespace DB

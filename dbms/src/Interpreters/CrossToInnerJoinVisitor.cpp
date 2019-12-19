@@ -4,7 +4,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/QueryNormalizer.h> // for functionIsInOperator
+#include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -90,11 +90,14 @@ public:
     using TypeToVisit = const ASTFunction;
 
     CheckExpressionVisitorData(const std::vector<JoinedTable> & tables_)
-        : tables(tables_)
+        : joined_tables(tables_)
         , ands_only(true)
-    {}
+    {
+        for (auto & joined : joined_tables)
+            tables.push_back(joined.table);
+    }
 
-    void visit(const ASTFunction & node, ASTPtr & ast)
+    void visit(const ASTFunction & node, const ASTPtr & ast)
     {
         if (!ands_only)
             return;
@@ -156,14 +159,15 @@ public:
     }
 
 private:
-    const std::vector<JoinedTable> & tables;
+    const std::vector<JoinedTable> & joined_tables;
+    std::vector<DatabaseAndTableWithAlias> tables;
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
     bool ands_only;
 
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
     {
         if (!node.arguments)
-            throw Exception("Logical error: function requires argiment", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: function requires arguments", ErrorCodes::LOGICAL_ERROR);
         if (node.arguments->children.size() != 2)
             return false;
 
@@ -180,31 +184,16 @@ private:
     /// @return table position to attach expression to or 0.
     size_t checkIdentifiers(const ASTIdentifier & left, const ASTIdentifier & right)
     {
-        /// {best_match, best_table_pos}
-        std::pair<size_t, size_t> left_best{0, 0};
-        std::pair<size_t, size_t> right_best{0, 0};
+        size_t left_table_pos = 0;
+        bool left_match = IdentifierSemantic::chooseTable(left, tables, left_table_pos);
 
-        for (size_t i = 0; i < tables.size(); ++i)
+        size_t right_table_pos = 0;
+        bool right_match = IdentifierSemantic::chooseTable(right, tables, right_table_pos);
+
+        if (left_match && right_match && (left_table_pos != right_table_pos))
         {
-            size_t match = IdentifierSemantic::canReferColumnToTable(left, tables[i].table);
-            if (match > left_best.first)
-            {
-                left_best.first = match;
-                left_best.second = i;
-            }
-
-            match = IdentifierSemantic::canReferColumnToTable(right, tables[i].table);
-            if (match > right_best.first)
-            {
-                right_best.first = match;
-                right_best.second = i;
-            }
-        }
-
-        if (left_best.first && right_best.first && (left_best.second != right_best.second))
-        {
-            size_t table_pos = std::max(left_best.second, right_best.second);
-            if (tables[table_pos].canAttachOnExpression())
+            size_t table_pos = std::max(left_table_pos, right_table_pos);
+            if (joined_tables[table_pos].canAttachOnExpression())
                 return table_pos;
         }
         return 0;
@@ -212,27 +201,17 @@ private:
 
     size_t checkIdentifier(const ASTIdentifier & identifier)
     {
-        size_t best_match = 0;
         size_t best_table_pos = 0;
+        bool match = IdentifierSemantic::chooseTable(identifier, tables, best_table_pos);
 
-        for (size_t i = 0; i < tables.size(); ++i)
-        {
-            size_t match = IdentifierSemantic::canReferColumnToTable(identifier, tables[i].table);
-            if (match > best_match)
-            {
-                best_match = match;
-                best_table_pos = i;
-            }
-        }
-
-        if (best_match && tables[best_table_pos].canAttachOnExpression())
+        if (match && joined_tables[best_table_pos].canAttachOnExpression())
             return best_table_pos;
         return 0;
     }
 };
 
-using CheckExpressionMatcher = OneTypeMatcher<CheckExpressionVisitorData, false>;
-using CheckExpressionVisitor = InDepthNodeVisitor<CheckExpressionMatcher, true>;
+using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, false>;
+using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 
 bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables, size_t & num_comma)
@@ -314,7 +293,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         return;
 
     CheckExpressionVisitor::Data visitor_data{joined_tables};
-    CheckExpressionVisitor(visitor_data).visit(select.refWhere());
+    CheckExpressionVisitor(visitor_data).visit(select.where());
 
     if (visitor_data.complex())
         return;

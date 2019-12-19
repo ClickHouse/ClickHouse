@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
@@ -138,15 +138,9 @@ public:
         Int64 length_value = 0;
 
         if (column_start_const)
-        {
             start_value = column_start_const->getInt(0);
-        }
         if (column_length_const)
-        {
             length_value = column_length_const->getInt(0);
-            if (length_value < 0)
-                throw Exception("Third argument provided for function substring could not be negative.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        }
 
         if constexpr (is_utf8)
         {

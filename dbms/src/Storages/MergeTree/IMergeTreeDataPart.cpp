@@ -260,6 +260,11 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
 
             dir.remove(true);
+
+            if (state == State::DeleteOnDestroy)
+            {
+                LOG_TRACE(storage.log, "Removed part from old location " << path);
+            }
         }
         catch (...)
         {
@@ -567,7 +572,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : storage.getColumns().getAllPhysical())
-            if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
+            if (Poco::File(getFullPath() + getFileNameForColumn(column) + ".bin").exists())
                 columns.push_back(column);
 
         if (columns.empty())

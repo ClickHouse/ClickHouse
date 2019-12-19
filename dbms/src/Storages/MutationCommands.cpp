@@ -7,6 +7,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

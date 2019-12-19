@@ -5,7 +5,6 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <IO/WriteHelpers.h>    /// backQuote, backQuoteIfNeed
 
 #include <algorithm>
 #include <ostream>
@@ -222,6 +221,5 @@ public:
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
-
 
 }

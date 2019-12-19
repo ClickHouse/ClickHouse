@@ -1,6 +1,8 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -9,7 +11,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTShowQuotasQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -19,8 +23,10 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -31,8 +37,10 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowQuotasQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
@@ -133,7 +141,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
-    else if (query->as<ASTExistsQuery>())
+    else if (query->as<ASTExistsTableQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsDictionaryQuery>())
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
@@ -142,6 +154,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
     else if (query->as<ASTShowCreateDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateDictionaryQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
@@ -178,6 +194,22 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTWatchQuery>())
     {
         return std::make_unique<InterpreterWatchQuery>(query, context);
+    }
+    else if (query->as<ASTCreateQuotaQuery>())
+    {
+        return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
+    }
+    else if (query->as<ASTDropAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTShowQuotasQuery>())
+    {
+        return std::make_unique<InterpreterShowQuotasQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

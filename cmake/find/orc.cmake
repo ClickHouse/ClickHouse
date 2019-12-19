@@ -1,7 +1,8 @@
-option (ENABLE_ORC "Enable ORC" 1)
+option (ENABLE_ORC "Enable ORC" ${ENABLE_LIBRARIES})
 
 if(ENABLE_ORC)
-option (USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled" ${NOT_UNBUNDLED})
+include(cmake/find/snappy.cmake)
+option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/orc/c++/include/orc/OrcFile.hh")
    if(USE_INTERNAL_ORC_LIBRARY)
@@ -25,7 +26,7 @@ endif ()
 
 if (ORC_LIBRARY AND ORC_INCLUDE_DIR)
     set(USE_ORC 1)
-elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND ARROW_LIBRARY) # (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
+elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND ARROW_LIBRARY AND SNAPPY_LIBRARY) # (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
     set(ORC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++/include")
     set(ORC_LIBRARY orc)
     set(USE_ORC 1)

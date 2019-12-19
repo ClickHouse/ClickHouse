@@ -1,6 +1,7 @@
 #include "KafkaBlockOutputStream.h"
 
 #include <Formats/FormatFactory.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 namespace DB
 {

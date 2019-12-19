@@ -66,26 +66,4 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
     if (has_nested)
         writeException(Exception(Exception::CreateFromPoco, *e.nested()), buf, with_stack_trace);
 }
-
-
-String backQuoteIfNeed(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeProbablyBackQuotedString(x, wb);
-    }
-    return res;
-}
-
-String backQuote(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeBackQuotedString(x, wb);
-    }
-    return res;
-}
-
 }

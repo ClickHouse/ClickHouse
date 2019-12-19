@@ -14,7 +14,7 @@ int test()
 
     std::atomic<int> counter{0};
     for (size_t i = 0; i < 10; ++i)
-        pool.schedule([&]{ ++counter; });
+        pool.scheduleOrThrowOnError([&]{ ++counter; });
     pool.wait();
 
     return counter;

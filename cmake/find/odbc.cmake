@@ -1,6 +1,9 @@
 # This file copied from contrib/poco/cmake/FindODBC.cmake to allow build without submodules
 
-option (ENABLE_ODBC "Enable ODBC" ${OS_LINUX})
+if(OS_LINUX)
+    option (ENABLE_ODBC "Enable ODBC" ${ENABLE_LIBRARIES})
+endif()
+
 if(ENABLE_ODBC)
     if (OS_LINUX)
         option(USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})

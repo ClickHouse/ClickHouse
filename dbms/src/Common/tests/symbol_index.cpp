@@ -6,15 +6,17 @@
 #include <iostream>
 #include <dlfcn.h>
 
-
-NO_INLINE const void * getAddress()
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
+#pragma GCC diagnostic pop
 
 int main(int argc, char ** argv)
 {
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
     using namespace DB;
 
     if (argc < 2)

@@ -21,6 +21,7 @@ private:
     ExpressionActionsPtr expression;
     bool on_totals;
     bool default_totals;
+    bool initialized = false;
 };
 
 }

@@ -14,6 +14,7 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const Names & required_result_column_names)
     : options(options_),
     query_ptr(query_ptr_),
-    context(context_)
+    context(std::make_shared<Context>(context_))
 {
     const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
@@ -56,7 +57,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
         Block full_result_header = InterpreterSelectQuery(
-            ast.list_of_selects->children.at(0), context, options.copy().analyze().noModify()).getSampleBlock();
+            ast.list_of_selects->children.at(0), *context, options.copy().analyze().noModify()).getSampleBlock();
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
@@ -65,7 +66,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_selects; ++query_num)
         {
             Block full_result_header_for_current_select = InterpreterSelectQuery(
-                ast.list_of_selects->children.at(query_num), context, options.copy().analyze().noModify()).getSampleBlock();
+                ast.list_of_selects->children.at(query_num), *context, options.copy().analyze().noModify()).getSampleBlock();
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -87,7 +88,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
             ast.list_of_selects->children.at(query_num),
-            context,
+            *context,
             options,
             current_required_result_column_names));
     }
@@ -106,6 +107,19 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         result_header = getCommonHeaderForUnion(headers);
     }
+
+    /// InterpreterSelectWithUnionQuery ignores limits if all nested interpreters ignore limits.
+    bool all_nested_ignore_limits = true;
+    bool all_nested_ignore_quota = true;
+    for (auto & interpreter : nested_interpreters)
+    {
+        if (!interpreter->ignoreLimits())
+            all_nested_ignore_limits = false;
+        if (!interpreter->ignoreQuota())
+            all_nested_ignore_quota = false;
+    }
+    options.ignore_limits |= all_nested_ignore_limits;
+    options.ignore_quota |= all_nested_ignore_quota;
 }
 
 
@@ -123,17 +137,17 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
                             + "\nand\n"
                             + headers[query_num].dumpNames() + "\n",
                             ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+    }
 
-        for (size_t column_num = 0; column_num < num_columns; ++column_num)
-        {
-            std::vector<const ColumnWithTypeAndName *> columns;
-            columns.reserve(num_selects);
-            for (size_t i = 0; i < num_selects; ++i)
-                columns.push_back(&headers[i].getByPosition(column_num));
+    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
 
-            ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-            result_elem = getLeastSuperColumn(columns);
-        }
+    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    {
+        for (size_t i = 0; i < num_selects; ++i)
+            columns[i] = &headers[i].getByPosition(column_num);
+
+        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
+        result_elem = getLeastSuperColumn(columns);
     }
 
     return common_header;
@@ -164,20 +178,23 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
 }
 
 
-BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
+BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams(QueryPipeline & parent_pipeline)
 {
     BlockInputStreams nested_streams;
 
     for (auto & interpreter : nested_interpreters)
     {
-        BlockInputStreams streams = interpreter->executeWithMultipleStreams();
+        BlockInputStreams streams = interpreter->executeWithMultipleStreams(parent_pipeline);
         nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
     }
 
     /// Unify data structure.
     if (nested_interpreters.size() > 1)
+    {
         for (auto & stream : nested_streams)
-            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, result_header, ConvertingBlockInputStream::MatchColumnsMode::Position);
+            stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, result_header,ConvertingBlockInputStream::MatchColumnsMode::Position);
+        parent_pipeline.addInterpreterContext(context);
+    }
 
     return nested_streams;
 }
@@ -185,9 +202,10 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
-    BlockInputStreams nested_streams = executeWithMultipleStreams();
+    BlockIO res;
+    BlockInputStreams nested_streams = executeWithMultipleStreams(res.pipeline);
     BlockInputStreamPtr result_stream;
 
     if (nested_streams.empty())
@@ -205,8 +223,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
         nested_streams.clear();
     }
 
-    BlockIO res;
     res.in = result_stream;
+    res.pipeline.addInterpreterContext(context);
     return res;
 }
 
@@ -236,13 +254,15 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
     }
 
     if (!has_main_pipeline)
-        main_pipeline.init({ std::make_shared<NullSource>(getSampleBlock()) });
+        main_pipeline.init(Pipe(std::make_shared<NullSource>(getSampleBlock())));
 
     if (!pipelines.empty())
     {
         auto common_header = getCommonHeaderForUnion(headers);
-        main_pipeline.unitePipelines(std::move(pipelines), common_header, context);
+        main_pipeline.unitePipelines(std::move(pipelines), common_header, *context);
     }
+
+    main_pipeline.addInterpreterContext(context);
 
     return main_pipeline;
 }

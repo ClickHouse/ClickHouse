@@ -21,6 +21,18 @@ ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionAction
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    if (!initialized)
+    {
+        initialized = true;
+
+        if (expression->resultIsAlwaysEmpty())
+        {
+            stopReading();
+            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            return;
+        }
+    }
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (on_totals)

@@ -4,6 +4,40 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## FQDN {#fqdn}
+
+Returns the fully qualified domain name. 
+
+**Syntax**
+
+```sql
+fqdn();
+```
+
+This function is case-insensitive.
+
+**Returned value**
+
+- String with the fully qualified domain name.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT FQDN();
+```
+
+Result:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
+
 ## basename
 
 Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
@@ -103,8 +137,38 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
-## currentUser()
-Returns the login of authorized user (initiator of query execution).
+## currentUser() {#other_function-currentuser}
+
+Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
+
+```sql
+SELECT currentUser();
+```
+
+Alias: `user()`, `USER()`.
+
+**Returned values**
+
+- Login of current user.
+- Login of user that initiated query in case of disributed query.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentUser();
+```
+
+Result:
+
+```text
+┌─currentUser()─┐
+│ default       │
+└───────────────┘
+```
 
 ## isFinite(x)
 
@@ -735,8 +799,8 @@ Gets data from [Join](../../operations/table_engines/join.md) tables using the s
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
-## modelEvaluate(model_name, ...)
-Evaluate model.
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
+Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
 ## throwIf(x\[, custom_message\])

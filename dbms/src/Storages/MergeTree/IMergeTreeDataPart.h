@@ -28,6 +28,7 @@ namespace DB
 
 struct ColumnSize;
 class MergeTreeData;
+struct FutureMergedMutatedPart;
 
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
@@ -313,7 +314,9 @@ public:
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
     void renameToDetached(const String & prefix) const;
     void makeCloneInDetached(const String & prefix) const;
-    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
+
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
 
     /// Checks that .bin and .mrk files exist
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */ ) const { return true; }

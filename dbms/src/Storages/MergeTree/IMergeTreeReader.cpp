@@ -48,7 +48,7 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
 
 static bool arrayHasNoElementsRead(const IColumn & column)
 {
-    const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&column);
+    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
 
     if (!column_array)
         return false;
@@ -66,22 +66,31 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void IMergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults, size_t num_rows)
+void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
     try
     {
+        size_t num_columns = columns.size();
+
+        if (res_columns.size() != num_columns)
+            throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
+                            "Expected " + toString(num_columns) + ", "
+                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
 
         /// First, collect offset columns for all arrays in the block.
         OffsetColumns offset_columns;
-        for (size_t i = 0; i < res.columns(); ++i)
+        auto requested_column = columns.begin();
+        for (size_t i = 0; i < num_columns; ++i, ++requested_column)
         {
-            const ColumnWithTypeAndName & column = res.safeGetByPosition(i);
+            if (res_columns[i] == nullptr)
+                continue;
 
-            if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.column.get()))
+            if (const auto * array = typeid_cast<const ColumnArray *>(res_columns[i].get()))
             {
-                String offsets_name = Nested::extractTableName(column.name);
+                String offsets_name = Nested::extractTableName(requested_column->name);
                 auto & offsets_column = offset_columns[offsets_name];
 
                 /// If for some reason multiple offsets columns are present for the same nested data structure,
@@ -92,54 +101,43 @@ void IMergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bo
         }
 
         should_evaluate_missing_defaults = false;
-        should_reorder = false;
 
         /// insert default values only for columns without default expressions
-        for (const auto & requested_column : columns)
+        requested_column = columns.begin();
+        for (size_t i = 0; i < num_columns; ++i, ++requested_column)
         {
-            bool has_column = res.has(requested_column.name);
-            if (has_column)
-            {
-                const auto & col = *res.getByName(requested_column.name).column;
-                if (arrayHasNoElementsRead(col))
-                {
-                    res.erase(requested_column.name);
-                    has_column = false;
-                }
-            }
+            auto & [name, type] = *requested_column;
 
-            if (!has_column)
+            if (res_columns[i] && arrayHasNoElementsRead(*res_columns[i]))
+                res_columns[i] = nullptr;
+
+            if (res_columns[i] == nullptr)
             {
-                should_reorder = true;
-                if (storage.getColumns().hasDefault(requested_column.name))
+                if (storage.getColumns().hasDefault(name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
                 }
 
-                ColumnWithTypeAndName column_to_add;
-                column_to_add.name = requested_column.name;
-                column_to_add.type = requested_column.type;
-
-                String offsets_name = Nested::extractTableName(column_to_add.name);
-                if (offset_columns.count(offsets_name))
+                String offsets_name = Nested::extractTableName(name);
+                auto offset_it = offset_columns.find(offsets_name);
+                if (offset_it != offset_columns.end())
                 {
-                    ColumnPtr offsets_column = offset_columns[offsets_name];
-                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
+                    ColumnPtr offsets_column = offset_it->second;
+                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
                     size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
+                    ColumnPtr nested_column =
+                        nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
-                    column_to_add.column = ColumnArray::create(nested_column, offsets_column);
+                    res_columns[i] = ColumnArray::create(nested_column, offsets_column);
                 }
                 else
                 {
-                    /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
-                    /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                    /// We must turn a constant column into a full column because the interpreter could infer
+                    /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+                    res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                 }
-
-                res.insert(std::move(column_to_add));
             }
         }
     }
@@ -151,34 +149,34 @@ void IMergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bo
     }
 }
 
-void IMergeTreeReader::reorderColumns(Block & res, const Names & ordered_names, const String * filter_name)
+void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
 {
     try
     {
-        Block ordered_block;
+        size_t num_columns = columns.size();
 
-        for (const auto & name : ordered_names)
-            if (res.has(name))
-                ordered_block.insert(res.getByName(name));
+        if (res_columns.size() != num_columns)
+            throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
+                            "Expected " + toString(num_columns) + ", "
+                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
 
-        if (filter_name && !ordered_block.has(*filter_name) && res.has(*filter_name))
-            ordered_block.insert(res.getByName(*filter_name));
+        /// Convert columns list to block.
+        /// TODO: rewrite with columns interface. It wll be possible after changes in ExpressionActions.
+        auto name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            if (res_columns[pos] == nullptr)
+                continue;
 
-        std::swap(res, ordered_block);
-    }
-    catch (Exception & e)
-    {
-        /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + ")");
-        throw;
-    }
-}
+            additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+        }
 
-void IMergeTreeReader::evaluateMissingDefaults(Block & res)
-{
-    try
-    {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
+        DB::evaluateMissingDefaults(additional_columns, columns, storage.getColumns().getDefaults(), storage.global_context);
+
+        /// Move columns from block.
+        name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+            res_columns[pos] = std::move(additional_columns.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {

@@ -1,9 +1,6 @@
 #include "ASTColumnsMatcher.h"
-
-#include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-
+#include <Common/quoteString.h>
 #include <re2/re2.h>
 
 
@@ -22,10 +19,8 @@ void ASTColumnsMatcher::appendColumnName(WriteBuffer & ostr) const { writeString
 
 void ASTColumnsMatcher::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    WriteBufferFromOwnString pattern_quoted;
-    writeQuotedString(original_pattern, pattern_quoted);
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(" << pattern_quoted.str() << ")";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "("
+                  << quoteString(original_pattern) << ")";
 }
 
 void ASTColumnsMatcher::setPattern(String pattern)

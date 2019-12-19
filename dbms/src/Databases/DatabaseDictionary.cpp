@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_)
@@ -27,32 +28,36 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, bool)
+void DatabaseDictionary::loadStoredObjects(Context &, bool)
 {
 }
 
 Tables DatabaseDictionary::listTables(const Context & context, const FilterByNameFunction & filter_by_name)
 {
     Tables tables;
-    ExternalLoader::Loadables loadables;
+    ExternalLoader::LoadResults load_results;
     if (filter_by_name)
     {
         /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
-        loadables = context.getExternalDictionariesLoader().loadAndGet(filter_by_name);
+        context.getExternalDictionariesLoader().load(filter_by_name, load_results);
     }
     else
     {
         /// If `filter_by_name` isn't set, we iterate through only already loaded dictionaries. We don't try to load all dictionaries in this case.
-        loadables = context.getExternalDictionariesLoader().getCurrentlyLoadedObjects();
+        load_results = context.getExternalDictionariesLoader().getCurrentLoadResults();
     }
 
-    for (const auto & loadable : loadables)
+    for (const auto & [object_name, info]: load_results)
     {
-        auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(loadable);
-        auto dict_name = dict_ptr->getName();
-        const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
-        auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
+        /// Load tables only from XML dictionaries, don't touch other
+        if (info.object != nullptr && info.repository_name.empty())
+        {
+            auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(info.object);
+            auto dict_name = dict_ptr->getName();
+            const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
+            auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
+            tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
+        }
     }
     return tables;
 }
@@ -62,6 +67,65 @@ bool DatabaseDictionary::isTableExist(
     const String & table_name) const
 {
     return context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
+}
+
+
+bool DatabaseDictionary::isDictionaryExist(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    return false;
+}
+
+
+DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
+    const Context & /*context*/,
+    const FilterByNameFunction & /*filter_by_dictionary_name*/)
+{
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
+}
+
+
+void DatabaseDictionary::createDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/,
+    const ASTPtr & /*query*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseDictionary::removeDictionary(
+    const Context & /*context*/,
+    const String & /*table_name*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseDictionary::attachDictionary(
+    const String & /*dictionary_name*/, const Context & /*context*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseDictionary::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+ASTPtr DatabaseDictionary::tryGetCreateDictionaryQuery(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    return nullptr;
+}
+
+
+ASTPtr DatabaseDictionary::getCreateDictionaryQuery(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
@@ -79,9 +143,9 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
 {
-    return std::make_unique<DatabaseSnapshotIterator>(listTables(context, filter_by_name));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const
@@ -115,7 +179,7 @@ void DatabaseDictionary::removeTable(
     throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-time_t DatabaseDictionary::getTableMetadataModificationTime(
+time_t DatabaseDictionary::getObjectMetadataModificationTime(
     const Context &,
     const String &)
 {

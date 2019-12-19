@@ -384,7 +384,7 @@ arrayPushFront(array, single_value)
 **Пример**
 
 ```sql
-SELECT arrayPushBack(['b'], 'a') AS res
+SELECT arrayPushFront(['b'], 'a') AS res
 ```
 
 ```text
@@ -778,6 +778,22 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## arrayFlatten(arr) {#array_functions-arrayflatten}
+
+Функция `arrayFlatten` (или `flatten`) соеденит вложенные массивы и вернет массив из их элементов.
+
+Пример:
+
+```sql
+SELECT arrayFlatten([[1, 2, 3], [4, 5]])
+```
+
+```text
+┌─arrayFlatten([[1, 2, 3], [4, 5]])─┐
+│                       [1,2,3,4,5] │
+└───────────────────────────────────┘
+```
+
 ## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
@@ -797,5 +813,41 @@ SELECT arrayReverse([1, 2, 3])
 
 Синоним для ["arrayReverse"](#array_functions-arrayreverse)
 
+
+## arrayCompact {#arraycompact}
+
+Удаляет дубликаты из массива. Порядок результирующих значений определяется порядком в исходном массиве.
+
+**Синтаксис**
+
+```sql
+arrayCompact(arr)
+```
+
+**Параметры**
+
+`arr` — [Массив](../../data_types/array.md) для обхода.
+
+**Возвращаемое значение**
+
+Массив без дубликатов.
+
+Тип: `Array`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
+```
+
+Ответ:
+
+```text
+┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
+│ [1,nan,nan,2,3]                            │
+└────────────────────────────────────────────┘
+```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->

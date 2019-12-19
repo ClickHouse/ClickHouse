@@ -5,6 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
@@ -15,7 +16,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
-#include <Common/SettingsChanges.h>
+#include <Common/TypePromotion.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -36,10 +37,19 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
+struct SettingChange;
+using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
 class PartitionCommands;
+
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
+
+class Pipe;
+using Pipes = std::vector<Pipe>;
 
 struct ColumnSize
 {
@@ -62,7 +72,7 @@ struct ColumnSize
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
 {
 public:
     IStorage() = default;
@@ -99,6 +109,9 @@ public:
 
     /// Returns true if the storage supports settings.
     virtual bool supportsSettings() const { return false; }
+
+    /// Returns true if the blocks shouldn't be pushed to associated views on insert.
+    virtual bool noPushingToViews() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -232,8 +245,20 @@ public:
       *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      *
+      * Default implementation calls `readWithProcessors` and wraps into TreeExecutor.
       */
     virtual BlockInputStreams read(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
+
+    /** The same as read, but returns processors.
+     */
+    virtual Pipes readWithProcessors(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
@@ -243,6 +268,8 @@ public:
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    virtual bool supportProcessorsPipeline() const { return false; }
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -399,7 +426,16 @@ public:
     virtual Names getSortingKeyColumns() const { return {}; }
 
     /// Returns storage policy if storage supports it
-    virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
+    virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+     */
+    virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
+
+    static DB::CompressionMethod chooseCompressionMethod(const String & uri, const String & compression_method);
 
 private:
     /// You always need to take the next three locks in this order.

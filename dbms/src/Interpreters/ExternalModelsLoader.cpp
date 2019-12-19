@@ -10,20 +10,16 @@ namespace ErrorCodes
 }
 
 
-ExternalModelsLoader::ExternalModelsLoader(
-    std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
-    Context & context_)
-        : ExternalLoader(context_.getConfigRef(),
-                         "external model",
-                         &Logger::get("ExternalModelsLoader")),
-          context(context_)
+ExternalModelsLoader::ExternalModelsLoader(Context & context_)
+    : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
+    , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"model", "name", "models_config"});
     enablePeriodicUpdates(true);
 }
 
 std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
-        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) const
+    const std::string & name, const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix, const std::string & /* repository_name */) const
 {
     String type = config.getString(config_prefix + ".type");
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");
@@ -43,4 +39,8 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     }
 }
 
+void ExternalModelsLoader::addConfigRepository(const String & name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
+{
+    ExternalLoader::addConfigRepository(name, std::move(config_repository), {"models", "name"});
+}
 }

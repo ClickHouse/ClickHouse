@@ -1,4 +1,3 @@
-project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
 foreach(policy
@@ -13,7 +12,11 @@ foreach(policy
     endif()
 endforeach()
 
+project(ClickHouse)
+
+include (cmake/arch.cmake)
 include (cmake/target.cmake)
+include (cmake/tools.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -25,8 +28,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
-
-include (cmake/arch.cmake)
 
 option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
@@ -118,16 +119,16 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
+if (ARCH_AMD64)
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+endif ()
 
-    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-        option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif ()
+if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+endif ()
 
-    if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
-        message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
-    endif ()
+if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
+    message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
 endif ()
 
 # Make sure the final executable has symbols exported
@@ -197,14 +198,22 @@ if(WITH_COVERAGE AND COMPILER_GCC)
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
-set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
+if (COMPILER_CLANG)
+    # Exception unwinding doesn't work in clang release build without this option
+    # TODO investigate if contrib/libcxxabi is out of date
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+endif ()
+
+option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 
 option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
 if (UNBUNDLED)
@@ -229,7 +238,6 @@ include(cmake/dbms_glob_sources.cmake)
 if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
-    include(cmake/darwin/sdk.cmake)
     include(cmake/darwin/default_libs.cmake)
 endif ()
 
@@ -324,6 +332,7 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
+include (cmake/find/s3.cmake)
 include (cmake/find/consistent-hashing.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
@@ -348,7 +357,7 @@ include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
-# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
+# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
@@ -367,15 +376,29 @@ elseif (USE_TCMALLOC)
     endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
+elseif (OS_LINUX)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
 include (cmake/print_flags.cmake)
 
-install (EXPORT global DESTINATION cmake)
+if (TARGET global-group)
+    install (EXPORT global DESTINATION cmake)
+endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+macro (add_executable target)
+    # invoke built-in add_executable
+    # explicitly acquire and interpose malloc symbols by clickhouse_malloc
+    _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    get_target_property (type ${target} TYPE)
+    if (${type} STREQUAL EXECUTABLE)
+        # operator::new/delete for executables (MemoryTracker stuff)
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+    endif()
+endmacro()
+
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)

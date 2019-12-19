@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Defines.h>
 #include <Common/typeid_cast.h>

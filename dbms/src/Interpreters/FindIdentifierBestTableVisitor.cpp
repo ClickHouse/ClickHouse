@@ -18,27 +18,20 @@ void FindIdentifierBestTableData::visit(ASTIdentifier & identifier, ASTPtr &)
     {
         for (const auto & table_names : tables)
         {
-            if (std::find(table_names.second.begin(), table_names.second.end(), identifier.name) != table_names.second.end())
+            auto & columns = table_names.columns;
+            if (std::find(columns.begin(), columns.end(), identifier.name) != columns.end())
             {
                 // TODO: make sure no collision ever happens
                 if (!best_table)
-                    best_table = &table_names.first;
+                    best_table = &table_names.table;
             }
         }
     }
     else
     {
-        // FIXME: make a better matcher using `names`?
-        size_t best_match = 0;
-        for (const auto & table_names : tables)
-        {
-            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table_names.first))
-                if (match > best_match)
-                {
-                    best_match = match;
-                    best_table = &table_names.first;
-                }
-        }
+        size_t best_table_pos = 0;
+        if (IdentifierSemantic::chooseTable(identifier, tables, best_table_pos))
+            best_table = &tables[best_table_pos].table;
     }
 
     identifier_table.emplace_back(&identifier, best_table);

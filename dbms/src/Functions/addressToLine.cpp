@@ -1,4 +1,4 @@
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
@@ -8,7 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
@@ -18,6 +18,7 @@
 #include <mutex>
 #include <filesystem>
 #include <unordered_map>
+#include "registerFunctions.h"
 
 
 namespace DB
@@ -140,8 +141,8 @@ private:
         std::lock_guard lock(mutex);
         map.emplace(addr, it, inserted);
         if (inserted)
-            *lookupResultGetMapped(it) = impl(addr);
-        return *lookupResultGetMapped(it);
+            it->getMapped() = impl(addr);
+        return it->getMapped();
     }
 };
 
