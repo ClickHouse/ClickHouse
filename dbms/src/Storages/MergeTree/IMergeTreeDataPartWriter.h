@@ -94,11 +94,13 @@ public:
 
     const MergeTreeData::ColumnSizeByName & getColumnsSizes() const { return columns_sizes; }
 
-    void setOffsetColumns(WrittenOffsetColumns * written_offset_columns_, bool skip_offsets_)
+    void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;
-        skip_offsets = skip_offsets_;
     }
+
+    using SkipIndices = std::vector<MergeTreeIndexPtr>;
+    const SkipIndices & getSkipIndices() { return skip_indices; }
 
     void initSkipIndices();
     void initPrimaryIndex();
@@ -160,8 +162,6 @@ protected:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
-    bool skip_offsets = false;
-
 };
 
 }

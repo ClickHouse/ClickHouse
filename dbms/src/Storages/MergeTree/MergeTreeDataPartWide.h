@@ -33,7 +33,7 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-   MergeTreeDataPartWide(
+    MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
@@ -86,7 +86,7 @@ public:
 
     ~MergeTreeDataPartWide() override;
 
-   bool hasColumnFiles(const String & column, const IDataType & type) const override;
+    bool hasColumnFiles(const String & column, const IDataType & type) const override;
 
 protected:
     void checkConsistency(bool require_part_metadata) const override;

@@ -185,10 +185,6 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         buffer.seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
     }
 
-    std::cerr << "(loadIndexGranularity) marks: " << index_granularity.getMarksCount() << "\n";
-    std::cerr << "(loadIndexGranularity) mark size: " << index_granularity_info.mark_size_in_bytes << "\n";
-    std::cerr << "(loadIndexGranularity) marks file size: " << marks_file_size << "\n";
-
     if (index_granularity.getMarksCount() * index_granularity_info.mark_size_in_bytes != marks_file_size)
         throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 

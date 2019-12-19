@@ -40,8 +40,6 @@ void MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    std::cerr << "(MergeTreeDataPartWriterCompact::write) block111: " << block.dumpStructure() << "\n";
-
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
@@ -117,10 +115,6 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
 size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
 {
-    std::cerr << "(writeColumnSingleGranule) writing column: " << column.name << "\n";
-    std::cerr << "(writeColumnSingleGranule) from_row: " << from_row << "\n";
-    std::cerr << "(writeColumnSingleGranule) number_of_rows: " << number_of_rows << "\n";
-
     size_t old_uncompressed_size = stream->compressed.count();
 
     writeIntBinary(stream->plain_hashing.count(), stream->marks);

@@ -155,8 +155,6 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
-    // std::cerr << "(readFromPartImpl) rows_to_read: " << rows_to_read << "\n";
-
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
     /// All rows were filtered. Repeat.

@@ -61,7 +61,7 @@ private:
 };
 
 constexpr inline auto getNonAdaptiveMrkExtension() { return ".mrk"; }
-constexpr inline auto getNonAdaptiveMrkSize() { return sizeof(MarkInCompressedFile) * 2; }
+constexpr inline auto getNonAdaptiveMrkSize() { return sizeof(UInt64) * 2; }
 
 std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type);
 size_t getAdaptiveMrkSize(MergeTreeDataPartType part_type, size_t columns_num);

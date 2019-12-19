@@ -668,7 +668,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
     MergeStageProgress horizontal_stage_progress(
-        column_sizes ? 1.0 : column_sizes->keyColumnsWeight());
+        column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
 
     for (const auto & part : parts)
     {
@@ -963,8 +963,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (isCompactPart(source_part))
         commands_for_part.additional_columns = source_part->columns.getNames();
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
-
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
@@ -973,6 +971,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
     auto in = mutations_interpreter.execute(table_lock_holder);
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 

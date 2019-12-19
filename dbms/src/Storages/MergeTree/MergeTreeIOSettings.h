@@ -28,6 +28,7 @@ struct MergeTreeWriterSettings
     bool blocks_are_granules_size;
     String filename_suffix = "";
     size_t estimated_size = 0;
+    bool skip_offsets = false;
 };
 }
 

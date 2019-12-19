@@ -20,7 +20,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     : IMergeTreeDataPartWriter(part_path_,
         storage_, columns_list_, indices_to_recalc_,
         marks_file_extension_, default_codec_, settings_, index_granularity_, false)
-    , can_use_adaptive_granularity(storage_.canUseAdaptiveGranularity())
 {
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
@@ -35,11 +34,10 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+        if (settings.skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
             return;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
@@ -54,8 +52,6 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.aio_threshold);
     };
 
-    std::cerr << "(addStreams) name: " << name << "\n";
-
     IDataType::SubstreamPath stream_path;
     type.enumerateStreams(callback, stream_path);
 }
@@ -67,7 +63,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     return [&, this] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && skip_offsets)
+        if (is_offsets && settings.skip_offsets)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
@@ -103,9 +99,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     /// but not in case of vertical merge)
     if (compute_granularity)
         fillIndexGranularity(block);
-
-    std::cerr << "(MergeTreeDataPartWriterWide::write) marks_count: " << index_granularity.getMarksCount() << "\n";
-    std::cerr << "(MergeTreeDataPartWriterWide::write) current_mark: " << current_mark << "\n";
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
 
@@ -150,7 +143,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
      type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-         if (is_offsets && skip_offsets)
+         if (is_offsets && settings.skip_offsets)
              return;
 
          String stream_name = IDataType::getFileNameForStream(name, substream_path);
@@ -192,7 +185,7 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && skip_offsets)
+        if (is_offsets && settings.skip_offsets)
             return;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
@@ -221,10 +214,6 @@ void MergeTreeDataPartWriterWide::writeColumn(
         serialize_settings.getter = createStreamGetter(name, offset_columns);
         type.serializeBinaryBulkStatePrefix(serialize_settings, it->second);
     }
-
-    std::cerr << "(writeColumn) table: " << storage.getTableName() << "\n";
-    std::cerr << "(writeColumn) column: " << name << "\n";
-    std::cerr << "(writeColumn) index_offset: " << index_offset << "\n";
 
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;

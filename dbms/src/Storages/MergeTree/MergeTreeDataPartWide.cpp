@@ -181,7 +181,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + escapeForFileName(columns.front().name));
+    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + getFileNameForColumn(columns.front()));
     if (!Poco::File(marks_file_path).exists())
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -431,7 +431,8 @@ NameToNameMap MergeTreeDataPartWide::createRenameMapForAlter(
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
-    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path) {
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column.name, substream_path);
     });
