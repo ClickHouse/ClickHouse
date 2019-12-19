@@ -25,7 +25,6 @@ struct MergeTreeMutationEntry
     MergeTreePartInfo latest_failed_part_info;
     time_t latest_fail_time = 0;
     String latest_fail_reason;
-    int latest_fail_error_code = 0;
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number);
