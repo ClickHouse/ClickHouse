@@ -52,13 +52,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         column_positions.push_back(data_part->getColumnPosition(column.name));
 }
 
-size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
+size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
-    UNUSED(from_mark);
-    UNUSED(continue_reading);
-    UNUSED(max_rows_to_read);
-    UNUSED(res);
-
     /// FIXME compute correct granularity
     std::cerr << "(MergeTreeReaderCompact::readRows) max_rows_to_read: " << max_rows_to_read << "\n";
 
@@ -75,23 +70,24 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
 
-        auto it = columns.begin();
-        for (size_t i = 0; i < num_columns; ++i, ++it)
+        auto name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            if (!column_positions[i])
+            if (!column_positions[pos])
                 continue;
-
-            bool append = res.has(it->name);
+            
+            auto & [name, type] = *name_and_type;
+            bool append = res_columns[pos] != nullptr;
             if (!append)
-                res.insert(ColumnWithTypeAndName(it->type->createColumn(), it->type, it->name));
+                res_columns[pos] = name_and_type->type->createColumn();
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
-            MutableColumnPtr column = res.getByName(it->name).column->assumeMutable();
+            MutableColumnPtr column = res_columns[pos]->assumeMutable();
 
             try
             {
                 size_t column_size_before_reading = column->size();
-                readData(it->name, *it->type, *column, from_mark, *column_positions[i], rows_to_read);
+                readData(name, *type, *column, from_mark, *column_positions[pos], rows_to_read);
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
 
                 if (read_rows_in_column < rows_to_read)
@@ -107,14 +103,14 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             catch (Exception & e)
             {
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + it->name + ")");
+                e.addMessage("(while reading column " + name + ")");
                 throw;
             }
 
             if (column->size())
-                res.getByName(it->name).column = std::move(column);
+                res_columns[pos] = std::move(column);
             else
-                res.erase(it->name);
+                res_columns[pos] = nullptr;
         }
 
         ++from_mark;

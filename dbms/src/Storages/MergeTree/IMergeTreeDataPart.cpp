@@ -138,7 +138,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 IMergeTreeDataPart::IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
@@ -152,7 +152,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
@@ -567,7 +567,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     Poco::File poco_file_path{path};
     if (!poco_file_path.exists())
     {
-        if (require)
+        if (require || isCompactPart(shared_from_this()))
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
@@ -836,10 +836,10 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
-void IMergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const
+void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
 {
     assertOnDisk();
-    auto & reserved_disk = reservation->getDisk();
+    auto reserved_disk = reservation->getDisk();
     if (reserved_disk->getName() == disk->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
 

@@ -52,7 +52,7 @@ namespace ErrorCodes
 MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
 {
@@ -62,7 +62,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
 {
@@ -426,6 +426,16 @@ NameToNameMap MergeTreeDataPartWide::createRenameMapForAlter(
     }
 
     return rename_map;
+}
+
+String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
+{
+    String filename;
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path) {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column.name, substream_path);
+    });
+    return filename;
 }
 
 }

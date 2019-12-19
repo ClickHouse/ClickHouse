@@ -1006,7 +1006,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception while reserving space.
-    MergeTreeDataPart::TTLInfos ttl_infos;
+    IMergeTreeDataPart::TTLInfos ttl_infos;
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);

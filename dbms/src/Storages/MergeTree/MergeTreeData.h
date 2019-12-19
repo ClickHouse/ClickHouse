@@ -185,21 +185,21 @@ public:
     /// After this methods setColumns must be called
     /// FIXME make this inside this function
     MutableDataPartPtr createPart(const String & name,
-        const MergeTreePartInfo & part_info,const DiskSpace::DiskPtr & disk,
+        const MergeTreePartInfo & part_info,const DiskPtr & disk,
         const NamesAndTypesList & columns,
         size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
+        const DiskPtr & disk, const String & relative_path) const;
 
     /// After this methods loadColumnsChecksumsIndexes must be called
     /// FIXME make this inside this function
     MutableDataPartPtr createPart(const String & name,
-        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
+        const DiskPtr & disk, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const DiskSpace::DiskPtr & disk, const String & relative_path) const;
+        const DiskPtr & disk, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -710,10 +710,10 @@ public:
 
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move) const;
     ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-                                                                const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                const IMergeTreeDataPart::TTLInfos & ttl_infos,
                                                                 time_t time_of_move) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -769,10 +769,10 @@ public:
         SpacePtr getDestination(const StoragePolicyPtr & policy) const;
 
         /// Checks if given part already belongs destination disk or volume for this rule.
-        bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
+        bool isPartInDestination(const StoragePolicyPtr & policy, const IMergeTreeDataPart & part) const;
     };
 
-    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    const TTLEntry * selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;

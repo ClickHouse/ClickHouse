@@ -353,7 +353,7 @@ public:
             reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
         else
         {
-            MergeTreeDataPart::TTLInfos ttl_infos;
+            IMergeTreeDataPart::TTLInfos ttl_infos;
             for (auto & part_ptr : future_part_.parts)
                 ttl_infos.update(part_ptr->ttl_infos);
 

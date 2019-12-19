@@ -82,6 +82,8 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const { return columns.front().name; }
 
+    virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
+
     virtual NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & /* analysis_result */,
         const NamesAndTypesList & /* old_columns */) const
@@ -114,13 +116,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk = {},
+        const DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk = {},
+        const DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 
     void assertOnDisk() const;
@@ -160,7 +162,7 @@ public:
     MergeTreePartInfo info;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
-    DiskSpace::DiskPtr disk;
+    DiskPtr disk;
 
     mutable String relative_path;
 

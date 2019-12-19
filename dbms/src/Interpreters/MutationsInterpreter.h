@@ -21,18 +21,9 @@ bool isStorageTouchedByMutations(StoragePtr storage, const std::vector<MutationC
 class MutationsInterpreter
 {
 public:
-<<<<<<< HEAD
-    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_)
-        : storage(std::move(storage_))
-        , commands(std::move(commands_))
-        , context(context_)
-    {
-    }
-=======
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_, bool can_execute_);
->>>>>>> upstream/master
+    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_, bool can_execute_);
 
     void validate(TableStructureReadLockHolder & table_lock_holder);
 

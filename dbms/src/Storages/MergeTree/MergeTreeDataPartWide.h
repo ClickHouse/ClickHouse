@@ -37,13 +37,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk,
+        const DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
     MergeTreeReaderPtr getReader(
@@ -67,6 +67,8 @@ public:
     bool supportsVerticalMerge() const override { return true; }
 
     void accumulateColumnSizes(ColumnToSize & column_to_size) const override;
+
+    String getFileNameForColumn(const NameAndTypePair & column) const override;
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.

@@ -55,7 +55,7 @@ namespace ErrorCodes
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
 {
@@ -65,7 +65,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
 {

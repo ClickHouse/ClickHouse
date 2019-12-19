@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Class contains information about index granularity in rows of MergeTreeDataPart
+/// Class contains information about index granularity in rows of IMergeTreeDataPart
 /// Inside it contains vector of partial sums of rows after mark:
 /// |-----|---|----|----|
 /// |  5  | 8 | 12 | 16 |

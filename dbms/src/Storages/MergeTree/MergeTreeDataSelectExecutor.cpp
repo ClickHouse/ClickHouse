@@ -783,7 +783,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
-                query_info.prewhere_info, reader_settings, virt_columns));
+                query_info.prewhere_info, reader_settings, virt_columns);
 
             if (i == 0)
             {
@@ -1047,7 +1047,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
-                    virt_columns, part.part_index_in_query);
+                    virt_columns, part.part_index_in_query));
             }
             else
             {
@@ -1055,7 +1055,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
-                    virt_columns, part.part_index_in_query);
+                    virt_columns, part.part_index_in_query));
 
                 pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
             }
