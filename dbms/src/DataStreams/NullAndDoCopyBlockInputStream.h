@@ -49,6 +49,10 @@ public:
 protected:
     Block readImpl() override
     {
+        /// We do not use cancel flag here.
+        /// If query was cancelled, it will be processed by child streams.
+        /// Part of the data will be processed.
+
         if (input_streams.size() == 1 && output_streams.size() == 1)
             copyData(*input_streams.at(0), *output_streams.at(0));
         else
