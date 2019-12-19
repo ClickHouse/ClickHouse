@@ -98,7 +98,7 @@ Next, check the version of CMake: `cmake --version`. If it is below 3.3, you sho
 
 ClickHouse uses several external libraries for building. Most of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
-There is one library that is not built from sources but is supplied by the system: Readline, and thus are recommended to be installed.
+There is one library that is not built from sources but is supplied by the system: Readline, and thus is recommended to be installed.
 
 Ubuntu: `sudo apt install libreadline-dev`
 
