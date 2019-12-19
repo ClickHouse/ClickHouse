@@ -47,19 +47,12 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     size_t part_index_in_query_,
     bool quiet)
     :
-<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReverseSelectBlockInputStream.cpp
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, reader_settings_,
-        use_uncompressed_cache_, virt_column_names_},
-    required_columns{required_columns_},
-=======
     MergeTreeBaseSelectProcessor{
         replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
         storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
-        max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+        reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
->>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReverseSelectProcessor.cpp
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(std::move(mark_ranges_)),
@@ -103,17 +96,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 }
 
-<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReverseSelectBlockInputStream.cpp
-Block MergeTreeReverseSelectBlockInputStream::getHeader() const
-{
-    return header;
-}
-
-
-bool MergeTreeReverseSelectBlockInputStream::getNewTask()
-=======
 bool MergeTreeReverseSelectProcessor::getNewTask()
->>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReverseSelectProcessor.cpp
 try
 {
     if ((chunks.empty() && all_mark_ranges.empty()) || total_marks_count == 0)

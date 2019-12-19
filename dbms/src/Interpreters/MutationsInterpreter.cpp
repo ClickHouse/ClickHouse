@@ -164,7 +164,7 @@ bool isStorageTouchedByMutations(
 
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
-    std::vector<MutationCommand> commands_,
+    MutationCommands commands_,
     const Context & context_,
     bool can_execute_)
     : storage(std::move(storage_))

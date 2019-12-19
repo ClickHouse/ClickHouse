@@ -66,7 +66,7 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
     try
     {
@@ -149,7 +149,7 @@ void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_ev
     }
 }
 
-void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
+void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
 {
     try
     {

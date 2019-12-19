@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReaderWide.cpp
 MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
     const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_,
@@ -34,36 +33,6 @@ MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data
     : IMergeTreeReader(data_part_, columns_
     , uncompressed_cache_, mark_cache_, mark_ranges_
     , settings_, avg_value_size_hints_)
-=======
-
-MergeTreeReader::~MergeTreeReader() = default;
-
-
-MergeTreeReader::MergeTreeReader(
-    String path_,
-    MergeTreeData::DataPartPtr data_part_,
-    NamesAndTypesList columns_,
-    UncompressedCache * uncompressed_cache_,
-    MarkCache * mark_cache_,
-    bool save_marks_in_cache_,
-    const MergeTreeData & storage_,
-    MarkRanges all_mark_ranges_,
-    size_t aio_threshold_,
-    size_t max_read_buffer_size_,
-    ValueSizeMap avg_value_size_hints_,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_)
-    : data_part(std::move(data_part_))
-    , avg_value_size_hints(std::move(avg_value_size_hints_))
-    , path(std::move(path_)), columns(std::move(columns_))
-    , uncompressed_cache(uncompressed_cache_)
-    , mark_cache(mark_cache_)
-    , save_marks_in_cache(save_marks_in_cache_)
-    , storage(storage_)
-    , all_mark_ranges(std::move(all_mark_ranges_))
-    , aio_threshold(aio_threshold_)
-    , max_read_buffer_size(max_read_buffer_size_)
->>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReader.cpp
 {
     try
     {
@@ -77,16 +46,9 @@ MergeTreeReader::MergeTreeReader(
     }
 }
 
-size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
-{
-    std::cerr << "(MergeTreeReaderWide::readRows) from_mark: " << from_mark << "\n";
-    std::cerr << "(MergeTreeReaderWide::readRows) continue_reading: " << continue_reading << "\n";
 
-<<<<<<< HEAD:dbms/src/Storages/MergeTree/MergeTreeReaderWide.cpp
-=======
-size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
->>>>>>> upstream/master:dbms/src/Storages/MergeTree/MergeTreeReader.cpp
     size_t read_rows = 0;
     try
     {

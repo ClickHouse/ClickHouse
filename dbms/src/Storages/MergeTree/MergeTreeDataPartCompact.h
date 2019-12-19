@@ -41,13 +41,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_ = {});
 
     MergeTreeDataPartCompact(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk_,
+        const DiskPtr & disk_,
         const std::optional<String> & relative_path_ = {});
 
     MergeTreeReaderPtr getReader(
@@ -81,6 +81,8 @@ public:
     void checkConsistency(bool /* require_part_metadata */) const override {}
 
     bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
+
+    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & analysis_result,

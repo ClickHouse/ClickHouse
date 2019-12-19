@@ -225,7 +225,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    DB::MergeTreeDataPart::TTLInfos move_ttl_infos;
+    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     for (const auto & ttl_entry : data.move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 

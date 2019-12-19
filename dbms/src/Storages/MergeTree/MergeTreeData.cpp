@@ -1521,7 +1521,7 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+    const DiskPtr & disk, const String & relative_path) const
 {
     if (type == MergeTreeDataPartType::COMPACT)
         return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
@@ -1534,7 +1534,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name,
     const MergeTreePartInfo & part_info,
-    const DiskSpace::DiskPtr & disk,
+    const DiskPtr & disk,
     const NamesAndTypesList & columns_list,
     size_t bytes_uncompressed,
     size_t rows_count,
@@ -1559,14 +1559,14 @@ static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const DiskSpace::DiskPtr & disk, const String & relative_path) const
+    const String & name, const DiskPtr & disk, const String & relative_path) const
 {
     return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), disk, relative_path);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const String & name, const MergeTreePartInfo & part_info,
-    const DiskSpace::DiskPtr & disk, const String & relative_path) const
+    const DiskPtr & disk, const String & relative_path) const
 {
     auto type = MergeTreeDataPartType::UNKNOWN;
     auto full_path = getFullPathOnDisk(disk) + relative_path + "/";
@@ -3169,7 +3169,7 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
 }
 
 ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
-        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
@@ -3180,7 +3180,7 @@ ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_siz
 }
 
 ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
-        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
@@ -3225,7 +3225,7 @@ SpacePtr MergeTreeData::TTLEntry::getDestination(const StoragePolicyPtr & policy
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const
+bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & policy, const IMergeTreeDataPart & part) const
 {
     if (destination_type == PartDestinationType::VOLUME)
     {
@@ -3239,7 +3239,7 @@ bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & polic
 }
 
 const MergeTreeData::TTLEntry * MergeTreeData::selectTTLEntryForTTLInfos(
-        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
     const MergeTreeData::TTLEntry * result = nullptr;
