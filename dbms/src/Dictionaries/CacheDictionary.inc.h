@@ -21,6 +21,7 @@ extern const Event DictCacheRequestTimeNs;
 extern const Event DictCacheRequests;
 extern const Event DictCacheLockWriteNs;
 extern const Event DictCacheLockReadNs;
+extern const Event DictCacheReadsRottedValues;
 }
 
 namespace CurrentMetrics

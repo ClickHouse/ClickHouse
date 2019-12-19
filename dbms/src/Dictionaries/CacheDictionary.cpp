@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 #include <ext/size.h>
+#include <Interpreters/Context.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -76,6 +77,14 @@ CacheDictionary::CacheDictionary(
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
+    update_thread = ThreadFromGlobalPool([this] { updateThreadFunction(); });
+}
+
+CacheDictionary::~CacheDictionary()
+{
+    finished = true;
+    update_queue.clear();
+    update_thread.join();
 }
 
 
@@ -272,10 +281,20 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
 
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
+    /// There are three types of ids.
+    /// - Valid ids. These ids are presented in local cache and their lifetime is not expired.
+    /// - CacheExpired ids. Ids that are in local cache, but their values are rotted (lifetime is expired).
+    /// - CacheNotFound ids. We have to go to external storage to know its value.
+
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
 
     size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
+
+    Context * context = current_thread->getThreadGroup()->global_context;
+    const bool allow_read_expired_keys_from_cache_dictionary =
+            context->getSettingsRef().allow_read_expired_keys_from_cache_dictionary;
 
     const auto rows = ext::size(ids);
     {
@@ -290,11 +309,22 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             const auto & cell_idx = find_result.cell_idx;
             if (!find_result.valid)
             {
-                outdated_ids[id].push_back(row);
                 if (find_result.outdated)
+                {
+                    cache_expired_ids[id].push_back(row);
                     ++cache_expired;
+
+                    if (allow_read_expired_keys_from_cache_dictionary)
+                    {
+                        const auto & cell = cells[cell_idx];
+                        out[row] = !cell.isDefault();
+                    }
+                }
                 else
+                {
+                    cache_not_found_ids[id].push_back(row);
                     ++cache_not_found;
+                }
             }
             else
             {
@@ -310,27 +340,53 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
+    const size_t outdated_ids_count = cache_expired + cache_not_found;
+    hit_count.fetch_add(rows - outdated_ids_count, std::memory_order_release);
 
-    if (outdated_ids.empty())
+    /// We have no keys to update.
+    if (outdated_ids_count == 0)
         return;
 
-    std::vector<Key> required_ids(outdated_ids.size());
-    std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+    /// Schedule an update job for expired keys. (At this point we have only expired keys.)
+    /// No need to wait for expired keys being updated.
+    if (allow_read_expired_keys_from_cache_dictionary && cache_not_found == 0)
+    {
+        std::vector<Key> required_expired_ids(cache_expired_ids.size());
+        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::begin(required_expired_ids), [](auto & pair) { return pair.first; });
+        /// Callbacks are empty because we don't want to receive them after an unknown period of time.
+        UpdateUnit update_unit{std::move(required_expired_ids), [&](const Key, const size_t){}, [&](const Key, const size_t){}};
+        UInt64 timeout{10}; /// TODO: make setting or a field called update_queue_push_timeout;
+        if (!update_queue.tryPush(update_unit, timeout))
+            throw std::runtime_error("Can't schedule an update job.");
+        return;
+    }
 
-    /// request new values
-    update(
-        required_ids,
-        [&](const auto id, const auto)
-        {
-            for (const auto row : outdated_ids[id])
-                out[row] = true;
-        },
-        [&](const auto id, const auto)
-        {
-            for (const auto row : outdated_ids[id])
-                out[row] = false;
-        });
+    /// At this point we have two situations. There may be both types of keys: expired and not found.
+    /// We will update them all synchronously.
+
+    std::vector<Key> required_ids(cache_not_found_ids.size());
+    std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+    std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+
+    UpdateUnit update_unit{
+            std::move(required_ids),
+            [&](const Key id, const size_t) {
+                for (const auto row : cache_not_found_ids[id])
+                    out[row] = true;
+            },
+            [&](const Key id, const size_t) {
+                for (const auto row : cache_not_found_ids[id])
+                    out[row] = false;
+            }
+    };
+
+    UInt64 timeout{10};
+    const bool res = update_queue.tryPush(update_unit, timeout);
+
+    if (!res)
+        throw std::runtime_error("Too many updates");
+
+    waitForCurrentUpdateFinish();
 }
 
 
@@ -608,6 +664,32 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("cache", create_layout, false);
+}
+
+void CacheDictionary::updateThreadFunction()
+{
+    try
+    {
+        while (!finished)
+        {
+            UpdateUnit unit;
+            update_queue.pop(unit);
+
+            update(unit.requested_ids, unit.on_cell_updated, unit.on_id_not_found);
+            last_update.fetch_add(1);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void CacheDictionary::waitForCurrentUpdateFinish() const
+{
+    size_t current_update_number = update_number.fetch_add(1);
+    while (last_update != current_update_number)
+        std::this_thread::yield();
 }
 
 

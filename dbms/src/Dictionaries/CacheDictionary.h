@@ -4,12 +4,15 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <mutex>
 #include <shared_mutex>
 #include <variant>
 #include <vector>
 #include <common/logger_useful.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Common/ThreadPool.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <pcg_random.hpp>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
@@ -30,6 +33,8 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         const size_t size_);
+
+    ~CacheDictionary() override;
 
     std::string getName() const override { return name; }
 
@@ -288,6 +293,28 @@ private:
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
+
+    mutable std::atomic<size_t> update_number{1};
+    mutable std::atomic<size_t> last_update{0};
+
+    struct UpdateUnit
+    {
+        std::vector<Key> requested_ids;
+        std::function<void(const Key, const size_t)> on_cell_updated;
+        std::function<void(const Key, const size_t)> on_id_not_found;
+    };
+
+    using UpdateQueue = ConcurrentBoundedQueue<UpdateUnit>;
+
+    // TODO: make setting called max_updates_number
+    mutable UpdateQueue update_queue{10};
+
+    ThreadFromGlobalPool update_thread;
+    void updateThreadFunction();
+    std::atomic<bool> finished{false};
+
+    void waitForCurrentUpdateFinish() const;
+    mutable std::mutex update_mutex;
 };
 
 }
