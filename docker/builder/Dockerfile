@@ -12,11 +12,7 @@ RUN apt-get update -y \
             expect \
             g++-9 \
             gcc-9 \
-            libclang-6.0-dev \
-            libicu-dev \
-            liblld-6.0-dev \
             libreadline-dev \
-            gperf \
             ninja-build \
             perl \
             pkg-config \
