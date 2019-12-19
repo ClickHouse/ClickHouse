@@ -451,10 +451,10 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     return true;
 }
 
-static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_element, const Context & context)
+static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_element, std::shared_ptr<AnalyzedJoin> analyzed_join,
+                                 const Context & context)
 {
     const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
-    auto & join_params = join_element.table_join->as<ASTTableJoin &>();
 
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
@@ -465,14 +465,8 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
         if (table)
         {
             auto * storage_join = dynamic_cast<StorageJoin *>(table.get());
-
             if (storage_join)
-            {
-                storage_join->assertCompatible(join_params.kind, join_params.strictness);
-                /// TODO Check the set of keys.
-
-                return storage_join->getJoin();
-            }
+                return storage_join->getJoin(analyzed_join);
         }
     }
 
@@ -497,7 +491,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
     /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
     if (!subquery_for_join.join)
-        subquery_for_join.join = tryGetStorageJoin(join_element, context);
+        subquery_for_join.join = tryGetStorageJoin(join_element, syntax->analyzed_join, context);
 
     if (!subquery_for_join.join)
     {
