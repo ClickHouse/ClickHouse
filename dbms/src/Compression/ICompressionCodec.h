@@ -45,7 +45,7 @@ public:
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
 
     /// Size of header in compressed data on disk
-    static UInt8 getHeaderSize() { return COMPRESSED_BLOCK_HEADER_SIZE; }
+    static constexpr UInt8 getHeaderSize() { return COMPRESSED_BLOCK_HEADER_SIZE; }
 
     /// Read size of compressed block from compressed source
     static UInt32 readCompressedBlockSize(const char * source);
