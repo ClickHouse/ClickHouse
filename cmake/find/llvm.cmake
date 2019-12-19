@@ -111,7 +111,6 @@ LLVMMCParser
 LLVMMC
 LLVMBinaryFormat
 LLVMDebugInfoCodeView
-LLVMOption
 LLVMSupport
 LLVMDemangle
 )

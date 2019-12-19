@@ -247,6 +247,7 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     endif ()
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
+    set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
     add_subdirectory (llvm/llvm)
 endif ()
 
