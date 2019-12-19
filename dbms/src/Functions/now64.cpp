@@ -21,10 +21,11 @@ namespace ErrorCodes
 
 static Field nowSubsecond(UInt32 scale)
 {
-    const Int32 fractional_scale = 9;
-    timespec spec;
+    static constexpr Int32 fractional_scale = 9;
+
+    timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
-        DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
+        throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
 
