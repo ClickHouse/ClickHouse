@@ -12,6 +12,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
@@ -129,6 +130,9 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {query.database});
 
     using Type = ASTSystemQuery::Type;
 

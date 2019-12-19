@@ -38,14 +38,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     if (!found)
         return false;
 
+
+    String cluster_str;
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
             if (ParserKeyword{"ON"}.ignore(pos, expected))
             {
-                if (!ASTQueryWithOnCluster::parse(pos, res->cluster, expected))
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                     return false;
             }
+            res->cluster = cluster_str;
             if (!parseIdentifierOrStringLiteral(pos, expected, res->target_dictionary))
                 return false;
             break;
