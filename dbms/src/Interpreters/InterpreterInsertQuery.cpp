@@ -116,6 +116,8 @@ BlockIO InterpreterInsertQuery::execute()
             in_streams = interpreter_select.executeWithMultipleStreams(res.pipeline);
             const Settings & settings = context.getSettingsRef();
             out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
+            if (out_streams_size == 0)
+                out_streams_size = 1;
         }
         else
             in_streams.emplace_back(interpreter_select.execute().in);
