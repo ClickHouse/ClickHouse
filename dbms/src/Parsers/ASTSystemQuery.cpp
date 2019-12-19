@@ -97,9 +97,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         settings.ostr << " ";
 
-        if (!target_database.empty())
+        if (!database.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_database)
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
 
@@ -107,6 +107,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
+    if (!cluster.empty())
+    {
+    }
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
         || type == Type::STOP_TTL_MERGES

@@ -41,6 +41,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, res->cluster, expected))
+                    return false;
+            }
             if (!parseIdentifierOrStringLiteral(pos, expected, res->target_dictionary))
                 return false;
             break;
@@ -48,7 +53,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::FLUSH_DISTRIBUTED:
-            if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table))
+            if (!parseDatabaseAndTableName(pos, expected, res->database, res->target_table))
                 return false;
             break;
 
@@ -66,7 +71,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
-            parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table);
+            parseDatabaseAndTableName(pos, expected, res->database, res->target_table);
             break;
 
         default:
