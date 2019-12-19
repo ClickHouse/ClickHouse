@@ -1040,7 +1040,10 @@ public:
                 throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
             char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
             long pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
             LOG_TRACE(log, "Key: " << pem);

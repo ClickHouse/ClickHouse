@@ -32,9 +32,9 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
+    MergeTreeDataPart(const MergeTreeData & storage_, const DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
 
-    MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & disk_, const String & name_);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -73,7 +73,7 @@ struct MergeTreeDataPart
 
     const MergeTreeData & storage;
 
-    DiskSpace::DiskPtr disk;
+    DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 
@@ -260,7 +260,7 @@ struct MergeTreeDataPart
     void makeCloneInDetached(const String & prefix) const;
 
     /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
+    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

@@ -28,7 +28,7 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         }
     };
 
-    FunctionBuilderPtr func_builder_cast = FunctionFactory::instance().get("CAST", context);
+    FunctionOverloadResolverPtr func_builder_cast = FunctionFactory::instance().get("CAST", context);
 
     ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
     auto func_cast = func_builder_cast->build(arguments);

@@ -625,14 +625,27 @@ class ClickHouseInstance:
         return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None):
-        return urllib.urlopen("http://" + self.ip_address + ":8123/?query=" + urllib.quote(sql, safe=''), data).read()
+    def http_query(self, sql, data=None, params=None, user=None):
+        if params is None:
+            params = {}
+        else:
+            params = params.copy()
 
-    def restart_clickhouse(self, stop_start_wait_sec=5):
+        params["query"] = sql
+
+        auth = ""
+        if user:
+            auth = "{}@".format(user)
+
+        url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
+
+        return urllib.urlopen(url, data).read()
+
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
 
@@ -683,6 +696,10 @@ class ClickHouseInstance:
                 break
             time.sleep(0.5)
             local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
 
         if callback_onstop:
             callback_onstop(self)
