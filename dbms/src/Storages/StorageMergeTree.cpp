@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int UNKNOWN_SETTING;
     extern const int TOO_BIG_AST;
-    extern const int UNFINISHED;
 }
 
 namespace ActionLocks
