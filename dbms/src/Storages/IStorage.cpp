@@ -1,6 +1,12 @@
 #include <Storages/IStorage.h>
 
 #include <Storages/AlterCommands.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
+
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
@@ -18,16 +24,13 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
+    extern const int SETTINGS_ARE_NOT_SUPPORTED;
+    extern const int UNKNOWN_SETTING;
+    extern const int TABLE_IS_DROPPED;
 }
 
-IStorage::IStorage(ColumnsDescription columns_)
+IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
 {
-    setColumns(std::move(columns_));
-}
-
-IStorage::IStorage(ColumnsDescription columns_, ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
-{
-    setColumns(std::move(columns_));
 }
 
 const ColumnsDescription & IStorage::getColumns() const
@@ -35,9 +38,19 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
+const ColumnsDescription & IStorage::getVirtuals() const
+{
+    return virtuals;
+}
+
 const IndicesDescription & IStorage::getIndices() const
 {
     return indices;
+}
+
+const ConstraintsDescription & IStorage::getConstraints() const
+{
+    return constraints;
 }
 
 NameAndTypePair IStorage::getColumn(const String & column_name) const
@@ -111,8 +124,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = GOOGLE_NAMESPACE::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = GOOGLE_NAMESPACE::dense_hash_set<StringRef, StringRefHash>;
+    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -145,9 +158,12 @@ namespace
     }
 }
 
-void IStorage::check(const Names & column_names) const
+void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
-    const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
+    NamesAndTypesList available_columns = getColumns().getAllPhysical();
+    if (include_virtuals)
+        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+
     const String list_of_columns = listOfColumns(available_columns);
 
     if (column_names.empty())
@@ -287,9 +303,20 @@ void IStorage::setIndices(IndicesDescription indices_)
     indices = std::move(indices_);
 }
 
+void IStorage::setConstraints(ConstraintsDescription constraints_)
+{
+    constraints = std::move(constraints_);
+}
+
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
     return getColumns().get(column_name).is_virtual;
+}
+
+void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
+{
+    if (!supportsSettings())
+        throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
 }
 
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
@@ -346,25 +373,94 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
     return result;
 }
 
+
+IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
+{
+    return [&] (IAST & ast)
+    {
+        if (!new_changes.empty())
+        {
+            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
+            /// Make storage settings unique
+            for (const auto & change : new_changes)
+            {
+                checkSettingCanBeChanged(change.name);
+
+                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
+                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+                    it->value = change.value;
+                else
+                    storage_changes.push_back(change);
+            }
+        }
+    };
+}
+
+
 void IStorage::alter(
     const AlterCommands & params,
-    const String & database_name,
-    const String & table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    for (const auto & param : params)
-    {
-        if (param.isMutable())
-            throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    if (params.isMutable())
+        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
-    setColumns(std::move(new_columns));
+    const String database_name = getDatabaseName();
+    const String table_name = getTableName();
+
+    if (params.isSettingsAlter())
+    {
+        SettingsChanges new_changes;
+        params.applyForSettingsOnly(new_changes);
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+    }
+    else
+    {
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+        auto new_columns = getColumns();
+        auto new_indices = getIndices();
+        auto new_constraints = getConstraints();
+        params.applyForColumnsOnly(new_columns);
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+        setColumns(std::move(new_columns));
+    }
+}
+
+BlockInputStreams IStorage::read(
+    const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    BlockInputStreams res;
+    res.reserve(pipes.size());
+
+    for (auto & pipe : pipes)
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+    return res;
+}
+
+DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
+{
+    if (compression_method == "auto" || compression_method == "")
+    {
+        if (endsWith(uri, ".gz"))
+            return DB::CompressionMethod::Gzip;
+        else
+            return DB::CompressionMethod::None;
+    }
+    else if (compression_method == "gzip")
+        return DB::CompressionMethod::Gzip;
+    else if (compression_method == "none")
+        return DB::CompressionMethod::None;
+    else
+        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

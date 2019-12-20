@@ -1,14 +1,14 @@
 #pragma once
 
-#include <queue>
-#include <stack>
 #include <Processors/IProcessor.h>
-#include <mutex>
+#include <Processors/Executors/ThreadsQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
 
-#include <boost/lockfree/stack.hpp>
+#include <queue>
+#include <stack>
+#include <mutex>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors);
+    explicit PipelineExecutor(Processors & processors_);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -35,23 +35,31 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Cancel execution. May be called from another thread.
-    void cancel()
-    {
-        cancelled = true;
-        finish();
-    }
+    void cancel();
 
 private:
     Processors & processors;
+    std::mutex processors_mutex;
 
     struct Edge
     {
+        Edge(UInt64 to_, bool backward_,
+             UInt64 input_port_number_, UInt64 output_port_number_, std::vector<void *> * update_list)
+            : to(to_), backward(backward_)
+            , input_port_number(input_port_number_), output_port_number(output_port_number_)
+        {
+            update_info.update_list = update_list;
+            update_info.id = this;
+        }
+
         UInt64 to = std::numeric_limits<UInt64>::max();
+        bool backward;
+        UInt64 input_port_number;
+        UInt64 output_port_number;
 
         /// Edge version is increased when port's state is changed (e.g. when data is pushed). See Port.h for details.
         /// To compare version with prev_version we can decide if neighbour processor need to be prepared.
-        UInt64 version = 0;
-        UInt64 prev_version = 0;
+        Port::UpdateInfo update_info;
     };
 
     /// Use std::list because new ports can be added to processor during execution.
@@ -61,7 +69,6 @@ private:
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
     enum class ExecStatus
     {
-        New,  /// prepare wasn't called yet. Initial state. Non-owning.
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
         Executing,  /// prepare returned Ready and task is executing. Owning.
@@ -75,8 +82,8 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
 
-        IProcessor * processor;
-        UInt64 processors_id;
+        IProcessor * processor = nullptr;
+        UInt64 processors_id = 0;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -90,17 +97,22 @@ private:
         Edges directEdges;
         Edges backEdges;
 
-        std::atomic<ExecStatus> status;
-        /// This flag can be set by any executor.
-        /// When enabled, any executor can try to atomically set Preparing state to status.
-        std::atomic_bool need_to_be_prepared;
+        ExecStatus status;
+        std::mutex status_mutex;
+
+        std::vector<void *> post_updated_input_ports;
+        std::vector<void *> post_updated_output_ports;
+
         /// Last state for profiling.
         IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
 
         std::unique_ptr<ExecutionState> execution_state;
 
+        IProcessor::PortNumbers updated_input_ports;
+        IProcessor::PortNumbers updated_output_ports;
+
         Node(IProcessor * processor_, UInt64 processor_id)
-            : processor(processor_), status(ExecStatus::New), need_to_be_prepared(false)
+            : processor(processor_), status(ExecStatus::Idle)
         {
             execution_state = std::make_unique<ExecutionState>();
             execution_state->processor = processor;
@@ -108,8 +120,8 @@ private:
         }
 
         Node(Node && other) noexcept
-            : processor(other.processor), status(other.status.load())
-            , need_to_be_prepared(other.need_to_be_prepared.load()), execution_state(std::move(other.execution_state))
+            : processor(other.processor), status(other.status)
+            , execution_state(std::move(other.execution_state))
         {
         }
     };
@@ -125,16 +137,14 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
+
+    ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
-    std::condition_variable task_queue_condvar;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
-
-    /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
-    size_t num_waiting_threads = 0;
 
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
@@ -158,9 +168,16 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::condition_variable condvar;
+        std::mutex mutex;
+        bool wake_flag = false;
+
+        std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
+    std::mutex executor_contexts_mutex;
 
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
@@ -180,7 +197,7 @@ private:
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(size_t pid, Stack & children, Stack & parents, size_t thread_number, bool async);
+    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);

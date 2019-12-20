@@ -1,11 +1,11 @@
 #!/bin/sh -x
 # Usages:
 # sh -x clickhouse-report > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/report/clickhouse-report | sh -x > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
 # Also dump some system info (can contain some private data) and get trace from running clickhouse-server process
 # sh -x clickhouse-report system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/report/clickhouse-report | sh -s -x system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
+# curl https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/report/clickhouse-report | sh -s -x system gdb > ch.`hostname`.`date '+%Y%M%''d%H%M%''S'`.dmp 2>&1
 
 
 for i in "$@" ; do

@@ -18,25 +18,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-    constexpr auto INDEX_FILE_EXTENSION = ".idx";
-}
-
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
-    String part_path_,
+    const String & part_path_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
-        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size_,
-        {}),
-    columns_list(columns_list_), part_path(part_path_)
+        std::vector<MergeTreeIndexPtr>(std::begin(storage_.skip_indices), std::end(storage_.skip_indices)),
+        {})
+    , columns_list(columns_list_)
 {
     init();
     for (const auto & it : columns_list)
@@ -48,17 +44,18 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
-    String part_path_,
+    const String & part_path_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
-        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
-        aio_threshold_, blocks_are_granules_size_, {}),
-    columns_list(columns_list_), part_path(part_path_)
+        aio_threshold_, blocks_are_granules_size_,
+        std::vector<MergeTreeIndexPtr>(std::begin(storage_.skip_indices), std::end(storage_.skip_indices)), {})
+    , columns_list(columns_list_)
 {
     init();
 
@@ -110,7 +107,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         const NamesAndTypesList * total_column_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
-
     /// Finish columns serialization.
     {
         auto & settings = storage.global_context.getSettingsRef();
@@ -134,15 +130,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (with_final_mark && rows_count != 0)
         index_granularity.appendMark(0); /// last mark
-
-    /// Finish skip index serialization
-    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
-    {
-        auto & stream = *skip_indices_streams[i];
-        if (!skip_indices_aggregators[i]->empty())
-            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-    }
-
 
     if (!total_column_list)
         total_column_list = &columns_list;
@@ -172,21 +159,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         index_stream = nullptr;
     }
 
-    for (auto & stream : skip_indices_streams)
-    {
-        stream->finalize();
-        stream->addToChecksums(checksums);
-    }
-
-    skip_indices_streams.clear();
-    skip_indices_aggregators.clear();
-    skip_index_filling.clear();
-
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {
         it->second->finalize();
         it->second->addToChecksums(checksums);
     }
+
+    finishSkipIndicesSerialization(checksums);
 
     column_streams.clear();
 
@@ -207,7 +186,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
     }
 
-    if (new_part->ttl_infos.part_min_ttl)
+    if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
         WriteBufferFromFile out(part_path + "ttl.txt", 4096);
@@ -249,19 +228,7 @@ void MergedBlockOutputStream::init()
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
-    for (const auto & index : storage.skip_indices)
-    {
-        String stream_name = index->getFileName();
-        skip_indices_streams.emplace_back(
-                std::make_unique<ColumnStream>(
-                        stream_name,
-                        part_path + stream_name, INDEX_FILE_EXTENSION,
-                        part_path + stream_name, marks_file_extension,
-                        codec, max_compress_block_size,
-                        0, aio_threshold));
-        skip_indices_aggregators.push_back(index->createIndexAggregator());
-        skip_index_filling.push_back(0);
-    }
+    initSkipIndices();
 }
 
 
@@ -365,7 +332,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
             {
                 const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
-                writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
+                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
             }
             else
             {
@@ -381,66 +348,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     rows_count += rows;
-    {
-        /// Creating block for update
-        Block indices_update_block(skip_indexes_columns);
-        size_t skip_index_current_mark = 0;
 
-        /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
-        {
-            const auto index = storage.skip_indices[i];
-            auto & stream = *skip_indices_streams[i];
-            size_t prev_pos = 0;
-            skip_index_current_mark = skip_index_mark;
-            while (prev_pos < rows)
-            {
-                UInt64 limit = 0;
-                if (prev_pos == 0 && index_offset != 0)
-                {
-                    limit = index_offset;
-                }
-                else
-                {
-                    limit = index_granularity.getMarkRows(skip_index_current_mark);
-                    if (skip_indices_aggregators[i]->empty())
-                    {
-                        skip_indices_aggregators[i] = index->createIndexAggregator();
-                        skip_index_filling[i] = 0;
-
-                        if (stream.compressed.offset() >= min_compress_block_size)
-                            stream.compressed.next();
-
-                        writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                        writeIntBinary(stream.compressed.offset(), stream.marks);
-                        /// Actually this numbers is redundant, but we have to store them
-                        /// to be compatible with normal .mrk2 file format
-                        if (storage.canUseAdaptiveGranularity())
-                            writeIntBinary(1UL, stream.marks);
-
-                        ++skip_index_current_mark;
-                    }
-                }
-
-                size_t pos = prev_pos;
-                skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
-
-                if (pos == prev_pos + limit)
-                {
-                    ++skip_index_filling[i];
-
-                    /// write index if it is filled
-                    if (skip_index_filling[i] == index->granularity)
-                    {
-                        skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-                        skip_index_filling[i] = 0;
-                    }
-                }
-                prev_pos = pos;
-            }
-        }
-        skip_index_mark = skip_index_current_mark;
-    }
+    /// Should be written before index offset update, because we calculate,
+    /// indices of currently written granules
+    calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
     {
         /** While filling index (index_columns), disable memory tracker.

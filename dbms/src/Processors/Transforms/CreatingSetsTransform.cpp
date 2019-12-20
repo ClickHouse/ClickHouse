@@ -21,15 +21,15 @@ namespace ErrorCodes
 
 
 CreatingSetsTransform::CreatingSetsTransform(
-    Block out_header,
+    Block out_header_,
     const SubqueriesForSets & subqueries_for_sets_,
-    const SizeLimits & network_transfer_limits,
-    const Context & context)
-    : IProcessor({}, {std::move(out_header)})
+    const SizeLimits & network_transfer_limits_,
+    const Context & context_)
+    : IProcessor({}, {std::move(out_header_)})
     , subqueries_for_sets(subqueries_for_sets_)
     , cur_subquery(subqueries_for_sets.begin())
-    , network_transfer_limits(network_transfer_limits)
-    , context(context)
+    , network_transfer_limits(network_transfer_limits_)
+    , context(context_)
 {
 }
 
@@ -82,8 +82,7 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
 
     head_rows = profile_info.rows;
 
-    if (subquery.join)
-        subquery.join->setTotals(subquery.source->getTotals());
+    subquery.setTotals();
 
     if (head_rows != 0)
     {
@@ -142,6 +141,9 @@ void CreatingSetsTransform::work()
 
     auto finishCurrentSubquery = [&]()
     {
+        if (subquery.set)
+            subquery.set->finishInsert();
+
         if (table_out)
             table_out->writeSuffix();
 
@@ -175,12 +177,7 @@ void CreatingSetsTransform::work()
 
     if (!done_with_join)
     {
-        subquery.renameColumns(block);
-
-        if (subquery.joined_block_actions)
-            subquery.joined_block_actions->execute(block);
-
-        if (!subquery.join->insertFromBlock(block))
+        if (!subquery.insertJoinedBlock(block))
             done_with_join = true;
     }
 

@@ -50,9 +50,9 @@ class QuantileTDigest
 
         Centroid() = default;
 
-        explicit Centroid(Value mean, Count count)
-            : mean(mean)
-            , count(count)
+        explicit Centroid(Value mean_, Count count_)
+            : mean(mean_)
+            , count(count_)
         {}
 
         Centroid & operator+=(const Centroid & other)

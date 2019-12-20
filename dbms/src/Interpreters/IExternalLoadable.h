@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include <pcg_random.hpp>
 #include <Core/Types.h>
 
 
@@ -24,6 +25,8 @@ struct ExternalLoadableLifetime
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
 
+/// Get delay before trying to load again after error.
+UInt64 calculateDurationWithBackoff(pcg64 & rnd_engine, size_t error_count = 1);
 
 /// Basic interface for external loadable objects. Is used in ExternalLoader.
 class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>, private boost::noncopyable

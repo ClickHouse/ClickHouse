@@ -52,7 +52,7 @@ struct Less
     {
         for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end(); ++it, ++jt)
         {
-            int res = it->second.direction * it->first->compareAt(a, b, *jt->first, it->second.nulls_direction);
+            int res = it->description.direction * it->column->compareAt(a, b, *jt->column, it->description.nulls_direction);
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -102,8 +102,6 @@ Block FinishSortingBlockInputStream::readImpl()
             if (block.rows() == 0)
                 continue;
 
-            // We need to sort each block separately before merging.
-            sortBlock(block, description_to_sort, limit);
 
             removeConstantsFromBlock(block);
 

@@ -24,15 +24,9 @@ cd ClickHouse
 
 以下教程是在 Ubuntu Linux 中进行编译的示例。
 通过适当的更改，它应该可以适用于任何其他的 Linux 发行版。
-仅支持具有 SSE 4.2的 x86_64。 对 AArch64 的支持是实验性的。
+仅支持具有 x86_64、AArch64。 对 Power9 的支持是实验性的。
 
-测试是否支持 SSE 4.2，执行：
-
-```bash
-grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
-```
-
-## 安装 Git 和 CMake
+## 安装 Git 和 CMake 和 Ninja
 
 ```bash
 sudo apt-get install git cmake ninja-build
@@ -41,7 +35,7 @@ sudo apt-get install git cmake ninja-build
 Or cmake3 instead of cmake on older systems.
 或者在早期版本的系统中用 cmake3 替代 cmake
 
-## 安装 GCC 7
+## 安装 GCC 9
 
 There are several ways to do this.
 
@@ -51,24 +45,24 @@ There are several ways to do this.
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-7 g++-7
+sudo apt-get install gcc-9 g++-9
 ```
 
 ### 源码安装 gcc
 
-请查看 [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
+请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## 使用 GCC 7 来编译
+## 使用 GCC 9 来编译
 
 ```bash
-export CC=gcc-7
-export CXX=g++-7
+export CC=gcc-9
+export CXX=g++-9
 ```
 
 ## 安装所需的工具依赖库
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev
+sudo apt-get install libreadline-dev
 ```
 
 ## 拉取 ClickHouse 源码

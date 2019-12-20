@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -15,10 +16,52 @@ namespace ErrorCodes
 }
 
 
+class RemovingLowCardinalityBlockInputStream : public IBlockInputStream
+{
+public:
+    RemovingLowCardinalityBlockInputStream(BlockInputStreamPtr input_, ColumnNumbers positions_)
+        : input(std::move(input_)), positions(std::move(positions_))
+    {
+        header = transform(input->getHeader());
+    }
+
+    Block transform(Block block)
+    {
+        if (block)
+        {
+            for (auto & pos : positions)
+            {
+                auto & col = block.safeGetByPosition(pos);
+                col.column = recursiveRemoveLowCardinality(col.column);
+                col.type = recursiveRemoveLowCardinality(col.type);
+            }
+        }
+
+        return block;
+    }
+
+    String getName() const override { return "RemovingLowCardinality"; }
+    Block getHeader() const override { return header; }
+    const BlockMissingValues & getMissingValues() const override { return input->getMissingValues(); }
+    bool isSortedOutput() const override { return input->isSortedOutput(); }
+    const SortDescription & getSortDescription() const override { return input->getSortDescription(); }
+
+protected:
+    Block readImpl() override { return transform(input->read()); }
+
+private:
+    Block header;
+    BlockInputStreamPtr input;
+    ColumnNumbers positions;
+};
+
+
 AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
 {
+    ColumnNumbers positions;
+
     /// Fill in the column numbers that need to be aggregated.
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -51,12 +94,23 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
                 allocatesMemoryInArena = true;
 
             columns_to_simple_aggregate.emplace_back(std::move(desc));
+
+            if (recursiveRemoveLowCardinality(column.type).get() != column.type.get())
+                positions.emplace_back(i);
         }
         else
         {
             // standard aggregate function
             column_numbers_to_aggregate.push_back(i);
         }
+    }
+
+    if (!positions.empty())
+    {
+        for (auto & input : children)
+            input = std::make_shared<RemovingLowCardinalityBlockInputStream>(input, positions);
+
+        header = children.at(0)->getHeader();
     }
 }
 
@@ -159,7 +213,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
     }
 
     /// Write the simple aggregation result for the previous group.
-    insertSimpleAggregationResult(merged_columns);
+    if (merged_rows > 0)
+        insertSimpleAggregationResult(merged_columns);
 
     finished = true;
 }

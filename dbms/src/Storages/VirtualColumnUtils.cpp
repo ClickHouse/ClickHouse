@@ -61,13 +61,7 @@ ASTPtr buildWhereExpression(const ASTs & functions)
         return nullptr;
     if (functions.size() == 1)
         return functions[0];
-    ASTPtr new_query = std::make_shared<ASTFunction>();
-    auto & new_function = new_query->as<ASTFunction &>();
-    new_function.name = "and";
-    new_function.arguments = std::make_shared<ASTExpressionList>();
-    new_function.arguments->children = functions;
-    new_function.children.push_back(new_function.arguments);
-    return new_query;
+    return makeASTFunction("and", functions);
 }
 
 }
@@ -75,16 +69,30 @@ ASTPtr buildWhereExpression(const ASTs & functions)
 namespace VirtualColumnUtils
 {
 
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
+void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func)
 {
     auto & select = ast->as<ASTSelectQuery &>();
     if (!select.with())
         select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
 
-    auto literal = std::make_shared<ASTLiteral>(value);
-    literal->alias = column_name;
-    literal->prefer_alias_to_column_name = true;
-    select.with()->children.push_back(literal);
+
+    if (func.empty())
+    {
+        auto literal = std::make_shared<ASTLiteral>(value);
+        literal->alias = column_name;
+        literal->prefer_alias_to_column_name = true;
+        select.with()->children.push_back(literal);
+    }
+    else
+    {
+        auto literal = std::make_shared<ASTLiteral>(value);
+        literal->prefer_alias_to_column_name = true;
+
+        auto function = makeASTFunction(func, literal);
+        function->alias = column_name;
+        function->prefer_alias_to_column_name = true;
+        select.with()->children.push_back(function);
+    }
 }
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)

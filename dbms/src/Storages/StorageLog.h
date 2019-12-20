@@ -21,6 +21,7 @@ class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageLog>;
 
 public:
     std::string getName() const override { return "Log"; }
@@ -37,15 +38,15 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
+    std::string fullPath() const { return path + escapeForFileName(table_name) + '/';}
 
-    String getDataPath() const override { return full_path(); }
+    Strings getDataPaths() const override { return {fullPath()}; }
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -57,6 +58,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         size_t max_compress_block_size_);
 
 private:

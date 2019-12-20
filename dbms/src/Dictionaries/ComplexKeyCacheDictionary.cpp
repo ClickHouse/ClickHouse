@@ -51,16 +51,16 @@ inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 
 
 ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
-    const std::string & name,
-    const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime,
-    const size_t size)
-    : name{name}
-    , dict_struct(dict_struct)
-    , source_ptr{std::move(source_ptr)}
-    , dict_lifetime(dict_lifetime)
-    , size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))}
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    const size_t size_)
+    : name{name_}
+    , dict_struct(dict_struct_)
+    , source_ptr{std::move(source_ptr_)}
+    , dict_lifetime(dict_lifetime_)
+    , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , rnd_engine(randomSeed())
 {
@@ -77,7 +77,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -94,7 +94,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -109,7 +109,7 @@ void ComplexKeyCacheDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -216,7 +216,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
     std::vector<size_t> required_rows(outdated_keys.size());
     std::transform(
-        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
+        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getMapped().front(); });
 
     /// request new values
     update(
@@ -290,7 +290,7 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
     {
         keys[j] = key_columns[j]->getDataAt(row);
         sum_keys_size += keys[j].size;
-        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::utString)
             sum_keys_size += sizeof(size_t) + 1;
     }
 
@@ -299,7 +299,7 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
     auto key_start = place;
     for (size_t j = 0; j < keys_size; ++j)
     {
-        if (key_attributes[j].underlying_type == AttributeUnderlyingType::String)
+        if (key_attributes[j].underlying_type == AttributeUnderlyingType::utString)
         {
             auto start = key_start;
             auto key_size = keys[j].size + 1;
@@ -415,7 +415,7 @@ void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("complex_key_cache", create_layout);
+    factory.registerLayout("complex_key_cache", create_layout, true);
 }
 
 

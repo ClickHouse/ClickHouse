@@ -1,6 +1,7 @@
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace DB
 {
@@ -9,13 +10,13 @@ MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
     const SortDescription & description_,
-    size_t max_block_size,
-    UInt64 limit,
-    bool quiet,
-    bool have_all_inputs)
-    : IProcessor(InputPorts(num_inputs, header), {header})
-    , description(description_), max_block_size(max_block_size), limit(limit), quiet(quiet)
-    , have_all_inputs(have_all_inputs)
+    size_t max_block_size_,
+    UInt64 limit_,
+    bool quiet_,
+    bool have_all_inputs_)
+    : IProcessor(InputPorts(num_inputs, header), {materializeBlock(header)})
+    , description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    , have_all_inputs(have_all_inputs_)
     , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
 {
     auto & sample = outputs.front().getHeader();
@@ -131,7 +132,7 @@ IProcessor::Status MergingSortedTransform::prepare()
             }
 
             auto chunk = input.pull();
-            if (chunk.hasNoRows())
+            if (!chunk.hasRows())
             {
                 all_inputs_has_data = false;
                 continue;
@@ -175,7 +176,7 @@ IProcessor::Status MergingSortedTransform::prepare()
                     return Status::NeedData;
 
                 auto chunk = input.pull();
-                if (chunk.hasNoRows())
+                if (!chunk.hasRows())
                     return Status::NeedData;
 
                 updateCursor(std::move(chunk), next_input_to_read);

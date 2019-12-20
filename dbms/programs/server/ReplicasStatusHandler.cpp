@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-ReplicasStatusHandler::ReplicasStatusHandler(Context & context_)
-    : context(context_)
+ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
+    : context(server.context())
 {
 }
 
@@ -40,7 +40,11 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            /// Lazy database can not contain replicated tables
+            if (db.second->getEngineName() == "Lazy")
+                continue;
+
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
                 StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());

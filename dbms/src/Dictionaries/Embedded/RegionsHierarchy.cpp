@@ -4,7 +4,6 @@
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
-#include <ext/singleton.h>
 #include "GeodataProviders/IHierarchiesProvider.h"
 
 

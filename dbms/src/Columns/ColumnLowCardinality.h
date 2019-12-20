@@ -2,6 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
@@ -58,6 +59,7 @@ public:
     UInt64 getUInt(size_t n) const override { return getDictionary().getUInt(getIndexes().getUInt(n)); }
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
     Float64 getFloat64(size_t n) const override { return getDictionary().getInt(getIndexes().getFloat64(n)); }
+    Float32 getFloat32(size_t n) const override { return getDictionary().getInt(getIndexes().getFloat32(n)); }
     bool getBool(size_t n) const override { return getDictionary().getInt(getIndexes().getBool(n)); }
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
@@ -166,10 +168,10 @@ public:
 
         switch (idx.getSizeOfIndexType())
         {
-            case sizeof(UInt8): return static_cast<const ColumnUInt8 *>(indexes)->getElement(row);
-            case sizeof(UInt16): return static_cast<const ColumnUInt16 *>(indexes)->getElement(row);
-            case sizeof(UInt32): return static_cast<const ColumnUInt32 *>(indexes)->getElement(row);
-            case sizeof(UInt64): return static_cast<const ColumnUInt64 *>(indexes)->getElement(row);
+            case sizeof(UInt8): return assert_cast<const ColumnUInt8 *>(indexes)->getElement(row);
+            case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
+            case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
+            case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
             default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -201,8 +203,8 @@ public:
     public:
         Index();
         Index(const Index & other) = default;
-        explicit Index(MutableColumnPtr && positions);
-        explicit Index(ColumnPtr positions);
+        explicit Index(MutableColumnPtr && positions_);
+        explicit Index(ColumnPtr positions_);
 
         const ColumnPtr & getPositions() const { return positions; }
         WrappedPtr & getPositionsPtr() { return positions; }

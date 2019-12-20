@@ -1,3 +1,5 @@
+#if defined(__ELF__) && !defined(__FreeBSD__)
+
 #include <Common/Elf.h>
 #include <Common/Exception.h>
 
@@ -55,8 +57,8 @@ Elf::Elf(const std::string & path)
 }
 
 
-Elf::Section::Section(const ElfShdr & header, const Elf & elf)
-    : header(header), elf(elf)
+Elf::Section::Section(const ElfShdr & header_, const Elf & elf_)
+    : header(header_), elf(elf_)
 {
 }
 
@@ -128,3 +130,5 @@ size_t Elf::Section::size() const
 }
 
 }
+
+#endif

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Core/Block.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
@@ -36,6 +37,7 @@ public:
     {
         const Context & context;
         size_t subquery_depth;
+        Scalars & scalars;
     };
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &);

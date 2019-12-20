@@ -23,11 +23,11 @@ class TrieDictionary final : public IDictionaryBase
 {
 public:
     TrieDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_);
 
     ~TrieDictionary() override;
 
@@ -46,8 +46,6 @@ public:
     size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
-
-    bool isCached() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {

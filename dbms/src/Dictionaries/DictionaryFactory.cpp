@@ -3,6 +3,7 @@
 #include <memory>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "getDictionaryConfigurationFromAST.h"
 
 namespace DB
 {
@@ -12,15 +13,22 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout)
+void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex)
 {
     if (!registered_layouts.emplace(layout_type, std::move(create_layout)).second)
         throw Exception("DictionaryFactory: the layout name '" + layout_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+
+    layout_complexity[layout_type] = is_complex;
+
 }
 
 
 DictionaryPtr DictionaryFactory::create(
-    const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context) const
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const Context & context,
+    bool check_source_config) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     const auto & layout_prefix = config_prefix + ".layout";
@@ -31,7 +39,7 @@ DictionaryPtr DictionaryFactory::create(
 
     const DictionaryStructure dict_struct{config, config_prefix + ".structure"};
 
-    auto source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context);
+    DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context, check_source_config);
 
     const auto & layout_type = keys.front();
 
@@ -39,12 +47,35 @@ DictionaryPtr DictionaryFactory::create(
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
         {
-            const auto & create_layout = found->second;
-            return create_layout(name, dict_struct, config, config_prefix, std::move(source_ptr));
+            const auto & layout_creator = found->second;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr));
         }
     }
 
     throw Exception{name + ": unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+}
+
+DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
+{
+    auto configurationFromAST = getDictionaryConfigurationFromAST(ast);
+    return DictionaryFactory::create(name, *configurationFromAST, "dictionary", context, true);
+}
+
+bool DictionaryFactory::isComplex(const std::string & layout_type) const
+{
+    auto found = layout_complexity.find(layout_type);
+
+    if (found != layout_complexity.end())
+        return found->second;
+
+    throw Exception{"Unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+}
+
+
+DictionaryFactory & DictionaryFactory::instance()
+{
+    static DictionaryFactory ret;
+    return ret;
 }
 
 }

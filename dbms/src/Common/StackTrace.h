@@ -4,11 +4,13 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <functional>
 #include <signal.h>
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
 
@@ -38,6 +40,8 @@ public:
     size_t getOffset() const;
     const Frames & getFrames() const;
     std::string toString() const;
+
+    void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 
 protected:
     void tryCapture();

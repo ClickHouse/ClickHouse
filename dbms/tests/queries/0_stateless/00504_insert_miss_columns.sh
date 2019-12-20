@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-# https://github.com/yandex/ClickHouse/issues/1300
+# https://github.com/ClickHouse/ClickHouse/issues/1300
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS advertiser";
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS advertiser_test";

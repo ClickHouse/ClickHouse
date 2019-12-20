@@ -1,8 +1,8 @@
 #pragma once
 
-#include <common/Types.h>
-#include <common/DayNum.h>
-#include <common/likely.h>
+#include "Types.h"
+#include "DayNum.h"
+#include "likely.h"
 #include <ctime>
 #include <string>
 
@@ -28,7 +28,7 @@ enum class WeekModeFlag : UInt8
     FIRST_WEEKDAY = 4,
     NEWYEAR_DAY = 8
 };
-typedef std::pair<UInt16, UInt8> YearWeek;
+using YearWeek = std::pair<UInt16, UInt8>;
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -666,7 +666,7 @@ public:
     inline DayNum makeDayNum(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return DayNum(0);
+            return DayNum(0); // TODO (nemkov, DateTime64 phase 2): implement creating real date for year outside of LUT range.
 
         return DayNum(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }

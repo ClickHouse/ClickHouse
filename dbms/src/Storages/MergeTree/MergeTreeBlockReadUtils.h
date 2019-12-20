@@ -56,10 +56,10 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
-        const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-        const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-        MergeTreeBlockSizePredictorPtr && size_predictor);
+        const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
+        const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
+        const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+        MergeTreeBlockSizePredictorPtr && size_predictor_);
 
     virtual ~MergeTreeReadTask();
 };
@@ -85,7 +85,7 @@ struct MergeTreeBlockSizePredictor
     void startBlock();
 
     /// Updates statistic for more accurate prediction
-    void update(const Block & block, double decay = DECAY());
+    void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = DECAY());
 
     /// Return current block size (after update())
     inline size_t getBlockSize() const
@@ -148,7 +148,7 @@ protected:
 
     bool is_initialized_in_update = false;
 
-    void initialize(const Block & sample_block, const Names & columns, bool from_update = false);
+    void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 
 public:
 

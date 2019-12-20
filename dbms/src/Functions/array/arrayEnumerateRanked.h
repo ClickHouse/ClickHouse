@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -307,10 +307,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     ColumnUInt32::Container & res_values)
 {
     /// Offsets at the depth we want to look.
-    const size_t current_offset_depth = arrays_depths.max_array_depth;
-    const auto & offsets = *offsets_by_depth[current_offset_depth - 1];
-
-    ColumnArray::Offset prev_off = 0;
+    const size_t depth_to_look = arrays_depths.max_array_depth;
+    const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
     using Map = ClearableHashMap<
         UInt128,
@@ -320,14 +318,17 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
     Map indices;
 
-    std::vector<size_t> indices_by_depth(arrays_depths.max_array_depth);
-    std::vector<size_t> current_offset_n_by_depth(arrays_depths.max_array_depth);
-    std::vector<size_t> last_offset_by_depth(arrays_depths.max_array_depth, 0); // For skipping empty arrays
+    std::vector<size_t> indices_by_depth(depth_to_look);
+    std::vector<size_t> current_offset_n_by_depth(depth_to_look);
+    std::vector<size_t> last_offset_by_depth(depth_to_look, 0); // For skipping empty arrays
 
+    /// For arrayEnumerateDense variant: to calculate every distinct value.
     UInt32 rank = 0;
 
     std::vector<size_t> columns_indices(columns.size());
 
+    /// For each array at the depth we want to look.
+    ColumnArray::Offset prev_off = 0;
     for (size_t off : offsets)
     {
         bool want_clear = false;
@@ -335,18 +336,29 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         /// Skipping offsets if no data in this array
         if (prev_off == off)
         {
-            want_clear = true;
-            if (arrays_depths.max_array_depth > 1)
-                ++indices_by_depth[0];
-
-            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
+            if (depth_to_look >= 2)
             {
-                const auto offsets_by_depth_size = offsets_by_depth[depth]->size();
-                while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                /// Advance to the next element of the parent array.
+                for (ssize_t depth = depth_to_look - 2; depth >= 0; --depth)
                 {
-                    if (current_offset_n_by_depth[depth] + 1 >= offsets_by_depth_size)
-                        break; // only one empty array: SELECT arrayEnumerateUniqRanked([]);
-                    ++current_offset_n_by_depth[depth];
+                    /// Skipping offsets for empty arrays
+                    while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                    {
+                        ++current_offset_n_by_depth[depth];
+                    }
+
+                    ++indices_by_depth[depth];
+
+                    if (indices_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                    {
+                        last_offset_by_depth[depth] = (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]];
+                        ++current_offset_n_by_depth[depth];
+                        want_clear = true;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -377,7 +389,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, columns_indices, res_values[j], columns);
 
-            for (ssize_t depth = current_offset_depth - 1; depth >= 0; --depth)
+            for (ssize_t depth = depth_to_look - 1; depth >= 0; --depth)
             {
                 /// Skipping offsets for empty arrays
                 while (last_offset_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])

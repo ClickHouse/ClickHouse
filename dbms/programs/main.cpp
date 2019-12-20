@@ -14,13 +14,10 @@
 #include "config_core.h"
 #endif
 
-#if USE_TCMALLOC
-#include <gperftools/malloc_extension.h>
-#endif
-
 #include <Common/StringUtils/StringUtils.h>
 
 #include <common/phdr_cache.h>
+#include <ext/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -55,11 +52,6 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
 
-
-#if USE_EMBEDDED_COMPILER
-    int mainEntryClickHouseClang(int argc, char ** argv);
-    int mainEntryClickHouseLLD(int argc, char ** argv);
-#endif
 
 namespace
 {
@@ -100,12 +92,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
     {"obfuscator", mainEntryClickHouseObfuscator},
 #endif
-
-#if USE_EMBEDDED_COMPILER
-    {"clang", mainEntryClickHouseClang},
-    {"clang++", mainEntryClickHouseClang},
-    {"lld", mainEntryClickHouseLLD},
-#endif
 };
 
 
@@ -141,8 +127,19 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 }
 
 
+/// This allows to implement assert to forbid initialization of a class in static constructors.
+/// Usage:
+///
+/// extern bool inside_main;
+/// class C { C() { assert(inside_main); } };
+bool inside_main = false;
+
+
 int main(int argc_, char ** argv_)
 {
+    inside_main = true;
+    SCOPE_EXIT({ inside_main = false; });
+
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
@@ -151,19 +148,6 @@ int main(int argc_, char ** argv_)
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
     updatePHDRCache();
-
-#if USE_EMBEDDED_COMPILER
-    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
-        return mainEntryClickHouseClang(argc_, argv_);
-#endif
-
-#if USE_TCMALLOC
-    /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations
-      *  (like IO buffers, column vectors, hash tables, etc.),
-      *  that lead to page faults and significantly hurts performance.
-      */
-    MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
-#endif
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 

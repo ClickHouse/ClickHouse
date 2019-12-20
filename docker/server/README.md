@@ -59,4 +59,4 @@ EOSQL
 
 ## License
 
-View [license information](https://github.com/yandex/ClickHouse/blob/master/LICENSE) for the software contained in this image.
+View [license information](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE) for the software contained in this image.

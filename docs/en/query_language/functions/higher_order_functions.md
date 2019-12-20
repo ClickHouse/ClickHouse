@@ -16,27 +16,33 @@ A lambda function can't be omitted for the following functions:
 
 - [arrayMap](#higher_order_functions-array-map)
 - [arrayFilter](#higher_order_functions-array-filter)
+- [arrayFill](#higher_order_functions-array-fill)
+- [arrayReverseFill](#higher_order_functions-array-reverse-fill)
+- [arraySplit](#higher_order_functions-array-split)
+- [arrayReverseSplit](#higher_order_functions-array-reverse-split)
 - [arrayFirst](#higher_order_functions-array-first)
 - [arrayFirstIndex](#higher_order_functions-array-first-index)
 
 ### arrayMap(func, arr1, ...) {#higher_order_functions-array-map}
 
-Returns an array obtained from the original application of the `func` function to each element in the `arr` array. 
+Returns an array obtained from the original application of the `func` function to each element in the `arr` array.
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
-
+```
+```text
 ┌─res─────┐
 │ [3,4,5] │
 └─────────┘
 ```
 The following example shows how to create a tuple of elements from different arrays:
 
-``` sql
+```sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
-
+```
+```text
 ┌─res─────────────────┐
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
@@ -50,17 +56,17 @@ Returns an array containing only the elements in `arr1` for which `func` returns
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```
+```text
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -69,13 +75,85 @@ SELECT
     AS res
 ```
 
-```
+```text
 ┌─res─┐
 │ [2] │
 └─────┘
 ```
 
 Note that the first argument (lambda function) can't be omitted in the `arrayFilter` function.
+
+### arrayFill(func, arr1, ...) {#higher_order_functions-array-fill}
+
+Scan through `arr1` from the first element to the last element and replace `arr1[i]` by `arr1[i - 1]` if `func` returns 0. The first element of `arr1` will not be replaced.
+
+Examples:
+
+```sql
+SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+```text
+┌─res──────────────────────────────┐
+│ [1,1,3,11,12,12,12,5,6,14,14,14] │
+└──────────────────────────────────┘
+```
+
+Note that the first argument (lambda function) can't be omitted in the `arrayFill` function.
+
+### arrayReverseFill(func, arr1, ...) {#higher_order_functions-array-reverse-fill}
+
+Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func` returns 0. The last element of `arr1` will not be replaced.
+
+Examples:
+
+```sql
+SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, null, null]) AS res
+```
+
+```text
+┌─res────────────────────────────────┐
+│ [1,3,3,11,12,5,5,5,6,14,NULL,NULL] │
+└────────────────────────────────────┘
+```
+
+Note that the first argument (lambda function) can't be omitted in the `arrayReverseFill` function.
+
+### arraySplit(func, arr1, ...) {#higher_order_functions-array-split}
+
+Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
+
+Examples:
+
+```sql
+SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+```text
+┌─res─────────────┐
+│ [[1,2,3],[4,5]] │
+└─────────────────┘
+```
+
+Note that the first argument (lambda function) can't be omitted in the `arraySplit` function.
+
+### arrayReverseSplit(func, arr1, ...) {#higher_order_functions-array-reverse-split}
+
+Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
+
+Examples:
+
+```sql
+SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
+```
+
+```text
+┌─res───────────────┐
+│ [[1],[2,3,4],[5]] │
+└───────────────────┘
+```
+
+Note that the first argument (lambda function) can't be omitted in the `arraySplit` function.
 
 ### arrayCount(\[func,\] arr1, ...) {#higher_order_functions-array-count}
 
@@ -111,11 +189,11 @@ Returns an array of partial sums of elements in the source array (a running sum)
 
 Example:
 
-``` sql
+```sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```
+```text
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -125,11 +203,11 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Same as `arrayCumSum`, returns an array of partial sums of elements in the source array (a running sum). Different `arrayCumSum`, when then returned value contains a value less than zero, the value is replace with zero and the subsequent calculation is performed with zero parameters. For example:
 
-``` sql
+```sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
-```
+```text
 ┌─res───────┐
 │ [1,2,0,1] │
 └───────────┘
@@ -137,17 +215,17 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 ### arraySort(\[func,\] arr1, ...)
 
-Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)
 
 The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to improve sorting efficiency.
 
 Example:
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```
+```text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -161,10 +239,10 @@ Returns an array as result of sorting the elements of `arr1` in descending order
 
 Example:
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
-``` sql
+```text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘

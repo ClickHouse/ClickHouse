@@ -1,5 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <iomanip>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -44,6 +45,16 @@ ASTPtr ASTAlterCommand::clone() const
     {
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
+    }
+    if (settings_changes)
+    {
+        res->settings_changes = settings_changes->clone();
+        res->children.push_back(res->settings_changes);
+    }
+    if (values)
+    {
+        res->values = values->clone();
+        res->children.push_back(res->values);
     }
 
     return res;
@@ -109,12 +120,45 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << "DROP INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+                      << (clear_index ? "CLEAR " : "DROP ") << "INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << "MATERIALIZE INDEX " << (settings.hilite ? hilite_none : "");
+        index->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::ADD_CONSTRAINT)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT" << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        constraint_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_CONSTRAINT)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
+                      << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        constraint->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (detach ? "DETACH" : "DROP") << " PARTITION "
+                      << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
@@ -123,6 +167,25 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH "
                       << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE "
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+        settings.ostr << " TO ";
+        switch (move_destination_type)
+        {
+            case PartDestinationType::DISK:
+                settings.ostr << "DISK ";
+                break;
+            case PartDestinationType::VOLUME:
+                settings.ostr << "VOLUME ";
+                break;
+            default:
+                break;
+        }
+        settings.ostr << quoteString(move_destination_name);
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
@@ -184,6 +247,15 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        settings_changes->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -236,7 +308,10 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+    if (is_live_view)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
+    else
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
     if (!table.empty())
     {

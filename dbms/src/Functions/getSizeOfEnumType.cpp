@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -50,10 +50,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        block.getByPosition(result).column = getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments)->cloneResized(input_rows_count);
+    }
+
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
+    {
         if (auto type8 = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());
+            return DataTypeUInt8().createColumnConst(1, type8->getValues().size());
         else if (auto type16 = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt16().createColumnConst(input_rows_count, type16->getValues().size());
+            return DataTypeUInt16().createColumnConst(1, type16->getValues().size());
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

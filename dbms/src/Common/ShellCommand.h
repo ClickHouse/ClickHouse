@@ -32,7 +32,7 @@ private:
 
     Poco::Logger * log;
 
-    ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_);
+    ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_);
 
     static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor);
 

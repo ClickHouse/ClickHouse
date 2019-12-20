@@ -1,5 +1,6 @@
 #include "convertMySQLDataType.h"
 
+#include <Core/Field.h>
 #include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

@@ -13,7 +13,6 @@ void registerInputFormatNative(FormatFactory & factory)
         const Block & sample,
         const Context &,
         UInt64 /* max_block_size */,
-        UInt64 /* min_read_rows */,
         FormatFactory::ReadCallback /* callback */,
         const FormatSettings &)
     {
@@ -27,6 +26,7 @@ void registerOutputFormatNative(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback,
         const FormatSettings &)
     {
         return std::make_shared<NativeBlockOutputStream>(buf, 0, sample);

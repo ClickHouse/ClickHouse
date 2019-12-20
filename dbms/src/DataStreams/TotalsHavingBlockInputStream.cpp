@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/Arena.h>
 
 
@@ -155,7 +156,7 @@ void TotalsHavingBlockInputStream::addToTotals(const Block & source_block, const
             continue;
         }
 
-        auto & totals_column = static_cast<ColumnAggregateFunction &>(*current_totals[i]);
+        auto & totals_column = assert_cast<ColumnAggregateFunction &>(*current_totals[i]);
         assert(totals_column.size() == 1);
 
         /// Accumulate all aggregate states from a column of a source block into

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,6 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -83,7 +85,7 @@ namespace
             if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
             {
                 const PaddedPODArray<T> & src_data_vec = src_data_concrete->getData();
-                PaddedPODArray<T> & res_data = static_cast<ColumnVector<T> &>(res_data_col).getData();
+                PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(res_data_col).getData();
 
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
@@ -379,7 +381,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
             ErrorCodes::ILLEGAL_COLUMN);
 
     MutableColumnPtr res_ptr = array->cloneEmpty();
-    ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & src_offsets = array->getOffsets();
@@ -398,7 +400,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
         inner_col = &nullable_col->getNestedColumn();
         src_null_map = &nullable_col->getNullMapData();
 
-        auto & nullable_res_col = static_cast<ColumnNullable &>(res_data);
+        auto & nullable_res_col = assert_cast<ColumnNullable &>(res_data);
         inner_res_col = &nullable_res_col.getNestedColumn();
         res_null_map = &nullable_res_col.getNullMapData();
     }

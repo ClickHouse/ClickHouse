@@ -1,5 +1,6 @@
 #include "PerformanceTestInfo.h"
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>

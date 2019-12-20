@@ -16,7 +16,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
-#include <Functions/IFunction.h>
+#include <Common/assert_cast.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Algorithms.h>
@@ -170,13 +171,11 @@ class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 public:
     static constexpr auto name = "if";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(context); }
-    FunctionIf(const Context & context) : context(context) {}
+    FunctionIf(const Context & context_) : context(context_) {}
 
 private:
     template <typename T0, typename T1>
-    static constexpr bool allow_arrays =
-        !IsDecimalNumber<T0> && !IsDecimalNumber<T1> &&
-        !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
+    static constexpr bool allow_arrays = !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
@@ -279,7 +278,7 @@ private:
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -296,7 +295,7 @@ private:
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -336,7 +335,7 @@ private:
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -353,7 +352,7 @@ private:
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
+                    NumericArraySink<ResultType>(assert_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -396,7 +395,7 @@ private:
         }
         else if (auto col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped))
         {
-            if (checkColumn<ColVecT0>(&static_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
+            if (checkColumn<ColVecT0>(&assert_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
             {
                 left_ok = true;
                 right_ok = executeConstRightTypeArray<T0, T1, ColVecT0, ColVecT1>(
@@ -438,7 +437,7 @@ private:
             /// The result is FixedString.
 
             auto col_res_untyped = block.getByPosition(result).type->createColumn();
-            ColumnFixedString * col_res = static_cast<ColumnFixedString *>(col_res_untyped.get());
+            ColumnFixedString * col_res = assert_cast<ColumnFixedString *>(col_res_untyped.get());
             auto sink = FixedStringSink(*col_res, rows);
 
             if (col_then_fixed && col_else_fixed)
@@ -514,7 +513,7 @@ private:
             && (col_arr_else || col_arr_else_const))
         {
             auto res = block.getByPosition(result).type->createColumn();
-            auto col_res = static_cast<ColumnArray *>(res.get());
+            auto col_res = assert_cast<ColumnArray *>(res.get());
 
             if (col_arr_then && col_arr_else)
                 conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
@@ -612,8 +611,8 @@ private:
 
         if (then_is_const && else_is_const)
         {
-            const IColumn & then_nested_column = static_cast<const ColumnConst &>(*col_then).getDataColumn();
-            const IColumn & else_nested_column = static_cast<const ColumnConst &>(*col_else).getDataColumn();
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -625,7 +624,7 @@ private:
         }
         else if (then_is_const)
         {
-            const IColumn & then_nested_column = static_cast<const ColumnConst &>(*col_then).getDataColumn();
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -637,7 +636,7 @@ private:
         }
         else if (else_is_const)
         {
-            const IColumn & else_nested_column = static_cast<const ColumnConst &>(*col_else).getDataColumn();
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -817,7 +816,7 @@ private:
                 {
                     auto arg_else_column = arg_else.column;
                     auto result_column = (*std::move(arg_else_column)).mutate();
-                    static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    assert_cast<ColumnNullable &>(*result_column).applyNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else
@@ -859,7 +858,7 @@ private:
                 {
                     auto arg_then_column = arg_then.column;
                     auto result_column = (*std::move(arg_then_column)).mutate();
-                    static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    assert_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(assert_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
                 else
@@ -894,6 +893,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

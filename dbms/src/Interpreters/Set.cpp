@@ -84,8 +84,16 @@ void NO_INLINE Set::insertFromBlockImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (has_null_map)
+        {
             if ((*null_map)[i])
+            {
+                if constexpr (build_filter)
+                {
+                    (*out_filter)[i] = false;
+                }
                 continue;
+            }
+        }
 
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
@@ -106,6 +114,7 @@ void Set::setHeader(const Block & block)
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
+    set_elements_types.reserve(keys_size);
 
     /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
@@ -116,6 +125,7 @@ void Set::setHeader(const Block & block)
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
         data_types.emplace_back(block.safeGetByPosition(i).type);
+        set_elements_types.emplace_back(block.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -135,8 +145,8 @@ void Set::setHeader(const Block & block)
         /// Create empty columns with set values in advance.
         /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
         set_elements.reserve(keys_size);
-        for (const auto & type : data_types)
-            set_elements.emplace_back(removeNullable(type)->createColumn());
+        for (const auto & type : set_elements_types)
+            set_elements.emplace_back(type->createColumn());
     }
 
     /// Choose data structure to use for the set.
@@ -246,7 +256,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
         else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
-            const TupleBackend * tuple = nullptr;
+            const Tuple * tuple = nullptr;
             if (func->name != "tuple")
             {
                 if (!tuple_type)
@@ -257,7 +267,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
                                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-                tuple = &function_result.get<Tuple>().toUnderType();
+                tuple = &function_result.get<Tuple>();
             }
 
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
@@ -291,6 +301,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     Block block = header.cloneWithColumns(std::move(columns));
     insertFromBlock(block);
+    finishInsert();
 }
 
 
@@ -320,13 +331,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         return res;
     }
 
-    if (data_types.size() != num_key_columns)
-    {
-        std::stringstream message;
-        message << "Number of columns in section IN doesn't match. "
-            << num_key_columns << " at left, " << data_types.size() << " at right.";
-        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-    }
+    checkColumnsNumber(num_key_columns);
 
     /// Remember the columns we will work with. Also check that the data types are correct.
     ColumnRawPtrs key_columns;
@@ -337,11 +342,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
-            throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-                + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
-                " on the left.", ErrorCodes::TYPE_MISMATCH);
-
+        checkTypesEqual(i, block.safeGetByPosition(i).type);
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back() = materialized_columns.back().get();
     }
@@ -421,6 +422,24 @@ void Set::executeOrdinary(
     }
 }
 
+void Set::checkColumnsNumber(size_t num_key_columns) const
+{
+    if (data_types.size() != num_key_columns)
+    {
+        std::stringstream message;
+        message << "Number of columns in section IN doesn't match. "
+                << num_key_columns << " at left, " << data_types.size() << " at right.";
+        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+    }
+}
+
+void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
+{
+    if (!removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type))))
+        throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
+                        + other_type->getName() + " on the left, "
+                        + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
+}
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
     : indexes_mapping(std::move(index_mapping_))
@@ -462,7 +481,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
+BoolMask MergeTreeSetIndex::mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types)
 {
     size_t tuple_size = indexes_mapping.size();
 

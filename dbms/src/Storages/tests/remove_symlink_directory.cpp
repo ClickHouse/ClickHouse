@@ -22,7 +22,7 @@ try
     Poco::File("./test_dir/file").createFile();
 
     if (0 != symlink("./test_dir", "./test_link"))
-        DB::throwFromErrno("Cannot create symlink", DB::ErrorCodes::SYSTEM_ERROR);
+        DB::throwFromErrnoWithPath("Cannot create symlink", "./test_link", DB::ErrorCodes::SYSTEM_ERROR);
 
     Poco::File link("./test_link");
     link.renameTo("./test_link2");

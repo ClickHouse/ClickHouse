@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -8,6 +8,8 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -92,7 +94,7 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     const auto & return_type = block.getByPosition(result).type;
 
     auto res_ptr = return_type->createColumn();
-    ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
@@ -172,7 +174,7 @@ bool FunctionArrayDistinct::executeNumber(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            if (set.find(values[j]) == set.end())
+            if (!set.find(values[j]))
             {
                 res_data.emplace_back(values[j]);
                 set.insert(values[j]);
@@ -228,7 +230,7 @@ bool FunctionArrayDistinct::executeString(
 
             StringRef str_ref = src_data_concrete->getDataAt(j);
 
-            if (set.find(str_ref) == set.end())
+            if (!set.find(str_ref))
             {
                 set.insert(str_ref);
                 res_data_column_string.insertData(str_ref.data, str_ref.size);
@@ -278,7 +280,7 @@ void FunctionArrayDistinct::executeHashed(
             src_data.updateHashWithValue(j, hash_function);
             hash_function.get128(reinterpret_cast<char *>(&hash));
 
-            if (set.find(hash) == set.end())
+            if (!set.find(hash))
             {
                 set.insert(hash);
                 res_data_col.insertFrom(src_data, j);

@@ -16,12 +16,12 @@ namespace ErrorCodes
 }
 
 
-MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index)
-    : IMergeTreeIndexGranule(), index(index), parallelogram() {}
+MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_)
+    : IMergeTreeIndexGranule(), index(index_), parallelogram() {}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
-    const MergeTreeIndexMinMax & index, std::vector<Range> && parallelogram)
-    : IMergeTreeIndexGranule(), index(index), parallelogram(std::move(parallelogram)) {}
+    const MergeTreeIndexMinMax & index_, std::vector<Range> && parallelogram_)
+    : IMergeTreeIndexGranule(), index(index_), parallelogram(std::move(parallelogram_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -83,8 +83,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index)
-    : index(index) {}
+MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index_)
+    : index(index_) {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
@@ -125,8 +125,8 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo &query,
     const Context &context,
-    const MergeTreeIndexMinMax &index)
-    : IMergeTreeIndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
+    const MergeTreeIndexMinMax &index_)
+    : IMergeTreeIndexCondition(), index(index_), condition(query, context, index.columns, index.expr) {}
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
@@ -143,7 +143,7 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     for (const auto & range : granule->parallelogram)
         if (range.left.isNull() || range.right.isNull())
             return true;
-    return condition.checkInParallelogram(granule->parallelogram, index.data_types).can_be_true;
+    return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
 
 
@@ -169,8 +169,8 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & name : columns)
-        if (column_name == name)
+    for (const auto & cname : columns)
+        if (column_name == cname)
             return true;
 
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))

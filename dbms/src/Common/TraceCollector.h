@@ -24,7 +24,7 @@ private:
     static void notifyToStop();
 
 public:
-    TraceCollector(std::shared_ptr<TraceLog> & trace_log);
+    TraceCollector(std::shared_ptr<TraceLog> & trace_log_);
 
     ~TraceCollector();
 };

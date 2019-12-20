@@ -28,6 +28,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
 }
 
 
@@ -87,10 +89,12 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     {
         std::unique_lock lock(mutex);
 
-        const auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
+        const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
-            if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{ return processes.size() < max_size; }))
+            if (queue_max_wait_ms)
+                LOG_WARNING(&Logger::get("ProcessList"), "Too many simultaneous queries, will wait " << queue_max_wait_ms << " ms.");
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
@@ -127,7 +131,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
 
-                    if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]
+                    const auto replace_running_query_max_wait_ms = settings.replace_running_query_max_wait_ms.totalMilliseconds();
+                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
+                        [&]
                         {
                             running_query = user_process_list->second.queries.find(client_info.current_query_id);
                             if (running_query == user_process_list->second.queries.end())
@@ -135,8 +141,10 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                             running_query->second->is_killed.store(true, std::memory_order_relaxed);
                             return false;
                         }))
+                    {
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                    }
                  }
             }
         }
@@ -440,6 +448,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         {
             std::lock_guard lock(thread_group->mutex);
             res.thread_numbers = thread_group->thread_numbers;
+            res.os_thread_ids = thread_group->os_thread_ids;
         }
 
         if (get_profile_events)

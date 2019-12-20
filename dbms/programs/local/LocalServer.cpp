@@ -19,8 +19,8 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
@@ -32,9 +32,11 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
+#include <Common/TerminalSize.h>
 
 
 namespace DB
@@ -73,6 +75,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
     {
+        // sensitive data rules are not used here
         buildLoggers(config(), logger());
     }
     else
@@ -150,6 +153,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -219,14 +223,6 @@ catch (const Exception & e)
 }
 
 
-inline String getQuotedString(const String & s)
-{
-    WriteBufferFromOwnString buf;
-    writeQuotedString(s, buf);
-    return buf.str();
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure"))
@@ -239,7 +235,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     if (!config().has("table-file") || config().getString("table-file") == "-") /// Use Unix tools stdin naming convention
         table_file = "stdin";
     else /// Use regular file
-        table_file = getQuotedString(config().getString("table-file"));
+        table_file = quoteString(config().getString("table-file"));
 
     return
     "CREATE TABLE " + table_name +
@@ -267,7 +263,7 @@ void LocalServer::attachSystemTables()
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query + config().getString("query");
+    String queries_str = initial_create_query + config().getRawString("query");
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries);
@@ -409,17 +405,7 @@ void LocalServer::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options
     stopOptionsProcessing();
 
-    unsigned line_length = po::options_description::m_default_line_length;
-    unsigned min_description_length = line_length / 2;
-    if (isatty(STDIN_FILENO))
-    {
-        winsize terminal_size{};
-        ioctl(0, TIOCGWINSZ, &terminal_size);
-        line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
-        min_description_length = std::min(min_description_length, line_length - 2);
-    }
-
-    po::options_description description("Main options", line_length, min_description_length);
+    po::options_description description = createOptionsDescription("Main options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
@@ -457,7 +443,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.count("help"))
+    if (options.empty() || options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
@@ -512,6 +498,9 @@ void LocalServer::applyCmdOptions()
 }
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

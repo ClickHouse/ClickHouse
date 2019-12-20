@@ -6,7 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/HashTable/HashMap.h>
+#include "ColumnsCommon.h"
 
 
 namespace DB
@@ -61,43 +61,18 @@ std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns,
     return counts;
 }
 
-/** clang 4 generates better code than gcc 6.
-  * And both gcc and clang could not vectorize trivial loop by bytes automatically.
-  */
-bool memoryIsZero(const void * data, size_t size)
+bool memoryIsByte(const void * data, size_t size, uint8_t byte)
 {
-    const Int8 * pos = reinterpret_cast<const Int8 *>(data);
-    const Int8 * end = pos + size;
-
-#ifdef __SSE2__
-    const __m128 zero16 = _mm_setzero_ps();
-    const Int8 * end64 = pos + size / 64 * 64;
-
-    for (; pos < end64; pos += 64)
-        if (_mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 16)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 32)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 48)),
-                zero16)))
-            return false;
-
-    /// TODO Add duff device for tail?
-#endif
-
-    for (; pos < end; ++pos)
-        if (*pos)
-            return false;
-
-    return true;
+    if (size == 0)
+        return true;
+    auto ptr = reinterpret_cast<const uint8_t *>(data);
+    return *ptr == byte && memcmp(ptr, ptr + 1, size - 1) == 0;
 }
 
+bool memoryIsZero(const void * data, size_t size)
+{
+    return memoryIsByte(data, size, 0x0);
+}
 
 namespace ErrorCodes
 {

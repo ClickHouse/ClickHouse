@@ -1,33 +1,34 @@
+import base64
+import distutils.dir_util
+import errno
 import os
 import os.path as p
 import pwd
 import re
-import subprocess
 import shutil
-import distutils.dir_util
 import socket
+import subprocess
 import time
-import errno
-from dicttoxml import dicttoxml
-import pymysql
+import urllib
 import xml.dom.minidom
+import logging
+import docker
+import psycopg2
+import pymongo
+import pymysql
+from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
-import psycopg2
-import requests
-import base64
-import pymongo
-import urllib
+from minio import Minio
 
-import docker
-from docker.errors import ContainerError
-
-from .client import Client, CommandRequest
+from .client import Client
 from .hdfs_api import HDFSApi
-
 
 HELPERS_DIR = p.dirname(__file__)
 DEFAULT_ENV_NAME = 'env_file'
+
+SANITIZER_SIGN = "=================="
+
 
 def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     full_path = os.path.join(path, fname)
@@ -36,15 +37,18 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
     subprocess.check_call(args)
 
+
 def subprocess_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
     subprocess.call(args)
+
 
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
@@ -71,16 +75,21 @@ class ClickHouseCluster:
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
-        self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
-        self.server_bin_path = p.realpath(server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
+        self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR',
+                                                                   '/etc/clickhouse-server/')
+        self.server_bin_path = p.realpath(
+            server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
         self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
-        self.client_bin_path = p.realpath(client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
-        self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(HELPERS_DIR, 'zookeeper_config.xml')
+        self.client_bin_path = p.realpath(
+            client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
+        self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
+            HELPERS_DIR, 'zookeeper_config.xml')
 
         self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
+        self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
@@ -103,10 +112,18 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
+        self.with_redis = False
+
+        self.with_minio = False
+        self.minio_host = "minio1"
+        self.minio_bucket = "root"
+        self.minio_port = 9001
+        self.minio_client = None  # type: Minio
+        self.minio_redirect_host = "redirect"
+        self.minio_redirect_port = 80
 
         self.docker_client = None
         self.is_up = False
-
 
     def get_client_cmd(self):
         cmd = self.client_bin_path
@@ -114,7 +131,12 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={},
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
+                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
+                     with_redis=False, with_minio=False,
+                     hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -132,10 +154,12 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary)
+            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            ipv6_address=ipv6_address,
+            with_installed_binary=with_installed_binary, tmpfs=tmpfs)
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
@@ -149,14 +173,14 @@ class ClickHouseCluster:
             self.with_zookeeper = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                           self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
@@ -164,7 +188,7 @@ class ClickHouseCluster:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
@@ -180,36 +204,49 @@ class ClickHouseCluster:
                 self.with_postgres = True
                 self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                          self.project_name, '--file',
+                                          p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
                 cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
 
-        return instance
+        if with_redis and not self.with_redis:
+            self.with_redis = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')])
+            self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')]
 
+        if with_minio and not self.with_minio:
+            self.with_minio = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')])
+            self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')]
+            cmds.append(self.base_minio_cmd)
+
+        return instance
 
     def get_instance_docker_id(self, instance_name):
         # According to how docker-compose names containers.
@@ -225,12 +262,12 @@ class ClickHouseCluster:
     def restart_instance_with_ip_change(self, node, new_ip):
         if '::' in new_ip:
             if node.ipv6_address is None:
-                raise Exception("You shoud specity ipv6_address in add_node method")
+                raise Exception("You should specity ipv6_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
             node.ipv6_address = new_ip
         else:
             if node.ipv4_address is None:
-                raise Exception("You shoud specity ipv4_address in add_node method")
+                raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
         subprocess.check_call(self.base_cmd + ["stop", node.name])
@@ -238,7 +275,7 @@ class ClickHouseCluster:
         subprocess.check_call(self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name])
         node.ip_address = self.get_instance_ip(node.name)
         node.client = Client(node.ip_address, command=self.client_bin_path)
-        start_deadline = time.time() + 20.0 # seconds
+        start_deadline = time.time() + 20.0  # seconds
         node.wait_for_start(start_deadline)
         return node
 
@@ -319,19 +356,39 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
+    def wait_minio_to_start(self, timeout=10):
+        minio_client = Minio('localhost:9001',
+                             access_key='minio',
+                             secret_key='minio123',
+                             secure=False)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                buckets = minio_client.list_buckets()
+                self.minio_client = minio_client
+                logging.info("Connected to Minio %s", buckets)
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
 
         # Just in case kill unstopped containers from previous launch
         try:
+            logging.info("Trying to kill unstopped containers...")
+
             if not subprocess_call(['docker-compose', 'kill']):
                 subprocess_call(['docker-compose', 'down', '--volumes'])
         except:
             pass
 
+        logging.info("Unstopped containers killed")
+
         if destroy_dirs and p.exists(self.instances_dir):
-            print "Removing instances dir", self.instances_dir
+            logging.info("Removing instances dir %s", self.instances_dir)
             shutil.rmtree(self.instances_dir)
 
         for instance in self.instances.values():
@@ -367,24 +424,49 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_mongo_cmd + common_opts)
             self.wait_mongo_to_start(30)
 
-        subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
+        if self.with_redis and self.base_redis_cmd:
+            subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+            time.sleep(10)
 
-        start_deadline = time.time() + 20.0 # seconds
+        if self.with_minio and self.base_minio_cmd:
+            minio_start_cmd = self.base_minio_cmd + common_opts
+            logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
+            subprocess_check_call(minio_start_cmd)
+            logging.info("Trying to connect to Minio...")
+            self.wait_minio_to_start()
+
+        clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
+        logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
+        subprocess_check_call(clickhouse_start_cmd)
+        logging.info("ClickHouse instance created")
+
+        start_deadline = time.time() + 20.0  # seconds
         for instance in self.instances.itervalues():
             instance.docker_client = self.docker_client
             instance.ip_address = self.get_instance_ip(instance.name)
 
+            logging.info("Waiting for ClickHouse start...")
             instance.wait_for_start(start_deadline)
+            logging.info("ClickHouse started")
 
             instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
         self.is_up = True
 
-
     def shutdown(self, kill=True):
+        sanitizer_assert_instance = None
+        with open(self.docker_logs_path, "w+") as f:
+            subprocess.check_call(self.base_cmd + ['logs'], stdout=f)
+            f.seek(0)
+            for line in f:
+                if SANITIZER_SIGN in line:
+                    sanitizer_assert_instance = line.split('|')[0].strip()
+                    break
+
         if kill:
             subprocess_check_call(self.base_cmd + ['kill'])
         subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+
         self.is_up = False
 
         self.docker_client = None
@@ -394,14 +476,19 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+        if sanitizer_assert_instance is not None:
+            raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
+
+
+    def open_bash_shell(self, instance_name):
+        os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
     def get_kazoo_client(self, zoo_instance_name):
         zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
         zk.start()
         return zk
 
-
-    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name = 'zoo1', repeats=1, sleep_for=1):
+    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name='zoo1', repeats=1, sleep_for=1):
         for i in range(repeats - 1):
             try:
                 kazoo_callback(self.get_kazoo_client(zoo_instance_name))
@@ -411,7 +498,6 @@ class ClickHouseCluster:
                 time.sleep(sleep_for)
 
         kazoo_callback(self.get_kazoo_client(zoo_instance_name))
-
 
     def add_zookeeper_startup_command(self, command):
         self.pre_zookeeper_commands.append(command)
@@ -435,6 +521,7 @@ services:
             {odbc_bridge_volume}
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
+        tmpfs: {tmpfs}
         cap_add:
             - SYS_PTRACE
         depends_on: {depends_on}
@@ -447,6 +534,8 @@ services:
             {app_net}
                 {ipv4_address}
                 {ipv6_address}
+                {net_aliases}
+                    {net_alias1}
 '''
 
 
@@ -454,9 +543,11 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={},
+            image="yandex/clickhouse-integration-test",
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -464,6 +555,7 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
+        self.tmpfs = tmpfs[:]
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
@@ -479,6 +571,8 @@ class ClickHouseInstance:
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
         self.with_mongo = with_mongo
+        self.with_redis = with_redis
+        self.with_minio = with_minio
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
@@ -492,7 +586,7 @@ class ClickHouseInstance:
         self.docker_client = None
         self.ip_address = None
         self.client = None
-        self.default_timeout = 20.0 # 20 sec
+        self.default_timeout = 20.0  # 20 sec
         self.image = image
         self.stay_alive = stay_alive
         self.ipv4_address = ipv4_address
@@ -503,7 +597,8 @@ class ClickHouseInstance:
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
         return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
 
-    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False, retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False,
+                         retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
         result = None
         for i in range(retry_count):
             try:
@@ -532,14 +627,27 @@ class ClickHouseInstance:
         return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None):
-        return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
+    def http_query(self, sql, data=None, params=None, user=None):
+        if params is None:
+            params = {}
+        else:
+            params = params.copy()
 
-    def restart_clickhouse(self, stop_start_wait_sec=5):
+        params["query"] = sql
+
+        auth = ""
+        if user:
+            auth = "{}@".format(user)
+
+        url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
+
+        return urllib.urlopen(url, data).read()
+
+    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
         time.sleep(stop_start_wait_sec)
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
 
@@ -555,17 +663,21 @@ class ClickHouseInstance:
         return output
 
     def contains_in_log(self, substring):
-        result = self.exec_in_container(["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+        result = self.exec_in_container(
+            ["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
         return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
         with open(local_path, 'r') as fdata:
             data = fdata.read()
             encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
+            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+                                   user='root')
 
     def get_process_pid(self, process_name):
-        output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])
+        output = self.exec_in_container(["bash", "-c",
+                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(
+                                             process_name)])
         if output:
             try:
                 pid = int(output.split('\n')[0].strip())
@@ -573,7 +685,6 @@ class ClickHouseInstance:
             except:
                 return None
         return None
-
 
     def restart_with_latest_version(self, stop_start_wait_sec=10, callback_onstop=None, signal=15):
         if not self.stay_alive:
@@ -588,10 +699,18 @@ class ClickHouseInstance:
             time.sleep(0.5)
             local_counter += 1
 
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], user='root')
+
         if callback_onstop:
             callback_onstop(self)
-        self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"], user='root')
-        self.exec_in_container(["bash", "-c", "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"], user='root')
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
+            user='root')
+        self.exec_in_container(["bash", "-c",
+                                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
+                               user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         from helpers.test_tools import assert_eq_with_retry
         # wait start
@@ -600,14 +719,11 @@ class ClickHouseInstance:
     def get_docker_handle(self):
         return self.docker_client.containers.get(self.docker_id)
 
-
     def stop(self):
         self.get_docker_handle().stop()
 
-
     def start(self):
         self.get_docker_handle().start()
-
 
     def wait_for_start(self, deadline=None, timeout=None):
         start_time = time.time()
@@ -617,9 +733,11 @@ class ClickHouseInstance:
 
         while True:
             handle = self.get_docker_handle()
-            status = handle.status;
+            status = handle.status
             if status == 'exited':
-                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status, handle.logs()))
+                raise Exception(
+                    "Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status,
+                                                                                           handle.logs()))
 
             current_time = time.time()
             time_left = deadline - current_time
@@ -644,7 +762,6 @@ class ClickHouseInstance:
             finally:
                 sock.close()
 
-
     @staticmethod
     def dict_to_xml(dictionary):
         xml_str = dicttoxml(dictionary, custom_root="yandex", attr_type=False)
@@ -656,7 +773,7 @@ class ClickHouseInstance:
             return {
                 "SQLite3": {
                     "DSN": "sqlite3_odbc",
-                    "Database" : "/tmp/sqliteodbc",
+                    "Database": "/tmp/sqliteodbc",
                     "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
                     "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
                 },
@@ -723,13 +840,14 @@ class ClickHouseInstance:
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
-        shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
+        # The file is named with 0_ prefix to be processed before other configuration overloads.
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), config_d_dir)
 
         # Generate and write macros file
         macros = self.macros.copy()
         macros['instance'] = self.name
         with open(p.join(config_d_dir, 'macros.xml'), 'w') as macros_config:
-            macros_config.write(self.dict_to_xml({"macros" : macros}))
+            macros_config.write(self.dict_to_xml({"macros": macros}))
 
         # Put ZooKeeper config
         if self.with_zookeeper:
@@ -768,6 +886,10 @@ class ClickHouseInstance:
             depends_on.append("zoo2")
             depends_on.append("zoo3")
 
+        if self.with_minio:
+            depends_on.append("minio1")
+            depends_on.append("redirect")
+
         env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
         odbc_ini_path = ""
@@ -780,17 +902,17 @@ class ClickHouseInstance:
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
 
-        ipv4_address = ipv6_address = ""
-        if self.ipv4_address is None and self.ipv6_address is None:
-            networks = ""
-            app_net = ""
-        else:
+        networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
+        if self.ipv4_address is not None or self.ipv6_address is not None or self.hostname != self.name:
             networks = "networks:"
             app_net = "default:"
             if self.ipv4_address is not None:
                 ipv4_address = "ipv4_address: " + self.ipv4_address
             if self.ipv6_address is not None:
                 ipv6_address = "ipv6_address: " + self.ipv6_address
+            if self.hostname != self.name:
+                net_aliases = "aliases:"
+                net_alias1 = "- " + self.hostname
 
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
@@ -798,7 +920,6 @@ class ClickHouseInstance:
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
-
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -810,6 +931,7 @@ class ClickHouseInstance:
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
+                tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),
                 user=os.getuid(),
@@ -820,8 +942,9 @@ class ClickHouseInstance:
                 app_net=app_net,
                 ipv4_address=ipv4_address,
                 ipv6_address=ipv6_address,
+                net_aliases = net_aliases,
+                net_alias1 = net_alias1,
             ))
-
 
     def destroy_dir(self):
         if p.exists(self.path):

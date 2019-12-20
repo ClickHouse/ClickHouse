@@ -1,46 +1,9 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/registerFunctionsArray.h>
 #include <Functions/registerFunctions.h>
 
 namespace DB
 {
-/** These functions are defined in a separate translation units.
-  * This is done in order to reduce the consumption of RAM during build, and to speed up the parallel build.
-  */
-void registerFunctionsArithmetic(FunctionFactory &);
-void registerFunctionsArray(FunctionFactory &);
-void registerFunctionsTuple(FunctionFactory &);
-void registerFunctionsBitmap(FunctionFactory &);
-void registerFunctionsCoding(FunctionFactory &);
-void registerFunctionsComparison(FunctionFactory &);
-void registerFunctionsConditional(FunctionFactory &);
-void registerFunctionsConversion(FunctionFactory &);
-void registerFunctionsDateTime(FunctionFactory &);
-void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
-void registerFunctionsExternalDictionaries(FunctionFactory &);
-void registerFunctionsExternalModels(FunctionFactory &);
-void registerFunctionsFormatting(FunctionFactory &);
-void registerFunctionsHashing(FunctionFactory &);
-void registerFunctionsConsistentHashing(FunctionFactory &);
-void registerFunctionsHigherOrder(FunctionFactory &);
-void registerFunctionsLogical(FunctionFactory &);
-void registerFunctionsMiscellaneous(FunctionFactory &);
-void registerFunctionsRandom(FunctionFactory &);
-void registerFunctionsReinterpret(FunctionFactory &);
-void registerFunctionsRound(FunctionFactory &);
-void registerFunctionsString(FunctionFactory &);
-void registerFunctionsStringArray(FunctionFactory &);
-void registerFunctionsStringSearch(FunctionFactory &);
-void registerFunctionsStringRegex(FunctionFactory &);
-void registerFunctionsStringSimilarity(FunctionFactory &);
-void registerFunctionsURL(FunctionFactory &);
-void registerFunctionsVisitParam(FunctionFactory &);
-void registerFunctionsMath(FunctionFactory &);
-void registerFunctionsGeo(FunctionFactory &);
-void registerFunctionsIntrospection(FunctionFactory &);
-void registerFunctionsNull(FunctionFactory &);
-void registerFunctionsFindCluster(FunctionFactory &);
-void registerFunctionsJSON(FunctionFactory &);
-void registerFunctionsIntrospection(FunctionFactory &);
 
 void registerFunctions()
 {
@@ -60,7 +23,6 @@ void registerFunctions()
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
-    registerFunctionsConsistentHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);
     registerFunctionsMiscellaneous(factory);
@@ -80,6 +42,7 @@ void registerFunctions()
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
+    registerFunctionsConsistentHashing(factory);
 }
 
 }

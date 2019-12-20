@@ -13,20 +13,21 @@ class ReadBuffer;
 
 
 /** A stream for reading data in JSON format, where each row is represented by a separate JSON object.
-  * Objects can be separated by feed return, other whitespace characters in any number and possibly a comma.
+  * Objects can be separated by line feed, other whitespace characters in any number and possibly a comma.
   * Fields can be listed in any order (including, in different lines there may be different order),
   *  and some fields may be missing.
   */
 class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSettings & format_settings);
+    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
 
 private:
     const String & columnName(size_t i) const;
@@ -55,14 +56,19 @@ private:
     /// the nested column names are 'n.i' and 'n.s' and the nested prefix is 'n.'
     size_t nested_prefix_length = 0;
 
+    /// Set of columns for which the values were read. The rest will be filled with default values.
     std::vector<UInt8> read_columns;
+    /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
+    std::vector<UInt8> seen_columns;
+    /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
+    /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<NameMap::iterator> prev_positions;
+    std::vector<NameMap::LookupResult> prev_positions;
 };
 
 }

@@ -35,16 +35,30 @@ struct MergeTreeDataPartTTLInfos
 {
     std::unordered_map<String, MergeTreeDataPartTTLInfo> columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
+
+    /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
+    /// to merge in order to remove expired rows.    
     time_t part_min_ttl = 0;
+    time_t part_max_ttl = 0;
+
+    std::unordered_map<String, MergeTreeDataPartTTLInfo> moves_ttl;
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
 
-    void updatePartMinTTL(time_t time)
+    void updatePartMinMaxTTL(time_t time_min, time_t time_max)
     {
-        if (time && (!part_min_ttl || time < part_min_ttl))
-            part_min_ttl = time;
+        if (time_min && (!part_min_ttl || time_min < part_min_ttl))
+            part_min_ttl = time_min;
+
+        if (time_max && (!part_max_ttl || time_max > part_max_ttl))
+            part_max_ttl = time_max;
+    }
+
+    bool empty()
+    {
+        return !part_min_ttl && moves_ttl.empty();
     }
 };
 

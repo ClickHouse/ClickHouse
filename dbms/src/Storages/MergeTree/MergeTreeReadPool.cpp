@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 
 
 namespace ProfileEvents
@@ -19,14 +19,14 @@ namespace DB
 
 
 MergeTreeReadPool::MergeTreeReadPool(
-    const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
-    RangesInDataParts parts, const MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
-    const bool check_columns, const Names & column_names,
-    const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
-    const bool do_not_steal_tasks)
-    : backoff_settings{backoff_settings}, backoff_state{threads}, data{data},
-      column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
-      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}, parts_ranges{parts}
+    const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
+    RangesInDataParts parts_, const MergeTreeData & data_, const PrewhereInfoPtr & prewhere_info_,
+    const bool check_columns_, const Names & column_names_,
+    const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
+    const bool do_not_steal_tasks_)
+    : backoff_settings{backoff_settings_}, backoff_state{threads_}, data{data_},
+      column_names{column_names_}, do_not_steal_tasks{do_not_steal_tasks_},
+      predict_block_size_bytes{preferred_block_size_bytes_ > 0}, prewhere_info{prewhere_info_}, parts_ranges{parts_}
 {
     /// reverse from right-to-left to left-to-right
     /// because 'reverse' was done in MergeTreeDataSelectExecutor
@@ -34,8 +34,8 @@ MergeTreeReadPool::MergeTreeReadPool(
         std::reverse(std::begin(part_ranges.ranges), std::end(part_ranges.ranges));
 
     /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(parts, check_columns);
-    fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
+    const auto per_part_sum_marks = fillPerPartInfo(parts_, check_columns_);
+    fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_, min_marks_for_concurrent_read_);
 }
 
 

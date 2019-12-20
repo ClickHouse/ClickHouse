@@ -3,6 +3,9 @@
 #include <string>
 #include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <DataStreams/SizeLimits.h>
+#include <Poco/Timespan.h>
+#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -23,7 +26,16 @@ struct RowInputFormatParams
 
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
+
+    using ReadCallback = std::function<void()>;
+    ReadCallback callback;
+
+    Poco::Timespan max_execution_time = 0;
+    OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
+
+bool isParseError(int code);
+bool checkTimeLimit(const RowInputFormatParams & params, const Stopwatch & stopwatch);
 
 ///Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
@@ -34,12 +46,14 @@ public:
     IRowInputFormat(
         Block header,
         ReadBuffer & in_,
-        Params params)
-        : IInputFormat(std::move(header), in_), params(params)
+        Params params_)
+        : IInputFormat(std::move(header), in_), params(params_)
     {
     }
 
     Chunk generate() override;
+
+    void resetParser() override;
 
 protected:
     /** Read next row and append it to the columns.
@@ -61,12 +75,15 @@ protected:
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
 
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
 private:
     Params params;
 
     size_t total_rows = 0;
     size_t num_errors = 0;
+
+    BlockMissingValues block_missing_values;
 };
 
 }
-

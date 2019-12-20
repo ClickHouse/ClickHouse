@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>
@@ -17,12 +18,13 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include "IFunction.h"
+#include "IFunctionImpl.h"
 #include "FunctionHelpers.h"
 #include "intDiv.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -437,7 +439,7 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool CanBeExecutedOnDefaultArguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
@@ -471,7 +473,7 @@ class FunctionBinaryArithmetic : public IFunction
         return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
     }
 
-    FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    FunctionOverloadResolverPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
@@ -507,7 +509,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         std::stringstream function_name;
-        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->kindToString() << 's';
+        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->getKind().toString() << 's';
 
         return FunctionFactory::instance().get(function_name.str(), context);
     }
@@ -549,7 +551,7 @@ class FunctionBinaryArithmetic : public IFunction
         const IColumn & agg_state_column = *block.getByPosition(new_arguments[0]).column;
         bool agg_state_is_const = isColumnConst(agg_state_column);
         const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
-            agg_state_is_const ? static_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
+            agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
 
@@ -613,9 +615,9 @@ class FunctionBinaryArithmetic : public IFunction
         bool rhs_is_const = isColumnConst(rhs_column);
 
         const ColumnAggregateFunction & lhs = typeid_cast<const ColumnAggregateFunction &>(
-            lhs_is_const ? static_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
+            lhs_is_const ? assert_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
         const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
-            rhs_is_const ? static_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
+            rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
 
         AggregateFunctionPtr function = lhs.getAggregateFunction();
 
@@ -637,7 +639,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     void executeDateTimeIntervalPlusMinus(Block & block, const ColumnNumbers & arguments,
-        size_t result, size_t input_rows_count, const FunctionBuilderPtr & function_builder) const
+        size_t result, size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
     {
         ColumnNumbers new_arguments = arguments;
 
@@ -943,7 +945,7 @@ public:
     }
 #endif
 
-    bool canBeExecutedOnDefaultArguments() const override { return CanBeExecutedOnDefaultArguments; }
+    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 };
 
 }

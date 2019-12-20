@@ -5,6 +5,8 @@
 #include <ext/map.h>
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -80,18 +82,29 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
     return ColumnTuple::create(std::move(new_columns));
 }
 
+MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
+{
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneResized(new_size);
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
 Field ColumnTuple::operator[](size_t n) const
 {
-    return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};
+    return ext::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
-    res = Tuple(TupleBackend(tuple_size));
-    TupleBackend & res_arr = DB::get<Tuple &>(res).toUnderType();
+    Tuple tuple(tuple_size);
     for (const auto i : ext::range(0, tuple_size))
-        columns[i]->get(n, res_arr[i]);
+        columns[i]->get(n, tuple[i]);
+
+    res = tuple;
 }
 
 StringRef ColumnTuple::getDataAt(size_t) const
@@ -106,7 +119,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const TupleBackend & tuple = DB::get<const Tuple &>(x).toUnderType();
+    auto & tuple = DB::get<const Tuple &>(x);
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -118,7 +131,7 @@ void ColumnTuple::insert(const Field & x)
 
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
-    const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
+    const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 
     const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
@@ -172,7 +185,7 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertRangeFrom(
-            *static_cast<const ColumnTuple &>(src).columns[i],
+            *assert_cast<const ColumnTuple &>(src).columns[i],
             start, length);
 }
 
@@ -245,7 +258,7 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
+        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
             return res;
 
     return 0;
@@ -257,8 +270,8 @@ struct ColumnTuple::Less
     TupleColumns columns;
     int nan_direction_hint;
 
-    Less(const TupleColumns & columns, int nan_direction_hint_)
-        : columns(columns), nan_direction_hint(nan_direction_hint_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
 
@@ -340,14 +353,14 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
 
-    min = Tuple(TupleBackend(tuple_size));
-    max = Tuple(TupleBackend(tuple_size));
-
-    auto & min_backend = min.get<Tuple &>().toUnderType();
-    auto & max_backend = max.get<Tuple &>().toUnderType();
+    Tuple min_tuple(tuple_size);
+    Tuple max_tuple(tuple_size);
 
     for (const auto i : ext::range(0, tuple_size))
-        columns[i]->getExtremes(min_backend[i], max_backend[i]);
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
+
+    min = min_tuple;
+    max = max_tuple;
 }
 
 void ColumnTuple::forEachSubcolumn(ColumnCallback callback)

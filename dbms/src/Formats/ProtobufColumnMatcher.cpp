@@ -1,8 +1,5 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
-
 #include "ProtobufColumnMatcher.h"
-
+#if USE_PROTOBUF
 #include <Common/Exception.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>

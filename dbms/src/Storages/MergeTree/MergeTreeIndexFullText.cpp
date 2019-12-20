@@ -8,7 +8,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Parsers/ASTIdentifier.h>
@@ -61,9 +61,9 @@ bool MergeTreeConditionFullText::createFunctionEqualsCondition(RPNElement & out,
     return true;
 }
 
-MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index)
+MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index_)
     : IMergeTreeIndexGranule()
-    , index(index)
+    , index(index_)
     , bloom_filters(
             index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
@@ -87,8 +87,8 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index)
-    : index(index), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
+MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index_)
+    : index(index_), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 {
@@ -165,6 +165,19 @@ const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
 
                     const auto & str = value.get<String>();
                     likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
+                    return true;
+                }
+        },
+        {
+                "hasToken",
+                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
+                {
+                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.bloom_filter = std::make_unique<BloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    const auto & str = value.get<String>();
+                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         },
@@ -365,11 +378,11 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in BloomFilterCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in BloomFilterCondition::mayBeTrueOnGranule", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }

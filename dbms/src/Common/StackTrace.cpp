@@ -1,16 +1,21 @@
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
-
 #include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
+
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
+#include <Common/SymbolIndex.h>
+#include <Common/config.h>
+#include <common/SimpleCache.h>
+#include <common/demangle.h>
+#include <Core/Defines.h>
 
-#include <sstream>
-#include <filesystem>
-#include <unordered_map>
 #include <cstring>
+#include <filesystem>
+#include <sstream>
+#include <unordered_map>
 
+#if USE_UNWIND
+#   include <libunwind.h>
+#endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
@@ -25,12 +30,14 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
             else
                 error << " Access: read.";
+#else
+            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -150,6 +157,12 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             }
             break;
         }
+
+        case SIGTSTP:
+        {
+            error << "This is a signal used for debugging purposes by the user.";
+            break;
+        }
     }
 
     return error.str();
@@ -208,12 +221,6 @@ StackTrace::StackTrace(NoCapture)
 {
 }
 
-
-#if USE_UNWIND
-extern "C" int unw_backtrace(void **, int);
-#endif
-
-
 void StackTrace::tryCapture()
 {
     size = 0;
@@ -238,11 +245,12 @@ const StackTrace::Frames & StackTrace::getFrames() const
 }
 
 
-static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
-        return "<Empty trace>";
+        return callback("<Empty trace>");
 
+#if defined(__ELF__) && !defined(__FreeBSD__)
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
@@ -252,7 +260,7 @@ static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset
     {
         const void * addr = frames[i];
 
-        out << "#" << i << " " << addr << " ";
+        out << i << ". " << addr << " ";
         auto symbol = symbol_index.findSymbol(addr);
         if (symbol)
         {
@@ -280,10 +288,33 @@ static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset
         else
             out << "?";
 
-        out << "\n";
+        callback(out.str());
+        out.str({});
     }
+#else
+    std::stringstream out;
 
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+        out << i << ". " << addr;
+
+        callback(out.str());
+        out.str({});
+    }
+#endif
+}
+
+static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+{
+    std::stringstream out;
+    toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
+}
+
+void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
+{
+    toStringEveryLineImpl(frames, offset, size, std::move(callback));
 }
 
 std::string StackTrace::toString() const

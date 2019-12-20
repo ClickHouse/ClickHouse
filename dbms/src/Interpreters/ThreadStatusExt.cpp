@@ -61,6 +61,7 @@ void ThreadStatus::initializeQuery()
     thread_group->memory_tracker.setDescription("(for query)");
 
     thread_group->thread_numbers.emplace_back(thread_number);
+    thread_group->os_thread_ids.emplace_back(os_thread_id);
     thread_group->master_thread_number = thread_number;
     thread_group->master_thread_os_id = os_thread_id;
 
@@ -99,15 +100,15 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
         /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_numbers.emplace_back(thread_number);
+        thread_group->os_thread_ids.emplace_back(os_thread_id);
     }
 
     if (query_context)
+    {
         query_id = query_context->getCurrentQueryId();
 
 #if defined(__linux__)
-    /// Set "nice" value if required.
-    if (query_context)
-    {
+        /// Set "nice" value if required.
         Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
         {
@@ -118,8 +119,8 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
             os_thread_priority = new_os_thread_priority;
         }
-    }
 #endif
+    }
 
     initPerformanceCounters();
     initQueryProfiler();
@@ -251,7 +252,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     {
         elem.client_info = query_context->getClientInfo();
 
-        if (query_context->getSettingsRef().log_profile_events.value != 0)
+        if (query_context->getSettingsRef().log_profile_events != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
             elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());

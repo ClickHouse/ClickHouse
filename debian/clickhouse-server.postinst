@@ -4,6 +4,7 @@ set -e
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+# Please note that we don't support paths with whitespaces. This is rather ignorant.
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
@@ -20,7 +21,7 @@ OS=${OS=`lsb_release -is 2>/dev/null ||:`}
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
 
-if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ]; then
+if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ] || [ "$OS" = "ol" ]; then
     is_rh=1
 fi
 
@@ -135,6 +136,8 @@ Please fix this and reinstall this package." >&2
         defaultpassword="$RET"
         if [ -n "$defaultpassword" ]; then
             echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
         fi
 
         # everything went well, so now let's reset the password

@@ -38,7 +38,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -92,18 +92,12 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-thread_local bool already_signal_handled = false;
-
 /** Handler for "fault" signals. Send data about fault to separate thread to write into log.
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (already_signal_handled)
-        return;
-    already_signal_handled = true;
-
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -116,10 +110,12 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     out.next();
 
-    /// The time that is usually enough for separate thread to print info into log.
-    ::sleep(10);
-
-    call_default_signal_handler(sig);
+    if (sig != SIGTSTP) /// This signal is used for debugging.
+    {
+        /// The time that is usually enough for separate thread to print info into log.
+        ::sleep(10);
+        call_default_signal_handler(sig);
+    }
 }
 
 
@@ -192,7 +188,9 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, stack_trace, thread_num);
+                /// This allows to receive more signals if failure happens inside onFault function.
+                /// Example: segfault while symbolizing stack trace.
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
             }
         }
     }
@@ -204,17 +202,32 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
+        LOG_FATAL(log, "########################################");
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        LOG_ERROR(log, signalToErrorMessage(sig, info, context));
-        LOG_ERROR(log, stack_trace.toString());
+        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
+
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+            LOG_FATAL(log, bare_stacktrace.rdbuf());
+        }
+
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
     }
 };
 
@@ -584,10 +597,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        if (0 != setenv("TZ", config().getString("timezone").data(), 1))
+        const std::string timezone = config().getString("timezone");
+        if (0 != setenv("TZ", timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
+        DateLUT::setDefaultTimezone(timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -633,6 +648,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
+    // sensitive data masking rules are not used here
     buildLoggers(config(), logger());
 
     if (is_daemon)
@@ -703,7 +719,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE}, faultSignalHandler);
+    /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
+
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
@@ -713,7 +731,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
-
 }
 
 void BaseDaemon::logRevision() const
@@ -873,4 +890,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-

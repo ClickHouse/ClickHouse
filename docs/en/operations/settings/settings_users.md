@@ -4,7 +4,7 @@ The `users` section of the `user.xml` configuration file contains user settings.
 
 Structure of the `users` section:
 
-```
+```xml
 <users>
     <!-- If user name was not specified, 'default' user is used. -->
     <user_name>
@@ -64,13 +64,13 @@ Each element of the list can have one of the following forms:
 
 - `<host>` — Hostname.
 
-    Example: `server01.yandex.ru`.
+    Example: `example01.host.ru`.
 
     To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
 
 - `<host_regexp>` — Regular expression for hostnames.
 
-    Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
+    Example, `^example\d\d-\d\d-\d\.host\.ru$`
 
     To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
 
@@ -80,7 +80,7 @@ All results of DNS requests are cached until the server restarts.
 
 To open access for user from any network, specify:
 
-```
+```xml
 <ip>::/0</ip>
 ```
 
@@ -90,7 +90,7 @@ To open access for user from any network, specify:
 
 To open access only from localhost, specify:
 
-```
+```xml
 <ip>::1</ip>
 <ip>127.0.0.1</ip>
 ```
@@ -114,7 +114,7 @@ In this section, you can you can limit rows that are returned by ClickHouse for 
 
 The following configuration forces that user `user1` can only see the rows of `table1` as the result of `SELECT` queries, where the value of the `id` field is 1000.
 
-```
+```xml
 <user1>
     <databases>
         <database_name>

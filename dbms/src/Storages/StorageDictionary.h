@@ -21,6 +21,7 @@ class ExternalDictionaries;
 
 class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDictionary>;
 public:
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
@@ -33,7 +34,6 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    void drop() override {}
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
     template <typename ForwardIterator>

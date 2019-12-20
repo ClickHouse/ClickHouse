@@ -109,7 +109,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     // Since only unsinged int has granted 2-compliment overflow handling, we are doing math here on unsigned types.
     // To simplify and booletproof code, we operate enforce ValueType to be unsigned too.
-    static_assert(std::is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     // We use signed delta type to turn huge unsigned values into smaller signed:
@@ -189,7 +189,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename ValueType>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    static_assert(std::is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
     using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
 
@@ -304,7 +304,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
 {
     UInt8 bytes_to_skip = source_size % data_bytes_size;
     dest[0] = data_bytes_size;
-    dest[1] = bytes_to_skip;
+    dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
     UInt32 compressed_size = 0;
@@ -328,10 +328,16 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
     return 1 + 1 + compressed_size;
 }
 
-void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /* uncompressed_size */) const
+void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    if (source_size < 2)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
     UInt8 bytes_size = source[0];
-    UInt8 bytes_to_skip = source[1];
+    UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+
+    if (UInt32(2 + bytes_to_skip) > source_size)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;

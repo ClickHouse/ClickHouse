@@ -14,7 +14,7 @@ Similar to IPv4NumToString, but using xxx instead of the last octet.
 
 Example:
 
-``` sql
+```sql
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
@@ -24,7 +24,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─k──────────────┬─────c─┐
 │ 83.149.9.xxx   │ 26238 │
 │ 217.118.81.xxx │ 26074 │
@@ -46,17 +46,17 @@ Since using 'xxx' is highly unusual, this may be changed in the future. We recom
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
 IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Examples:
 
-``` sql
+```sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
-```
+```text
 ┌─addr─────────┐
 │ 2a02:6b8::11 │
 └──────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -67,7 +67,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
 │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
 │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -82,7 +82,7 @@ LIMIT 10
 └─────────────────────────────────────────┴───────┘
 ```
 
-``` sql
+```sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -93,7 +93,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
 │ ::ffff:94.26.111.111       │ 747440 │
 │ ::ffff:37.143.222.4        │ 529483 │
@@ -117,11 +117,11 @@ HEX can be uppercase or lowercase.
 
 Takes a `UInt32` number. Interprets it as an IPv4 address in [big endian](https://en.wikipedia.org/wiki/Endianness). Returns a `FixedString(16)` value containing the IPv6 address in binary format. Examples:
 
-``` sql
+```sql
 SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 ```
 
-```
+```text
 ┌─addr───────────────┐
 │ ::ffff:192.168.0.1 │
 └────────────────────┘
@@ -131,7 +131,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing the address of the specified number of bits removed in text format. For example:
 
-``` sql
+```sql
 WITH
     IPv6StringToNum('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D') AS ipv6,
     IPv4ToIPv6(IPv4StringToNum('192.168.0.1')) AS ipv4
@@ -141,7 +141,7 @@ SELECT
 
 ```
 
-```
+```text
 ┌─cutIPv6(ipv6, 2, 0)─────────────────┬─cutIPv6(ipv4, 0, 2)─┐
 │ 2001:db8:ac10:fe01:feed:babe:cafe:0 │ ::ffff:192.168.0.0  │
 └─────────────────────────────────────┴─────────────────────┘
@@ -155,7 +155,7 @@ Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.or
 ```sql
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 ```
-```
+```text
 ┌─IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)─┐
 │ ('192.168.0.0','192.168.255.255')          │
 └────────────────────────────────────────────┘
@@ -171,7 +171,7 @@ Accepts an IPv6 and an UInt8 value containing the CIDR. Return a tuple with two 
 SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 ```
 
-```
+```text
 ┌─IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32)─┐
 │ ('2001:db8::','2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')                │
 └────────────────────────────────────────────────────────────────────────┘
@@ -181,7 +181,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 An alias to `IPv4StringToNum()` that takes a string form of IPv4 address and returns value of [IPv4](../../data_types/domains/ipv4.md) type, which is binary equal to value returned by `IPv4StringToNum()`.
 
-``` sql
+```sql
 WITH
     '171.225.130.45' as IPv4_string
 SELECT
@@ -189,13 +189,13 @@ SELECT
     toTypeName(toIPv4(IPv4_string))
 ```
 
-```
+```text
 ┌─toTypeName(IPv4StringToNum(IPv4_string))─┬─toTypeName(toIPv4(IPv4_string))─┐
 │ UInt32                                   │ IPv4                            │
 └──────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
-``` sql
+```sql
 WITH
     '171.225.130.45' as IPv4_string
 SELECT
@@ -203,7 +203,7 @@ SELECT
     hex(toIPv4(IPv4_string))
 ```
 
-```
+```text
 ┌─hex(IPv4StringToNum(IPv4_string))─┬─hex(toIPv4(IPv4_string))─┐
 │ ABE1822D                          │ ABE1822D                 │
 └───────────────────────────────────┴──────────────────────────┘
@@ -213,7 +213,7 @@ SELECT
 
 An alias to `IPv6StringToNum()` that takes a string form of IPv6 address and returns value of [IPv6](../../data_types/domains/ipv6.md) type, which is binary equal to value returned by `IPv6StringToNum()`.
 
-``` sql
+```sql
 WITH
     '2001:438:ffff::407d:1bc1' as IPv6_string
 SELECT
@@ -221,13 +221,13 @@ SELECT
     toTypeName(toIPv6(IPv6_string))
 ```
 
-```
+```text
 ┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
 │ FixedString(16)                          │ IPv6                            │
 └──────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
-``` sql
+```sql
 WITH
     '2001:438:ffff::407d:1bc1' as IPv6_string
 SELECT
@@ -235,7 +235,7 @@ SELECT
     hex(toIPv6(IPv6_string))
 ```
 
-```
+```text
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
 │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
 └───────────────────────────────────┴──────────────────────────────────┘

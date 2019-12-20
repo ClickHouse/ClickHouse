@@ -15,6 +15,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -59,8 +60,9 @@ class Context;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TextLog;
 class TraceLog;
-
+class MetricLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -75,6 +77,8 @@ struct SystemLogs
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
     std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
+    std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
+    std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
 
     String part_log_database;
 };

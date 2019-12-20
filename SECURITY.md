@@ -14,4 +14,4 @@ currently being supported with security updates:
 ## Reporting a Vulnerability
 
 To report a potential vulnerability in ClickHouse please use the security advisory feature of GitHub:
-https://github.com/yandex/ClickHouse/security/advisories
+https://github.com/ClickHouse/ClickHouse/security/advisories

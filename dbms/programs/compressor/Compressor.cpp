@@ -12,8 +12,9 @@
 #include <IO/copyData.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-
 #include <Compression/CompressionFactory.h>
+#include <Common/TerminalSize.h>
+
 
 namespace DB
 {
@@ -56,10 +57,12 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
-    boost::program_options::options_description desc("Allowed options");
+    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("decompress,d", "decompress")

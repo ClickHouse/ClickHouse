@@ -1,7 +1,7 @@
 # docker build -t yandex/clickhouse-stateful-test .
 FROM yandex/clickhouse-stateless-test
 
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic main" >> /etc/apt/sources.list
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \

@@ -4,7 +4,7 @@
 
 #include <unistd.h>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include "hasLinuxCapability.h"
 #include <common/unaligned.h>
@@ -287,10 +287,13 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 }
 
 
+static thread_local pid_t current_tid = 0;
 pid_t TaskStatsInfoGetter::getCurrentTID()
 {
-    /// This call is always successful. - man gettid
-    return static_cast<pid_t>(syscall(SYS_gettid));
+    if (!current_tid)
+        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
+
+    return current_tid;
 }
 
 
@@ -321,7 +324,7 @@ bool TaskStatsInfoGetter::checkPermissions()
 
 TaskStatsInfoGetter::TaskStatsInfoGetter()
 {
-    throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
+    // TODO: throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)

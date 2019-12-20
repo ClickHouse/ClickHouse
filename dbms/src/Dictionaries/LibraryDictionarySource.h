@@ -31,8 +31,10 @@ public:
     LibraryDictionarySource(
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        Block & sample_block);
+        const std::string & config_prefix_,
+        Block & sample_block_,
+        const Context & context,
+        bool check_config);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
     LibraryDictionarySource & operator=(const LibraryDictionarySource &) = delete;

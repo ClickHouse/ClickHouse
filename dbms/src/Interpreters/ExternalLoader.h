@@ -11,19 +11,6 @@
 
 namespace DB
 {
-struct ExternalLoaderUpdateSettings
-{
-    UInt64 check_period_sec = 5;
-    UInt64 backoff_initial_sec = 5;
-    /// 10 minutes
-    UInt64 backoff_max_sec = 10 * 60;
-
-    ExternalLoaderUpdateSettings() = default;
-    ExternalLoaderUpdateSettings(UInt64 check_period_sec, UInt64 backoff_initial_sec, UInt64 backoff_max_sec)
-        : check_period_sec(check_period_sec), backoff_initial_sec(backoff_initial_sec), backoff_max_sec(backoff_max_sec) {}
-};
-
-
 /* External configuration structure.
  *
  * <external_group>
@@ -37,12 +24,10 @@ struct ExternalLoaderConfigSettings
 {
     std::string external_config;
     std::string external_name;
-
-    std::string path_setting_name;
 };
 
 
-/** Manages user-defined objects.
+/** Interface for manage user-defined objects.
   * Monitors configuration file and automatically reloads objects in separate threads.
   * The monitoring thread wakes up every 'check_period_sec' seconds and checks
   * modification time of objects' configuration file. If said time is greater than
@@ -87,16 +72,22 @@ public:
         TimePoint loading_start_time;
         Duration loading_duration;
         std::exception_ptr exception;
+        std::string repository_name;
     };
 
     using LoadResults = std::vector<std::pair<String, LoadResult>>;
 
-    ExternalLoader(const Poco::Util::AbstractConfiguration & main_config, const String & type_name_, Logger * log);
+    ExternalLoader(const String & type_name_, Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
     void addConfigRepository(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
+        const std::string & repository_name,
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        const ExternalLoaderConfigSettings & config_settings);
+
+    /// Removes a repository which were used to read configurations.
+    std::unique_ptr<IExternalLoaderConfigRepository> removeConfigRepository(const std::string & repository_name);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
@@ -105,7 +96,7 @@ public:
     void enableAsyncLoading(bool enable);
 
     /// Sets settings for periodic updates.
-    void enablePeriodicUpdates(bool enable, const ExternalLoaderUpdateSettings & settings = {});
+    void enablePeriodicUpdates(bool enable);
 
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
@@ -134,64 +125,63 @@ public:
 
     static constexpr Duration NO_TIMEOUT = Duration::max();
 
-    /// Starts loading of a specified object.
-    void load(const String & name) const;
-
     /// Tries to finish loading of a specified object during the timeout.
     /// Returns nullptr if the loading is unsuccessful or if there is no such object.
     void load(const String & name, LoadablePtr & loaded_object, Duration timeout = NO_TIMEOUT) const;
-    void load(const String & name, LoadResult & load_result, Duration timeout = NO_TIMEOUT) const;
+    void load(const String & name) const { LoadablePtr object; load(name, object, Duration::zero()); }
     LoadablePtr loadAndGet(const String & name, Duration timeout = NO_TIMEOUT) const { LoadablePtr object; load(name, object, timeout); return object; }
     LoadablePtr tryGetLoadable(const String & name) const { return loadAndGet(name); }
 
     /// Tries to finish loading of a specified object during the timeout.
     /// Throws an exception if the loading is unsuccessful or if there is no such object.
     void loadStrict(const String & name, LoadablePtr & loaded_object) const;
-    void loadStrict(const String & name, LoadResult & load_result) const;
-    LoadablePtr loadAndGetStrict(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
-    LoadablePtr getLoadable(const String & name) const { return loadAndGetStrict(name); }
-
-    /// Tries to start loading of the objects for which the specified function returns true.
-    void load(const FilterByNameFunction & filter_by_name) const;
+    void loadStrict(const String & name) const { LoadablePtr object; loadStrict(name, object); }
+    LoadablePtr getLoadable(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
 
     /// Tries to finish loading of the objects for which the specified function returns true.
+    void load(const FilterByNameFunction & filter_by_name) const { Loadables objects; load(filter_by_name, objects, Duration::zero()); }
     void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
     void load(const FilterByNameFunction & filter_by_name, LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
     Loadables loadAndGet(const FilterByNameFunction & filter_by_name, Duration timeout = NO_TIMEOUT) const { Loadables loaded_objects; load(filter_by_name, loaded_objects, timeout); return loaded_objects; }
 
-    /// Starts loading of all the objects.
-    void load() const;
-
     /// Tries to finish loading of all the objects during the timeout.
     void load(Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
-    void load(LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
 
     /// Starts reloading of a specified object.
     /// `load_never_loading` specifies what to do if the object has never been loading before.
     /// The function can either skip it (false) or load for the first time (true).
-    void reload(const String & name, bool load_never_loading = false);
-
-    /// Starts reloading of the objects for which the specified function returns true.
-    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
-    /// The function can either skip them (false) or load for the first time (true).
-    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false);
+    /// Also function can load dictionary synchronously
+    void reload(const String & name, bool load_never_loading = false) const;
 
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
     /// The function can either skip them (false) or load for the first time (true).
-    void reload(bool load_never_loading = false);
+    void reload(bool load_never_loading = false) const;
+
+    /// Starts reloading of all objects matched `filter_by_name`.
+    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
+    /// The function can either skip them (false) or load for the first time (true).
+    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false) const;
+
+    /// Reloads all config repositories.
+    void reloadConfig() const;
+
+    /// Reloads only a specified config repository.
+    void reloadConfig(const String & repository_name) const;
+
+    /// Reload only a specified path in a specified config repository.
+    void reloadConfig(const String & repository_name, const String & path) const;
 
 protected:
-    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
+    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
 private:
     struct ObjectConfig;
 
-    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
-    TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
-    class ConfigFilesReader;
-    std::unique_ptr<ConfigFilesReader> config_files_reader;
+    class LoadablesConfigReader;
+    std::unique_ptr<LoadablesConfigReader> config_files_reader;
 
     class LoadingDispatcher;
     std::unique_ptr<LoadingDispatcher> loading_dispatcher;

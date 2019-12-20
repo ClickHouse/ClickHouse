@@ -5,9 +5,12 @@
 #include <common/DayNum.h>
 
 #include "config_formats.h"
+
+#include <memory>
+
 #if USE_PROTOBUF
 
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/WriteBufferFromString.h>
 #include <boost/noncopyable.hpp>
 #include <Common/PODArray.h>
@@ -70,6 +73,7 @@ public:
     bool writeUUID(const UUID & uuid) { return writeValueIfPossible(&IConverter::writeUUID, uuid); }
     bool writeDate(DayNum date) { return writeValueIfPossible(&IConverter::writeDate, date); }
     bool writeDateTime(time_t tm) { return writeValueIfPossible(&IConverter::writeDateTime, tm); }
+    bool writeDateTime64(DateTime64 tm, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDateTime64, tm, scale); }
     bool writeDecimal(Decimal32 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal32, decimal, scale); }
     bool writeDecimal(Decimal64 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal64, decimal, scale); }
     bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal128, decimal, scale); }
@@ -108,7 +112,7 @@ private:
         {
             size_t start;
             size_t end;
-            Piece(size_t start, size_t end) : start(start), end(end) {}
+            Piece(size_t start_, size_t end_) : start(start_), end(end_) {}
             Piece() = default;
         };
 
@@ -116,8 +120,8 @@ private:
         {
             size_t num_pieces_at_start;
             size_t num_bytes_skipped_at_start;
-            NestedInfo(size_t num_pieces_at_start, size_t num_bytes_skipped_at_start)
-                : num_pieces_at_start(num_pieces_at_start), num_bytes_skipped_at_start(num_bytes_skipped_at_start)
+            NestedInfo(size_t num_pieces_at_start_, size_t num_bytes_skipped_at_start_)
+                : num_pieces_at_start(num_pieces_at_start_), num_bytes_skipped_at_start(num_bytes_skipped_at_start_)
             {
             }
         };
@@ -153,6 +157,7 @@ private:
         virtual void writeUUID(const UUID &) = 0;
         virtual void writeDate(DayNum) = 0;
         virtual void writeDateTime(time_t) = 0;
+        virtual void writeDateTime64(DateTime64, UInt32 scale) = 0;
         virtual void writeDecimal32(Decimal32, UInt32) = 0;
         virtual void writeDecimal64(Decimal64, UInt32) = 0;
         virtual void writeDecimal128(const Decimal128 &, UInt32) = 0;
@@ -257,6 +262,7 @@ public:
     bool writeUUID(const UUID & /* value */) { return false; }
     bool writeDate(DayNum /* date */) { return false; }
     bool writeDateTime(time_t /* tm */) { return false; }
+    bool writeDateTime64(DateTime64 /*tm*/, UInt32 /*scale*/) { return false; }
     bool writeDecimal(Decimal32 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(Decimal64 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(const Decimal128 & /* decimal */, UInt32 /* scale */) { return false; }

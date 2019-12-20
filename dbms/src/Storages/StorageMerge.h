@@ -14,6 +14,7 @@ namespace DB
   */
 class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return table_name; }
@@ -41,14 +42,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void drop() override {}
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
     void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
@@ -68,7 +71,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseIteratorPtr getDatabaseIterator(const Context & context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
 
 protected:
     StorageMerge(

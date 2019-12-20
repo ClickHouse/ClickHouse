@@ -22,12 +22,12 @@ class FlatDictionary final : public IDictionary
 {
 public:
     FlatDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty,
-        BlockPtr saved_block = nullptr);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_,
+        BlockPtr saved_block_ = nullptr);
 
     std::string getName() const override { return name; }
 
@@ -42,8 +42,6 @@ public:
     size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
-
-    bool isCached() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {

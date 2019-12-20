@@ -123,7 +123,7 @@ struct PerformanceStatistics
     }
 
     PerformanceStatistics() {}
-    PerformanceStatistics(ssize_t choose_method) : choose_method(choose_method) {}
+    PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
 };
 
 

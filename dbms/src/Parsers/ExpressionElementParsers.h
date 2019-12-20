@@ -90,9 +90,12 @@ protected:
   */
 class ParserFunction : public IParserBase
 {
+public:
+    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    bool allow_function_parameters;
 };
 
 class ParserCodecDeclarationList : public IParserBase
@@ -275,8 +278,7 @@ class ParserWithOptionalAlias : public IParserBase
 {
 public:
     ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-    {}
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
@@ -289,11 +291,42 @@ protected:
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST
   *  and optionally, COLLATE 'locale'.
+  *  and optionally, WITH FILL [FROM x] [TO y] [STEP z]
   */
 class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const { return "element of ORDER BY expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Parser for function with arguments like KEY VALUE (space separated)
+  * no commas alowed, just space-separated pairs.
+  */
+class ParserFunctionWithKeyValueArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function with key-value arguments"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+  * Parse result is ASTFunction, with or without arguments.
+  */
+class ParserIdentifierWithOptionalParameters : public IParserBase
+{
+protected:
+    const char * getName() const { return "identifier with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Element of TTL expression - same as expression element, but in addition,
+ *   TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
+  */
+class ParserTTLElement : public IParserBase
+{
+protected:
+    const char * getName() const { return "element of TTL expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

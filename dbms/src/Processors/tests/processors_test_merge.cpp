@@ -161,9 +161,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 start_number, UInt64 step, unsigned sleep_useconds)
+    NumbersSource(UInt64 start_number, UInt64 step_, unsigned sleep_useconds_)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              current_number(start_number), step(step), sleep_useconds(sleep_useconds)
+              current_number(start_number), step(step_), sleep_useconds(sleep_useconds_)
     {
     }
 
@@ -187,12 +187,12 @@ private:
 class SleepyTransform : public ISimpleTransform
 {
 public:
-    explicit SleepyTransform(unsigned sleep_useconds)
+    explicit SleepyTransform(unsigned sleep_useconds_)
             : ISimpleTransform(
             Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
             Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
             false)
-            , sleep_useconds(sleep_useconds) {}
+            , sleep_useconds(sleep_useconds_) {}
 
     String getName() const override { return "SleepyTransform"; }
 
@@ -211,9 +211,9 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix)
+    PrintSink(String prefix_)
             : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              prefix(std::move(prefix))
+              prefix(std::move(prefix_))
     {
     }
 

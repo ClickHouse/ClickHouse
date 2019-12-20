@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -12,6 +13,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -23,7 +25,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
@@ -554,8 +556,8 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
 
-    FunctionComparison(const Context & context)
-    :   context(context),
+    FunctionComparison(const Context & context_)
+    :   context(context_),
         check_decimal_overflow(decimalCheckComparisonOverflow(context))
     {}
 
@@ -683,7 +685,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes<true, false, true, false>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -838,7 +840,7 @@ private:
                 throw Exception("String is too long for Date: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, date);
-            const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
+            const ColumnConst * parsed_const_date = assert_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
                 left_is_num ? parsed_const_date : col_right_untyped);
@@ -852,7 +854,7 @@ private:
                 throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
-            const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
+            const ColumnConst * parsed_const_date_time = assert_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
                 left_is_num ? parsed_const_date_time : col_right_untyped);
@@ -866,7 +868,7 @@ private:
                 throw Exception("String is too long for UUID: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, uuid);
-            const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
+            const ColumnConst * parsed_const_uuid = assert_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
                 left_is_num ? parsed_const_uuid : col_right_untyped);
@@ -890,7 +892,7 @@ private:
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
 
-        const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
+        const Field x = castToNearestFieldType(type->getValue(column_string->getValue<String>()));
         const auto enum_col = type->createColumnConst(input_rows_count, x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
@@ -932,12 +934,12 @@ private:
         if (x_const)
             x_columns = convertConstTupleToConstantElements(*x_const);
         else
-            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumnsCopy();
+            x_columns = assert_cast<const ColumnTuple &>(*c0.column).getColumnsCopy();
 
         if (y_const)
             y_columns = convertConstTupleToConstantElements(*y_const);
         else
-            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumnsCopy();
+            y_columns = assert_cast<const ColumnTuple &>(*c1.column).getColumnsCopy();
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -959,8 +961,14 @@ private:
     void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
                                       size_t tuple_size, size_t input_rows_count)
     {
-        ComparisonFunction func_compare(context);
-        ConvolutionFunction func_convolution;
+        if (0 == tuple_size)
+            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+
+        auto func_compare = ComparisonFunction::create(context);
+        auto func_convolution = ConvolutionFunction::create(context);
+
+        auto func_compare_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare));
+        auto func_convolution_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_convolution));
 
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
@@ -968,9 +976,18 @@ private:
             tmp_block.insert(x[i]);
             tmp_block.insert(y[i]);
 
+            auto impl = func_compare_adaptor.build({x[i], y[i]});
+
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+            impl->execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
+        }
+
+        if (tuple_size == 1)
+        {
+            /// Do not call AND for single-element tuple.
+            block.getByPosition(result).column = tmp_block.getByPosition(2).column;
+            return;
         }
 
         /// Logical convolution.
@@ -980,7 +997,10 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
+        ColumnsWithTypeAndName convolution_types(convolution_args.size(), { nullptr, std::make_shared<DataTypeUInt8>(), "" });
+        auto impl = func_convolution_adaptor.build(convolution_types);
+
+        impl->execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
@@ -988,11 +1008,24 @@ private:
     void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                                          const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
     {
-        HeadComparisonFunction func_compare_head(context);
-        TailComparisonFunction func_compare_tail(context);
-        FunctionAnd func_and;
-        FunctionOr func_or;
-        FunctionComparison<EqualsOp, NameEquals> func_equals(context);
+        auto func_compare_head = HeadComparisonFunction::create(context);
+        auto func_compare_tail = TailComparisonFunction::create(context);
+        auto func_and = FunctionAnd::create(context);
+        auto func_or = FunctionOr::create(context);
+        auto func_equals = FunctionComparison<EqualsOp, NameEquals>::create(context);
+
+        auto func_compare_head_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare_head));
+        auto func_compare_tail_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_compare_tail));
+        auto func_equals_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_equals));
+
+        ColumnsWithTypeAndName bin_args = {{ nullptr, std::make_shared<DataTypeUInt8>(), "" },
+                                           { nullptr, std::make_shared<DataTypeUInt8>(), "" }};
+
+        auto func_and_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_and))
+                .build(bin_args);
+
+        auto func_or_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(func_or))
+                .build(bin_args);
 
         Block tmp_block;
 
@@ -1006,14 +1039,20 @@ private:
 
             if (i + 1 != tuple_size)
             {
-                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+                auto impl_head = func_compare_head_adaptor.build({x[i], y[i]});
+                impl_head->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
                 tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
+
+                auto impl_equals = func_equals_adaptor.build({x[i], y[i]});
+                impl_equals->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
-                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            {
+                auto impl_tail = func_compare_tail_adaptor.build({x[i], y[i]});
+                impl_tail->execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
+            }
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
@@ -1021,9 +1060,9 @@ private:
         while (i > 0)
         {
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
+            func_and_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
+            func_or_adaptor->execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
         }
 
@@ -1118,12 +1157,15 @@ public:
 
         if (left_tuple && right_tuple)
         {
+            auto adaptor = FunctionOverloadResolverAdaptor(
+                    std::make_unique<DefaultOverloadResolver>(FunctionComparison<Op, Name>::create(context)));
+
             size_t size = left_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
                 ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
                                                {nullptr, right_tuple->getElements()[i], ""}};
-                getReturnType(args);
+                adaptor.build(args);
             }
         }
 
@@ -1191,9 +1233,10 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(left_type) || isDecimal(right_type))
+        else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {
-            if (!allowDecimalComparison(left_type, right_type))
+            // compare
+            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

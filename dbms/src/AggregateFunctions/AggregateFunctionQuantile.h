@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 #include <type_traits>
 
@@ -76,8 +77,8 @@ private:
     DataTypePtr & argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type}, params)
+    AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
         , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
@@ -143,7 +144,7 @@ public:
 
         if constexpr (returns_many)
         {
-            ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+            ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
             ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
             size_t size = levels.size();
@@ -154,7 +155,7 @@ public:
 
             if constexpr (returns_float)
             {
-                auto & data_to = static_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
+                auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
@@ -172,7 +173,7 @@ public:
         else
         {
             if constexpr (returns_float)
-                static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
+                assert_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
@@ -199,8 +200,15 @@ struct NameQuantileDeterministic { static constexpr auto name = "quantileDetermi
 struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeterministic"; };
 
 struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
-struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
+
+struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
+struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };
+
+struct NameQuantileExactInclusive { static constexpr auto name = "quantileExactInclusive"; };
+struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExactInclusive"; };
+
+struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };

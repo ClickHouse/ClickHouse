@@ -11,7 +11,9 @@ endif ()
 set(LIBUNWIND_C_SOURCES
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1.c
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1-gcc-ext.c
-    ${LIBUNWIND_SOURCE_DIR}/src/Unwind-sjlj.c)
+    ${LIBUNWIND_SOURCE_DIR}/src/Unwind-sjlj.c
+    # Use unw_backtrace to override libgcc's backtrace symbol for better ABI compatibility
+    unwind-override.c)
 set_source_files_properties(${LIBUNWIND_C_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c99")
 
 set(LIBUNWIND_ASM_SOURCES
@@ -24,8 +26,15 @@ set(LIBUNWIND_SOURCES
     ${LIBUNWIND_C_SOURCES}
     ${LIBUNWIND_ASM_SOURCES})
 
-add_library(unwind_static ${LIBUNWIND_SOURCES})
+add_library(unwind ${LIBUNWIND_SOURCES})
 
-target_include_directories(unwind_static PUBLIC ${LIBUNWIND_SOURCE_DIR}/include)
-target_compile_definitions(unwind_static PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
-target_compile_options(unwind_static PRIVATE -fno-exceptions -funwind-tables -fno-sanitize=all -nostdinc++ -fno-rtti)
+target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
+target_compile_options(unwind PRIVATE -fno-exceptions -funwind-tables -fno-sanitize=all -nostdinc++ -fno-rtti)
+
+install(
+    TARGETS unwind
+    EXPORT global
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)

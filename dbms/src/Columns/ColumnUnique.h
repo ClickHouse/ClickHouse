@@ -11,6 +11,7 @@
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 
 #include <common/unaligned.h>
@@ -65,6 +66,7 @@ public:
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     Float64 getFloat64(size_t n) const override { return getNestedColumn()->getFloat64(n); }
+    Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -140,8 +142,8 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder.get()); }
-    const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
+    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -186,10 +188,10 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
     : column_holder(std::move(holder))
-    , is_nullable(is_nullable)
-    , index(numSpecialValues(is_nullable), 0)
+    , is_nullable(is_nullable_)
+    , index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
@@ -232,7 +234,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-            static_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
 }
 
@@ -261,7 +263,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getNullValueIndex();
 
     if (size_of_value_if_fixed)
-        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());

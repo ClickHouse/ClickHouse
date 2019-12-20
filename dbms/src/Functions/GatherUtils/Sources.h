@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -30,17 +31,18 @@ namespace GatherUtils
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
-    const typename ColumnVector<T>::Container & elements;
+    const typename ColVecType::Container & elements;
     const typename ColumnArray::Offsets & offsets;
 
     size_t row_num = 0;
     ColumnArray::Offset prev_offset = 0;
 
     explicit NumericArraySource(const ColumnArray & arr)
-            : elements(typeid_cast<const ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
+            : elements(typeid_cast<const ColVecType &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
 
@@ -585,8 +587,8 @@ struct NullableArraySource : public ArraySource
 
     const NullMap & null_map;
 
-    NullableArraySource(const ColumnArray & arr, const NullMap & null_map)
-            : ArraySource(arr), null_map(null_map)
+    NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
+            : ArraySource(arr), null_map(null_map_)
     {
     }
 
@@ -650,7 +652,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = ColumnVector<T>;
+    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
     const T * begin;
     size_t total_rows;
@@ -743,7 +745,7 @@ struct NullableValueSource : public ValueSource
     const NullMap & null_map;
 
     template <typename Column>
-    explicit NullableValueSource(const Column & col, const NullMap & null_map) : ValueSource(col), null_map(null_map) {}
+    explicit NullableValueSource(const Column & col, const NullMap & null_map_) : ValueSource(col), null_map(null_map_) {}
 
     void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
 

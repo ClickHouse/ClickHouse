@@ -37,7 +37,7 @@ Memory consumption is also restricted by the parameters `max_memory_usage_for_us
 
 The maximum amount of RAM to use for running a user's queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -45,7 +45,7 @@ See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 The maximum amount of RAM to use for running all queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -79,7 +79,7 @@ Enables or disables execution of `GROUP BY` clauses in external memory. See [GRO
 
 Possible values:
 
-- Maximum volume or RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.

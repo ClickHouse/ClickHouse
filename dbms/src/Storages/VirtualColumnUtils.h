@@ -16,9 +16,13 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// Adds to the select query section `select column_name as value`
-/// For example select _port as 9000.
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value);
+/// Adds to the select query section `WITH value AS column_name`, and uses func
+/// to wrap the value (if any)
+///
+/// For example:
+/// - `WITH 9000 as _port`.
+/// - `WITH toUInt16(9000) as _port`.
+void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func = "");
 
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.

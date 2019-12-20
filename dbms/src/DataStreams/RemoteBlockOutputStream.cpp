@@ -32,7 +32,7 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
 
     while (true)
     {
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
 
         if (Protocol::Server::Data == packet.type)
         {
@@ -77,7 +77,7 @@ void RemoteBlockOutputStream::write(const Block & block)
         auto packet_type = connection.checkPacket();
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
-            Connection::Packet packet = connection.receivePacket();
+            Packet packet = connection.receivePacket();
             packet.exception->rethrow();
         }
 
@@ -101,7 +101,7 @@ void RemoteBlockOutputStream::writeSuffix()
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)
     {
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;

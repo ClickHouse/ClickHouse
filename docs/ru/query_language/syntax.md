@@ -108,7 +108,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Синоним — это пользовательское имя выражения в запросе.
 
-```
+```sql
 expr AS alias
 ```
 
@@ -136,7 +136,7 @@ expr AS alias
 
 Будьте осторожны с синонимами, совпадающими с именами столбцов или таблиц. Рассмотрим следующий пример:
 
-```
+```sql
 CREATE TABLE t
 (
     a Int,
@@ -145,12 +145,13 @@ CREATE TABLE t
 ENGINE = TinyLog()
 ```
 
-```
+```sql
 SELECT
     argMax(a, b),
     sum(b) AS b
 FROM t
-
+```
+```text
 Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```

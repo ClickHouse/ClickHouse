@@ -2,10 +2,10 @@
 
 If ClickHouse was installed from deb packages, execute the following commands on the server:
 
-```
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
-sudo service clickhouse-server restart
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-client clickhouse-server
+$ sudo service clickhouse-server restart
 ```
 
 If you installed ClickHouse using something other than the recommended deb packages, use the appropriate update method.

@@ -1,22 +1,31 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
+class ASTFunction;
+class AnalyzedJoin;
+class Context;
+struct SelectQueryOptions;
+using Scalars = std::map<String, Block>;
 
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
+    std::shared_ptr<AnalyzedJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
+    /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
+    NamesAndTypesList required_source_columns;
 
     Aliases aliases;
+    std::vector<const ASTFunction *> aggregates;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
@@ -31,10 +40,17 @@ struct SyntaxAnalyzerResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
-    AnalyzedJoin analyzed_join;
-
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
+
+    /// Results of scalar sub queries
+    Scalars scalars;
+
+    bool maybe_optimize_trivial_count = false;
+
+    void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
+    Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    const Scalars & getScalars() const { return scalars; }
 };
 
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -64,7 +80,8 @@ public:
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         const Names & required_result_columns = {},
-        StoragePtr storage = {}) const;
+        StoragePtr storage = {},
+        const NamesAndTypesList & additional_source_columns = {}) const;
 
 private:
     const Context & context;

@@ -1,14 +1,15 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/SetVariants.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
 }
 
@@ -156,7 +157,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(nested_key_columns[0])
-            || (isColumnConst(*nested_key_columns[0]) && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(nested_key_columns[0])->getDataColumn()))))
+            || (isColumnConst(*nested_key_columns[0]) && typeid_cast<const ColumnString *>(&assert_cast<const ColumnConst *>(nested_key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))

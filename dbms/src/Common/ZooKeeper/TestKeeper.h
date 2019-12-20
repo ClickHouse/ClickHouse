@@ -33,7 +33,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper : public IKeeper
 {
 public:
-    TestKeeper(const String & root_path, Poco::Timespan operation_timeout);
+    TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }

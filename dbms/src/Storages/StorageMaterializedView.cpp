@@ -9,7 +9,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -99,9 +99,11 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage{columns_}, table_name(table_name_),
+    : table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
+    setColumns(columns_);
+
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
@@ -230,7 +232,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 }
 
 
-void StorageMaterializedView::drop()
+void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
@@ -240,7 +242,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const Context &)
+void StorageMaterializedView::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);
@@ -297,7 +299,8 @@ static void executeRenameQuery(Context & global_context, const String & database
 }
 
 
-void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
+void StorageMaterializedView::rename(
+    const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (has_inner_table && tryGetTargetTable())
     {
@@ -338,10 +341,10 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
     return global_context.tryGetTable(target_database_name, target_table_name);
 }
 
-String StorageMaterializedView::getDataPath() const
+Strings StorageMaterializedView::getDataPaths() const
 {
     if (auto table = tryGetTargetTable())
-        return table->getDataPath();
+        return table->getDataPaths();
     return {};
 }
 

@@ -72,11 +72,11 @@ public:
 
         Stream(
             const String & path,
-            const String & base_name,
+            const String & base_name_,
             const String & bin_file_extension_,
             const String & mrk_file_extension_,
             const MergeTreeIndexGranularity & index_granularity_)
-        : base_name(base_name)
+        : base_name(base_name_)
         , bin_file_extension(bin_file_extension_)
         , mrk_file_extension(mrk_file_extension_)
         , bin_file_path(path + base_name + bin_file_extension)
@@ -143,12 +143,14 @@ public:
                 + toString(compressed_hashing_buf.count()) + " (compressed), "
                 + toString(uncompressed_hashing_buf.count()) + " (uncompressed)", ErrorCodes::CORRUPTED_DATA);
 
+        /// Maybe we have final mark.
         if (index_granularity.hasFinalMark())
         {
             auto final_mark_rows = readMarkFromFile().second;
             if (final_mark_rows != 0)
                 throw Exception("Incorrect final mark at the end of " + mrk_file_path + " expected 0 rows, got " + toString(final_mark_rows), ErrorCodes::CORRUPTED_DATA);
         }
+
         if (!mrk_hashing_buf.eof())
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "
@@ -217,31 +219,25 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     MergeTreeData::DataPart::Checksums checksums_data;
 
     size_t marks_in_primary_key = 0;
+    if (!primary_key_data_types.empty())
     {
         ReadBufferFromFile file_buf(path + "primary.idx");
         HashingReadBuffer hashing_buf(file_buf);
 
-        if (!primary_key_data_types.empty())
-        {
-            size_t key_size = primary_key_data_types.size();
-            MutableColumns tmp_columns(key_size);
+        size_t key_size = primary_key_data_types.size();
+        MutableColumns tmp_columns(key_size);
 
+        for (size_t j = 0; j < key_size; ++j)
+            tmp_columns[j] = primary_key_data_types[j]->createColumn();
+
+        while (!hashing_buf.eof())
+        {
+            if (is_cancelled())
+                return {};
+
+            ++marks_in_primary_key;
             for (size_t j = 0; j < key_size; ++j)
-                tmp_columns[j] = primary_key_data_types[j]->createColumn();
-
-            while (!hashing_buf.eof())
-            {
-                if (is_cancelled())
-                    return {};
-
-                ++marks_in_primary_key;
-                for (size_t j = 0; j < key_size; ++j)
-                    primary_key_data_types[j]->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
-            }
-        }
-        else
-        {
-            hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+                primary_key_data_types[j]->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
         }
 
         size_t primary_idx_size = hashing_buf.count();
@@ -385,7 +381,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             size_t read_size = tmp_column->size();
             column_size += read_size;
 
-            if (read_size < rows_after_mark || mark_num == adaptive_index_granularity.getMarksCount())
+            /// We already checked all marks except final (it will be checked in assertEnd()).
+            if (mark_num == adaptive_index_granularity.getMarksCountWithoutFinal())
                 break;
             else if (marks_eof)
                 throw Exception("Unexpected end of mrk file while reading column " + name_type.name, ErrorCodes::CORRUPTED_DATA);

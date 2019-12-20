@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -148,6 +149,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             s.ostr << ", ";
         }
         limitLength()->formatImpl(s, state, frame);
+        if (limit_with_ties)
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
     }
 
     if (settings())
@@ -236,8 +239,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Multiple JOIN disabled or does not support the query. "
-                                "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN disabled or does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -272,6 +274,18 @@ bool ASTSelectQuery::final() const
         return {};
 
     return table_expression->final;
+}
+
+bool ASTSelectQuery::withFill() const
+{
+    if (!orderBy())
+        return false;
+
+    for (const auto & order_expression_element : orderBy()->children)
+        if (order_expression_element->as<ASTOrderByElement &>().with_fill)
+            return true;
+
+    return false;
 }
 
 

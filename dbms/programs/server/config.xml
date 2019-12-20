@@ -3,6 +3,25 @@
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
 <yandex>
+	<!-- The list of hosts allowed to use in URL-related storage engines and table functions.
+		If this section is not present in configuration, all hosts are allowed.
+	-->
+	<remote_url_allow_hosts>
+		<!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
+			Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
+            		If port is explicitly specified in URL, the host:port is checked as a whole.
+            		If host specified here without port, any port with this host allowed.
+            		"yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed. 
+			If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
+			If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked. 
+		-->
+
+		<!-- Regular expression can be specified. RE2 engine is used for regexps.
+			Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
+			(forgetting to do so is a common source of error).
+		-->
+	</remote_url_allow_hosts>
+
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
@@ -15,7 +34,6 @@
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
-
     <!-- For HTTPS and SSL over native protocol. -->
     <!--
     <https_port>8443</https_port>
@@ -180,7 +198,21 @@
                      <port>9000</port>
                  </replica>
              </shard>
-         </test_cluster_two_shards_localhost>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
         <test_shard_localhost_secure>
             <shard>
                 <replica>
@@ -217,6 +249,7 @@
 
          See https://clickhouse.yandex/docs/en/table_engines/replication/
       -->
+
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
@@ -257,6 +290,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>true</asynchronous_metrics>
     </graphite>
     <graphite>
@@ -268,10 +302,29 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>false</asynchronous_metrics>
     </graphite>
     -->
 
+    <!-- Serve endpoint fot Prometheus monitoring. -->
+    <!--
+        endpoint - mertics path (relative to root, statring with "/")
+        port - port to setup server. If not defined or 0 than http_port used
+        metrics - send data from table system.metrics
+        events - send data from table system.events
+        asynchronous_metrics - send data from table system.asynchronous_metrics
+    -->
+    <!--
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+    -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
@@ -322,6 +375,24 @@
     </part_log>
     -->
 
+    <!-- Uncomment to write text log into table.
+         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </text_log>
+    -->
+
+    <!-- Uncomment to write metric log into table.
+         Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+    -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
@@ -376,7 +447,7 @@
 
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
-         If you want do delete one table and don't want to restart clickhouse-server, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
+         If you want do delete one table and don't want to change clickhouse-server config, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
          By default max_table_size_to_drop is 50GB; max_table_size_to_drop=0 allows to DROP any tables.
          The same for max_partition_size_to_drop.
          Uncomment to disable protection.
@@ -419,6 +490,20 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+
+    <!-- Uncomment to use query masking rules.
+        name - name for the rule (optional)
+        regexp - RE2 compatible regular expression (mandatory)
+        replace - substitution string for sensitive data (optional, by default - six asterisks)
+    <query_masking_rules>
+        <rule>
+            <name>hide SSN</name>
+            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
+            <replace>000-00-0000</replace>
+        </rule>
+    </query_masking_rules>
+    -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

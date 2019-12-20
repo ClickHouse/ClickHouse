@@ -83,7 +83,8 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
-    is_local = isLocal(config.getInt("tcp_port", 0));
+    const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
+    is_local = isLocal(config.getInt(port_type, 0));
 }
 
 
@@ -347,7 +348,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                        all_replicas_pools, settings.load_balancing);
+                        all_replicas_pools, settings.load_balancing,
+                        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -398,7 +400,8 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                all_replicas, settings.load_balancing);
+                all_replicas, settings.load_balancing,
+                settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), std::move(shard_pool),

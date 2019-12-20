@@ -1,3 +1,5 @@
+#if defined(__ELF__) && !defined(__FreeBSD__)
+
 /*
  * Copyright 2012-present Facebook, Inc.
  *
@@ -422,7 +424,7 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
     switch (form)
     {
         case DW_FORM_addr:
-            return read<uintptr_t>(sp);
+            return uint64_t(read<uintptr_t>(sp));
         case DW_FORM_block1:
             return readBytes(sp, read<uint8_t>(sp));
         case DW_FORM_block2:
@@ -434,23 +436,23 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
             return readBytes(sp, readULEB(sp));
         case DW_FORM_data1: [[fallthrough]];
         case DW_FORM_ref1:
-            return read<uint8_t>(sp);
+            return uint64_t(read<uint8_t>(sp));
         case DW_FORM_data2: [[fallthrough]];
         case DW_FORM_ref2:
-            return read<uint16_t>(sp);
+            return uint64_t(read<uint16_t>(sp));
         case DW_FORM_data4: [[fallthrough]];
         case DW_FORM_ref4:
-            return read<uint32_t>(sp);
+            return uint64_t(read<uint32_t>(sp));
         case DW_FORM_data8: [[fallthrough]];
         case DW_FORM_ref8:
             return read<uint64_t>(sp);
         case DW_FORM_sdata:
-            return readSLEB(sp);
+            return uint64_t(readSLEB(sp));
         case DW_FORM_udata: [[fallthrough]];
         case DW_FORM_ref_udata:
             return readULEB(sp);
         case DW_FORM_flag:
-            return read<uint8_t>(sp);
+            return uint64_t(read<uint8_t>(sp));
         case DW_FORM_flag_present:
             return 1;
         case DW_FORM_sec_offset: [[fallthrough]];
@@ -707,7 +709,7 @@ void Dwarf::LineNumberVM::init()
     lineRange_ = read<uint8_t>(header);
     opcodeBase_ = read<uint8_t>(header);
     SAFE_CHECK(opcodeBase_ != 0, "invalid opcode base");
-    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data());
+    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data()); //-V506
     header.remove_prefix(opcodeBase_ - 1);
 
     // We don't want to use heap, so we don't keep an unbounded amount of state.
@@ -1031,3 +1033,5 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 }
 
 }
+
+#endif
