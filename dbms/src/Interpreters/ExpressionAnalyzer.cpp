@@ -230,6 +230,16 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 }
 
 
+NamesAndTypesList ExpressionAnalyzer::sourceWithJoinedColumns() const
+{
+    auto result_columns = sourceColumns();
+    result_columns.insert(result_columns.end(), array_join_columns.begin(), array_join_columns.end());
+    result_columns.insert(result_columns.end(),
+                        analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
+    return result_columns;
+}
+
+
 void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
@@ -313,12 +323,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             }
             else
             {
-                NamesAndTypesList temp_columns = sourceColumns();
-                temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                temp_columns.insert(temp_columns.end(),
-                                    analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
-
-                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceWithJoinedColumns(), context);
                 getRootActions(left_in_operand, true, temp_actions);
 
                 Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
@@ -743,10 +748,14 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
         step.required_output.push_back(order_expression->getColumnName());
+    }
 
-        if (optimize_read_in_order)
+    if (optimize_read_in_order)
+    {
+        auto all_columns = sourceWithJoinedColumns();
+        for (auto & child : select_query->orderBy()->children)
         {
-            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(sourceColumns(), context));
+            order_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(all_columns, context));
             getRootActions(child, only_types, order_by_elements_actions.back());
         }
     }

@@ -1,5 +1,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -21,13 +22,14 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     if (elements_actions.size() != required_sort_description.size())
         throw Exception("Sizes of sort description and actions are mismatched", ErrorCodes::LOGICAL_ERROR);
 
-    /// Do not analyze ARRAY JOIN result columns.
-    /// TODO: forbid more columns for analyzing.
+    /// Do not analyze joined columns.
+    /// They may have aliases and come to descriprion as is.
+    /// We can mismatch them with order key columns at stage of fetching columns.
     for (const auto & elem : syntax_result->array_join_result_to_source)
         forbidden_columns.insert(elem.first);
 }
 
-InputSortingInfoPtr ReadInOrderOptimizer::analyze(const StoragePtr & storage) const
+InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & storage) const
 {
     const MergeTreeData * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
     if (!merge_tree || !merge_tree->hasSortingKey())
