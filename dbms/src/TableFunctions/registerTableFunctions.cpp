@@ -24,9 +24,7 @@ void registerTableFunctions()
     registerTableFunctionHDFS(factory);
 #endif
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
-#endif
     registerTableFunctionJDBC(factory);
 
 #if USE_MYSQL
