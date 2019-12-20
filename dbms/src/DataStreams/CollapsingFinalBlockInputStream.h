@@ -45,9 +45,9 @@ private:
         MergingBlock(const Block & block_,
                      size_t stream_index_,
                      const SortDescription & desc,
-                     const String & sign_column_name,
-                     BlockPlainPtrs * output_blocks)
-            : block(block_), stream_index(stream_index_), output_blocks(output_blocks)
+                     const String & sign_column_name_,
+                     BlockPlainPtrs * output_blocks_)
+            : block(block_), stream_index(stream_index_), output_blocks(output_blocks_)
         {
             sort_columns.resize(desc.size());
             for (size_t i = 0; i < desc.size(); ++i)
@@ -59,7 +59,7 @@ private:
                 sort_columns[i] = block.safeGetByPosition(column_number).column.get();
             }
 
-            const IColumn * sign_icolumn = block.getByName(sign_column_name).column.get();
+            const IColumn * sign_icolumn = block.getByName(sign_column_name_).column.get();
 
             sign_column = typeid_cast<const ColumnInt8 *>(sign_icolumn);
 

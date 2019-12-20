@@ -13,35 +13,46 @@ namespace DB
 
 class Context;
 
-/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
+/// Return false if the data isn't going to be changed by mutations.
+bool isStorageTouchedByMutations(StoragePtr storage, const std::vector<MutationCommand> & commands, Context context_copy);
+
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
 {
 public:
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_)
-        : storage(std::move(storage_))
-        , commands(std::move(commands_))
-        , context(context_)
-    {
-    }
+    /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
+    /// use can_execute = true, in other cases (validation, amount of commands) it can be false
+    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_, bool can_execute_);
 
-    void validate();
+    void validate(TableStructureReadLockHolder & table_lock_holder);
 
-    /// Return false if the data isn't going to be changed by mutations.
-    bool isStorageTouchedByMutations() const;
+    size_t evaluateCommandsSize();
 
-    /// The resulting stream will return blocks containing changed columns only.
-    BlockInputStreamPtr execute();
+    /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
+    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
 
-private:
-    void prepare(bool dry_run);
-
-    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
+    /// Only changed columns.
+    const Block & getUpdatedHeader() const;
 
 private:
+    ASTPtr prepare(bool dry_run);
+
+    struct Stage;
+
+    ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
+
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
+    bool can_execute;
+
+    ASTPtr mutation_ast;
+
+    /// We have to store interpreter because it use own copy of context
+    /// and some streams from execute method may use it.
+    std::unique_ptr<InterpreterSelectQuery> select_interpreter;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
@@ -59,7 +70,7 @@ private:
 
     struct Stage
     {
-        Stage(const Context & context) : expressions_chain(context) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -77,7 +88,7 @@ private:
         Names filter_column_names;
     };
 
-    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+    std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
 };

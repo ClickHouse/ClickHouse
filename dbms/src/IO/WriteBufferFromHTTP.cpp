@@ -22,7 +22,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
 void WriteBufferFromHTTP::finalize()
 {
-    receiveResponse(*session, request, response);
+    receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.
 }
 

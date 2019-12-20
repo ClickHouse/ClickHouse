@@ -1,138 +1,101 @@
-from contextlib import contextmanager
-
 import time
-import pytest
+import contextlib
 
-## sudo -H pip install PyMySQL
 import pymysql.cursors
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql = True)
-create_table_normal_sql_template = """
-    CREATE TABLE `clickhouse`.`{}` (
-        `id` int(11) NOT NULL,
-        `name` varchar(50) NOT NULL,
-        `age` int  NOT NULL default 0,
-        `money` int NOT NULL default 0,
-        PRIMARY KEY (`id`)
-    ) ENGINE=InnoDB;
-    """
-
-create_table_mysql_style_sql_template = """
-    CREATE TABLE `clickhouse`.`{}` (
-        `id` int(11) NOT NULL,
-        `float` float NOT NULL,
-        `Float32` float NOT NULL,
-        `test``name` varchar(50) NOT NULL,
-        PRIMARY KEY (`id`)
-    ) ENGINE=InnoDB;
-    """
-
-drop_table_sql_template = "DROP TABLE `clickhouse`.`{}`"
-
-add_column_sql_template = "ALTER TABLE `clickhouse`.`{}` ADD COLUMN `pid` int(11)"
-del_column_sql_template = "ALTER TABLE `clickhouse`.`{}` DROP COLUMN `pid`"
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-
-        conn = get_mysql_conn()
-        ## create mysql db and table
-        create_mysql_db(conn, 'clickhouse')
-        node1.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql1:3306', 'clickhouse', 'root', 'clickhouse')")
         yield cluster
-
     finally:
         cluster.shutdown()
 
 
-def test_sync_tables_list_between_clickhouse_and_mysql(started_cluster):
-    mysql_connection = get_mysql_conn()
-    assert node1.query('SHOW TABLES FROM clickhouse_mysql FORMAT TSV').rstrip() == ''
+class MySQLNodeInstance:
+    def __init__(self, user='root', password='clickhouse', hostname='127.0.0.1', port=3308):
+        self.user = user
+        self.port = port
+        self.hostname = hostname
+        self.password = password
+        self.mysql_connection = None  # lazy init
 
-    create_normal_mysql_table(mysql_connection, 'first_mysql_table')
-    assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'first_mysql_table' FORMAT TSV").rstrip() == 'first_mysql_table'
+    def query(self, execution_query):
+        if self.mysql_connection is None:
+            self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname, port=self.port)
+        with self.mysql_connection.cursor() as cursor:
+            cursor.execute(execution_query)
 
-    create_normal_mysql_table(mysql_connection, 'second_mysql_table')
-    assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'second_mysql_table' FORMAT TSV").rstrip() == 'second_mysql_table'
+    def close(self):
+        if self.mysql_connection is not None:
+            self.mysql_connection.close()
 
-    drop_mysql_table(mysql_connection, 'second_mysql_table')
-    assert node1.query("SHOW TABLES FROM clickhouse_mysql LIKE 'second_mysql_table' FORMAT TSV").rstrip() == ''
 
-    mysql_connection.close()
+def test_mysql_ddl_for_mysql_database(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
-def test_sync_tables_structure_between_clickhouse_and_mysql(started_cluster):
-    mysql_connection = get_mysql_conn()
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
+        assert 'test_database' in clickhouse_node.query('SHOW DATABASES')
 
-    create_normal_mysql_table(mysql_connection, 'test_sync_column')
+        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_database')
 
-    assert node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == ''
+        time.sleep(3)  # Because the unit of MySQL modification time is seconds, modifications made in the same second cannot be obtained
+        mysql_node.query('ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11)')
+        assert 'add_column' in clickhouse_node.query("SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
 
-    time.sleep(3)
-    add_mysql_table_column(mysql_connection, "test_sync_column")
+        time.sleep(3)  # Because the unit of MySQL modification time is seconds, modifications made in the same second cannot be obtained
+        mysql_node.query('ALTER TABLE `test_database`.`test_table` DROP COLUMN `add_column`')
+        assert 'add_column' not in clickhouse_node.query("SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
 
-    assert node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == 'pid'
+        mysql_node.query('DROP TABLE `test_database`.`test_table`;')
+        assert 'test_table' not in clickhouse_node.query('SHOW TABLES FROM test_database')
 
-    time.sleep(3)
-    drop_mysql_table_column(mysql_connection, "test_sync_column")
-    assert node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_sync_column' AND database = 'clickhouse_mysql' AND name = 'pid' ").rstrip() == ''
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
 
-    mysql_connection.close()
+        mysql_node.query("DROP DATABASE test_database")
 
-def test_insert_select(started_cluster):
-    mysql_connection = get_mysql_conn()
-    create_normal_mysql_table(mysql_connection, 'test_insert_select')
 
-    assert node1.query("SELECT count() FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '0'
-    node1.query("INSERT INTO `clickhouse_mysql`.{}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000) ".format('test_insert_select'))
-    assert node1.query("SELECT count() FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '10000'
-    assert node1.query("SELECT sum(money) FROM `clickhouse_mysql`.{}".format('test_insert_select')).rstrip() == '30000'
-    mysql_connection.close()
+def test_clickhouse_ddl_for_mysql_database(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
 
-def test_insert_select_with_mysql_style_table(started_cluster):
-    mysql_connection = get_mysql_conn()
-    create_mysql_style_mysql_table(mysql_connection, 'test_mysql``_style_table')
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
 
-    assert node1.query("SELECT count() FROM `clickhouse_mysql`.`{}`".format('test_mysql\`_style_table')).rstrip() == '0'
-    node1.query("INSERT INTO `clickhouse_mysql`.`{}`(id, `float`, `Float32`, `test\`name`) select number, 3, 3, 'name' from numbers(10000) ".format('test_mysql\`_style_table'))
-    assert node1.query("SELECT count() FROM `clickhouse_mysql`.`{}`".format('test_mysql\`_style_table')).rstrip() == '10000'
-    assert node1.query("SELECT sum(`float`) FROM `clickhouse_mysql`.`{}`".format('test_mysql\`_style_table')).rstrip() == '30000'
-    mysql_connection.close()
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_database')
+        clickhouse_node.query("DROP TABLE test_database.test_table")
+        assert 'test_table' not in clickhouse_node.query('SHOW TABLES FROM test_database')
+        clickhouse_node.query("ATTACH TABLE test_database.test_table")
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_database')
+        clickhouse_node.query("DETACH TABLE test_database.test_table")
+        assert 'test_table' not in clickhouse_node.query('SHOW TABLES FROM test_database')
+        clickhouse_node.query("ATTACH TABLE test_database.test_table")
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_database')
 
-def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
-    return conn
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
 
-def create_mysql_db(conn, name):
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        mysql_node.query("DROP DATABASE test_database")
 
-def create_normal_mysql_table(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(create_table_normal_sql_template.format(table_name))
 
-def create_mysql_style_mysql_table(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(create_table_mysql_style_sql_template.format(table_name))
+def test_clickhouse_dml_for_mysql_database(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;')
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
 
-def drop_mysql_table(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(drop_table_sql_template.format(table_name))
+        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '0'
+        clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i\`d`) select number from numbers(10000)")
+        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
 
-def add_mysql_table_column(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(add_column_sql_template.format(table_name))
-
-def drop_mysql_table_column(conn, table_name):
-    with conn.cursor() as cursor:
-        cursor.execute(del_column_sql_template.format(table_name))
+        mysql_node.query("DROP DATABASE test_database")

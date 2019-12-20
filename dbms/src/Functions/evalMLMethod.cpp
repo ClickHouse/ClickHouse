@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -34,7 +34,7 @@ public:
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    FunctionEvalMLMethod(const Context & context) : context(context)
+    FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override

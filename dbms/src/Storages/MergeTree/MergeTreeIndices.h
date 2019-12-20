@@ -5,7 +5,6 @@
 #include <vector>
 #include <memory>
 #include <Core/Block.h>
-#include <ext/singleton.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -59,17 +58,17 @@ using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
 
 /// Condition on the index.
-class IIndexCondition
+class IMergeTreeIndexCondition
 {
 public:
-    virtual ~IIndexCondition() = default;
+    virtual ~IMergeTreeIndexCondition() = default;
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };
 
-using IndexConditionPtr = std::shared_ptr<IIndexCondition>;
+using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 
 
 /// Structure for storing basic index info like columns, expression, arguments, ...
@@ -77,18 +76,18 @@ class IMergeTreeIndex
 {
 public:
     IMergeTreeIndex(
-        String name,
-        ExpressionActionsPtr expr,
-        const Names & columns,
-        const DataTypes & data_types,
-        const Block & header,
-        size_t granularity)
-        : name(name)
-        , expr(expr)
-        , columns(columns)
-        , data_types(data_types)
-        , header(header)
-        , granularity(granularity) {}
+        String name_,
+        ExpressionActionsPtr expr_,
+        const Names & columns_,
+        const DataTypes & data_types_,
+        const Block & header_,
+        size_t granularity_)
+        : name(name_)
+        , expr(expr_)
+        , columns(columns_)
+        , data_types(data_types_)
+        , header(header_)
+        , granularity(granularity_) {}
 
     virtual ~IMergeTreeIndex() = default;
 
@@ -101,25 +100,39 @@ public:
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual IndexConditionPtr createIndexCondition(
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
+    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+
+    /// Index name
     String name;
+
+    /// Index expression (x * y)
+    /// with columns arguments
     ExpressionActionsPtr expr;
+
+    /// Names of columns for index
     Names columns;
+
+    /// Data types of columns
     DataTypes data_types;
+
+    /// Block with columns and data_types
     Block header;
+
+    /// Skip index granularity
     size_t granularity;
 };
 
 using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
 
 
-class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
+class MergeTreeIndexFactory : private boost::noncopyable
 {
-    friend class ext::singleton<MergeTreeIndexFactory>;
-
 public:
+    static MergeTreeIndexFactory & instance();
+
     using Creator = std::function<
             std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,
@@ -142,5 +155,25 @@ private:
     using Indexes = std::unordered_map<std::string, Creator>;
     Indexes indexes;
 };
+
+std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context);
+
+std::unique_ptr<IMergeTreeIndex> setIndexCreator(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context);
+
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context);
+
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
+    const NamesAndTypesList & columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context);
 
 }

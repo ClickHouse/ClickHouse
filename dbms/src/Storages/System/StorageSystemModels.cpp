@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/CatBoostModel.h>
 
 
@@ -27,12 +27,12 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 
 void StorageSystemModels::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto & external_models = context.getExternalModels();
-    auto load_results = external_models.getCurrentLoadResults();
+    const auto & external_models_loader = context.getExternalModelsLoader();
+    auto load_results = external_models_loader.getCurrentLoadResults();
 
-    for (const auto & [name, load_result] : load_results)
+    for (const auto & [model_name, load_result] : load_results)
     {
-        res_columns[0]->insert(name);
+        res_columns[0]->insert(model_name);
         res_columns[1]->insert(static_cast<Int8>(load_result.status));
         res_columns[2]->insert(load_result.origin);
 

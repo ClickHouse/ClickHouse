@@ -5,7 +5,7 @@ Adding data.
 
 Basic query format:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -18,13 +18,13 @@ If [strict_insert_defaults=1](../operations/settings/settings.md), columns that 
 
 Data can be passed to the INSERT in any [format](../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
 For example, the following query format is identical to the basic version of INSERT ... VALUES:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -32,7 +32,7 @@ ClickHouse removes all spaces and one line feed (if there is one) before the dat
 
 Example:
 
-``` sql
+```sql
 INSERT INTO t FORMAT TabSeparated
 11  Hello, world!
 22  Qwerty
@@ -40,10 +40,13 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
+### Constraints
+
+If table has [constraints](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
 ### Inserting The Results of `SELECT` {#insert_query_insert-select}
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
@@ -54,12 +57,14 @@ None of the data formats except Values allow setting values to expressions such 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
+`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](table_functions/input.md).
+
 ### Performance Considerations
 
-`INSERT` sorts the input data by primary key and splits them into partitions by month. If you insert data for mixed months, it can significantly reduce the performance of the `INSERT` query. To avoid this:
+`INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
 - Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by month before uploading it to ClickHouse.
+- Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 

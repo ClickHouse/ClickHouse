@@ -1,5 +1,6 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/PartDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -23,12 +24,40 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.detach = command_ast->detach;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = DROP_DETACHED_PARTITION;
+        res.partition = command_ast->partition;
+        res.part = command_ast->part;
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
     {
         PartitionCommand res;
         res.type = ATTACH_PARTITION;
         res.partition = command_ast->partition;
         res.part = command_ast->part;
+        return res;
+    }
+    else if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = MOVE_PARTITION;
+        res.partition = command_ast->partition;
+        res.part = command_ast->part;
+        switch (command_ast->move_destination_type)
+        {
+            case PartDestinationType::DISK:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::DISK;
+                break;
+            case PartDestinationType::VOLUME:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
+                break;
+            default:
+                break;
+        }
+        res.move_destination_name = command_ast->move_destination_name;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
@@ -65,7 +94,18 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = CLEAR_COLUMN;
         res.partition = command_ast->partition;
-        res.column_name = *getIdentifierName(command_ast->column);
+        res.column_name = getIdentifierName(command_ast->column);
+        return res;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX && command_ast->partition)
+    {
+        if (!command_ast->clear_index)
+            throw Exception("Can't DROP INDEX from partition. It is possible only to CLEAR INDEX in partition", ErrorCodes::BAD_ARGUMENTS);
+
+        PartitionCommand res;
+        res.type = CLEAR_INDEX;
+        res.partition = command_ast->partition;
+        res.index_name = getIdentifierName(command_ast->index);
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
@@ -91,6 +131,16 @@ void PartitionCommands::validate(const IStorage & table)
             {
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
                     DB::ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+        else if (command.type == PartitionCommand::CLEAR_INDEX)
+        {
+            String index_name = command.index_name.safeGet<String>();
+
+            if (!table.getIndices().has(index_name))
+            {
+                throw Exception("Wrong index name. Cannot find index " + index_name + " to clear it from partition",
+                                DB::ErrorCodes::BAD_ARGUMENTS);
             }
         }
     }

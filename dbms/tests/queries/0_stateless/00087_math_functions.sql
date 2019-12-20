@@ -32,16 +32,16 @@ select tgamma(2) = 1;
 select tgamma(3) = 2;
 select tgamma(4) = 6;
 
-select sum(abs(lgamma(x + 1) - log(tgamma(x + 1))) < 1.0e-9) / count() from system.one array join range(10) as x;
+select sum(abs(lgamma(x + 1) - log(tgamma(x + 1))) < 1.0e-8) / count() from system.one array join range(10) as x;
 
 select abs(e() - arraySum(arrayMap(x -> 1 / tgamma(x + 1), range(13)))) < 1.0e-9;
 
 select log(0) = -inf;
 select log(1) = 0;
-select log(e()) = 1;
-select log(exp(1)) = 1;
-select log(exp(2)) = 2;
-select sum(abs(log(exp(x)) - x) < 1.0e-9) / count() from system.one array join range(100) as x;
+select abs(log(e()) - 1) < 1e-8;
+select abs(log(exp(1)) - 1) < 1e-8;
+select abs(log(exp(2)) - 2) < 1e-8;
+select sum(abs(log(exp(x)) - x) < 1e-8) / count() from system.one array join range(100) as x;
 
 select exp2(-1) = 1/2;
 select exp2(0) = 1;

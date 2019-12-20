@@ -16,12 +16,13 @@ public:
         const BlockInputStreamPtr & input_,
         const MergeTreeData & storage_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
-        time_t current_time
+        time_t current_time,
+        bool force_
     );
 
-    String getName() const override { return "TTLBlockInputStream"; }
+    String getName() const override { return "TTL"; }
 
-    Block getHeader() const override;
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
@@ -36,6 +37,7 @@ private:
     const MergeTreeData::MutableDataPartPtr & data_part;
 
     time_t current_time;
+    bool force;
 
     MergeTreeDataPart::TTLInfos old_ttl_infos;
     MergeTreeDataPart::TTLInfos new_ttl_infos;
@@ -47,14 +49,20 @@ private:
 
     std::unordered_map<String, String> defaults_result_column;
     ExpressionActionsPtr defaults_expression;
+
+    Block header;
 private:
-    /// Removes values with expired ttl and computes new min_ttl and empty_columns for part
+    /// Removes values with expired ttl and computes new_ttl_infos and empty_columns for part
     void removeValuesWithExpiredColumnTTL(Block & block);
 
-    /// Remove rows with expired table ttl and computes new min_ttl for part
+    /// Removes rows with expired table ttl and computes new ttl_infos for part
     void removeRowsWithExpiredTableTTL(Block & block);
 
+    /// Updates TTL for moves
+    void updateMovesTTL(Block & block);
+
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
+    bool isTTLExpired(time_t ttl);
 };
 
 }

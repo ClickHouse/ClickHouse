@@ -1,4 +1,5 @@
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {

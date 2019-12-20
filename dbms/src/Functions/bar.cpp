@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -7,6 +7,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
+#include "registerFunctions.h"
 
 
 namespace DB
@@ -108,7 +109,7 @@ private:
     {
         const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
-        if (!column.isColumnConst())
+        if (!isColumnConst(column))
             throw Exception(
                 which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 

@@ -23,7 +23,12 @@ void CurrentThread::updatePerformanceCounters()
 {
     if (unlikely(!current_thread))
         return;
-    get().updatePerformanceCounters();
+    current_thread->updatePerformanceCounters();
+}
+
+bool CurrentThread::isInitialized()
+{
+    return current_thread;
 }
 
 ThreadStatus & CurrentThread::get()
@@ -36,35 +41,36 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return current_thread ? get().performance_counters : ProfileEvents::global_counters;
+    return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
 }
 
 MemoryTracker * CurrentThread::getMemoryTracker()
 {
     if (unlikely(!current_thread))
         return nullptr;
-    return &get().memory_tracker;
+    return &current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
 {
     if (unlikely(!current_thread))
         return;
-    get().progress_in.incrementPiecewiseAtomically(value);
+    current_thread->progress_in.incrementPiecewiseAtomically(value);
 }
 
 void CurrentThread::updateProgressOut(const Progress & value)
 {
     if (unlikely(!current_thread))
         return;
-    get().progress_out.incrementPiecewiseAtomically(value);
+    current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
+void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                                LogsLevel client_logs_level)
 {
     if (unlikely(!current_thread))
         return;
-    get().attachInternalTextLogsQueue(logs_queue);
+    current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
@@ -73,10 +79,10 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
     if (unlikely(!current_thread))
         return nullptr;
 
-    if (get().getCurrentState() == ThreadStatus::ThreadState::Died)
+    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
         return nullptr;
 
-    return get().getInternalTextLogsQueue();
+    return current_thread->getInternalTextLogsQueue();
 }
 
 ThreadGroupStatusPtr CurrentThread::getGroup()
@@ -84,7 +90,7 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
     if (unlikely(!current_thread))
         return nullptr;
 
-    return get().getThreadGroup();
+    return current_thread->getThreadGroup();
 }
 
 }

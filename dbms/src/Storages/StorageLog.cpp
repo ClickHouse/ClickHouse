@@ -87,8 +87,8 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
+        Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size_)
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
             compressed(plain)
         {
             if (offset)
@@ -211,7 +211,7 @@ Block LogBlockInputStream::readImpl()
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + storage.path + escapeForFileName(storage.name));
+            e.addMessage("while reading column " + name_type.name + " at " + storage.path + escapeForFileName(storage.table_name));
             throw;
         }
 
@@ -419,24 +419,28 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 
 StorageLog::StorageLog(
     const std::string & path_,
-    const std::string & name_,
+    const std::string & database_name_,
+    const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), name(name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
+    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json")
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
      /// create files if they do not exist
-    Poco::File(path + escapeForFileName(name) + '/').createDirectories();
+    Poco::File(path + escapeForFileName(table_name) + '/').createDirectories();
 
     for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
-    marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    marks_file = Poco::File(path + escapeForFileName(table_name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
 
@@ -455,7 +459,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
             ColumnData & column_data = files[stream_name];
             column_data.column_index = file_count;
             column_data.data_file = Poco::File{
-                path + escapeForFileName(name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
+                path + escapeForFileName(table_name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
             column_names_by_idx.push_back(stream_name);
             ++file_count;
@@ -508,28 +512,29 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
-    Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
     path = new_path_to_db;
-    name = new_table_name;
-    file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.json");
+    table_name = new_table_name;
+    database_name = new_database_name;
+    file_checker.setPath(path + escapeForFileName(table_name) + '/' + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(file.second.data_file.path()).getFileName());
+        file.second.data_file = Poco::File(path + escapeForFileName(table_name) + '/' + Poco::Path(file.second.data_file.path()).getFileName());
 
-    marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    marks_file = Poco::File(path + escapeForFileName(table_name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-void StorageLog::truncate(const ASTPtr &, const Context &)
+void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    String table_dir = path + escapeForFileName(name);
+    String table_dir = path + escapeForFileName(table_name);
 
     files.clear();
     file_count = 0;
@@ -625,7 +630,7 @@ BlockOutputStreamPtr StorageLog::write(
     return std::make_shared<LogBlockOutputStream>(*this);
 }
 
-bool StorageLog::checkData() const
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
@@ -642,7 +647,7 @@ void registerStorageLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageLog::create(
-            args.data_path, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
     });
 }

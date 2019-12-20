@@ -29,6 +29,11 @@
 //#include "includes.h"
 #include "config_client.h"
 
+// Should not be included on BSD systems, but if it happen...
+#ifdef HAVE_READPASSPHRASE
+#   include_next <readpassphrase.h>
+#endif
+
 #ifndef HAVE_READPASSPHRASE
 
 #    ifdef __cplusplus

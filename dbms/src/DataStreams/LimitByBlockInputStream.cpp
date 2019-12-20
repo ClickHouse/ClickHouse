@@ -1,4 +1,5 @@
 #include <DataStreams/LimitByBlockInputStream.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
 
@@ -71,7 +72,7 @@ ColumnRawPtrs LimitByBlockInputStream::getKeyColumns(Block & block) const
         auto & column = block.getByName(name).column;
 
         /// Ignore all constant columns.
-        if (!column->isColumnConst())
+        if (!isColumnConst(*column))
             column_ptrs.emplace_back(column.get());
     }
 

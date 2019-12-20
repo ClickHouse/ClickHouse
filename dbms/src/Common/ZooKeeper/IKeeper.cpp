@@ -23,8 +23,8 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-Exception::Exception(const std::string & msg, const int32_t code, int)
-    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code)
+Exception::Exception(const std::string & msg, const int32_t code_, int)
+    : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code_)
 {
     if (Coordination::isUserError(code))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
@@ -34,18 +34,18 @@ Exception::Exception(const std::string & msg, const int32_t code, int)
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const int32_t code)
-    : Exception(msg + " (" + errorMessage(code) + ")", code, 0)
+Exception::Exception(const std::string & msg, const int32_t code_)
+    : Exception(msg + " (" + errorMessage(code_) + ")", code_, 0)
 {
 }
 
-Exception::Exception(const int32_t code)
-    : Exception(errorMessage(code), code, 0)
+Exception::Exception(const int32_t code_)
+    : Exception(errorMessage(code_), code_, 0)
 {
 }
 
-Exception::Exception(const int32_t code, const std::string & path)
-    : Exception(std::string{errorMessage(code)} + ", path: " + path, code, 0)
+Exception::Exception(const int32_t code_, const std::string & path)
+    : Exception(std::string{errorMessage(code_)} + ", path: " + path, code_, 0)
 {
 }
 
@@ -58,7 +58,7 @@ Exception::Exception(const Exception & exc)
 using namespace DB;
 
 
-void addRootPath(String & path, const String & root_path)
+static void addRootPath(String & path, const String & root_path)
 {
     if (path.empty())
         throw Exception("Path cannot be empty", ZBADARGUMENTS);
@@ -75,7 +75,7 @@ void addRootPath(String & path, const String & root_path)
         path = root_path + path;
 }
 
-void removeRootPath(String & path, const String & root_path)
+static void removeRootPath(String & path, const String & root_path)
 {
     if (root_path.empty())
         return;

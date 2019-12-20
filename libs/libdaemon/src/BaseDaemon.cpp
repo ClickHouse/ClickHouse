@@ -1,5 +1,4 @@
 #include <daemon/BaseDaemon.h>
-
 #include <Common/Config/ConfigProcessor.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -11,9 +10,12 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <unistd.h>
+
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
+#include <common/Pipe.h>
+#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
@@ -35,7 +37,8 @@
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -44,65 +47,11 @@
 #include <Common/config_version.h>
 #include <common/argsToConfig.h>
 
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
-
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
-
-
-/** For transferring information from signal handler to a separate thread.
-  * If you need to do something serious in case of a signal (example: write a message to the log),
-  *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
-  *  - is probably the only safe method for doing it.
-  * (Because it's only safe to use reentrant functions in signal handlers.)
-  */
-struct Pipe
-{
-    union
-    {
-        int fds[2];
-        struct
-        {
-            int read_fd;
-            int write_fd;
-        };
-    };
-
-    Pipe()
-    {
-        read_fd = -1;
-        write_fd = -1;
-
-        if (0 != pipe(fds))
-            DB::throwFromErrno("Cannot create pipe", 0);
-    }
-
-    void close()
-    {
-        if (-1 != read_fd)
-        {
-            ::close(read_fd);
-            read_fd = -1;
-        }
-
-        if (-1 != write_fd)
-        {
-            ::close(write_fd);
-            write_fd = -1;
-        }
-    }
-
-    ~Pipe()
-    {
-        close();
-    }
-};
 
 
 Pipe signal_pipe;
@@ -119,14 +68,14 @@ static void call_default_signal_handler(int sig)
 
 
 using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(ThreadNumber);
+static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
 
 using signal_function = void(int, siginfo_t*, void*);
 
 static void writeSignalIDtoSignalPipe(int sig)
 {
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 }
@@ -143,71 +92,31 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-thread_local bool already_signal_handled = false;
-
 /** Handler for "fault" signals. Send data about fault to separate thread to write into log.
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (already_signal_handled)
-        return;
-    already_signal_handled = true;
-
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
+
+    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    const StackTrace stack_trace(signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
-    DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
+    DB::writePODBinary(signal_context, out);
+    DB::writePODBinary(stack_trace, out);
     DB::writeBinary(getThreadNumber(), out);
 
     out.next();
 
-    /// The time that is usually enough for separate thread to print info into log.
-    ::sleep(10);
-
-    call_default_signal_handler(sig);
-}
-
-
-#if USE_UNWIND
-/** We suppress the following ASan report. Also shown by Valgrind.
-==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
-READ of size 1 at 0x7f054be57000 thread T3
-    #0 0x68b0648 in write (/usr/bin/clickhouse+0x68b0648)
-    #1 0x717da02 in write_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:110:13
-    #2 0x717da02 in mincore_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:146
-    #3 0x717dec1 in validate_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:206:7
-    #4 0x717dec1 in access_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:240
-    #5 0x71881a9 in dwarf_get /build/obj-x86_64-linux-gnu/../contrib/libunwind/include/tdep-x86_64/libunwind_i.h:168:12
-    #6 0x71881a9 in apply_reg_state /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:872
-    #7 0x718705c in _ULx86_64_dwarf_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:953:10
-    #8 0x718f155 in _ULx86_64_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Gstep.c:71:9
-    #9 0x7162671 in backtraceLibUnwind(void**, unsigned long, ucontext_t&) /build/obj-x86_64-linux-gnu/../libs/libdaemon/src/BaseDaemon.cpp:202:14
-  */
-size_t NO_SANITIZE_ADDRESS backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
-{
-    unw_cursor_t cursor;
-
-    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
-        return 0;
-
-    size_t i = 0;
-    for (; i < max_frames; ++i)
+    if (sig != SIGTSTP) /// This signal is used for debugging.
     {
-        unw_word_t ip;
-        unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        out_frames[i] = reinterpret_cast<void*>(ip);
-
-        /// NOTE This triggers "AddressSanitizer: stack-buffer-overflow". Looks like false positive.
-        /// It's Ok, because we use this method if the program is crashed nevertheless.
-        if (!unw_step(&cursor))
-            break;
+        /// The time that is usually enough for separate thread to print info into log.
+        ::sleep(10);
+        call_default_signal_handler(sig);
     }
-
-    return i;
 }
-#endif
 
 
 /** The thread that read info about signal or std::terminate from pipe.
@@ -233,7 +142,7 @@ public:
     void run()
     {
         char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.read_fd, buf_size, buf);
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
 
         while (!in.eof())
         {
@@ -271,13 +180,17 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
+                StackTrace stack_trace(NoCapture{});
                 ThreadNumber thread_num;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
+                DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, thread_num);
+                /// This allows to receive more signals if failure happens inside onFault function.
+                /// Example: segfault while symbolizing stack trace.
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
             }
         }
     }
@@ -289,227 +202,32 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
+        LOG_FATAL(log, "########################################");
+        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
-        void * caller_address = nullptr;
+        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
 
-#if defined(__x86_64__)
-        /// Get the address at the time the signal was raised from the RIP (x86-64)
-        #if defined(__FreeBSD__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-        #elif defined(__APPLE__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
-        #else
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
-        auto err_mask = context.uc_mcontext.gregs[REG_ERR];
-        #endif
-#elif defined(__aarch64__)
-        caller_address = reinterpret_cast<void *>(context.uc_mcontext.pc);
-#endif
-
-        switch (sig)
+        if (stack_trace.getSize())
         {
-            case SIGSEGV:
-            {
-                /// Print info about address and reason.
-                if (nullptr == info.si_addr)
-                    LOG_ERROR(log, "Address: NULL pointer.");
-                else
-                    LOG_ERROR(log, "Address: " << info.si_addr);
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
-                if ((err_mask & 0x02))
-                    LOG_ERROR(log, "Access: write.");
-                else
-                    LOG_ERROR(log, "Access: read.");
-#endif
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-                switch (info.si_code)
-                {
-                    case SEGV_ACCERR:
-                        LOG_ERROR(log, "Attempted access has violated the permissions assigned to the memory area.");
-                        break;
-                    case SEGV_MAPERR:
-                        LOG_ERROR(log, "Address not mapped to object.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGBUS:
-            {
-                switch (info.si_code)
-                {
-                    case BUS_ADRALN:
-                        LOG_ERROR(log, "Invalid address alignment.");
-                        break;
-                    case BUS_ADRERR:
-                        LOG_ERROR(log, "Non-existant physical address.");
-                        break;
-                    case BUS_OBJERR:
-                        LOG_ERROR(log, "Object specific hardware error.");
-                        break;
-
-                    // Linux specific
-#if defined(BUS_MCEERR_AR)
-                    case BUS_MCEERR_AR:
-                        LOG_ERROR(log, "Hardware memory error: action required.");
-                        break;
-#endif
-#if defined(BUS_MCEERR_AO)
-                    case BUS_MCEERR_AO:
-                        LOG_ERROR(log, "Hardware memory error: action optional.");
-                        break;
-#endif
-
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGILL:
-            {
-                switch (info.si_code)
-                {
-                    case ILL_ILLOPC:
-                        LOG_ERROR(log, "Illegal opcode.");
-                        break;
-                    case ILL_ILLOPN:
-                        LOG_ERROR(log, "Illegal operand.");
-                        break;
-                    case ILL_ILLADR:
-                        LOG_ERROR(log, "Illegal addressing mode.");
-                        break;
-                    case ILL_ILLTRP:
-                        LOG_ERROR(log, "Illegal trap.");
-                        break;
-                    case ILL_PRVOPC:
-                        LOG_ERROR(log, "Privileged opcode.");
-                        break;
-                    case ILL_PRVREG:
-                        LOG_ERROR(log, "Privileged register.");
-                        break;
-                    case ILL_COPROC:
-                        LOG_ERROR(log, "Coprocessor error.");
-                        break;
-                    case ILL_BADSTK:
-                        LOG_ERROR(log, "Internal stack error.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
-
-            case SIGFPE:
-            {
-                switch (info.si_code)
-                {
-                    case FPE_INTDIV:
-                        LOG_ERROR(log, "Integer divide by zero.");
-                        break;
-                    case FPE_INTOVF:
-                        LOG_ERROR(log, "Integer overflow.");
-                        break;
-                    case FPE_FLTDIV:
-                        LOG_ERROR(log, "Floating point divide by zero.");
-                        break;
-                    case FPE_FLTOVF:
-                        LOG_ERROR(log, "Floating point overflow.");
-                        break;
-                    case FPE_FLTUND:
-                        LOG_ERROR(log, "Floating point underflow.");
-                        break;
-                    case FPE_FLTRES:
-                        LOG_ERROR(log, "Floating point inexact result.");
-                        break;
-                    case FPE_FLTINV:
-                        LOG_ERROR(log, "Floating point invalid operation.");
-                        break;
-                    case FPE_FLTSUB:
-                        LOG_ERROR(log, "Subscript out of range.");
-                        break;
-                    default:
-                        LOG_ERROR(log, "Unknown si_code.");
-                        break;
-                }
-                break;
-            }
+            LOG_FATAL(log, bare_stacktrace.rdbuf());
         }
 
-        static const int max_frames = 50;
-        void * frames[max_frames];
-
-#if USE_UNWIND
-        int frames_size = backtraceLibUnwind(frames, max_frames, context);
-
-        if (frames_size)
-        {
-#else
-        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
-        /// So at least print the function where the signal happened.
-        if (caller_address)
-        {
-            frames[0] = caller_address;
-            int frames_size = 1;
-#endif
-
-            char ** symbols = backtrace_symbols(frames, frames_size);
-
-            if (!symbols)
-            {
-                if (caller_address)
-                    LOG_ERROR(log, "Caller address: " << caller_address);
-            }
-            else
-            {
-                for (int i = 0; i < frames_size; ++i)
-                {
-                    /// Perform demangling of names. Name is in parentheses, before '+' character.
-
-                    char * name_start = nullptr;
-                    char * name_end = nullptr;
-                    char * demangled_name = nullptr;
-                    int status = 0;
-
-                    if (nullptr != (name_start = strchr(symbols[i], '('))
-                        && nullptr != (name_end = strchr(name_start, '+')))
-                    {
-                        ++name_start;
-                        *name_end = '\0';
-                        demangled_name = abi::__cxa_demangle(name_start, 0, 0, &status);
-                        *name_end = '+';
-                    }
-
-                    std::stringstream res;
-
-                    res << i << ". ";
-
-                    if (nullptr != demangled_name && 0 == status)
-                    {
-                        res.write(symbols[i], name_start - symbols[i]);
-                        res << demangled_name << name_end;
-                    }
-                    else
-                        res << symbols[i];
-
-                    LOG_ERROR(log, res.rdbuf());
-                }
-            }
-        }
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
     }
 };
 
@@ -543,7 +261,7 @@ static void terminate_handler()
         log_message.resize(buf_size - 16);
 
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     DB::writeBinary(getThreadNumber(), out);
@@ -779,7 +497,7 @@ void BaseDaemon::closeFDs()
         for (const auto & fd_str : fds)
         {
             int fd = DB::parse<int>(fd_str);
-            if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
     }
@@ -792,9 +510,38 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
-            if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
     }
+}
+
+namespace
+{
+/// In debug version on Linux, increase oom score so that clickhouse is killed
+/// first, instead of some service. Use a carefully chosen random score of 555:
+/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+/// whatever errors that occur, because it's just a debugging aid and we don't
+/// care if it breaks.
+#if defined(__linux__) && !defined(NDEBUG)
+void debugIncreaseOOMScore()
+{
+    const std::string new_score = "555";
+    try
+    {
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(new_score.c_str(), new_score.size());
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
+                    e.displayText() + "'.");
+        return;
+    }
+    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
+}
+#else
+void debugIncreaseOOMScore() {}
+#endif
 }
 
 void BaseDaemon::initialize(Application & self)
@@ -850,10 +597,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        if (0 != setenv("TZ", config().getString("timezone").data(), 1))
+        const std::string timezone = config().getString("timezone");
+        if (0 != setenv("TZ", timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
+        DateLUT::setDefaultTimezone(timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -899,6 +648,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
+    // sensitive data masking rules are not used here
     buildLoggers(config(), logger());
 
     if (is_daemon)
@@ -926,6 +676,7 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
+    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
@@ -968,7 +719,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE}, faultSignalHandler);
+    /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
+
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
@@ -978,7 +731,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
-
 }
 
 void BaseDaemon::logRevision() const
@@ -1138,4 +890,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-

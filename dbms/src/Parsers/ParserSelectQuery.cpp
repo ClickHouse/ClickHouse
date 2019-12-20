@@ -17,6 +17,8 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
 }
 
 
@@ -41,10 +43,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rollup("ROLLUP");
     ParserKeyword s_cube("CUBE");
     ParserKeyword s_top("TOP");
+    ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
 
     ParserNotEmptyExpressionList exp_list(false);
-    ParserNotEmptyExpressionList exp_list_for_with_clause(false, true); /// Set prefer_alias_to_column_name for each alias.
+    ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
@@ -65,6 +68,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_by_expression_list;
     ASTPtr limit_offset;
     ASTPtr limit_length;
+    ASTPtr top_length;
     ASTPtr settings;
 
     /// WITH expr list
@@ -76,7 +80,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [DISTINCT] [TOP N] expr list
+    /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
     {
         if (!s_select.ignore(pos, expected))
             return false;
@@ -90,16 +94,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (open_bracket.ignore(pos, expected))
             {
-                if (!num.parse(pos, limit_length, expected))
+                if (!num.parse(pos, top_length, expected))
                     return false;
                 if (!close_bracket.ignore(pos, expected))
                     return false;
             }
             else
             {
-                if (!num.parse(pos, limit_length, expected))
+                if (!num.parse(pos, top_length, expected))
                     return false;
             }
+
+            if (s_with_ties.ignore(pos, expected))
+                select_query->limit_with_ties = true;
         }
 
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
@@ -181,12 +188,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    /// This is needed for TOP expression, because it can also use WITH TIES.
+    bool limit_with_ties_occured = false;
+
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
-        if (limit_length)
-            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
-
         ParserToken s_comma(TokenType::Comma);
 
         if (!exp_elem.parse(pos, limit_length, expected))
@@ -197,14 +204,32 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_offset = limit_length;
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                limit_with_ties_occured = true;
+                select_query->limit_with_ties = true;
+            }
         }
         else if (s_offset.ignore(pos, expected))
         {
             if (!exp_elem.parse(pos, limit_offset, expected))
                 return false;
         }
+        else if (s_with_ties.ignore(pos, expected))
+        {
+            limit_with_ties_occured = true;
+            select_query->limit_with_ties = true;
+        }
+
         if (s_by.ignore(pos, expected))
         {
+            /// WITH TIES was used alongside LIMIT BY
+            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+            if (limit_with_ties_occured)
+                throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
             limit_length = nullptr;
@@ -213,12 +238,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!exp_list.parse(pos, limit_by_expression_list, expected))
                 return false;
         }
+
+        if (top_length && limit_length)
+            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
     }
 
-    /// LIMIT length | LIMIT offset, length
+    /// Because TOP n in totally equals LIMIT n
+    if (top_length)
+        limit_length = top_length;
+
+    /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
     if (s_limit.ignore(pos, expected))
     {
-        if (!limit_by_length|| limit_length)
+        if (!limit_by_length || limit_length)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
@@ -237,7 +269,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!exp_elem.parse(pos, limit_offset, expected))
                 return false;
         }
+
+        if (s_with_ties.ignore(pos, expected))
+            select_query->limit_with_ties = true;
     }
+
+    /// WITH TIES was used without ORDER BY
+    if (!order_expression_list && select_query->limit_with_ties)
+        throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))

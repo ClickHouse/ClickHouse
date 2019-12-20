@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ private:
     WrappedPtr data;
     size_t s;
 
-    ColumnConst(const ColumnPtr & data, size_t s);
+    ColumnConst(const ColumnPtr & data, size_t s_);
     ColumnConst(const ColumnConst & src) = default;
 
 public:
@@ -97,6 +98,16 @@ public:
     bool getBool(size_t) const override
     {
         return data->getBool(0);
+    }
+
+    Float64 getFloat64(size_t) const override
+    {
+        return data->getFloat64(0);
+    }
+
+    Float32 getFloat32(size_t) const override
+    {
+        return data->getFloat32(0);
     }
 
     bool isNullAt(size_t) const override
@@ -170,7 +181,7 @@ public:
 
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
-        return data->compareAt(0, 0, *static_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+        return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
@@ -197,8 +208,8 @@ public:
         return false;
     }
 
+    bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
-    bool isColumnConst() const override { return true; }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
@@ -213,6 +224,7 @@ public:
 
     Field getField() const { return getDataColumn()[0]; }
 
+    /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };

@@ -4,7 +4,7 @@
 #define FAIL(msg) do { std::cout << msg; exit(1); } while (0)
 
 
-CityHash_v1_0_2::uint128 referenceHash(const char * data, size_t len)
+static CityHash_v1_0_2::uint128 referenceHash(const char * data, size_t len)
 {
     const size_t block_size = DBMS_DEFAULT_HASHING_BLOCK_SIZE;
     CityHash_v1_0_2::uint128 state(0, 0);

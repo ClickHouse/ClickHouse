@@ -1,17 +1,23 @@
 # Command-line Client
 
-To work from the command line, you can use `clickhouse-client`:
+ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
+
+[Install](../getting_started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ```bash
 $ clickhouse-client
-ClickHouse client version 0.0.26176.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.
+ClickHouse client version 19.17.1.1579 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 19.17.1 revision 54428.
 
 :)
 ```
 
-The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
+Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
+
+```
+ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+```
 
 ## Usage {#cli_usage}
 
@@ -22,14 +28,14 @@ Similar to the HTTP interface, when using the 'query' parameter and sending data
 Example of using the client to insert data:
 
 ```bash
-echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
-cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
 
-cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
@@ -39,9 +45,9 @@ Similarly, to process a large number of queries, you can run 'clickhouse-client'
 
 In interactive mode, you get a command line where you can enter queries.
 
-If 'multiline' is not specified (the default):To run the query, press Enter. The semicolon is not necessary at the end of the query. To enter a multiline query, enter a backslash `\` before the line feed. After you press Enter, you will be asked to enter the next line of the query.
+If 'multiline' is not specified (the default): To run the query, press Enter. The semicolon is not necessary at the end of the query. To enter a multiline query, enter a backslash `\` before the line feed. After you press Enter, you will be asked to enter the next line of the query.
 
-If multiline is specified:To run a query, end it with a semicolon and press Enter. If the semicolon was omitted at the end of the entered line, you will be asked to enter the next line of the query.
+If multiline is specified: To run a query, end it with a semicolon and press Enter. If the semicolon was omitted at the end of the entered line, you will be asked to enter the next line of the query.
 
 Only a single query is run, so everything after the semicolon is ignored.
 
@@ -64,6 +70,31 @@ When processing a query, the client shows:
 You can cancel a long query by pressing Ctrl+C. However, you will still need to wait a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you don't wait and press Ctrl+C a second time, the client will exit.
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
+
+### Queries with Parameters {#cli-queries-with-parameters}
+
+You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
+
+```bash
+$ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+```
+
+#### Query Syntax {#cli-queries-with-parameters-syntax}
+
+Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
+
+```sql
+{<name>:<data type>}
+```
+
+- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+- `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+
+#### Example
+
+```bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+```
 
 ## Configuring {#interfaces_cli_configuration}
 
@@ -93,12 +124,14 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
 - `--secure` – If specified, will connect to server over secure connection.
+- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
 
 ### Configuration Files
 
 `clickhouse-client` uses the first existing file of the following:
 
-- Defined in the `-config-file` parameter.
+- Defined in the `--config-file` parameter.
 - `./clickhouse-client.xml`
 - `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`

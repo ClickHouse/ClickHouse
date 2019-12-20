@@ -1,9 +1,12 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -11,10 +14,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Parsers/ASTAsterisk.h>
-#include <iostream>
-#include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -27,11 +27,14 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
+    const String & database_name_,
     const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_)
+    : table_name(table_name_), database_name(database_name_)
 {
+    setColumns(columns_);
+
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
@@ -63,7 +66,9 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
+    QueryPipeline pipeline;
+    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams(pipeline);
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -101,7 +106,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_name, args.query, args.columns);
+        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
     });
 }
 

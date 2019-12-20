@@ -6,7 +6,7 @@ Use this engine in scenarios when you need to write many tables with a small amo
 
 ## Creating a Table {#table_engines-stripelog-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -60,7 +60,7 @@ ClickHouse uses multiple threads when selecting data. Each thread reads a separa
 ```sql
 SELECT * FROM stripe_log_table
 ```
-```
+```text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
@@ -75,7 +75,7 @@ Sorting the results (ascending order by default):
 ```sql
 SELECT * FROM stripe_log_table ORDER BY timestamp
 ```
-```
+```text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │

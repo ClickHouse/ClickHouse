@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library(common
+add_library (common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -21,8 +21,12 @@ add_library(common
     src/demangle.cpp
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
+    src/sleep.cpp
     src/argsToConfig.cpp
+    src/Pipe.cpp
+    src/phdr_cache.cpp
 
+    include/common/SimpleCache.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h
@@ -42,9 +46,14 @@ add_library(common
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/Pipe.h
     include/common/getThreadNumber.h
+    include/common/sleep.h
+    include/common/SimpleCache.h
+    include/common/phdr_cache.h
 
     include/ext/bit_cast.h
+    include/ext/chrono_io.h
     include/ext/collection_cast.h
     include/ext/enumerate.h
     include/ext/function_traits.h
@@ -54,33 +63,8 @@ add_library(common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
-    include/ext/singleton.h
 
-    ${CONFIG_COMMON}
-)
-
-# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
-
-if (USE_JEMALLOC)
-    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
-    endif ()
-
-    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
-    else ()
-        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
-    endif ()
-elseif (SANITIZE)
-    message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
-    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
-endif ()
+    ${CONFIG_COMMON})
 
 if (USE_INTERNAL_MEMCPY)
     set (MEMCPY_LIBRARIES memcpy)
@@ -111,13 +95,9 @@ target_link_libraries (common
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
-        PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
-    ${MALLOC_LIBRARIES}
-    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

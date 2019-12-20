@@ -14,12 +14,17 @@
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
 
+namespace ErrorCodes
+{
+    extern const int DICTIONARY_ACCESS_DENIED;
+}
 
 namespace
 {
@@ -46,15 +51,15 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block,
-    const Context & context)
+    Block & sample_block_,
+    const Context & context_)
     : log(&Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , command{config.getString(config_prefix + ".command")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , format{config.getString(config_prefix + ".format")}
-    , sample_block{sample_block}
-    , context(context)
+    , sample_block{sample_block_}
+    , context(context_)
 {
 }
 
@@ -217,12 +222,21 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
+        /// Executable dictionaries may execute arbitrary commands.
+        /// It's OK for dictionaries created by administrator from xml-file, but
+        /// maybe dangerous for dictionaries created from DDL-queries.
+        if (check_config)
+            throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+
+        return std::make_unique<ExecutableDictionarySource>(
+            dict_struct, config, config_prefix + ".executable",
+            sample_block, context);
     };
     factory.registerSource("executable", createTableSource);
 }

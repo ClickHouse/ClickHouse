@@ -92,7 +92,17 @@ struct MergeTreePartInfo
 /// addition to the above fields.
 struct DetachedPartInfo : public MergeTreePartInfo
 {
+    String dir_name;
     String prefix;
+
+    String disk;
+
+    /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
+    bool valid_name;
+
+    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
 };
+
+using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
 }

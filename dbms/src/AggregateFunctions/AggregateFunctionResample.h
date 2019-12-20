@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -28,26 +29,26 @@ private:
     size_t step;
 
     size_t total;
-    size_t aod;
-    size_t sod;
+    size_t align_of_data;
+    size_t size_of_data;
 
 public:
     AggregateFunctionResample(
-        AggregateFunctionPtr nested_function,
-        Key begin,
-        Key end,
-        size_t step,
+        AggregateFunctionPtr nested_function_,
+        Key begin_,
+        Key end_,
+        size_t step_,
         const DataTypes & arguments,
         const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
-        , nested_function{nested_function}
+        , nested_function{nested_function_}
         , last_col{arguments.size() - 1}
-        , begin{begin}
-        , end{end}
-        , step{step}
+        , begin{begin_}
+        , end{end_}
+        , step{step_}
         , total{0}
-        , aod{nested_function->alignOfData()}
-        , sod{(nested_function->sizeOfData() + aod - 1) / aod * aod}
+        , align_of_data{nested_function->alignOfData()}
+        , size_of_data{(nested_function->sizeOfData() + align_of_data - 1) / align_of_data * align_of_data}
     {
         // notice: argument types has been checked before
         if (step == 0)
@@ -93,24 +94,24 @@ public:
 
     size_t sizeOfData() const override
     {
-        return total * sod;
+        return total * size_of_data;
     }
 
     size_t alignOfData() const override
     {
-        return aod;
+        return align_of_data;
     }
 
     void create(AggregateDataPtr place) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->create(place + i * sod);
+            nested_function->create(place + i * size_of_data);
     }
 
     void destroy(AggregateDataPtr place) const noexcept override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->destroy(place + i * sod);
+            nested_function->destroy(place + i * size_of_data);
     }
 
     void add(
@@ -131,7 +132,7 @@ public:
 
         size_t pos = (key - begin) / step;
 
-        nested_function->add(place + pos * sod, columns, row_num, arena);
+        nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
     void merge(
@@ -140,7 +141,7 @@ public:
         Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->merge(place + i * sod, rhs + i * sod, arena);
+            nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
     void serialize(
@@ -148,7 +149,7 @@ public:
         WriteBuffer & buf) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->serialize(place + i * sod, buf);
+            nested_function->serialize(place + i * size_of_data, buf);
     }
 
     void deserialize(
@@ -157,7 +158,7 @@ public:
         Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->deserialize(place + i * sod, buf, arena);
+            nested_function->deserialize(place + i * size_of_data, buf, arena);
     }
 
     DataTypePtr getReturnType() const override
@@ -169,11 +170,11 @@ public:
         ConstAggregateDataPtr place,
         IColumn & to) const override
     {
-        auto & col = static_cast<ColumnArray &>(to);
-        auto & col_offsets = static_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+        auto & col = assert_cast<ColumnArray &>(to);
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * sod, col.getData());
+            nested_function->insertResultInto(place + i * size_of_data, col.getData());
 
         col_offsets.getData().push_back(col.getData().size());
     }

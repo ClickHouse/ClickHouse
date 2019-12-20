@@ -2,6 +2,7 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/SetVariants.h>
+#include <Core/SortDescription.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ class DistinctSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns);
+    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSorted"; }
 

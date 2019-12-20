@@ -1,7 +1,6 @@
 #pragma once
 
 #include "DatabaseAndTableWithAlias.h"
-#include "ExpressionAnalyzer.h"
 #include <Parsers/ASTSelectQuery.h>
 #include <map>
 
@@ -21,7 +20,7 @@ class Context;
  *      - Query after optimization :
  *          SELECT id_1, name_1 FROM (SELECT id_1, name_1 FROM table_a WHERE id_1 = 1 UNION ALL SELECT id_2, name_2 FROM table_b WHERE id_2 = 1)
  *              WHERE id_1 = 1
- *  For more details : https://github.com/yandex/ClickHouse/pull/2015#issuecomment-374283452
+ *  For more details : https://github.com/ClickHouse/ClickHouse/pull/2015#issuecomment-374283452
  */
 class PredicateExpressionsOptimizer
 {
@@ -39,15 +38,17 @@ class PredicateExpressionsOptimizer
 
         /// for PredicateExpressionsOptimizer
         const bool enable_optimize_predicate_expression;
+        const bool enable_optimize_predicate_expression_to_final_subquery;
         const bool join_use_nulls;
 
         template<typename T>
-        ExtractedSettings(const T & settings)
-        :   max_ast_depth(settings.max_ast_depth),
-            max_expanded_ast_elements(settings.max_expanded_ast_elements),
-            count_distinct_implementation(settings.count_distinct_implementation),
-            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
-            join_use_nulls(settings.join_use_nulls)
+        ExtractedSettings(const T & settings_)
+        :   max_ast_depth(settings_.max_ast_depth),
+            max_expanded_ast_elements(settings_.max_expanded_ast_elements),
+            count_distinct_implementation(settings_.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings_.enable_optimize_predicate_expression),
+            enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery),
+            join_use_nulls(settings_.join_use_nulls)
         {}
     };
 

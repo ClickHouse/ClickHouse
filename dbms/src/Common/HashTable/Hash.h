@@ -3,6 +3,8 @@
 #include <Core/Types.h>
 #include <Common/UInt128.h>
 
+#include <type_traits>
+
 
 /** Hash functions that are better than the trivial function std::hash.
   *
@@ -57,8 +59,6 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 }
 
 
-template <typename T> struct DefaultHash;
-
 template <typename T>
 inline size_t DefaultHash64(T key)
 {
@@ -72,28 +72,35 @@ inline size_t DefaultHash64(T key)
     return intHash64(u.out);
 }
 
-#define DEFINE_HASH(T) \
-template <> struct DefaultHash<T>\
-{\
-    size_t operator() (T key) const\
-    {\
-        return DefaultHash64<T>(key);\
-    }\
+template <typename T, typename Enable = void>
+struct DefaultHash;
+
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<T>(key);
+    }
 };
 
-DEFINE_HASH(DB::UInt8)
-DEFINE_HASH(DB::UInt16)
-DEFINE_HASH(DB::UInt32)
-DEFINE_HASH(DB::UInt64)
-DEFINE_HASH(DB::Int8)
-DEFINE_HASH(DB::Int16)
-DEFINE_HASH(DB::Int32)
-DEFINE_HASH(DB::Int64)
-DEFINE_HASH(DB::Float32)
-DEFINE_HASH(DB::Float64)
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<typename T::NativeType>(key);
+    }
+};
 
-#undef DEFINE_HASH
-
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) == 16>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<Int64>(key >> 64) ^ DefaultHash64<Int64>(key);
+    }
+};
 
 template <typename T> struct HashCRC32;
 

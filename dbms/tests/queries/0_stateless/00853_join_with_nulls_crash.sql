@@ -44,6 +44,8 @@ ALL RIGHT JOIN
 USING (something)
 ORDER BY count_a DESC;
 
+SET joined_subquery_requires_alias = 0;
+
 SELECT something, count_a, count_b, toTypeName(something) FROM
     ( SELECT something, count() AS count_a FROM table_a GROUP BY something )
 ALL FULL JOIN

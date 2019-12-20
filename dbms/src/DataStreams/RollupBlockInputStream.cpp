@@ -33,26 +33,40 @@ Block RollupBlockInputStream::readImpl()
       * by zeroing out every column one-by-one and re-merging a block.
       */
 
-    if (current_key >= 0)
+    if (!is_data_read)
     {
-        auto & current = rollup_block.getByPosition(keys[current_key]);
-        current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
-        --current_key;
+        BlocksList source_blocks;
+        while (auto block = children[0]->read())
+            source_blocks.push_back(block);
 
-        BlocksList rollup_blocks = { rollup_block };
-        rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
+        if (source_blocks.empty())
+            return {};
 
-        Block finalized = rollup_block;
+        is_data_read = true;
+        if (source_blocks.size() > 1)
+            rollup_block = aggregator.mergeBlocks(source_blocks, false);
+        else
+            rollup_block = std::move(source_blocks.front());
+
+        current_key = keys.size() - 1;
+
+        auto finalized = rollup_block;
         finalizeBlock(finalized);
         return finalized;
     }
 
-    Block block = children[0]->read();
-    current_key = keys.size() - 1;
+    if (current_key < 0)
+        return {};
 
-    rollup_block = block;
-    finalizeBlock(block);
+    auto & current = rollup_block.getByPosition(keys[current_key]);
+    current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
+    --current_key;
 
-    return block;
+    BlocksList rollup_blocks = { rollup_block };
+    rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
+
+    auto finalized = rollup_block;
+    finalizeBlock(finalized);
+    return finalized;
 }
 }

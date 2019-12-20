@@ -7,6 +7,7 @@
 #include <shared_mutex>
 #include <variant>
 #include <vector>
+#include <common/logger_useful.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <pcg_random.hpp>
@@ -24,13 +25,11 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        const size_t size);
-
-    std::exception_ptr getCreationException() const override { return {}; }
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getName() const override { return name; }
 
@@ -49,7 +48,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
-    bool isCached() const override { return true; }
+    bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
@@ -61,8 +60,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -77,6 +74,8 @@ public:
         const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
+    std::exception_ptr getLastException() const override;
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -257,8 +256,9 @@ private:
 
     const std::string name;
     const DictionaryStructure dict_struct;
-    const DictionarySourcePtr source_ptr;
+    mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+    Logger * const log;
 
     mutable std::shared_mutex rw_lock;
 
@@ -278,14 +278,16 @@ private:
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
+    mutable std::exception_ptr last_exception;
+    mutable size_t error_count = 0;
+    mutable std::chrono::system_clock::time_point backoff_end_time;
+
     mutable pcg64 rnd_engine;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
-
-    const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

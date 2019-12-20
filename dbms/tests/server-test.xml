@@ -75,6 +75,20 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>59000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>59000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
         <test_cluster_two_shards_localhost>
             <shard>
                 <replica>
@@ -117,4 +131,10 @@
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
     <format_schema_path>/tmp/clickhouse/data/format_schemas/</format_schema_path>
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
 </yandex>

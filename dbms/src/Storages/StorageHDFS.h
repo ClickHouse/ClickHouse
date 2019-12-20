@@ -15,16 +15,11 @@ namespace DB
  */
 class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:
-    String getName() const override
-    {
-        return "HDFS";
-    }
-
-    String getTableName() const override
-    {
-        return table_name;
-    }
+    String getName() const override { return "HDFS"; }
+    String getTableName() const override { return table_name; }
+    String getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -35,20 +30,25 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
 protected:
     StorageHDFS(const String & uri_,
+        const String & database_name_,
         const String & table_name_,
         const String & format_name_,
         const ColumnsDescription & columns_,
-        Context & context_);
+        const ConstraintsDescription & constraints_,
+        Context & context_,
+        const String & compression_method_);
 
 private:
     String uri;
     String format_name;
     String table_name;
+    String database_name;
     Context & context;
+    String compression_method;
 
     Logger * log = &Logger::get("StorageHDFS");
 };

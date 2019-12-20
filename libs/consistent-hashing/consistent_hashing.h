@@ -15,5 +15,5 @@
  * It requires O(1) memory and cpu to calculate. So, it is faster than classic
  * consistent hashing algos with points on circle.
  */
-std::size_t ConsistentHashing(std::uint64_t x, std::size_t n); // Works good for n < 65536
-std::size_t ConsistentHashing(std::uint64_t lo, std::uint64_t hi, std::size_t n); // Works good for n < 4294967296
+std::size_t ConsistentHashing(std::uint64_t x, std::size_t n); // Works for n <= 32768
+std::size_t ConsistentHashing(std::uint64_t lo, std::uint64_t hi, std::size_t n); // Works for n <= 2^31

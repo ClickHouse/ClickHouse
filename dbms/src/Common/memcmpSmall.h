@@ -3,8 +3,7 @@
 #include <cstdint>
 #include <algorithm>
 
-#ifdef __SSE2__
-#include <emmintrin.h>
+#include <Core/Defines.h>
 
 
 namespace detail
@@ -21,6 +20,15 @@ inline int cmp(T a, T b)
 }
 
 }
+
+
+/// We can process uninitialized memory in the functions below.
+/// Results don't depend on the values inside uninitialized memory but Memory Sanitizer cannot see it.
+/// Disable optimized functions if compile with Memory Sanitizer.
+
+#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
+#include <emmintrin.h>
+
 
 /** All functions works under the following assumptions:
   * - it's possible to read up to 15 excessive bytes after end of 'a' and 'b' region;
@@ -192,7 +200,10 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
-    return memcmp(a, b, std::min(a_size, b_size));
+    if (auto res = memcmp(a, b, std::min(a_size, b_size)))
+        return res;
+    else
+        return detail::cmp(a_size, b_size);
 }
 
 template <typename Char>

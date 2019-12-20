@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -21,8 +21,8 @@ namespace ErrorCodes
 class FunctionArrayPush : public IFunction
 {
 public:
-    FunctionArrayPush(const Context & context, bool push_front, const char * name)
-        : context(context), push_front(push_front), name(name) {}
+    FunctionArrayPush(const Context & context_, bool push_front_, const char * name_)
+        : context(context_), push_front(push_front_), name(name_) {}
 
     String getName() const override { return name; }
 

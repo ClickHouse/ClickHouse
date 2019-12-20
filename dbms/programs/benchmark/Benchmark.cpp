@@ -32,6 +32,8 @@
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
+#include <Common/TerminalSize.h>
+#include <Common/StudentTTest.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -40,6 +42,8 @@
 
 namespace DB
 {
+
+using Ports = std::vector<UInt16>;
 
 namespace ErrorCodes
 {
@@ -50,17 +54,36 @@ namespace ErrorCodes
 class Benchmark : public Poco::Util::Application
 {
 public:
-    Benchmark(unsigned concurrency_, double delay_,
-            const String & host_, UInt16 port_, bool secure_, const String & default_database_,
+    Benchmark(unsigned concurrency_, double delay_, Strings && hosts_, Ports && ports_,
+            bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, const Settings & settings_)
+            const String & json_path_, size_t confidence_, const Settings & settings_)
         :
-        concurrency(concurrency_), delay(delay_), queue(concurrency),
-        connections(concurrency, host_, port_, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
-        randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
+        concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
+        cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
+        confidence(confidence_), json_path(json_path_), settings(settings_),
+        global_context(Context::createGlobal()), pool(concurrency)
     {
+        const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+        size_t connections_cnt = std::max(ports_.size(), hosts_.size());
+
+        connections.reserve(connections_cnt);
+        comparison_info_total.reserve(connections_cnt);
+        comparison_info_per_interval.reserve(connections_cnt);
+
+        for (size_t i = 0; i < connections_cnt; ++i)
+        {
+            UInt16 cur_port = i >= ports_.size() ? 9000 : ports_[i];
+            std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
+
+            connections.emplace_back(std::make_unique<ConnectionPool>(concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
+            comparison_info_total.emplace_back(std::make_shared<Stats>());
+        }
+
+        global_context.makeGlobalContext();
+
         std::cerr << std::fixed << std::setprecision(3);
 
         /// This is needed to receive blocks with columns of AggregateFunction data type
@@ -99,21 +122,29 @@ public:
     }
 
 private:
-    using Query = std::string;
+    using Entry = ConnectionPool::Entry;
+    using EntryPtr = std::shared_ptr<Entry>;
+    using EntryPtrs = std::vector<EntryPtr>;
 
     unsigned concurrency;
     double delay;
 
+    using Query = std::string;
     using Queries = std::vector<Query>;
     Queries queries;
 
     using Queue = ConcurrentBoundedQueue<Query>;
     Queue queue;
 
-    ConnectionPool connections;
+    using ConnectionPoolUniq = std::unique_ptr<ConnectionPool>;
+    using ConnectionPoolUniqs = std::vector<ConnectionPoolUniq>;
+    ConnectionPoolUniqs connections;
+
     bool randomize;
+    bool cumulative;
     size_t max_iterations;
     double max_time;
+    size_t confidence;
     String json_path;
     Settings settings;
     Context global_context;
@@ -126,12 +157,12 @@ private:
 
     struct Stats
     {
-        Stopwatch watch;
         std::atomic<size_t> queries{0};
         size_t read_rows = 0;
         size_t read_bytes = 0;
         size_t result_rows = 0;
         size_t result_bytes = 0;
+        double work_time = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler {1 << 16};
@@ -139,6 +170,7 @@ private:
         void add(double seconds, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
         {
             ++queries;
+            work_time += seconds;
             read_rows += read_rows_inc;
             read_bytes += read_bytes_inc;
             result_rows += result_rows_inc;
@@ -148,8 +180,8 @@ private:
 
         void clear()
         {
-            watch.restart();
             queries = 0;
+            work_time = 0;
             read_rows = 0;
             read_bytes = 0;
             result_rows = 0;
@@ -158,14 +190,17 @@ private:
         }
     };
 
-    Stats info_per_interval;
-    Stats info_total;
+    using MultiStats = std::vector<std::shared_ptr<Stats>>;
+    MultiStats comparison_info_per_interval;
+    MultiStats comparison_info_total;
+    StudentTTest t_test;
+
+    Stopwatch total_watch;
     Stopwatch delay_watch;
 
     std::mutex mutex;
 
     ThreadPool pool;
-
 
     void readQueries()
     {
@@ -211,7 +246,7 @@ private:
                 return false;
             }
 
-            if (max_time > 0 && info_total.watch.elapsedSeconds() >= max_time)
+            if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             {
                 std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
                 return false;
@@ -225,8 +260,8 @@ private:
 
             if (delay > 0 && delay_watch.elapsedSeconds() > delay)
             {
-                printNumberOfQueriesExecuted(info_total.queries);
-                report(info_per_interval);
+                printNumberOfQueriesExecuted(queries_executed);
+                cumulative ? report(comparison_info_total) : report(comparison_info_per_interval);
                 delay_watch.restart();
             }
         }
@@ -239,12 +274,27 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
-        for (size_t i = 0; i < concurrency; ++i)
-            pool.schedule(std::bind(&Benchmark::thread, this,
-                                    connections.get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
+        try
+        {
+            for (size_t i = 0; i < concurrency; ++i)
+            {
+                EntryPtrs connection_entries;
+                connection_entries.reserve(connections.size());
+
+                for (const auto & connection : connections)
+                    connection_entries.emplace_back(std::make_shared<Entry>(
+                            connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
+
+                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+            }
+        }
+        catch (...)
+        {
+            pool.wait();
+            throw;
+        }
 
         InterruptListener interrupt_listener;
-        info_per_interval.watch.restart();
         delay_watch.restart();
 
         /// Push queries into queue
@@ -260,19 +310,23 @@ private:
         }
 
         pool.wait();
-        info_total.watch.stop();
+        total_watch.stop();
 
         if (!json_path.empty())
-            reportJSON(info_total, json_path);
+            reportJSON(comparison_info_total, json_path);
 
-        printNumberOfQueriesExecuted(info_total.queries);
-        report(info_total);
+        printNumberOfQueriesExecuted(queries_executed);
+        report(comparison_info_total);
     }
 
 
-    void thread(ConnectionPool::Entry connection)
+    void thread(EntryPtrs & connection_entries)
     {
         Query query;
+
+        /// Randomly choosing connection index
+        pcg64 generator(randomSeed());
+        std::uniform_int_distribution<size_t> distribution(0, connection_entries.size() - 1);
 
         try
         {
@@ -294,8 +348,7 @@ private:
                     if (shutdown || (max_iterations && queries_executed == max_iterations))
                         return;
                 }
-
-                execute(connection, query);
+                execute(connection_entries, query, distribution(generator));
                 ++queries_executed;
             }
         }
@@ -307,20 +360,19 @@ private:
         }
     }
 
-
-    void execute(ConnectionPool::Entry & connection, Query & query)
+    void execute(EntryPtrs & connection_entries, Query & query, size_t connection_index)
     {
         Stopwatch watch;
         RemoteBlockInputStream stream(
-            *connection,
-            query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
+            *(*connection_entries[connection_index]),
+            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
         stream.readPrefix();
-        while (Block block = stream.read())
-            ;
+        while (Block block = stream.read());
+
         stream.readSuffix();
 
         const BlockStreamProfileInfo & info = stream.getProfileInfo();
@@ -328,33 +380,47 @@ private:
         double seconds = watch.elapsedSeconds();
 
         std::lock_guard lock(mutex);
-        info_per_interval.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        info_total.add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+
+        comparison_info_per_interval[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        comparison_info_total[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        t_test.add(connection_index, seconds);
     }
 
-
-    void report(Stats & info)
+    void report(MultiStats & infos)
     {
         std::lock_guard lock(mutex);
 
-        /// Avoid zeros, nans or exceptions
-        if (0 == info.queries)
-            return;
+        std::cerr << "\n";
+        for (size_t i = 0; i < infos.size(); ++i)
+        {
+            const auto & info = infos[i];
 
-        double seconds = info.watch.elapsedSeconds();
+            /// Avoid zeros, nans or exceptions
+            if (0 == info->queries)
+                return;
 
-        std::cerr
-            << "\n"
-            << "QPS: " << (info.queries / seconds) << ", "
-            << "RPS: " << (info.read_rows / seconds) << ", "
-            << "MiB/s: " << (info.read_bytes / seconds / 1048576) << ", "
-            << "result RPS: " << (info.result_rows / seconds) << ", "
-            << "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
-            << "\n";
+            double seconds = info->work_time / concurrency;
+
+            std::cerr
+                    << connections[i]->getDescription() << ", "
+                    << "queries " << info->queries << ", "
+                    << "QPS: " << (info->queries / seconds) << ", "
+                    << "RPS: " << (info->read_rows / seconds) << ", "
+                    << "MiB/s: " << (info->read_bytes / seconds / 1048576) << ", "
+                    << "result RPS: " << (info->result_rows / seconds) << ", "
+                    << "result MiB/s: " << (info->result_bytes / seconds / 1048576) << "."
+                    << "\n";
+        }
+        std::cerr << "\n";
 
         auto print_percentile = [&](double percent)
         {
-            std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
+            std::cerr << percent << "%\t\t";
+            for (const auto & info : infos)
+            {
+                std::cerr << info->sampler.quantileInterpolated(percent / 100.0) << " sec." << "\t";
+            }
+            std::cerr << "\n";
         };
 
         for (int percent = 0; percent <= 90; percent += 10)
@@ -365,10 +431,16 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        info.clear();
+        std::cerr << "\n" << t_test.compareAndReport(confidence).second << "\n";
+
+        if (!cumulative)
+        {
+            for (auto & info : infos)
+                info->clear();
+        }
     }
 
-    void reportJSON(Stats & info, const std::string & filename)
+    void reportJSON(MultiStats & infos, const std::string & filename)
     {
         WriteBufferFromFile json_out(filename);
 
@@ -379,36 +451,41 @@ private:
             json_out << double_quote << key << ": " << value << (with_comma ? ",\n" : "\n");
         };
 
-        auto print_percentile = [&json_out, &info](auto percent, bool with_comma = true)
+        auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
             json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileInterpolated(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
 
-        json_out << double_quote << "statistics" << ": {\n";
+        for (size_t i = 0; i < infos.size(); ++i)
+        {
+            const auto & info = infos[i];
 
-        double seconds = info.watch.elapsedSeconds();
-        print_key_value("QPS", info.queries / seconds);
-        print_key_value("RPS", info.read_rows / seconds);
-        print_key_value("MiBPS", info.read_bytes / seconds);
-        print_key_value("RPS_result", info.result_rows / seconds);
-        print_key_value("MiBPS_result", info.result_bytes / seconds);
-        print_key_value("num_queries", info.queries.load(), false);
+            json_out << double_quote << connections[i]->getDescription() << ": {\n";
+            json_out << double_quote << "statistics" << ": {\n";
 
-        json_out << "},\n";
+            print_key_value("QPS", info->queries / info->work_time);
+            print_key_value("RPS", info->read_rows / info->work_time);
+            print_key_value("MiBPS", info->read_bytes / info->work_time);
+            print_key_value("RPS_result", info->result_rows / info->work_time);
+            print_key_value("MiBPS_result", info->result_bytes / info->work_time);
+            print_key_value("num_queries", info->queries.load(), false);
 
-        json_out << double_quote << "query_time_percentiles" << ": {\n";
+            json_out << "},\n";
+            json_out << double_quote << "query_time_percentiles" << ": {\n";
 
-        for (int percent = 0; percent <= 90; percent += 10)
-            print_percentile(percent);
+            for (int percent = 0; percent <= 90; percent += 10)
+                print_percentile(*info, percent);
 
-        print_percentile(95);
-        print_percentile(99);
-        print_percentile(99.9);
-        print_percentile(99.99, false);
+            print_percentile(*info, 95);
+            print_percentile(*info, 99);
+            print_percentile(*info, 99.9);
+            print_percentile(*info, 99.99, false);
 
-        json_out << "}\n";
+            json_out << "}\n";
+            json_out << (i == infos.size() - 1 ? "}\n" : "},\n");
+        }
 
         json_out << "}\n";
     }
@@ -427,6 +504,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
@@ -437,7 +515,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     {
         using boost::program_options::value;
 
-        boost::program_options::options_description desc("Allowed options");
+        boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
@@ -447,13 +525,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
-            ("host,h",        value<std::string>()->default_value("localhost"), "")
-            ("port",          value<UInt16>()->default_value(9000),             "")
+            ("host,h",        value<Strings>()->multitoken(),                   "")
+            ("port,p",        value<Ports>()->multitoken(),                     "")
+            ("cumulative",                                                      "prints cumulative data instead of data per interval")
             ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
+            ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
         ;
 
         Settings settings;
@@ -473,12 +553,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         print_stacktrace = options.count("stacktrace");
 
         UseSSL use_ssl;
+        Ports ports = options.count("port") ? options["port"].as<Ports>() : Ports({9000});
+        Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
-            options["host"].as<std::string>(),
-            options["port"].as<UInt16>(),
+            std::move(hosts),
+            std::move(ports),
+            options.count("cumulative"),
             options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
@@ -488,6 +571,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["iterations"].as<size_t>(),
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
+            options["confidence"].as<size_t>(),
             settings);
         return benchmark.run();
     }

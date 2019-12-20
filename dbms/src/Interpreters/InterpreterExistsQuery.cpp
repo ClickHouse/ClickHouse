@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 BlockIO InterpreterExistsQuery::execute()
 {
     BlockIO res;
@@ -32,11 +37,24 @@ Block InterpreterExistsQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
-    const auto & ast = query_ptr->as<ASTExistsQuery &>();
-    bool res = ast.temporary ? context.isExternalTableExist(ast.table) : context.isTableExist(ast.database, ast.table);
+    ASTQueryWithTableAndOutput * exists_query;
+    bool result = false;
+    if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
+    {
+        if (exists_query->temporary)
+            result = context.isExternalTableExist(exists_query->table);
+        else
+            result = context.isTableExist(exists_query->database, exists_query->table);
+    }
+    else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
+    {
+        if (exists_query->temporary)
+            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+        result = context.isDictionaryExists(exists_query->database, exists_query->table);
+    }
 
     return std::make_shared<OneBlockInputStream>(Block{{
-        ColumnUInt8::create(1, res),
+        ColumnUInt8::create(1, result),
         std::make_shared<DataTypeUInt8>(),
         "result" }});
 }

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
 
@@ -47,26 +49,44 @@ struct SortCursorImpl
         reset(block);
     }
 
+    SortCursorImpl(const Columns & columns, const SortDescription & desc_, size_t order_ = 0)
+        : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
+    {
+        for (auto & column_desc : desc)
+        {
+            if (!column_desc.column_name.empty())
+                throw Exception("SortDesctiption should contain column position if SortCursor was used without header.",
+                        ErrorCodes::LOGICAL_ERROR);
+        }
+        reset(columns, {});
+    }
+
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
     void reset(const Block & block)
     {
+        reset(block.getColumns(), block);
+    }
+
+    /// Set the cursor to the beginning of the new block.
+    void reset(const Columns & columns, const Block & block)
+    {
         all_columns.clear();
         sort_columns.clear();
 
-        size_t num_columns = block.columns();
+        size_t num_columns = columns.size();
 
         for (size_t j = 0; j < num_columns; ++j)
-            all_columns.push_back(block.safeGetByPosition(j).column.get());
+            all_columns.push_back(columns[j].get());
 
         for (size_t j = 0, size = desc.size(); j < size; ++j)
         {
-            size_t column_number = !desc[j].column_name.empty()
-                ? block.getPositionByName(desc[j].column_name)
-                : desc[j].column_number;
-
-            sort_columns.push_back(block.safeGetByPosition(column_number).column.get());
+            auto & column_desc = desc[j];
+            size_t column_number = !column_desc.column_name.empty()
+                                   ? block.getPositionByName(column_desc.column_name)
+                                   : column_desc.column_number;
+            sort_columns.push_back(columns[column_number].get());
 
             need_collation[j] = desc[j].collator != nullptr && typeid_cast<const ColumnString *>(sort_columns.back());    /// TODO Nullable(String)
             has_collation |= need_collation[j];
@@ -148,7 +168,7 @@ struct SortCursorWithCollation
             int res;
             if (impl->need_collation[i])
             {
-                const ColumnString & column_string = static_cast<const ColumnString &>(*impl->sort_columns[i]);
+                const ColumnString & column_string = assert_cast<const ColumnString &>(*impl->sort_columns[i]);
                 res = column_string.compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
             }
             else

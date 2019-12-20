@@ -2,11 +2,7 @@
 #if USE_MYSQL
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -18,10 +14,10 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
-#include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include "registerTableFunctions.h"
 
 #include <mysqlxx/Pool.h>
 
@@ -37,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -54,8 +50,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
@@ -74,7 +70,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     /// 3306 is the default MySQL port number
     auto parsed_host_port = parseAddress(host_port, 3306);
 
-    mysqlxx::Pool pool(database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
+    mysqlxx::Pool pool(remote_database_name, parsed_host_port.first, user_name, password, parsed_host_port.second);
 
     /// Determine table definition by running a query to INFORMATION_SCHEMA.
 
@@ -95,8 +91,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
             " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
             " CHARACTER_MAXIMUM_LENGTH AS length"
         " FROM INFORMATION_SCHEMA.COLUMNS"
-        " WHERE TABLE_SCHEMA = " << quote << database_name
-        << " AND TABLE_NAME = " << quote << table_name
+        " WHERE TABLE_SCHEMA = " << quote << remote_database_name
+        << " AND TABLE_NAME = " << quote << remote_table_name
         << " ORDER BY ORDINAL_POSITION";
 
     NamesAndTypesList columns;
@@ -116,16 +112,18 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     }
 
     if (columns.empty())
-        throw Exception("MySQL table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
+        getDatabaseName(),
         table_name,
         std::move(pool),
-        database_name,
-        table_name,
+        remote_database_name,
+        remote_table_name,
         replace_query,
         on_duplicate_clause,
         ColumnsDescription{columns},
+        ConstraintsDescription{},
         context);
 
     res->startup();

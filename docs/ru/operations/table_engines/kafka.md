@@ -10,7 +10,7 @@ Kafka позволяет:
 
 ## Создание таблицы {#table_engine-kafka-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -25,7 +25,7 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
-    [kafka_skip_broken_messages = <0|1>]
+    [kafka_skip_broken_messages = N]
 ```
 
 Обязательные параметры:
@@ -40,7 +40,7 @@ SETTINGS
 - `kafka_row_delimiter` – символ-разделитель записей (строк), которым завершается сообщение.
 - `kafka_schema` – опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
 - `kafka_num_consumers` – количество потребителей (consumer) на таблицу. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
-- `kafka_skip_broken_messages` – режим обработки сообщений Kafka. Если `kafka_skip_broken_messages = 1`, то движок отбрасывает сообщения Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке).
+- `kafka_skip_broken_messages` – максимальное количество некорректных сообщений в блоке. Если `kafka_skip_broken_messages = N`, то движок отбрасывает `N` сообщений Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
 
 Примеры
 
@@ -77,7 +77,7 @@ SETTINGS
 !!! attention
     Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
 
-```
+```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
@@ -97,6 +97,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 3. Создайте материализованное представление, которое преобразует данные от движка и помещает их в ранее созданную таблицу.
 
 Когда к движку присоединяется материализованное представление (`MATERIALIZED VIEW`), оно начинает в фоновом режиме собирать данные. Это позволяет непрерывно получать сообщения от Kafka и преобразовывать их в необходимый формат с помощью `SELECT`.
+Материализованных представлений у одной kafka таблицы может быть сколько угодно, они не считывают данные из таблицы kafka непосредственно, а получают новые записи (блоками), таким образом можно писать в несколько таблиц с разным уровнем детализации (с группировкой - агрегацией и без).
 
 Пример:
 
@@ -124,7 +125,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
-```
+```sql
   DETACH TABLE consumer;
   ATTACH MATERIALIZED VIEW consumer;
 ```
@@ -151,4 +152,17 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
 
+## Виртуальные столбцы
+
+- `_topic` — топик Kafka.
+- `_key` — ключ сообщения.
+- `_offset` — оффсет сообщения.
+- `_timestamp` — временная метка сообщения.
+- `_partition` — секция топика Kafka.
+
+**Смотрите также**
+
+- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->
+

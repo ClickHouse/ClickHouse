@@ -1,90 +1,327 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <malloc.h>
-#endif
-#include <execinfo.h>
-#include <string.h>
-
-#include <sstream>
-
 #include <Common/StackTrace.h>
-#include <Common/SimpleCache.h>
 
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
+#include <Common/SymbolIndex.h>
+#include <Common/config.h>
+#include <common/SimpleCache.h>
 #include <common/demangle.h>
+#include <Core/Defines.h>
 
+#include <cstring>
+#include <filesystem>
+#include <sstream>
+#include <unordered_map>
 
-/// Arcadia compatibility DEVTOOLS-3976
-#if defined(BACKTRACE_INCLUDE)
-#include BACKTRACE_INCLUDE
+#if USE_UNWIND
+#   include <libunwind.h>
 #endif
-#if !defined(BACKTRACE_FUNC)
-    #define BACKTRACE_FUNC backtrace
+
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
+{
+    std::stringstream error;
+    switch (sig)
+    {
+        case SIGSEGV:
+        {
+            /// Print info about address and reason.
+            if (nullptr == info.si_addr)
+                error << "Address: NULL pointer.";
+            else
+                error << "Address: " << info.si_addr;
+
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
+            auto err_mask = context.uc_mcontext.gregs[REG_ERR];
+            if ((err_mask & 0x02))
+                error << " Access: write.";
+            else
+                error << " Access: read.";
+#else
+            UNUSED(context);
 #endif
+
+            switch (info.si_code)
+            {
+                case SEGV_ACCERR:
+                    error << " Attempted access has violated the permissions assigned to the memory area.";
+                    break;
+                case SEGV_MAPERR:
+                    error << " Address not mapped to object.";
+                    break;
+                default:
+                    error << " Unknown si_code.";
+                    break;
+            }
+            break;
+        }
+
+        case SIGBUS:
+        {
+            switch (info.si_code)
+            {
+                case BUS_ADRALN:
+                    error << "Invalid address alignment.";
+                    break;
+                case BUS_ADRERR:
+                    error << "Non-existant physical address.";
+                    break;
+                case BUS_OBJERR:
+                    error << "Object specific hardware error.";
+                    break;
+
+                    // Linux specific
+#if defined(BUS_MCEERR_AR)
+                case BUS_MCEERR_AR:
+                    error << "Hardware memory error: action required.";
+                    break;
+#endif
+#if defined(BUS_MCEERR_AO)
+                case BUS_MCEERR_AO:
+                    error << "Hardware memory error: action optional.";
+                    break;
+#endif
+
+                default:
+                    error << "Unknown si_code.";
+                    break;
+            }
+            break;
+        }
+
+        case SIGILL:
+        {
+            switch (info.si_code)
+            {
+                case ILL_ILLOPC:
+                    error << "Illegal opcode.";
+                    break;
+                case ILL_ILLOPN:
+                    error << "Illegal operand.";
+                    break;
+                case ILL_ILLADR:
+                    error << "Illegal addressing mode.";
+                    break;
+                case ILL_ILLTRP:
+                    error << "Illegal trap.";
+                    break;
+                case ILL_PRVOPC:
+                    error << "Privileged opcode.";
+                    break;
+                case ILL_PRVREG:
+                    error << "Privileged register.";
+                    break;
+                case ILL_COPROC:
+                    error << "Coprocessor error.";
+                    break;
+                case ILL_BADSTK:
+                    error << "Internal stack error.";
+                    break;
+                default:
+                    error << "Unknown si_code.";
+                    break;
+            }
+            break;
+        }
+
+        case SIGFPE:
+        {
+            switch (info.si_code)
+            {
+                case FPE_INTDIV:
+                    error << "Integer divide by zero.";
+                    break;
+                case FPE_INTOVF:
+                    error << "Integer overflow.";
+                    break;
+                case FPE_FLTDIV:
+                    error << "Floating point divide by zero.";
+                    break;
+                case FPE_FLTOVF:
+                    error << "Floating point overflow.";
+                    break;
+                case FPE_FLTUND:
+                    error << "Floating point underflow.";
+                    break;
+                case FPE_FLTRES:
+                    error << "Floating point inexact result.";
+                    break;
+                case FPE_FLTINV:
+                    error << "Floating point invalid operation.";
+                    break;
+                case FPE_FLTSUB:
+                    error << "Subscript out of range.";
+                    break;
+                default:
+                    error << "Unknown si_code.";
+                    break;
+            }
+            break;
+        }
+
+        case SIGTSTP:
+        {
+            error << "This is a signal used for debugging purposes by the user.";
+            break;
+        }
+    }
+
+    return error.str();
+}
+
+static void * getCallerAddress(const ucontext_t & context)
+{
+#if defined(__x86_64__)
+    /// Get the address at the time the signal was raised from the RIP (x86-64)
+#if defined(__FreeBSD__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
+#elif defined(__APPLE__)
+    return reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
+#else
+    return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
+#endif
+#elif defined(__aarch64__)
+    return reinterpret_cast<void *>(context.uc_mcontext.pc);
+#else
+    return nullptr;
+#endif
+}
 
 StackTrace::StackTrace()
 {
-    frames_size = BACKTRACE_FUNC(frames.data(), STACK_TRACE_MAX_DEPTH);
-
-    for (size_t i = frames_size; i < STACK_TRACE_MAX_DEPTH; ++i)
-        frames[i] = nullptr;
+    tryCapture();
 }
 
-
-std::string StackTrace::toStringImpl(const Frames & frames, size_t frames_size)
+StackTrace::StackTrace(const ucontext_t & signal_context)
 {
-    char ** symbols = backtrace_symbols(frames.data(), frames_size);
-    if (!symbols)
-        return "Cannot get symbols for stack trace.\n";
+    tryCapture();
 
-    std::stringstream res;
-    try
+    void * caller_address = getCallerAddress(signal_context);
+
+    if (size == 0 && caller_address)
     {
-        for (size_t i = 0, size = frames_size; i < size; ++i)
+        frames[0] = caller_address;
+        size = 1;
+    }
+    else
+    {
+        /// Skip excessive stack frames that we have created while finding stack trace.
+
+        for (size_t i = 0; i < size; ++i)
         {
-            /// We do "demangling" of names. The name is in parenthesis, before the '+' character.
-
-            char * name_start = nullptr;
-            char * name_end = nullptr;
-            std::string demangled_name;
-            int status = 0;
-
-            if (nullptr != (name_start = strchr(symbols[i], '('))
-                && nullptr != (name_end = strchr(name_start, '+')))
+            if (frames[i] == caller_address)
             {
-                ++name_start;
-                *name_end = '\0';
-                demangled_name = demangle(name_start, status);
-                *name_end = '+';
+                offset = i;
+                break;
             }
-
-            res << i << ". ";
-
-            if (0 == status && name_start && name_end)
-            {
-                res.write(symbols[i], name_start - symbols[i]);
-                res << demangled_name << name_end;
-            }
-            else
-                res << symbols[i];
-
-            res << std::endl;
         }
     }
-    catch (...)
-    {
-        free(symbols);
-        throw;
-    }
-
-    free(symbols);
-    return res.str();
 }
 
+StackTrace::StackTrace(NoCapture)
+{
+}
+
+void StackTrace::tryCapture()
+{
+    size = 0;
+#if USE_UNWIND
+    size = unw_backtrace(frames.data(), capacity);
+#endif
+}
+
+size_t StackTrace::getSize() const
+{
+    return size;
+}
+
+size_t StackTrace::getOffset() const
+{
+    return offset;
+}
+
+const StackTrace::Frames & StackTrace::getFrames() const
+{
+    return frames;
+}
+
+
+static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
+{
+    if (size == 0)
+        return callback("<Empty trace>");
+
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+
+        out << i << ". " << addr << " ";
+        auto symbol = symbol_index.findSymbol(addr);
+        if (symbol)
+        {
+            int status = 0;
+            out << demangle(symbol->name, status);
+        }
+        else
+            out << "?";
+
+        out << " ";
+
+        if (auto object = symbol_index.findObject(addr))
+        {
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line;
+                else
+                    out << object->name;
+            }
+        }
+        else
+            out << "?";
+
+        callback(out.str());
+        out.str({});
+    }
+#else
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+        out << i << ". " << addr;
+
+        callback(out.str());
+        out.str({});
+    }
+#endif
+}
+
+static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+{
+    std::stringstream out;
+    toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
+    return out.str();
+}
+
+void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
+{
+    toStringEveryLineImpl(frames, offset, size, std::move(callback));
+}
 
 std::string StackTrace::toString() const
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
-    static SimpleCache<decltype(StackTrace::toStringImpl), &StackTrace::toStringImpl> func_cached;
-    return func_cached(frames, frames_size);
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frames, offset, size);
 }

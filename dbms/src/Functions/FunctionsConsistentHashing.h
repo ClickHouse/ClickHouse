@@ -4,12 +4,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <common/likely.h>
-
-#include <sumbur.h>
-#include <consistent_hashing.h>
 
 
 namespace DB
@@ -21,66 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
-
-
-/// An O(1) time and space consistent hash algorithm by Konstantin Oblakov
-struct YandexConsistentHashImpl
-{
-    static constexpr auto name = "yandexConsistentHash";
-
-    using HashType = UInt64;
-    /// Actually it supports UInt64, but it is effective only if n < 65536
-    using ResultType = UInt32;
-    using BucketsCountType = ResultType;
-
-    static inline ResultType apply(UInt64 hash, BucketsCountType n)
-    {
-        return ConsistentHashing(hash, n);
-    }
-};
-
-
-/// Code from https://arxiv.org/pdf/1406.2294.pdf
-static inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
-{
-    int64_t b = -1, j = 0;
-    while (j < num_buckets)
-    {
-        b = j;
-        key = key * 2862933555777941757ULL + 1;
-        j = static_cast<int64_t>((b + 1) * (double(1LL << 31) / double((key >> 33) + 1)));
-    }
-    return static_cast<int32_t>(b);
-}
-
-struct JumpConsistentHashImpl
-{
-    static constexpr auto name = "jumpConsistentHash";
-
-    using HashType = UInt64;
-    using ResultType = Int32;
-    using BucketsCountType = ResultType;
-
-    static inline ResultType apply(UInt64 hash, BucketsCountType n)
-    {
-        return JumpConsistentHash(hash, n);
-    }
-};
-
-
-struct SumburConsistentHashImpl
-{
-    static constexpr auto name = "sumburConsistentHash";
-
-    using HashType = UInt32;
-    using ResultType = UInt16;
-    using BucketsCountType = ResultType;
-
-    static inline ResultType apply(HashType hash, BucketsCountType n)
-    {
-        return static_cast<ResultType>(sumburConsistentHash(hash, n));
-    }
-};
 
 
 template <typename Impl>
@@ -133,7 +70,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (block.getByPosition(arguments[1]).column->isColumnConst())
+        if (isColumnConst(*block.getByPosition(arguments[1]).column))
             executeConstBuckets(block, arguments, result);
         else
             throw Exception(
@@ -143,8 +80,7 @@ public:
 private:
     using HashType = typename Impl::HashType;
     using ResultType = typename Impl::ResultType;
-    using BucketsType = typename Impl::BucketsCountType;
-    static constexpr auto max_buckets = static_cast<UInt64>(std::numeric_limits<BucketsType>::max());
+    using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
     inline BucketsType checkBucketsRange(T buckets)
@@ -153,10 +89,9 @@ private:
             throw Exception(
                 "The second argument of function " + getName() + " (number of buckets) must be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if (unlikely(static_cast<UInt64>(buckets) > max_buckets))
-            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) is not fit to "
-                    + DataTypeNumber<BucketsType>().getName(),
-                ErrorCodes::BAD_ARGUMENTS);
+        if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
+            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) must not be greater than "
+                    + std::to_string(Impl::max_buckets), ErrorCodes::BAD_ARGUMENTS);
 
         return static_cast<BucketsType>(buckets);
     }
@@ -219,11 +154,5 @@ private:
             vec_result[i] = Impl::apply(static_cast<HashType>(vec_hash[i]), num_buckets);
     }
 };
-
-
-using FunctionYandexConsistentHash = FunctionConsistentHashImpl<YandexConsistentHashImpl>;
-using FunctionJumpConsistentHash = FunctionConsistentHashImpl<JumpConsistentHashImpl>;
-using FunctionSumburConsistentHash = FunctionConsistentHashImpl<SumburConsistentHashImpl>;
-
 
 }

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -110,7 +111,7 @@ public:
                 block.getByPosition(result).column = array_column;
                 return;
             }
-            else if (length_column->isColumnConst())
+            else if (isColumnConst(*length_column))
                 GatherUtils::sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
             else
             {
@@ -118,7 +119,7 @@ public:
                 GatherUtils::sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
             }
         }
-        else if (offset_column->isColumnConst())
+        else if (isColumnConst(*offset_column))
         {
             ssize_t offset = offset_column->getUInt(0);
 
@@ -129,7 +130,7 @@ public:
                 else
                     GatherUtils::sliceFromRightConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(-offset));
             }
-            else if (length_column->isColumnConst())
+            else if (isColumnConst(*length_column))
             {
                 ssize_t length = length_column->getInt(0);
                 if (offset > 0)

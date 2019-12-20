@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -157,14 +157,12 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (data_columns[i]->isColumnNullable())
+        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
         {
-            const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-
             if (num_arguments == 1)
-                data_columns[i] = &nullable_col.getNestedColumn();
+                data_columns[i] = &nullable_col->getNestedColumn();
 
-            null_map = &nullable_col.getNullMapData();
+            null_map = &nullable_col->getNullMapData();
             break;
         }
     }

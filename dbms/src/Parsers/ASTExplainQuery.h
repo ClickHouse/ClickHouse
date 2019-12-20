@@ -26,9 +26,10 @@ public:
     ASTPtr clone() const override { return std::make_shared<ASTExplainQuery>(*this); }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "") << " ";
+        children.at(0)->formatImpl(settings, state, frame);
     }
 
 private:
@@ -38,8 +39,8 @@ private:
     {
         switch (kind)
         {
-            case ParsedAST: return "ParsedAST";
-            case AnalyzedSyntax: return "AnalyzedSyntax";
+            case ParsedAST: return "AST";
+            case AnalyzedSyntax: return "ANALYZE";
         }
 
         __builtin_unreachable();

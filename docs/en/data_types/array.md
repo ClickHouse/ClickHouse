@@ -8,42 +8,34 @@ Array of `T`-type items.
 
 You can use a function to create an array:
 
-```
+```sql
 array(T)
 ```
 
 You can also use square brackets.
 
-```
+```sql
 []
 ```
 
 Example of creating an array:
 
+```sql
+SELECT array(1, 2) AS x, toTypeName(x)
 ```
-:) SELECT array(1, 2) AS x, toTypeName(x)
-
-SELECT
-    [1, 2] AS x,
-    toTypeName(x)
-
+```text
 ┌─x─────┬─toTypeName(array(1, 2))─┐
 │ [1,2] │ Array(UInt8)            │
 └───────┴─────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
-
-:) SELECT [1, 2] AS x, toTypeName(x)
-
-SELECT
-    [1, 2] AS x,
-    toTypeName(x)
-
+```
+```sql
+SELECT [1, 2] AS x, toTypeName(x)
+```
+```text
 ┌─x─────┬─toTypeName([1, 2])─┐
 │ [1,2] │ Array(UInt8)       │
 └───────┴────────────────────┘
 
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 ## Working with data types
@@ -54,31 +46,23 @@ If ClickHouse couldn't determine the data type, it will generate an exception. F
 
 Examples of automatic data type detection:
 
-```
-:) SELECT array(1, 2, NULL) AS x, toTypeName(x)
-
-SELECT
-    [1, 2, NULL] AS x,
-    toTypeName(x)
-
+```sql
+SELECT array(1, 2, NULL) AS x, toTypeName(x)
+```    
+```text
 ┌─x──────────┬─toTypeName(array(1, 2, NULL))─┐
 │ [1,2,NULL] │ Array(Nullable(UInt8))        │
 └────────────┴───────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 If you try to create an array of incompatible data types, ClickHouse throws an exception:
 
+```sql
+SELECT array(1, 'a')
 ```
-:) SELECT array(1, 'a')
-
-SELECT [1, 'a']
-
+```text
 Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
-
-0 rows in set. Elapsed: 0.246 sec.
 ```
 
 

@@ -15,13 +15,7 @@
 #include <vector>
 #include <typeinfo>
 #include <iostream>
-
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wundef"
-#endif
-
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 using namespace DB;

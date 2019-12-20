@@ -5,13 +5,13 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
-#include <ext/range.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "readInvalidateQuery.h"
 #include "writeParenthesisedString.h"
+#include "DictionaryFactory.h"
 
 
 namespace DB
@@ -51,8 +51,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const Block & sample_block,
-    Context & context_)
+    const Block & sample_block_,
+    const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -66,7 +66,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
     , context(context_)
     , is_local{isLocalAddress({host, port}, context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
@@ -74,6 +74,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
+    /// Processors are not supported here yet.
+    context.getSettingsRef().experimental_use_processors = false;
 }
 
 
@@ -113,8 +115,7 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        std::string str_time("0000-00-00 00:00:00"); ///for initial load
-        return query_builder.composeUpdateQuery(update_field, str_time);
+        return query_builder.composeLoadAllQuery();
     }
 }
 
@@ -124,7 +125,11 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       *    the necessity of holding process_list_element shared pointer.
       */
     if (is_local)
-        return executeQuery(load_all_query, context, true).in;
+    {
+        BlockIO res = executeQuery(load_all_query, context, true);
+        /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
+        return res.in;
+    }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
 }
 
@@ -205,7 +210,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool /* check_config */) -> DictionarySourcePtr
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };

@@ -4,11 +4,11 @@
 #include <regex>
 #include <thread>
 #include <memory>
+#include <filesystem>
 
 #include <port/unistd.h>
 #include <sys/stat.h>
 
-#include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
 #include <Poco/AutoPtr.h>
@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
+#include <Common/TerminalSize.h>
 
 #include "TestStopConditions.h"
 #include "TestStats.h"
@@ -36,7 +37,7 @@
 #include "ReportBuilder.h"
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 namespace DB
@@ -89,6 +90,7 @@ public:
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
+        global_context.makeGlobalContext();
         global_context.getSettingsRef().copyChangesFrom(cmd_settings);
         if (input_files.size() < 1)
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
@@ -259,15 +261,12 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         if (input_files.empty())
             throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
-        else
-            LOG_INFO(log, "Found " << input_files.size() << " files");
     }
     else
     {
         input_files = options["input-files"].as<std::vector<std::string>>();
-        LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
-        std::vector<std::string> collected_files;
 
+        std::vector<std::string> collected_files;
         for (const std::string & filename : input_files)
         {
             fs::path file(filename);
@@ -289,11 +288,13 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         input_files = std::move(collected_files);
     }
+
+    LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
     std::sort(input_files.begin(), input_files.end());
     return input_files;
 }
 
-std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
+static std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
@@ -318,14 +319,16 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
     return result;
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
     using po::value;
     using Strings = DB::Strings;
 
-
-    po::options_description desc("Allowed options");
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")

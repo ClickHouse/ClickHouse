@@ -1,7 +1,8 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -18,7 +19,7 @@ public:
         return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase());
     }
 
-    explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name}
+    explicit FunctionCurrentDatabase(const String & db_name_) : db_name{db_name_}
     {
     }
 

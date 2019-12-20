@@ -1,6 +1,7 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -38,7 +39,11 @@ namespace DB
 
         void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(0));
+            /// This function is mainly used in query analysis instead of "in" functions
+            /// in the case when only header is needed and set for in is not calculated.
+            /// Because of that function must return the same column type as "in" function, which is ColumnUInt8.
+            auto res = ColumnUInt8::create(input_rows_count, 0);
+            block.getByPosition(result).column = std::move(res);
         }
     };
 

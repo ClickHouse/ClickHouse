@@ -173,6 +173,12 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
         s.insert(rb.position(), end);
 }
 
+template <>
+inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
+{
+    s.insert(rb.position(), end);
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -187,6 +193,25 @@ void readStringInto(Vector & s, ReadBuffer & buf)
             return;
     }
 }
+
+template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            break;
+    }
+    buf.ignore();
+}
+
+template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
+template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 
 void readString(String & s, ReadBuffer & buf)
 {
@@ -1026,6 +1051,37 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
             continue;
         }
     }
+}
+
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+{
+    assert(current >= in.position());
+    assert(current <= in.buffer().end());
+
+    const int old_bytes = memory.size();
+    const int additional_bytes = current - in.position();
+    const int new_bytes = old_bytes + additional_bytes;
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
+        return;
+    memory.resize(new_bytes);
+    memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
+    in.position() = current;
+}
+
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+{
+    assert(current <= in.buffer().end());
+
+    if (current < in.buffer().end())
+        return true;
+
+    saveUpToPosition(in, memory, current);
+    bool loaded_more = !in.eof();
+    assert(in.position() == in.buffer().begin());
+    current = in.position();
+    return loaded_more;
 }
 
 }

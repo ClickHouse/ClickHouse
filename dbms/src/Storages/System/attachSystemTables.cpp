@@ -25,6 +25,8 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
+#include <Storages/System/StorageSystemQuotas.h>
+#include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
@@ -34,6 +36,8 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#include <Storages/System/StorageSystemDisks.h>
+#include <Storages/System/StorageSystemStoragePolicies.h>
 
 
 namespace DB
@@ -50,6 +54,8 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("functions", StorageSystemFunctions::create("functions"));
     system_database.attachTable("events", StorageSystemEvents::create("events"));
     system_database.attachTable("settings", StorageSystemSettings::create("settings"));
+    system_database.attachTable("quotas", StorageSystemQuotas::create("quotas"));
+    system_database.attachTable("quota_usage", StorageSystemQuotaUsage::create("quota_usage"));
     system_database.attachTable("merge_tree_settings", SystemMergeTreeSettings::create("merge_tree_settings"));
     system_database.attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
     system_database.attachTable("formats", StorageSystemFormats::create("formats"));
@@ -67,6 +73,8 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     system_database.attachTable("parts", StorageSystemParts::create("parts"));
     system_database.attachTable("detached_parts", createDetachedPartsTable());
     system_database.attachTable("parts_columns", StorageSystemPartsColumns::create("parts_columns"));
+    system_database.attachTable("disks", StorageSystemDisks::create("disks"));
+    system_database.attachTable("storage_policies", StorageSystemStoragePolicies::create("storage_policies"));
     system_database.attachTable("processes", StorageSystemProcesses::create("processes"));
     system_database.attachTable("metrics", StorageSystemMetrics::create("metrics"));
     system_database.attachTable("merges", StorageSystemMerges::create("merges"));

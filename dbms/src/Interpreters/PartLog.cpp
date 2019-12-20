@@ -15,19 +15,19 @@
 namespace DB
 {
 
-template <> struct NearestFieldTypeImpl<PartLogElement::Type> { using Type = UInt64; };
-
 Block PartLogElement::createBlock()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"NEW_PART",       static_cast<Int8>(NEW_PART)},
-            {"MERGE_PARTS",    static_cast<Int8>(MERGE_PARTS)},
-            {"DOWNLOAD_PART",  static_cast<Int8>(DOWNLOAD_PART)},
-            {"REMOVE_PART",    static_cast<Int8>(REMOVE_PART)},
-            {"MUTATE_PART",    static_cast<Int8>(MUTATE_PART)},
-        });
+            {"NewPart",       static_cast<Int8>(NEW_PART)},
+            {"MergeParts",    static_cast<Int8>(MERGE_PARTS)},
+            {"DownloadPart",  static_cast<Int8>(DOWNLOAD_PART)},
+            {"RemovePart",    static_cast<Int8>(REMOVE_PART)},
+            {"MutatePart",    static_cast<Int8>(MUTATE_PART)},
+            {"MovePart",      static_cast<Int8>(MOVE_PART)},
+        }
+    );
 
     return
     {
@@ -40,6 +40,7 @@ Block PartLogElement::createBlock()
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "table"},
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "part_name"},
         {ColumnString::create(), std::make_shared<DataTypeString>(),   "partition_id"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "path_on_disk"},
 
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "rows"},
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "size_in_bytes"}, // On disk
@@ -71,6 +72,7 @@ void PartLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(table_name);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
+    columns[i++]->insert(path_on_disk);
 
     columns[i++]->insert(rows);
     columns[i++]->insert(bytes_compressed_on_disk);
@@ -124,6 +126,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
             elem.table_name = part->storage.getTableName();
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
+            elem.path_on_disk = part->getFullPath();
 
             elem.bytes_compressed_on_disk = part->bytes_on_disk;
             elem.rows = part->rows_count;

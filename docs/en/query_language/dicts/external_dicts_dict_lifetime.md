@@ -15,7 +15,14 @@ Example of settings:
 </dictionary>
 ```
 
-Setting ` <lifetime> 0</lifetime> ` prevents updating dictionaries.
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
+Setting `<lifetime>0</lifetime>` (`LIFETIME(0)`) prevents dictionaries from updating.
 
 You can set a time interval for upgrades, and ClickHouse will choose a uniformly random time within this range. This is necessary in order to distribute the load on the dictionary source when upgrading on a large number of servers.
 
@@ -30,6 +37,12 @@ Example of settings:
     </lifetime>
     ...
 </dictionary>
+```
+
+or
+
+```sql
+LIFETIME(MIN 300 MAX 360)
 ```
 
 When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [ source](external_dicts_dict_sources.md):
@@ -54,6 +67,14 @@ Example of settings:
     </odbc>
     ...
 </dictionary>
+```
+
+or
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
 ```
 
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <common/LocalDateTime.h>
 #include "DictionaryStructure.h"
@@ -22,10 +24,12 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        Block & sample_block,
-        const Context & context);
+        Block & sample_block_,
+        const Context & context_,
+        bool check_config);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
+    HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 
@@ -55,6 +59,8 @@ private:
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string url;
+    Poco::Net::HTTPBasicCredentials credentials;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
     std::string update_field;
     const std::string format;
     Block sample_block;

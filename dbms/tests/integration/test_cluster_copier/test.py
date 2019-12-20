@@ -260,31 +260,24 @@ def execute_task(task, cmd_options):
 
 # Tests
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_copy1_simple(started_cluster):
     execute_task(Task1(started_cluster), [])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_copy1_with_recovering(started_cluster):
     execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.3)])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_block_size(started_cluster):
     execute_task(Task_test_block_size(started_cluster), [])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_no_index(started_cluster):
     execute_task(Task_no_index(started_cluster), [])
 
-@pytest.mark.skip(reason="Fails under asan")
 def test_no_arg(started_cluster):
     execute_task(Task_no_arg(started_cluster), [])
 

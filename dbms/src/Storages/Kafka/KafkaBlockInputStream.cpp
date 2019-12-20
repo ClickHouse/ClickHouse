@@ -1,21 +1,30 @@
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 namespace DB
 {
-
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
-    : storage(storage_), context(context_), max_block_size(max_block_size_)
+    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    : storage(storage_)
+    , context(context_)
+    , column_names(columns)
+    , max_block_size(max_block_size_)
+    , commit_in_suffix(commit_in_suffix_)
+    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
+
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
-    context.setSetting("input_format_allow_errors_num", storage.skip_broken);
+    context.setSetting("input_format_allow_errors_num", storage.skipBroken());
 
-    if (!schema.empty())
-        context.setSetting("format_schema", schema);
+    if (!storage.getSchemaName().empty())
+        context.setSetting("format_schema", storage.getSchemaName());
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -24,38 +33,166 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         return;
 
     if (broken)
-        buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
+        buffer->unsubscribe();
 
-    storage.pushBuffer(buffer);
+    storage.pushReadBuffer(buffer);
+}
+
+Block KafkaBlockInputStream::getHeader() const
+{
+    return storage.getSampleBlockForColumns(column_names);
 }
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    buffer = storage.tryClaimBuffer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+    buffer = storage.popReadBuffer(timeout);
     claimed = !!buffer;
 
     if (!buffer)
-        buffer = storage.createBuffer();
+        return;
 
-    buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.topics);
-
-    const auto & limits = getLimits();
-    const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
-    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
-    rows_portion_size = std::max(rows_portion_size, 1ul);
-
-    auto child = FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size, rows_portion_size);
-    child->setLimits(limits);
-    addChild(child);
+    buffer->subscribe(storage.getTopics());
 
     broken = true;
 }
 
+Block KafkaBlockInputStream::readImpl()
+{
+    if (!buffer)
+        return Block();
+
+    MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
+    MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
+
+    auto input_format = FormatFactory::instance().getInputFormat(
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+
+    InputPort port(input_format->getPort().getHeader(), input_format.get());
+    connect(input_format->getPort(), port);
+    port.setNeeded();
+
+    auto read_kafka_message = [&]
+    {
+        size_t new_rows = 0;
+
+        while (true)
+        {
+            auto status = input_format->prepare();
+
+            switch (status)
+            {
+                case IProcessor::Status::Ready:
+                    input_format->work();
+                    break;
+
+                case IProcessor::Status::Finished:
+                    input_format->resetParser();
+                    return new_rows;
+
+                case IProcessor::Status::PortFull:
+                {
+                    auto chunk = port.pull();
+
+                    // that was returning bad value before https://github.com/ClickHouse/ClickHouse/pull/8005
+                    // if will be backported should go together with #8005
+                    auto chunk_rows = chunk.getNumRows();
+                    new_rows += chunk_rows;
+
+                    auto columns = chunk.detachColumns();
+                    for (size_t i = 0, s = columns.size(); i < s; ++i)
+                    {
+                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                    }
+                    break;
+                }
+                case IProcessor::Status::NeedData:
+                case IProcessor::Status::Async:
+                case IProcessor::Status::Wait:
+                case IProcessor::Status::ExpandPipeline:
+                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+    };
+
+    size_t total_rows = 0;
+
+    while (true)
+    {
+        // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
+        // throw an exception from readPrefix when buffer in empty
+        if (buffer->eof())
+            break;
+
+        auto new_rows = read_kafka_message();
+
+        auto _topic         = buffer->currentTopic();
+        auto _key           = buffer->currentKey();
+        auto _offset        = buffer->currentOffset();
+        auto _partition     = buffer->currentPartition();
+        auto _timestamp_raw = buffer->currentTimestamp();
+        auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
+                                                : 0;
+        for (size_t i = 0; i < new_rows; ++i)
+        {
+            virtual_columns[0]->insert(_topic);
+            virtual_columns[1]->insert(_key);
+            virtual_columns[2]->insert(_offset);
+            virtual_columns[3]->insert(_partition);
+            if (_timestamp_raw)
+            {
+                virtual_columns[4]->insert(_timestamp);
+            }
+            else
+            {
+                virtual_columns[4]->insertDefault();
+            }
+        }
+
+        total_rows = total_rows + new_rows;
+        buffer->allowNext();
+        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+            break;
+    }
+
+    if (total_rows == 0)
+        return Block();
+
+    /// MATERIALIZED columns can be added here, but I think
+    // they are not needed here:
+    // and it's misleading to use them here,
+    // as columns 'materialized' that way stays 'ephemeral'
+    // i.e. will not be stored anythere
+    // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
+
+    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
+    auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+
+    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+        result_block.insert(column);
+
+    return ConvertingBlockInputStream(
+               context,
+               std::make_shared<OneBlockInputStream>(result_block),
+               getHeader(),
+               ConvertingBlockInputStream::MatchColumnsMode::Name)
+        .read();
+}
+
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->commit();
-
     broken = false;
+
+    if (commit_in_suffix)
+        commit();
+}
+
+void KafkaBlockInputStream::commit()
+{
+    if (!buffer)
+        return;
+
+    buffer->commit();
 }
 
 }

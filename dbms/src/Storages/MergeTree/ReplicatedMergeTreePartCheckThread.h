@@ -11,6 +11,7 @@
 #include <Core/Types.h>
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Storages/CheckResults.h>
 
 namespace DB
 {
@@ -40,7 +41,7 @@ public:
     {
         ReplicatedMergeTreePartCheckThread * parent;
 
-        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent) : parent(parent)
+        TemporarilyStop(ReplicatedMergeTreePartCheckThread * parent_) : parent(parent_)
         {
             parent->stop();
         }
@@ -66,12 +67,12 @@ public:
     /// Get the number of parts in the queue for check.
     size_t size() const;
 
-
+    /// Check part by name
+    CheckResult checkPart(const String & part_name);
 
 private:
     void run();
 
-    void checkPart(const String & part_name);
     void searchForMissingPart(const String & part_name);
 
     StorageReplicatedMergeTree & storage;

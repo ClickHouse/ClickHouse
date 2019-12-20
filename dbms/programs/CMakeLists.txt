@@ -19,7 +19,7 @@ if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED 1)
 endif()
 
-configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
+configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 
 macro(clickhouse_target_link_split_lib target name)
@@ -81,7 +81,6 @@ add_subdirectory (extract-from-config)
 add_subdirectory (compressor)
 add_subdirectory (copier)
 add_subdirectory (format)
-add_subdirectory (clang)
 add_subdirectory (obfuscator)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -89,23 +88,19 @@ if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
 endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
-    add_library(clickhouse-lib SHARED ${CLICKHOUSE_SERVER_SOURCES} ${CLICKHOUSE_CLIENT_SOURCES} ${CLICKHOUSE_LOCAL_SOURCES} ${CLICKHOUSE_BENCHMARK_SOURCES} ${CLICKHOUSE_PERFORMANCE_TEST_SOURCES} ${CLICKHOUSE_COPIER_SOURCES} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES} ${CLICKHOUSE_COMPRESSOR_SOURCES} ${CLICKHOUSE_FORMAT_SOURCES} ${CLICKHOUSE_OBFUSCATOR_SOURCES} ${CLICKHOUSE_COMPILER_SOURCES} ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
-    target_link_libraries(clickhouse-lib ${CLICKHOUSE_SERVER_LINK} ${CLICKHOUSE_CLIENT_LINK} ${CLICKHOUSE_LOCAL_LINK} ${CLICKHOUSE_BENCHMARK_LINK} ${CLICKHOUSE_PERFORMANCE_TEST_LINK} ${CLICKHOUSE_COPIER_LINK} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK} ${CLICKHOUSE_COMPRESSOR_LINK} ${CLICKHOUSE_FORMAT_LINK} ${CLICKHOUSE_OBFUSCATOR_LINK} ${CLICKHOUSE_COMPILER_LINK}  ${CLICKHOUSE_ODBC_BRIDGE_LINK})
-    target_include_directories(clickhouse-lib ${CLICKHOUSE_SERVER_INCLUDE} ${CLICKHOUSE_CLIENT_INCLUDE} ${CLICKHOUSE_LOCAL_INCLUDE} ${CLICKHOUSE_BENCHMARK_INCLUDE} ${CLICKHOUSE_PERFORMANCE_TEST_INCLUDE} ${CLICKHOUSE_COPIER_INCLUDE} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE} ${CLICKHOUSE_COMPRESSOR_INCLUDE} ${CLICKHOUSE_FORMAT_INCLUDE} ${CLICKHOUSE_OBFUSCATOR_INCLUDE} ${CLICKHOUSE_COMPILER_INCLUDE} ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE})
+    add_library(clickhouse-lib SHARED ${CLICKHOUSE_SERVER_SOURCES} ${CLICKHOUSE_CLIENT_SOURCES} ${CLICKHOUSE_LOCAL_SOURCES} ${CLICKHOUSE_BENCHMARK_SOURCES} ${CLICKHOUSE_PERFORMANCE_TEST_SOURCES} ${CLICKHOUSE_COPIER_SOURCES} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES} ${CLICKHOUSE_COMPRESSOR_SOURCES} ${CLICKHOUSE_FORMAT_SOURCES} ${CLICKHOUSE_OBFUSCATOR_SOURCES} ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
+    target_link_libraries(clickhouse-lib ${CLICKHOUSE_SERVER_LINK} ${CLICKHOUSE_CLIENT_LINK} ${CLICKHOUSE_LOCAL_LINK} ${CLICKHOUSE_BENCHMARK_LINK} ${CLICKHOUSE_PERFORMANCE_TEST_LINK} ${CLICKHOUSE_COPIER_LINK} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK} ${CLICKHOUSE_COMPRESSOR_LINK} ${CLICKHOUSE_FORMAT_LINK} ${CLICKHOUSE_OBFUSCATOR_LINK} ${CLICKHOUSE_ODBC_BRIDGE_LINK})
+    target_include_directories(clickhouse-lib ${CLICKHOUSE_SERVER_INCLUDE} ${CLICKHOUSE_CLIENT_INCLUDE} ${CLICKHOUSE_LOCAL_INCLUDE} ${CLICKHOUSE_BENCHMARK_INCLUDE} ${CLICKHOUSE_PERFORMANCE_TEST_INCLUDE} ${CLICKHOUSE_COPIER_INCLUDE} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE} ${CLICKHOUSE_COMPRESSOR_INCLUDE} ${CLICKHOUSE_FORMAT_INCLUDE} ${CLICKHOUSE_OBFUSCATOR_INCLUDE} ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE})
     set_target_properties(clickhouse-lib PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse DEBUG_POSTFIX "")
     install (TARGETS clickhouse-lib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif()
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier)
+            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-obfuscator clickhouse-copier)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
-    endif ()
-
-    if (USE_EMBEDDED_COMPILER)
-        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
     endif ()
 
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
@@ -115,10 +110,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
-    if (USE_EMBEDDED_COMPILER)
-        # before add_executable !
-        link_directories (${LLVM_LIBRARY_DIRS})
-    endif ()
     add_executable (clickhouse main.cpp)
     target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
@@ -153,9 +144,6 @@ else ()
     endif ()
     if (ENABLE_CLICKHOUSE_OBFUSCATOR)
         clickhouse_target_link_split_lib(clickhouse obfuscator)
-    endif ()
-    if (USE_EMBEDDED_COMPILER)
-        target_link_libraries(clickhouse PRIVATE clickhouse-compiler-lib)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
@@ -213,20 +201,13 @@ else ()
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-odbc-bridge)
     endif()
 
-    # install always because depian package want this files:
-    add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
-    add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
-    list(APPEND CLICKHOUSE_BUNDLE clickhouse-clang clickhouse-lld)
-
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-
-    install (FILES
-       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang
-       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-lld
-       DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
+    if (USE_GDB_ADD_INDEX)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
+    endif()
 endif ()
 
 if (TARGET clickhouse-server AND TARGET copy-headers)

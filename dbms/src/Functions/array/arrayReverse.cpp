@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,6 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -61,7 +63,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
             ErrorCodes::ILLEGAL_COLUMN);
 
     auto res_ptr = array->cloneEmpty();
-    ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
     res.getOffsetsPtr() = array->getOffsetsPtr();
 
     const IColumn & src_data = array->getData();

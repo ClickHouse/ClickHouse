@@ -20,10 +20,10 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns, const Context 
     const auto & formats = FormatFactory::instance().getAllFormats();
     for (const auto & pair : formats)
     {
-        const auto & [name, creator_pair] = pair;
-        UInt64 has_input_format(creator_pair.first != nullptr);
-        UInt64 has_output_format(creator_pair.second != nullptr);
-        res_columns[0]->insert(name);
+        const auto & [format_name, creators] = pair;
+        UInt64 has_input_format(creators.input_creator != nullptr || creators.input_processor_creator != nullptr);
+        UInt64 has_output_format(creators.output_creator != nullptr || creators.output_processor_creator != nullptr);
+        res_columns[0]->insert(format_name);
         res_columns[1]->insert(has_input_format);
         res_columns[2]->insert(has_output_format);
     }

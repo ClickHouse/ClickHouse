@@ -10,8 +10,8 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
-
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -44,9 +44,9 @@ protected:
     UInt64 reserved;
 
 public:
-    AggregateFunctionTopK(UInt64 threshold, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
+    AggregateFunctionTopK(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params)
-        , threshold(threshold), reserved(load_factor * threshold) {}
+        , threshold(threshold_), reserved(load_factor * threshold) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
@@ -62,9 +62,9 @@ public:
             set.resize(reserved);
 
         if constexpr (is_weighted)
-            set.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
+            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
         else
-            set.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -86,7 +86,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
@@ -95,7 +95,7 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
         data_to.resize(old_size + size);
 
@@ -139,9 +139,9 @@ private:
 
 public:
     AggregateFunctionTopKGeneric(
-        UInt64 threshold, UInt64 load_factor, const DataTypePtr & input_data_type, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type}, params)
-        , threshold(threshold), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
+        UInt64 threshold_, UInt64 load_factor, const DataTypePtr & input_data_type_, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type_}, params)
+        , threshold(threshold_), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
@@ -215,7 +215,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 

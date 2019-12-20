@@ -35,8 +35,8 @@ private:
     const DataTypePtr & type_val;
 
 public:
-    AggregateFunctionArgMinMax(const DataTypePtr & type_res, const DataTypePtr & type_val)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, AllocatesMemoryInArena>>({type_res, type_val}, {}),
+    AggregateFunctionArgMinMax(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, AllocatesMemoryInArena>>({type_res_, type_val_}, {}),
         type_res(this->argument_types[0]), type_val(this->argument_types[1])
     {
         if (!type_val->isComparable())

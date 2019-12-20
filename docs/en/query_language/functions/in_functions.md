@@ -1,6 +1,6 @@
 # Functions for implementing the IN operator
 
-## in, notIn, globalIn, globalNotIn
+## in, notIn, globalIn, globalNotIn {#in-functions}
 
 See the section [IN operators](../select.md#select-in-operators).
 

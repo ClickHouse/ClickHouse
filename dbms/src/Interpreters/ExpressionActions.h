@@ -4,12 +4,12 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -20,19 +20,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using NameWithAlias = std::pair<std::string, std::string>;
-using NamesWithAliases = std::vector<NameWithAlias>;
+class AnalyzedJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
-class Join;
-
-class IPreparedFunction;
-using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
+class IExecutableFunction;
+using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
-class IFunctionBuilder;
-using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -82,18 +81,18 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
-    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
-    FunctionBuilderPtr function_builder;
+    /// OverloadResolver is used before action was added to ExpressionActions (when we don't know types of arguments).
+    FunctionOverloadResolverPtr function_builder;
 
     /// For unaligned [LEFT] ARRAY JOIN
-    FunctionBuilderPtr function_length;
-    FunctionBuilderPtr function_greatest;
-    FunctionBuilderPtr function_arrayResize;
+    FunctionOverloadResolverPtr function_length;
+    FunctionOverloadResolverPtr function_greatest;
+    FunctionOverloadResolverPtr function_arrayResize;
 
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
-    PreparedFunctionPtr function;
+    ExecutableFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
 
@@ -103,16 +102,15 @@ public:
     bool unaligned_array_join = false;
 
     /// For JOIN
-    std::shared_ptr<const Join> join;
-    Names join_key_names_left;
-    NamesAndTypesList columns_added_by_join;
+    std::shared_ptr<const AnalyzedJoin> table_join;
+    JoinPtr join;
 
     /// For PROJECT.
     NamesWithAliases projection;
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+            const FunctionOverloadResolverPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
     static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
     static ExpressionAction removeColumn(const std::string & removed_name);
@@ -121,8 +119,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
-                                         const NamesAndTypesList & columns_added_by_join_);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -139,7 +136,7 @@ public:
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block, const Settings & settings);
+    void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
     void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
@@ -223,6 +220,9 @@ public:
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
 
+    /// Check if joined subquery has totals.
+    bool hasTotalsInJoin() const;
+
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
       */
@@ -235,10 +235,17 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
+    JoinPtr getTableJoinAlgo() const;
 
     const Settings & getSettings() const { return settings; }
 
+    /// Check if result block has no rows. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for join were executed.
+    bool resultIsAlwaysEmpty() const;
+
+    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for sets were executed.
+    bool checkColumnIsAlwaysFalse(const String & column_name) const;
 
     struct ActionsHash
     {
@@ -254,9 +261,15 @@ public:
     };
 
 private:
+    /// These columns have to be in input blocks (arguments of execute* methods)
     NamesAndTypesList input_columns;
+    /// These actions will be executed on input blocks
     Actions actions;
+    /// The example of result (output) block.
     Block sample_block;
+    /// Columns which can't be used for constant folding.
+    NameSet names_not_for_constant_folding;
+
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;

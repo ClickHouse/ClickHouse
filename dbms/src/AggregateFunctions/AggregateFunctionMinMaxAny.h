@@ -4,9 +4,11 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <common/StringRef.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -25,6 +27,7 @@ struct SingleValueDataFixed
 {
 private:
     using Self = SingleValueDataFixed;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
@@ -38,9 +41,9 @@ public:
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            static_cast<ColumnVector<T> &>(to).getData().push_back(value);
+            assert_cast<ColVecType &>(to).getData().push_back(value);
         else
-            static_cast<ColumnVector<T> &>(to).insertDefault();
+            assert_cast<ColVecType &>(to).insertDefault();
     }
 
     void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
@@ -61,7 +64,7 @@ public:
     void change(const IColumn & column, size_t row_num, Arena *)
     {
         has_value = true;
-        value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+        value = assert_cast<const ColVecType &>(column).getData()[row_num];
     }
 
     /// Assuming to.has()
@@ -112,7 +115,7 @@ public:
 
     bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] < value)
+        if (!has() || assert_cast<const ColVecType &>(column).getData()[row_num] < value)
         {
             change(column, row_num, arena);
             return true;
@@ -134,7 +137,7 @@ public:
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] > value)
+        if (!has() || assert_cast<const ColVecType &>(column).getData()[row_num] > value)
         {
             change(column, row_num, arena);
             return true;
@@ -161,7 +164,7 @@ public:
 
     bool isEqualTo(const IColumn & column, size_t row_num) const
     {
-        return has() && static_cast<const ColumnVector<T> &>(column).getData()[row_num] == value;
+        return has() && assert_cast<const ColVecType &>(column).getData()[row_num] == value;
     }
 };
 
@@ -204,9 +207,9 @@ public:
     void insertResultInto(IColumn & to) const
     {
         if (has())
-            static_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
+            assert_cast<ColumnString &>(to).insertDataWithTerminatingZero(getData(), size);
         else
-            static_cast<ColumnString &>(to).insertDefault();
+            assert_cast<ColumnString &>(to).insertDefault();
     }
 
     void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
@@ -281,7 +284,7 @@ public:
 
     void change(const IColumn & column, size_t row_num, Arena * arena)
     {
-        changeImpl(static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
+        changeImpl(assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
     }
 
     void change(const Self & to, Arena * arena)
@@ -330,7 +333,7 @@ public:
 
     bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
+        if (!has() || assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
         {
             change(column, row_num, arena);
             return true;
@@ -352,7 +355,7 @@ public:
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
+        if (!has() || assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
         {
             change(column, row_num, arena);
             return true;
@@ -379,7 +382,7 @@ public:
 
     bool isEqualTo(const IColumn & column, size_t row_num) const
     {
-        return has() && static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
+        return has() && assert_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) == getStringRef();
     }
 };
 
@@ -672,15 +675,15 @@ struct AggregateFunctionAnyHeavyData : Data
 };
 
 
-template <typename Data, bool AllocatesMemoryInArena>
-class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>
+template <typename Data, bool use_arena>
+class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, use_arena>>
 {
 private:
     DataTypePtr & type;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, AllocatesMemoryInArena>>({type}, {})
+    AggregateFunctionsSingleValue(const DataTypePtr & type_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data, use_arena>>({type_}, {})
         , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")
@@ -721,7 +724,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return AllocatesMemoryInArena;
+        return use_arena;
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

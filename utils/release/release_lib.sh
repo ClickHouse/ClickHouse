@@ -1,4 +1,5 @@
 set +e
+# set -x
 
 function gen_version_string {
     if [ -n "$TEST" ]; then
@@ -181,17 +182,16 @@ function gen_dockerfiles {
 }
 
 function make_rpm {
-    get_version
-    VERSION_STRING+=$VERSION_POSTFIX
-    VERSION=$VERSION_STRING
-    PACKAGE_DIR=../
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
+    PACKAGE_DIR=${PACKAGE_DIR=../}
 
     function deb_unpack {
-        rm -rf $PACKAGE-$VERSION
-        alien --verbose --generate --to-rpm --scripts ${PACKAGE_DIR}${PACKAGE}_${VERSION}_${ARCH}.deb
-        cd $PACKAGE-$VERSION
-        mv ${PACKAGE}-$VERSION-2.spec ${PACKAGE}-$VERSION-2.spec.tmp
-        cat ${PACKAGE}-$VERSION-2.spec.tmp \
+        rm -rf $PACKAGE-$VERSION_FULL
+        alien --verbose --generate --to-rpm --scripts ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_${ARCH}.deb
+        cd $PACKAGE-$VERSION_FULL
+        mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec.tmp
+        cat ${PACKAGE}-$VERSION_FULL-2.spec.tmp \
             | grep -vF '%dir "/"' \
             | grep -vF '%dir "/usr/"' \
             | grep -vF '%dir "/usr/bin/"' \
@@ -210,11 +210,12 @@ function make_rpm {
             | grep -vF '%dir "/etc/cron.d/"' \
             | grep -vF '%dir "/etc/systemd/system/"' \
             | grep -vF '%dir "/etc/systemd/"' \
-            > ${PACKAGE}-$VERSION-2.spec
+            | sed -e 's|%config |%config(noreplace) |' \
+            > ${PACKAGE}-$VERSION_FULL-2.spec
     }
 
     function rpm_pack {
-        rpmbuild --buildroot="$CUR_DIR/${PACKAGE}-$VERSION" -bb --target ${TARGET} "${PACKAGE}-$VERSION-2.spec"
+        rpmbuild --buildroot="$CUR_DIR/${PACKAGE}-$VERSION_FULL" -bb --target ${TARGET} "${PACKAGE}-$VERSION_FULL-2.spec"
         cd $CUR_DIR
     }
 
@@ -226,21 +227,33 @@ function make_rpm {
     PACKAGE=clickhouse-server
     ARCH=all
     TARGET=noarch
-    unpack_pack
+    deb_unpack
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: tzdata" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: initscripts" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Obsoletes: clickhouse-server-common < $VERSION_FULL" >> ${PACKAGE}-$VERSION_FULL-2.spec
+
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
+    rpm_pack
 
     PACKAGE=clickhouse-client
     ARCH=all
     TARGET=noarch
-    unpack_pack
+    deb_unpack
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
+    rpm_pack
 
     PACKAGE=clickhouse-test
     ARCH=all
     TARGET=noarch
     deb_unpack
-    mv ${PACKAGE}-$VERSION-2.spec ${PACKAGE}-$VERSION-2.spec_tmp
-    echo "Requires: python2" >> ${PACKAGE}-$VERSION-2.spec
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: python2" >> ${PACKAGE}-$VERSION_FULL-2.spec
     #echo "Requires: python2-termcolor" >> ${PACKAGE}-$VERSION-2.spec
-    cat ${PACKAGE}-$VERSION-2.spec_tmp >> ${PACKAGE}-$VERSION-2.spec
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 
     PACKAGE=clickhouse-common-static
@@ -253,18 +266,17 @@ function make_rpm {
     TARGET=x86_64
     unpack_pack
 
-    mv clickhouse-*-${VERSION_STRING}-2.*.rpm ${PACKAGE_DIR}
+    mv clickhouse-*-${VERSION_FULL}-2.*.rpm ${PACKAGE_DIR}
 }
 
 function make_tgz {
-    get_version
-    VERSION_STRING+=$VERSION_POSTFIX
-    VERSION=$VERSION_STRING
-    PACKAGE_DIR=../
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
+    PACKAGE_DIR=${PACKAGE_DIR=../}
 
     for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
-        alien --verbose --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION}_*.deb
+        alien --verbose --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
     done
 
-    mv clickhouse-*-${VERSION_STRING}.tgz ${PACKAGE_DIR}
+    mv clickhouse-*-${VERSION_FULL}.tgz ${PACKAGE_DIR}
 }

@@ -1,11 +1,14 @@
 <test>
-    <name>IPv4 Functions</name>
 
-    <type>once</type>
+    <type>loop</type>
     <stop_conditions>
+        <all_of>
+            <iterations>10</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>1000</average_speed_not_changing_for_ms>
-            <total_time_ms>2000</total_time_ms>
+            <iterations>50</iterations>
+            <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
 
@@ -49,15 +52,16 @@
     <fill_query>INSERT INTO mon_{table_suffix} (n) SELECT n FROM mon_{table_suffix}</fill_query>
     <fill_query>INSERT INTO rnd_{table_suffix} (n) SELECT n FROM rnd_{table_suffix}</fill_query>
 
+    <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->
+    <query>INSERT INTO seq_{table_suffix} (n) SELECT number FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</query>
+    <query>INSERT INTO mon_{table_suffix} (n) SELECT number*67+(rand()%67) FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</query>
+    <query>INSERT INTO rnd_{table_suffix} (n) SELECT rand() FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</query>
 
-    <query>INSERT INTO seq_{table_suffix} (n) SELECT number FROM system.numbers SETTINGS max_threads=1</query>
-    <query>INSERT INTO mon_{table_suffix} (n) SELECT number*67+(rand()%67) FROM system.numbers SETTINGS max_threads=1</query>
-    <query>INSERT INTO rnd_{table_suffix} (n) SELECT rand() FROM system.numbers SETTINGS max_threads=1</query>
-
-
-    <query>SELECT count(n) FROM seq_{table_suffix} SETTINGS max_threads=1</query>
-    <query>SELECT count(n) FROM mon_{table_suffix} SETTINGS max_threads=1</query>
-    <query>SELECT count(n) FROM rnd_{table_suffix} SETTINGS max_threads=1</query>
+    <!-- INSERTs above will be run unspecified amount of times, hence size of table is unknown.
+    To make test more reliable, we SELECT fixed number of rows. -->
+    <query>SELECT count(n) FROM seq_{table_suffix} LIMIT 1000000 SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM mon_{table_suffix} LIMIT 1000000 SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM rnd_{table_suffix} LIMIT 1000000 SETTINGS max_threads=1</query>
 
 
     <drop_query>DROP TABLE IF EXISTS seq_{table_suffix}</drop_query>

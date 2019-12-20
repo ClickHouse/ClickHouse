@@ -35,7 +35,7 @@ public:
       */
     inline void next()
     {
-        if (!offset())
+        if (!offset() && available())
             return;
         bytes += offset();
 
@@ -89,6 +89,9 @@ public:
         *pos = x;
         ++pos;
     }
+
+    virtual void sync() {}
+    virtual void finalize() {}
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

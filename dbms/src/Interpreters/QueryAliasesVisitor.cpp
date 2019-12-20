@@ -5,9 +5,10 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -41,10 +42,23 @@ void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * s = ast->as<ASTSubquery>())
         visit(*s, ast, data);
+    else if (auto * q = ast->as<ASTSelectQuery>())
+        visit(*q, ast, data);
     else if (auto * aj = ast->as<ASTArrayJoin>())
         visit(*aj, ast, data);
     else
         visitOther(ast, data);
+}
+
+void QueryAliasesMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data &)
+{
+    ASTPtr with = select.with();
+    if (!with)
+        return;
+
+    for (auto & child : with->children)
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
+            ast_with_alias->prefer_alias_to_column_name = true;
 }
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
@@ -83,11 +97,12 @@ void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data
         while (aliases.count(alias));
 
         subquery.setAlias(alias);
-        subquery.prefer_alias_to_column_name = true;
         aliases[alias] = ast;
     }
     else
         visitOther(ast, data);
+
+    subquery.prefer_alias_to_column_name = true;
 }
 
 void QueryAliasesMatcher::visitOther(const ASTPtr & ast, Data & data)

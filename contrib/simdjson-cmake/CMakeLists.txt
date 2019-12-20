@@ -1,6 +1,3 @@
-if (NOT HAVE_AVX2)
-    message (FATAL_ERROR "No AVX2 support")
-endif ()
 set(SIMDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include")
 set(SIMDJSON_SRC_DIR "${SIMDJSON_INCLUDE_DIR}/../src")
 set(SIMDJSON_SRC
@@ -11,8 +8,8 @@ set(SIMDJSON_SRC
     ${SIMDJSON_SRC_DIR}/stage2_build_tape.cpp
     ${SIMDJSON_SRC_DIR}/parsedjson.cpp
     ${SIMDJSON_SRC_DIR}/parsedjsoniterator.cpp
+    ${SIMDJSON_SRC_DIR}/simdjson.cpp
 )
 
 add_library(${SIMDJSON_LIBRARY} ${SIMDJSON_SRC})
-target_include_directories(${SIMDJSON_LIBRARY} PUBLIC "${SIMDJSON_INCLUDE_DIR}")
-target_compile_options(${SIMDJSON_LIBRARY} PRIVATE -mavx2 -mbmi -mbmi2 -mpclmul)
+target_include_directories(${SIMDJSON_LIBRARY} SYSTEM PUBLIC "${SIMDJSON_INCLUDE_DIR}" PRIVATE "${SIMDJSON_SRC_DIR}")

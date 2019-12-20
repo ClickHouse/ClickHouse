@@ -6,7 +6,7 @@ Counts the number of rows or not-NULL values.
 
 ClickHouse supports the following syntaxes for `count`:
 - `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is a ClickHouse-specific implementation.
+- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
 **Parameters**
 
@@ -19,15 +19,15 @@ The function can take:
 **Returned value**
 
 - If the function is called without parameters it counts the number of rows.
-- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a value of the [Nullable](../../data_types/nullable.md) data type, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../data_types/int_uint.md).
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. By default the [uniqExact](#agg_function-uniqexact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](#agg_function-uniqexact) function.
 
-A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses some small column from the table and count the number of values in it.
+The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
 
 
 **Examples**
@@ -62,7 +62,7 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-This example shows that `count(DISTINCT num)` is performed by the function `uniqExact` corresponding to the `count_distinct_implementation` setting value.
+This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 
 
 ## any(x) {#agg_function-any}
@@ -79,7 +79,7 @@ When a `SELECT` query has the `GROUP BY` clause or at least one aggregate functi
 
 Selects a frequently occurring value using the [heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithm. If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned. Normally, the result is nondeterministic.
 
-```
+```sql
 anyHeavy(column)
 ```
 
@@ -91,12 +91,12 @@ anyHeavy(column)
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
 
-``` sql
+```sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌───res─┐
 │ 19690 │
 └───────┘
@@ -111,7 +111,7 @@ The result is just as indeterminate as for the `any` function.
 
 Applies bitwise `AND` for series of numbers.
 
-```
+```sql
 groupBitAnd(expr)
 ```
 
@@ -127,7 +127,7 @@ Value of the `UInt*` type.
 
 Test data:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -137,7 +137,7 @@ binary     decimal
 
 Query:
 
-```
+```sql
 SELECT groupBitAnd(num) FROM t
 ```
 
@@ -145,7 +145,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-```
+```text
 binary     decimal
 00000100 = 4
 ```
@@ -154,7 +154,7 @@ binary     decimal
 
 Applies bitwise `OR` for series of numbers.
 
-```
+```sql
 groupBitOr(expr)
 ```
 
@@ -170,7 +170,7 @@ Value of the `UInt*` type.
 
 Test data:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -180,7 +180,7 @@ binary     decimal
 
 Query:
 
-```
+```sql
 SELECT groupBitOr(num) FROM t
 ```
 
@@ -188,7 +188,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-```
+```text
 binary     decimal
 01111101 = 125
 ```
@@ -197,7 +197,7 @@ binary     decimal
 
 Applies bitwise `XOR` for series of numbers.
 
-```
+```sql
 groupBitXor(expr)
 ```
 
@@ -213,7 +213,7 @@ Value of the `UInt*` type.
 
 Test data:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -223,7 +223,7 @@ binary     decimal
 
 Query:
 
-```
+```sql
 SELECT groupBitXor(num) FROM t
 ```
 
@@ -231,7 +231,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-```
+```text
 binary     decimal
 01101000 = 104
 ```
@@ -241,7 +241,7 @@ binary     decimal
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
 
-```
+```sql
 groupBitmap(expr)
 ```
 
@@ -257,8 +257,8 @@ Value of the `UInt64` type.
 
 Test data:
 
-```
-userid
+```text
+UserID
 1
 1
 2
@@ -267,13 +267,13 @@ userid
 
 Query:
 
-```
-SELECT groupBitmap(userid) as num FROM t
+```sql
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:
 
-```
+```text
 num
 3
 ```
@@ -291,15 +291,17 @@ Calculates the maximum.
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
 **Example:**
-```
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
 │ worker   │   1000 │
 └──────────┴────────┘
-
+```
+```sql
 SELECT argMin(user, salary) FROM salary
-
+```
+```text
 ┌─argMin(user, salary)─┐
 │ worker               │
 └──────────────────────┘
@@ -330,7 +332,7 @@ Returns a tuple of two arrays: keys in sorted order, and values ​​summed for
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -351,7 +353,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```
+```text
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -360,9 +362,9 @@ GROUP BY timeslot
 
 ## skewPop
 
-Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
-```
+```sql
 skewPop(expr)
 ```
 
@@ -372,9 +374,9 @@ skewPop(expr)
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md)
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md)
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT skewPop(value) FROM series_with_value_column
@@ -382,11 +384,11 @@ SELECT skewPop(value) FROM series_with_value_column
 
 ## skewSamp
 
-Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) for sequence.
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 
-It represents an unbiased estimate of the skewness of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
 
-```
+```sql
 skewSamp(expr)
 ```
 
@@ -396,9 +398,9 @@ skewSamp(expr)
 
 **Returned value**
 
-The skewness of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is the size of the sample), then the function returns `nan`.
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT skewSamp(value) FROM series_with_value_column
@@ -406,9 +408,9 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 ## kurtPop
 
-Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 
-```
+```sql
 kurtPop(expr)
 ```
 
@@ -418,9 +420,9 @@ kurtPop(expr)
 
 **Returned value**
 
-The kurtosis of given distribution. Type — [Float64](../../data_types/float.md)
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md)
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT kurtPop(value) FROM series_with_value_column
@@ -428,11 +430,11 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 ## kurtSamp
 
-Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) for sequence.
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 
-It represents an unbiased estimate of the kurtosis of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
 
-```
+```sql
 kurtSamp(expr)
 ```
 
@@ -442,9 +444,9 @@ kurtSamp(expr)
 
 **Returned value**
 
-The kurtosis of given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
 
-**Example of Use**
+**Example**
 
 ```sql
 SELECT kurtSamp(value) FROM series_with_value_column
@@ -463,7 +465,7 @@ The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
 Before using this function make sure `timestamp` is in ascending order.
 
 Example:
-```
+```text
 ┌─uid─┬─timestamp─┬─value─┐
 │ 1   │     2     │   0.2 │
 │ 1   │     7     │   0.7 │
@@ -477,7 +479,7 @@ Example:
 │ 2   │    24     │   4.8 │
 └─────┴───────────┴───────┘
 ```
-```
+```sql
 CREATE TABLE time_series(
     uid       UInt64,
     timestamp Int64,
@@ -493,7 +495,7 @@ FROM (
 );
 ```
 And the result will be:
-```
+```text
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
@@ -502,7 +504,7 @@ Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate
 Also, timestamp should be in ascend order before use this function.
 
 Use this function, the result above case will be:
-```
+```text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
@@ -516,107 +518,115 @@ The result is always Float64.
 
 Calculates the approximate number of different values of the argument.
 
-```
+```sql
 uniq(x[, ...])
 ```
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values with a size up to 65536.
+- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
 
-    This algorithm is very accurate and very efficient on CPU. When query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
+    This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-- Provides the result deterministically (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the query processing order).
 
-We recommend to use this function in almost all scenarios.
+We recommend using this function in almost all scenarios.
 
 **See Also**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
 ## uniqCombined {#agg_function-uniqcombined}
 
-Calculates the approximate number of different values of the argument.
+Calculates the approximate number of different argument values.
 
-```
+```sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
+The `uniqCombined` function is a good choice for calculating the number of different values.
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
-`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each).
+`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, which is effectively 96 KiB of space (2^17 cells, 6 bits each).
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A number [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses combination of three algorithms: array, hash table and HyperLogLog with an error correction table.
+- Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
+- Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
-    For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
+    For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
-- Provides the result deterministically (it doesn't depend on the order of query processing).
+- Provides the result deterministically (it doesn't depend on the query processing order).
 
-In comparison with the [uniq](#agg_function-uniq) function the `uniqCombined`:
+!!! note "Note"
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
+
+Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
 - Consumes several times less memory.
 - Calculates with several times higher accuracy.
-- Performs slightly lower usually. In some scenarios `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+- Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
 
 **See Also**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
-Calculates the approximate number of different values of the argument, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algortithm.
+Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
-```
+```sql
 uniqHLL12(x[, ...])
 ```
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **Returned value**
 
-- The number of the [UInt64](../../data_types/int_uint.md) type.
+- A [UInt64](../../data_types/int_uint.md)-type number.
 
 **Implementation details**
 
 Function:
 
 - Calculates a hash for all parameters in the aggregate, then uses it in calculations.
-- Uses the HyperLogLog algorithm to approximate the number of different values of the argument.
+- Uses the HyperLogLog algorithm to approximate the number of different argument values.
 
     212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
-- Provides the determinate result (it doesn't depend on the order of query processing).
+- Provides the determinate result (it doesn't depend on the query processing order).
 
 We don't recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
 
@@ -629,19 +639,19 @@ We don't recommend using this function. In most cases, use the [uniq](#agg_funct
 
 ## uniqExact {#agg_function-uniqexact}
 
-Calculates the exact number of different values of the argument.
+Calculates the exact number of different argument values.
 
-```
+```sql
 uniqExact(x[, ...])
 ```
 
-Use the `uniqExact` function if you definitely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
+Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
 
-The `uniqExact` function uses more memory than the `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 
 **Parameters**
 
-Function takes the variable number of parameters. Parameters can be of types: `Tuple`, `Array`, `Date`, `DateTime`, `String`, numeric types.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
 **See Also**
 
@@ -650,7 +660,7 @@ Function takes the variable number of parameters. Parameters can be of types: `T
 - [uniqHLL12](#agg_function-uniqhll12)
 
 
-## groupArray(x), groupArray(max_size)(x)
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
@@ -672,6 +682,146 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
+## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+
+Calculates the moving sum of input values.
+
+```sql
+groupArrayMovingSum(numbers_for_summing)
+groupArrayMovingSum(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+**Example**
+
+The sample table:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingSum(int) AS I,
+    groupArrayMovingSum(float) AS F,
+    groupArrayMovingSum(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingSum(2)(int) AS I,
+    groupArrayMovingSum(2)(float) AS F,
+    groupArrayMovingSum(2)(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+
+Calculates the moving average of input values.
+
+```sql
+groupArrayMovingAvg(numbers_for_summing)
+groupArrayMovingAvg(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
+
+**Example**
+
+The sample table `b`:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingAvg(int) AS I,
+    groupArrayMovingAvg(float) AS F,
+    groupArrayMovingAvg(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
+│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
+└───────────┴─────────────────────────────────────┴───────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingAvg(2)(int) AS I,
+    groupArrayMovingAvg(2)(float) AS F,
+    groupArrayMovingAvg(2)(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
+│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
+└───────────┴──────────────────────────────────┴───────────────────────┘
+```
+
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
@@ -679,7 +829,7 @@ Creates an array from different argument values. Memory consumption is the same 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
 For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
-## quantile(level)(x)
+## quantile(level)(x) {#agg_function-quantile}
 
 Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
 We recommend using a `level` value in the range of `[0.01, 0.99]`
@@ -706,27 +856,55 @@ To achieve this, the function takes a second argument – the "determinator". Th
 
 Don't use this function for calculating timings. There is a more suitable function for this purpose: `quantileTiming`.
 
-## quantileTiming(level)(x)
+## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of 'level' with a fixed precision.
-Works for numbers. Intended for calculating quantiles of page loading time in milliseconds.
+Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds.
 
-If the value is greater than 30,000 (a page loading time of more than 30 seconds), the result is equated to 30,000.
+```sql
+quantileTiming(level)(expr)
+```
 
-If the total value is not more than about 5670, then the calculation is accurate.
+**Parameters**
 
-Otherwise:
+- `level` — Quantile level. Range: [0, 1].
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a [Float*](../../data_types/float.md)-type number. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
 
-- if the time is less than 1024 ms, then the calculation is accurate.
-- otherwise the calculation is rounded to a multiple of 16 ms.
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-When passing negative values to the function, the behavior is undefined.
+**Accuracy**
 
-The returned value has the Float32 type. If no values were passed to the function (when using `quantileTimingIf`), 'nan' is returned. The purpose of this is to differentiate these instances from zeros. See the note on sorting NaNs in "ORDER BY clause".
+The calculation is accurate if:
 
-The result is determinate (it doesn't depend on the order of query processing).
+- Total number of values doesn't exceed 5670.
+- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
-For its purpose (calculating quantiles of page loading times), using this function is more effective and the result is more accurate than for the `quantile` function.
+Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+
+!!! note "Note"
+    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type: `Float32`.
+
+!!! note "Note"
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../select.md#select-order-by) for notes on sorting `NaN` values.
+
+The result is deterministic (it doesn't depend on the query processing order).
+
+**Example**
+
+```sql
+SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
+```
+```text
+┌─quantileTiming(0.5)(divide(number, 2))─┐
+│                                      2 │
+└────────────────────────────────────────┘
+```
 
 ## quantileTimingWeighted(level)(x, weight)
 
@@ -763,7 +941,7 @@ All the quantile functions also have corresponding quantiles functions: `quantil
 
 Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
-It represents an unbiased estimate of the variance of a random variable, if passed values form it's sample.
+It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
@@ -787,7 +965,7 @@ Returns an array of the most frequent values in the specified column. The result
 
 Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
-```
+```sql
 topK(N)(column)
 ```
 
@@ -804,12 +982,12 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
 
-``` sql
+```sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
 └─────────────────────┘
@@ -829,11 +1007,21 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## categoricalInformationValue
+
+Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
+
+```sql
+categoricalInformationValue(category1, category2, ..., tag)
+```
+
+The result indicates how a discrete (categorical) feature `[category1, category2, ...]` contribute to a learning model which predicting the value of `tag`.
+
 ## simpleLinearRegression
 
 Performs simple (unidimensional) linear regression.
 
-```
+```sql
 simpleLinearRegression(x, y)
 ```
 
@@ -869,7 +1057,7 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 ## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
 ### Parameters {#agg_functions-stochasticlinearregression-parameters}
 
@@ -882,7 +1070,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
 2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
 3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
-4. `method for updating weights`, there are 3 of them: `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods. Default is `'SGD'`.
+4. `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
 
 
 ### Usage {#agg_functions-stochasticlinearregression-usage}
@@ -891,39 +1079,40 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Fitting
 
-    Such query may be used.
+**1.** Fitting
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Such query may be used.
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    ```
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
 
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+```
 
-2. Predicting
+Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+**2.** Predicting
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
 
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    `test_data` is a table like `train_data` but may not contain target value.
+The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+`test_data` is a table like `train_data` but may not contain target value.
 
 ### Notes {#agg_functions-stochasticlinearregression-notes}
 
@@ -993,6 +1182,141 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
+
+## groupBitmapAnd
+
+Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapAnd(z)─┐
+│               3   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
+│ [6,8,10]                                         │
+└──────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapOr
+
+Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md). This is equivalent to `groupBitmapMerge`.
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapOr(z)─┐
+│             15   │
+└──────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
+│ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
+└─────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapXor
+
+Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapXor(z)─┐
+│              10   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
+│ [1,3,5,6,8,10,11,13,14,15]                       │
+└──────────────────────────────────────────────────┘
+
+```
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

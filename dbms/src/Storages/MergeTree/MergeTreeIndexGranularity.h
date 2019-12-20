@@ -43,6 +43,9 @@ public:
     /// Total rows
     size_t getTotalRows() const;
 
+    /// Total number marks without final mark if it exists
+    size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
+
     /// Rows after mark to next mark
     inline size_t getMarkRows(size_t mark_index) const
     {
@@ -60,6 +63,14 @@ public:
     {
         size_t last = marks_rows_partial_sums.size() - 1;
         return getMarkRows(last);
+    }
+
+    size_t getLastNonFinalMarkRows() const
+    {
+        size_t last_mark_rows = getLastMarkRows();
+        if (last_mark_rows != 0)
+            return last_mark_rows;
+        return getMarkRows(marks_rows_partial_sums.size() - 2);
     }
 
     bool hasFinalMark() const

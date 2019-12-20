@@ -1,8 +1,8 @@
 #pragma once
 
-#include <common/Types.h>
-#include <common/DayNum.h>
-#include <common/likely.h>
+#include "Types.h"
+#include "DayNum.h"
+#include "likely.h"
 #include <ctime>
 #include <string>
 
@@ -19,6 +19,16 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #endif
+
+/// Flags for toYearWeek() function.
+enum class WeekModeFlag : UInt8
+{
+    MONDAY_FIRST = 1,
+    YEAR = 2,
+    FIRST_WEEKDAY = 4,
+    NEWYEAR_DAY = 8
+};
+using YearWeek = std::pair<UInt16, UInt8>;
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -379,6 +389,167 @@ public:
         return toISOWeek(toDayNum(t));
     }
 
+    /*
+      The bits in week_mode has the following meaning:
+       WeekModeFlag::MONDAY_FIRST (0)  If not set	Sunday is first day of week
+                      If set	Monday is first day of week
+       WeekModeFlag::YEAR (1)	  If not set	Week is in range 0-53
+
+        Week 0 is returned for the the last week of the previous year (for
+        a date at start of january) In this case one can get 53 for the
+        first week of next year.  This flag ensures that the week is
+        relevant for the given year. Note that this flag is only
+        releveant if WeekModeFlag::JANUARY is not set.
+
+                  If set	 Week is in range 1-53.
+
+        In this case one may get week 53 for a date in January (when
+        the week is that last week of previous year) and week 1 for a
+        date in December.
+
+      WeekModeFlag::FIRST_WEEKDAY (2)  If not set	Weeks are numbered according
+                        to ISO 8601:1988
+                  If set	The week that contains the first
+                        'first-day-of-week' is week 1.
+
+      WeekModeFlag::NEWYEAR_DAY (3)   If not set  no meaning
+                  If set	The week that contains the January 1 is week 1.
+                            Week is in range 1-53.
+                            And ignore WeekModeFlag::YEAR, WeekModeFlag::FIRST_WEEKDAY
+
+        ISO 8601:1988 means that if the week containing January 1 has
+        four or more days in the new year, then it is week 1;
+        Otherwise it is the last week of the previous year, and the
+        next week is week 1.
+    */
+    inline YearWeek toYearWeek(DayNum d, UInt8 week_mode) const
+    {
+        bool newyear_day_mode = week_mode & static_cast<UInt8>(WeekModeFlag::NEWYEAR_DAY);
+        week_mode = check_week_mode(week_mode);
+        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        bool week_year_mode = week_mode & static_cast<UInt8>(WeekModeFlag::YEAR);
+        bool first_weekday_mode = week_mode & static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
+
+        // Calculate week number of WeekModeFlag::NEWYEAR_DAY mode
+        if (newyear_day_mode)
+        {
+            return toYearWeekOfNewyearMode(d, monday_first_mode);
+        }
+
+        YearWeek yw(toYear(d), 0);
+        UInt16 days = 0;
+        UInt16 daynr = makeDayNum(yw.first, toMonth(d), toDayOfMonth(d));
+        UInt16 first_daynr = makeDayNum(yw.first, 1, 1);
+
+        // 0 for monday, 1 for tuesday ...
+        // get weekday from first day in year.
+        UInt16 weekday = calc_weekday(DayNum(first_daynr), !monday_first_mode);
+
+        if (toMonth(d) == 1 && toDayOfMonth(d) <= static_cast<UInt32>(7 - weekday))
+        {
+            if (!week_year_mode && ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4)))
+                return yw;
+            week_year_mode = 1;
+            (yw.first)--;
+            first_daynr -= (days = calc_days_in_year(yw.first));
+            weekday = (weekday + 53 * 7 - days) % 7;
+        }
+
+        if ((first_weekday_mode && weekday != 0) || (!first_weekday_mode && weekday >= 4))
+            days = daynr - (first_daynr + (7 - weekday));
+        else
+            days = daynr - (first_daynr - weekday);
+
+        if (week_year_mode && days >= 52 * 7)
+        {
+            weekday = (weekday + calc_days_in_year(yw.first)) % 7;
+            if ((!first_weekday_mode && weekday < 4) || (first_weekday_mode && weekday == 0))
+            {
+                (yw.first)++;
+                yw.second = 1;
+                return yw;
+            }
+        }
+        yw.second = days / 7 + 1;
+        return yw;
+    }
+
+    /// Calculate week number of WeekModeFlag::NEWYEAR_DAY mode
+    /// The week number 1 is the first week in year that contains January 1,
+    inline YearWeek toYearWeekOfNewyearMode(DayNum d, bool monday_first_mode) const
+    {
+        YearWeek yw(0, 0);
+        UInt16 offset_day = monday_first_mode ? 0U : 1U;
+
+        // Checking the week across the year
+        yw.first = toYear(DayNum(d + 7 - toDayOfWeek(DayNum(d + offset_day))));
+
+        DayNum first_day = makeDayNum(yw.first, 1, 1);
+        DayNum this_day = d;
+
+        if (monday_first_mode)
+        {
+            // Rounds down a date to the nearest Monday.
+            first_day = toFirstDayNumOfWeek(first_day);
+            this_day = toFirstDayNumOfWeek(d);
+        }
+        else
+        {
+            // Rounds down a date to the nearest Sunday.
+            if (toDayOfWeek(first_day) != 7)
+                first_day = DayNum(first_day - toDayOfWeek(first_day));
+            if (toDayOfWeek(d) != 7)
+                this_day = DayNum(d - toDayOfWeek(d));
+        }
+        yw.second = (this_day - first_day) / 7 + 1;
+        return yw;
+    }
+
+    /**
+     * get first day of week with week_mode, return Sunday or Monday
+     */
+    inline DayNum toFirstDayNumOfWeek(DayNum d, UInt8 week_mode) const
+    {
+        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        if (monday_first_mode)
+        {
+            return toFirstDayNumOfWeek(d);
+        }
+        else
+        {
+            return (toDayOfWeek(d) != 7) ? DayNum(d - toDayOfWeek(d)) : d;
+        }
+    }
+
+    /*
+     * check and change mode to effective
+     */
+    inline UInt8 check_week_mode(UInt8 mode) const
+    {
+        UInt8 week_format = (mode & 7);
+        if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
+            week_format ^= static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
+        return week_format;
+    }
+
+    /*
+     * Calc weekday from d
+     * Returns 0 for monday, 1 for tuesday ...
+     */
+    inline unsigned calc_weekday(DayNum d, bool sunday_first_day_of_week) const
+    {
+        if (!sunday_first_day_of_week)
+            return toDayOfWeek(d) - 1;
+        else
+            return toDayOfWeek(DayNum(d + 1)) - 1;
+    }
+
+    /* Calc days in one year. */
+    inline unsigned calc_days_in_year(UInt16 year) const
+    {
+        return ((year & 3) == 0 && (year % 100 || (year % 400 == 0 && year)) ? 366 : 365);
+    }
+
     /// Number of month from some fixed moment in the past (year * 12 + month)
     inline unsigned toRelativeMonthNum(DayNum d) const
     {
@@ -495,7 +666,7 @@ public:
     inline DayNum makeDayNum(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
-            return DayNum(0);
+            return DayNum(0); // TODO (nemkov, DateTime64 phase 2): implement creating real date for year outside of LUT range.
 
         return DayNum(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }

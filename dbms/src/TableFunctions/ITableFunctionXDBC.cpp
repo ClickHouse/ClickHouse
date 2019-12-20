@@ -16,7 +16,8 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-
+#include <Poco/NumberFormatter.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {
@@ -27,7 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     const auto & args_func = ast_function->as<ASTFunction &>();
 
@@ -45,18 +46,18 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
 
     std::string connection_string;
     std::string schema_name;
-    std::string table_name;
+    std::string remote_table_name;
 
     if (args.size() == 3)
     {
         connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
         schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (args.size() == 2)
     {
         connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     }
 
     /* Infer external table structure */
@@ -68,7 +69,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     columns_info_uri.addQueryParameter("connection_string", connection_string);
     if (!schema_name.empty())
         columns_info_uri.addQueryParameter("schema", schema_name);
-    columns_info_uri.addQueryParameter("table", table_name);
+    columns_info_uri.addQueryParameter("table", remote_table_name);
+
+    const auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    columns_info_uri.addQueryParameter("external_table_functions_use_nulls",
+        Poco::NumberFormatter::format(use_nulls));
 
     ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
 
@@ -76,7 +81,7 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     readStringBinary(columns_info, buf);
     NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
-    auto result = std::make_shared<StorageXDBC>(table_name, schema_name, table_name, ColumnsDescription{columns}, context, helper);
+    auto result = std::make_shared<StorageXDBC>(getDatabaseName(), table_name, schema_name, remote_table_name, ColumnsDescription{columns}, context, helper);
 
     if (!result)
         throw Exception("Failed to instantiate storage from table function " + getName(), ErrorCodes::UNKNOWN_EXCEPTION);

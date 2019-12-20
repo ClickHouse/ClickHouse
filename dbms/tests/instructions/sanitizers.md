@@ -6,7 +6,7 @@ Note: We use Address Sanitizer to run functional tests for every commit automati
 mkdir build_asan && cd build_asan
 ```
 
-Note: using clang instead of gcc is strongly recommended.
+Note: using clang instead of gcc is strongly recommended. Make sure you have installed required packages (`clang`, `lld`). It may be required to specify non-standard `lld` binary using `LINKER_NAME` option (e.g. `-D LINKER_NAME=lld-8`).
 
 ```
 CC=clang CXX=clang++ cmake -D SANITIZE=address ..
@@ -40,7 +40,7 @@ ninja
 ## Start ClickHouse and run tests
 
 ```
-sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1,suppressions=../dbms/tests/tsan_suppressions.txt' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
 ```
 
 
@@ -66,4 +66,6 @@ sudo -u clickhouse UBSAN_OPTIONS='print_stacktrace=1' ./clickhouse-ubsan server 
 
 # How to use Memory Sanitizer
 
-TODO
+```
+CC=clang-8 CXX=clang++-8 cmake -D ENABLE_HDFS=0 -D ENABLE_CAPNP=0 -D ENABLE_RDKAFKA=0 -D ENABLE_ICU=0 -D ENABLE_POCO_MONGODB=0 -D ENABLE_POCO_NETSSL=0 -D ENABLE_POCO_ODBC=0 -D ENABLE_ODBC=0 -D ENABLE_MYSQL=0 -D ENABLE_EMBEDDED_COMPILER=0 -D USE_INTERNAL_CAPNP_LIBRARY=0 -D USE_SIMDJSON=0 -D ENABLE_READLINE=0 -D SANITIZE=memory ..
+```

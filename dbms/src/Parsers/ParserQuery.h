@@ -16,8 +16,8 @@ private:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    ParserQuery(const char * end, bool enable_explain_ = false)
-        : end(end),
+    ParserQuery(const char * end_, bool enable_explain_ = false)
+        : end(end_),
         enable_explain(enable_explain_)
     {}
 };

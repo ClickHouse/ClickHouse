@@ -25,10 +25,8 @@ public:
         setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
-    std::string getTableName() const override
-    {
-        return name;
-    }
+    std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,

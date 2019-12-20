@@ -16,15 +16,15 @@ generateUUIDv4()
 
 Этот пример демонстрирует, как создать таблицу с UUID-колонкой и добавить в нее сгенерированный UUID.
 
-``` sql
-:) CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
+```sql
+CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
 
-:) INSERT INTO t_uuid SELECT generateUUIDv4()
+INSERT INTO t_uuid SELECT generateUUIDv4()
 
-:) SELECT * FROM t_uuid
+SELECT * FROM t_uuid
 ```
 
-```
+```text
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
@@ -44,11 +44,11 @@ toUUID(String)
 
 **Пример использования**
 
-``` sql
-:) SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+```sql
+SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
-```
+```text
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
@@ -58,7 +58,7 @@ toUUID(String)
 
 Принимает строку, содержащую 36 символов в формате `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, и возвращает в виде набора байт в [FixedString(16)](../../data_types/fixedstring.md).
 
-``` sql
+```sql
 UUIDStringToNum(String)
 ```
 
@@ -68,13 +68,13 @@ FixedString(16)
 
 **Пример использования**
 
-``` sql
-:) SELECT 
+```sql
+SELECT 
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid, 
     UUIDStringToNum(uuid) AS bytes
 ```
 
-```
+```text
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -84,7 +84,7 @@ FixedString(16)
 
 Принимает значение типа [FixedString(16)](../../data_types/fixedstring.md). Возвращает строку из 36 символов в текстовом виде.
 
-``` sql
+```sql
 UUIDNumToString(FixedString(16))
 ```
 
@@ -94,13 +94,13 @@ UUIDNumToString(FixedString(16))
 
 **Пример использования**
 
-``` sql
+```sql
 SELECT 
     'a/<@];!~p{jTj={)' AS bytes, 
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
 ```
 
-```
+```text
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘

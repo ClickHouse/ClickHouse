@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -27,8 +27,8 @@ namespace ErrorCodes
 class FunctionArrayHasAllAny : public IFunction
 {
 public:
-    FunctionArrayHasAllAny(const Context & context, bool all, const char * name)
-        : context(context), all(all), name(name) {}
+    FunctionArrayHasAllAny(const Context & context_, bool all_, const char * name_)
+        : context(context_), all(all_), name(name_) {}
 
     String getName() const override { return name; }
 

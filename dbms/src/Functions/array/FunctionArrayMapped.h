@@ -7,7 +7,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
-#include <Functions/IFunction.h>
+#include <Common/assert_cast.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -53,7 +54,7 @@ public:
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
-    void getLambdaArgumentTypesImpl(DataTypes & arguments) const override
+    void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 1)
             throw Exception("Function " + getName() + " needs at least one argument; passed "
@@ -146,7 +147,7 @@ public:
                 if (!column_const_array)
                     throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
-                column_array = static_cast<const ColumnArray *>(column_array_ptr.get());
+                column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
             block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());

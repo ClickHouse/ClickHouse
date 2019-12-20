@@ -8,7 +8,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -35,7 +35,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p;
+    ParserFunction table_function_p{false};
 
     ASTPtr database;
     ASTPtr table;
@@ -97,6 +97,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = before_select;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
+
+        /// FORMAT section is expected if we have input() in SELECT part
+        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+            return false;
     }
     else
     {
@@ -147,11 +151,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        getIdentifierName(database, query->database);
-        getIdentifierName(table, query->table);
+        tryGetIdentifierNameInto(database, query->database);
+        tryGetIdentifierNameInto(table, query->table);
     }
 
-    getIdentifierName(format, query->format);
+    tryGetIdentifierNameInto(format, query->format);
 
     query->columns = columns;
     query->select = select;

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeString.h>
@@ -187,7 +188,7 @@ MutableColumnPtr AddingDefaultsBlockInputStream::mixColumns(const ColumnWithType
     {
         if (defaults_mask[i])
         {
-            if (col_defaults.column->isColumnConst())
+            if (isColumnConst(*col_defaults.column))
                 column_mixed->insert((*col_defaults.column)[i]);
             else
                 column_mixed->insertFrom(*col_defaults.column, i);

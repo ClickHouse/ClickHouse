@@ -1,6 +1,8 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Parsers/IAST.h>
 
 
@@ -60,7 +62,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                 if (input_header.has(res_elem.name))
                     conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
                 else
-                    throw Exception("Cannot find column " + backQuoteIfNeed(res_elem.name) + " in source stream",
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                         ErrorCodes::THERE_IS_NO_COLUMN);
                 break;
         }
@@ -69,13 +71,13 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
 
         /// Check constants.
 
-        if (res_elem.column->isColumnConst())
+        if (isColumnConst(*res_elem.column))
         {
-            if (!src_elem.column->isColumnConst())
+            if (!isColumnConst(*src_elem.column))
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is non constant in source stream but must be constant in result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-            else if (static_cast<const ColumnConst &>(*src_elem.column).getField() != static_cast<const ColumnConst &>(*res_elem.column).getField())
+            else if (assert_cast<const ColumnConst &>(*src_elem.column).getField() != assert_cast<const ColumnConst &>(*res_elem.column).getField())
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is constant but values of constants are different in source and result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
@@ -103,7 +105,7 @@ Block ConvertingBlockInputStream::readImpl()
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
-        if (src_elem.column->isColumnConst() && !res_elem.column->isColumnConst())
+        if (isColumnConst(*src_elem.column) && !isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();
 
         res_elem.column = std::move(converted);

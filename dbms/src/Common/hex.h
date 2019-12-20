@@ -42,7 +42,7 @@ inline void writeHexByteLowercase(UInt8 byte, void * out)
 
 /// Produces hex representation of an unsigned int with leading zeros (for checksums)
 template <typename TUInt>
-inline void writeHexUIntImpl(TUInt uint, char * out, const char * const table)
+inline void writeHexUIntImpl(TUInt uint_, char * out, const char * const table)
 {
     union
     {
@@ -50,7 +50,7 @@ inline void writeHexUIntImpl(TUInt uint, char * out, const char * const table)
         UInt8 uint8[sizeof(TUInt)];
     };
 
-    value = uint;
+    value = uint_;
 
     /// Use little endian
     for (size_t i = 0; i < sizeof(TUInt); ++i)
@@ -58,30 +58,30 @@ inline void writeHexUIntImpl(TUInt uint, char * out, const char * const table)
 }
 
 template <typename TUInt>
-inline void writeHexUIntUppercase(TUInt uint, char * out)
+inline void writeHexUIntUppercase(TUInt uint_, char * out)
 {
-    writeHexUIntImpl(uint, out, hex_byte_to_char_uppercase_table);
+    writeHexUIntImpl(uint_, out, hex_byte_to_char_uppercase_table);
 }
 
 template <typename TUInt>
-inline void writeHexUIntLowercase(TUInt uint, char * out)
+inline void writeHexUIntLowercase(TUInt uint_, char * out)
 {
-    writeHexUIntImpl(uint, out, hex_byte_to_char_lowercase_table);
+    writeHexUIntImpl(uint_, out, hex_byte_to_char_lowercase_table);
 }
 
 template <typename TUInt>
-std::string getHexUIntUppercase(TUInt uint)
+std::string getHexUIntUppercase(TUInt uint_)
 {
     std::string res(sizeof(TUInt) * 2, '\0');
-    writeHexUIntUppercase(uint, res.data());
+    writeHexUIntUppercase(uint_, res.data());
     return res;
 }
 
 template <typename TUInt>
-std::string getHexUIntLowercase(TUInt uint)
+std::string getHexUIntLowercase(TUInt uint_)
 {
     std::string res(sizeof(TUInt) * 2, '\0');
-    writeHexUIntLowercase(uint, res.data());
+    writeHexUIntLowercase(uint_, res.data());
     return res;
 }
 
