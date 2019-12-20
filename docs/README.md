@@ -78,7 +78,12 @@ Preferable language for contribution is English. Also, we can take contributions
 
 ### Markdown Dialect Cheatsheet
 
-- Headings: Place them on a separate line and start with `# `, `## ` or `### `. Use the [Title Case](https://titlecase.com/) for them. Example, `# The First Obligatory Title on a Page`.
+- Headings: Place them on a separate line and start with `# `, `## ` or `### `. Use the [Title Case](https://titlecase.com/) for them. Example:
+
+    ```text
+    # The First Obligatory Title on a Page.
+    ```
+
 - Bold text: `**asterisks**` or `__underlines__`.
 - Links: `[link text](uri)`. Examples: 
 
@@ -91,14 +96,13 @@ Preferable language for contribution is English. Also, we can take contributions
     - `- unordered`: Each item starts from the `-`.
     - `1. ordered`: Each item starts from the number.
     
-    The list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
+    A list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
 
 - Inline code: `` `in backticks` ``.
 - Multiline code blocks:
     <pre lang="no-highlight"><code>```lang_name
-    SELECT 1 FORMAT TSV
-    
-    1
+    code
+    lines
     ```</code></pre>
 - Note:
 
@@ -196,7 +200,9 @@ ClickHouse documentation can be divided by the audience for the following parts:
 
 ### Description Templates
 
-When writing docs, you can use prepared templates for the following entities:
+When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change level of headers.
+
+Templates:
 
 - [Function](dscr-templates/template-function.md)
 - [Setting](dscr-templates/template-setting.md)
