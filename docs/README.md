@@ -1,10 +1,10 @@
-# ClickHouse Docs
+# Contributing to ClickHouse Documentation
 
 ## Why You Need to Document ClickHouse
 
-The main reason is that ClickHouse is an open source project and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top compliant about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued, but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
+The main reason is that ClickHouse is an open source project, and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top complaint about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
 
-Many developers can say that the code is best docs by itself and they are right, but ClickHouse is not a project for C++ developers. The most of it's users don't know C++ and they don't search through the code. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in docs.
+Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't read the code. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
 
 If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
@@ -12,15 +12,15 @@ If you want to help ClickHouse with documentation you can face, for example, the
     
     We prepared some [recommendations](#what-to-write) for you.
 
-- "I know what I want to write, but I don't know how to contribute in docs."
+- "I know what I want to write, but I don't know how to contribute to docs."
 
     Here is some [tips](#how-to-contribute).
 
 - "I don't know what to describe."
 
-    Ask us and we will provide you a choice.
+    Ask us, and we will provide you a choice.
 
-Writing the docs is extremely useful for project's users and developers, and grows your carma :-)
+Writing the docs is extremely useful for project's users and developers, and grows your karma :-)
 
 **Contents**
 
@@ -30,7 +30,7 @@ Writing the docs is extremely useful for project's users and developers, and gro
     - [Adding a New File](#adding-a-new-file)
     - [Adding a New Language](#adding-a-new-language)
 -  [How to Write Content for ClickHouse Documentation](#what-to-write)
-    - [Target Audience](#target-audience)
+    - [Documentation for Different Audience](#target-audience)
     - [Common Recommendations](#common-recommendations)
     - [Description Templates](#templates)
 - [How to Build Documentation](#how-to-build-docs)
@@ -40,7 +40,7 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 ## What is the ClickHouse Documentation
 
-The documentation contains information about all the aspects of ClickHouse lifecycle: developing, testing, installing, operating and using. The base language of the documentation is English. English version is the most actual. All other languages are supported by contributors from different countries.
+The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
 At the moment, documentation exists in:
 
@@ -50,30 +50,29 @@ At the moment, documentation exists in:
 * Japanese: https://clickhouse.yandex/docs/ja/
 * Farsi: https://clickhouse.yandex/docs/fa/
 
-We store the documentation with the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs). Each language lays in the corresponding folder. Files in language folders that are not translated from English are created as symbolic links from the English ones.
+We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs). Each language lays in the corresponding folder. Files in language folders that are not translated from English are the symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
 
 ## How to Contribute to ClickHouse Documentation
 
-You can contribute to the documentation by many ways, for example:
+You can contribute to the documentation in many ways, for example:
 
 - Fork the ClickHouse repository, edit, commit, push, and open a pull request.
 
-    Add the `documentation` label to this pull request for proper checks applying.
+    Add the `documentation` label to this pull request for proper automatic checks applying.
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
-    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.yandex/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol you get to the ClickHouse docs file opened for editing.
+    You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.yandex/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
 
-    When you saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper checks applying.
+    When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying.
 
-- Open GitHub issue and place your docs there with the `documentation` label.
+- Open the GitHub issue and place your docs there with the `documentation` label.
 
-    We surely will find it and adopt to the documentation.
+    We surely will find and adopt it to the documentation.
 
-Preferable language for contribution is English, also, we can take contributions in Russian.
-
+Preferable language for contribution is English. Also, we can take contributions in the Russian language.
 
 <a name="markdown-cheatsheet"/>
 
@@ -151,8 +150,7 @@ When adding a new file:
 2. Add Markdown files with the translation, mirroring the folder structure of other languages.
 3. Commit and open a pull request with the new content.
 
-Some additional configuration has to be done to actually make a new language live on the official website, but it's not automated or documented yet, so we'll do it on our own after the pull request with the content is merged.
-
+When everything is ready, we will add the new language to the website.
 
 <a name="what-to-write"/>
 
@@ -161,23 +159,23 @@ Some additional configuration has to be done to actually make a new language liv
 
 <a name="target-audience"/>
 
-### Target Audience
+### Documentation for Different Audience
 
-When writing documentation think about people who will read it. Each audience has special requirements for terms they use in communications.
+When writing documentation, think about people who read it. Each audience has specific requirements for terms they use in communications.
 
-ClickHouse documentation can be divided by audience for the following parts:
+ClickHouse documentation can be divided by the audience for the following parts:
 
 - Conceptual topics in [Introduction](https://clickhouse.yandex/docs/en/), tutorials and overviews, changelog.
 
-    These topics are the most common through all the documentation. When editing text in them, use the most common terms that is comfortable for audience with basic technical skills. Everybody should understand advantages and disadvantages of a product.
+    These topics are for the most common auditory. When editing text in them, use the most common terms that are comfortable for the audience with basic technical skills.
 
 - Query language reference and related topics.
 
-    These parts of documentation are dedicated for those, who use ClickHouse for data analysis. Carefully describe syntax, input and output data for expressions. Don't forget of examples.
+    These parts of the documentation are dedicated to those who use ClickHouse for data analysis. Carefully describe syntax, input, and output data for expressions. Don't forget the examples.
 
 - Description of table engines and operation details.
 
-    Operation engineers, who help data analysts to solve their tasks should know how to install/update a ClickHouse server, maintain ClickHouse cluster, how integrate it with other tools and systems, how to get the maximum performance of their entire environment.
+    Operation engineers who help data analysts to solve their tasks should know how to install/update a ClickHouse server, maintain the ClickHouse cluster, how to integrate it with other tools and systems, how to get the maximum performance of their entire environment.
 
 - Developer's guides.
 
@@ -187,13 +185,12 @@ ClickHouse documentation can be divided by audience for the following parts:
 
 ### Common Recommendations
 
-- When searching a position for your text try to place it in the most anticipated place.
-- Group entities. For example, if several functions solve similar tasks or belong to specific group by use case or an application type, place them together.
+- When searching for a position for your text, try to place it in the most anticipated place.
+- Group entities. For example, if several functions solve similar tasks or belong to a specific group by use case or an application type, place them together.
 - Try to avoid slang. Use the most common and specific terms possible. If some terms are used as synonyms, state this explicitly.
-- Add examples for all the functionality. Add basic examples to show, how the function works by itself. Add use case examples to show how the function participate in solving specific tasks.
-- Any text concerning politics, religion or other social related themes are strictly prohibited in a documentation, examples, comments, and code.
+- Add examples for all the functionality. Add basic examples to show how the function works by itself. Add use case examples to show how the function participates in solving specific tasks.
+- Any text concerning politics, religion, or other social related themes are strictly prohibited in all the ClickHouse texts.
 - Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
-
 
 <a name="templates"/>
 
@@ -210,6 +207,6 @@ When writing docs, you can use prepared templates for the following entities:
 
 ## How to Build Documentation
 
-You don't need to build documentation locally. Add the `documentation` label to your PR's and CI tool will build docs and show you errors.
+You don't need to build the documentation locally. Add the `documentation` label to your PR's, and the GitHub CI tool will build docs and show you errors.
 
 However, if you want to build documentation locally, use the instructions in [docs/tools/README.md](docs/tools/README.md).
