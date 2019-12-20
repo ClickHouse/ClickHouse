@@ -148,7 +148,7 @@ class Join : public IJoin
 public:
     Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
-    bool empty() { return type == Type::EMPTY; }
+    bool empty() { return data->type == Type::EMPTY; }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -185,7 +185,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
-    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && has_no_rows_in_maps; }
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty; }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -294,6 +294,30 @@ public:
     using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsOneFlagged, MapsAllFlagged, MapsAsof>;
+    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
+
+    struct RightTableData
+    {
+        /// Protect state for concurrent use in insertFromBlock and joinBlock.
+        /// @note that these methods could be called simultaneously only while use of StorageJoin.
+        mutable std::shared_mutex rwlock;
+
+        Type type = Type::EMPTY;
+        bool empty = true;
+
+        MapsVariant maps;
+        Block sample_block; /// Block as it would appear in the BlockList
+        BlocksList blocks; /// Blocks of "right" table.
+        BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+
+        /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
+        Arena pool;
+    };
+
+    void reuseJoinedData(const Join & join)
+    {
+        data = join.data;
+    }
 
 private:
     friend class NonJoinedBlockInputStream;
@@ -306,33 +330,14 @@ private:
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;
 
-    /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
-    bool nullable_right_side;
-    /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
-    bool nullable_left_side;
-
-    /// Overwrite existing values when encountering the same key again
-    bool any_take_last_row;
-
-    /// Blocks of "right" table.
-    BlocksList blocks;
-
-    /// Nullmaps for blocks of "right" table (if needed)
-    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
-    BlockNullmapList blocks_nullmaps;
-
-    MapsVariant maps;
-    bool has_no_rows_in_maps = true;
-
-    /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
-    Arena pool;
-
-    Type type = Type::EMPTY;
+    bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
+    bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
+    bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<AsofRowRefs::Type> asof_type;
     ASOF::Inequality asof_inequality;
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
-
+    /// Right table data. StorageJoin shares it between many Join objects.
+    std::shared_ptr<RightTableData> data;
     Sizes key_sizes;
 
     /// Block with columns from the right-side table except key columns.
@@ -344,25 +349,17 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// Block as it would appear in the BlockList
-    Block saved_block_sample;
-
     Poco::Logger * log;
 
     Block totals;
-
-    /** Protect state for concurrent use in insertFromBlock and joinBlock.
-      * Note that these methods could be called simultaneously only while use of StorageJoin,
-      *  and StorageJoin only calls these two methods.
-      * That's why another methods are not guarded.
-      */
-    mutable std::shared_mutex rwlock;
 
     void init(Type type_);
 
     /** Set information about structure of right hand of JOIN (joined data).
       */
     void setSampleBlock(const Block & block);
+
+    const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
@@ -380,6 +377,8 @@ private:
 
     template <typename Maps>
     void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
+
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 };
 
 }
