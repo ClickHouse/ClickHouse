@@ -3844,9 +3844,15 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Repli
 {
     LOG_DEBUG(log, "Waiting for all replicas to process " << entry.znode_name);
 
-    Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    auto zookeeper = getZooKeeper()
+    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
     for (const String & replica : replicas)
-        waitForReplicaToProcessLogEntry(replica, entry);
+    {
+        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+        {
+            waitForReplicaToProcessLogEntry(replica, entry);
+        }
+    }
 
     LOG_DEBUG(log, "Finished waiting for all replicas to process " << entry.znode_name);
 }
