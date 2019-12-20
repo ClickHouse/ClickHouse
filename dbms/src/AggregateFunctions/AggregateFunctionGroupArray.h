@@ -552,7 +552,7 @@ public:
             if (data(place).value.size() >= max_elems)
                 return;
 
-            new_elems = std::min(data(rhs).value.size(), max_elems - data(place).value.size());
+            new_elems = std::min(data(rhs).value.size(), static_cast<size_t>(max_elems) - data(place).value.size());
         }
         else
             new_elems = data(rhs).value.size();
@@ -805,7 +805,7 @@ public:
             if (data(place).elems >= max_elems)
                 return;
 
-            new_elems = std::min(data(place).elems + data(rhs).elems, max_elems);
+            new_elems = std::min(data(place).elems + data(rhs).elems, static_cast<size_t>(max_elems));
         }
         else
         {
