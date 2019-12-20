@@ -83,7 +83,8 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
-    is_local = isLocal(config.getInt("tcp_port", 0));
+    const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
+    is_local = isLocal(config.getInt(port_type, 0));
 }
 
 
