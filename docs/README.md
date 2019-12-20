@@ -103,7 +103,7 @@ Preferable language for contribution is English. Also, we can take contributions
     <pre lang="no-highlight"><code>```lang_name
     code
     lines
-    ```</code></pre>
+```</code></pre>
 - Note:
 
     ```text
