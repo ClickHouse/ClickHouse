@@ -1,5 +1,8 @@
 #pragma once
 
+#include <vector>
+#include <algorithm>
+
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Core/SortDescription.h>
@@ -98,8 +101,11 @@ struct SortCursorImpl
 
     bool isFirst() const { return pos == 0; }
     bool isLast() const { return pos + 1 >= rows; }
+    bool isValid() const { return pos < rows; }
     void next() { ++pos; }
 };
+
+using SortCursorImpls = std::vector<SortCursorImpl>;
 
 
 /// For easy copying.
@@ -200,6 +206,92 @@ struct SortCursorWithCollation
     bool operator< (const SortCursorWithCollation & rhs) const
     {
         return greater(rhs);
+    }
+};
+
+
+template <typename Cursor>
+class SortingHeap
+{
+public:
+    SortingHeap() = default;
+
+    template <typename Cursors>
+    SortingHeap(const Cursors & cursors)
+    {
+        size_t size = cursors.size();
+        queue.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+            queue.emplace_back(&cursors[i]);
+        std::make_heap(queue.begin(), queue.end());
+    }
+
+    bool isValid() const { return !queue.empty(); }
+
+    Cursor & current() { return queue.front(); }
+
+    void next()
+    {
+        if (current()->isValid())
+        {
+            current()->next();
+            updateTopHeap(queue.begin(), queue.end());
+        }
+        else
+            queue.erase(queue.begin());
+    }
+
+private:
+    using Container = std::vector<Cursor>;
+    Container queue;
+
+    /// This is adapted version of the function __sift_down from libc++.
+    template <typename It>
+    static void updateTopHeap(It begin, It end)
+    {
+        size_t size = end - begin;
+        if (size < 2)
+            return;
+
+        size_t child_idx = 1;
+        It child_it = begin + 1;
+
+        /// Right child exists and is greater than left child.
+        if (size > 2 && *child_it < *(child_it + 1))
+        {
+            ++child_it;
+            ++child_idx;
+        }
+
+        /// Check if we are in order.
+        if (*child_it < *begin)
+            return;
+
+        auto curr_it = begin;
+        auto top(std::move(*begin));
+        do
+        {
+            /// We are not in heap-order, swap the parent with it's largest child.
+            *curr_it = std::move(*child_it);
+            curr_it = child_it;
+
+            if ((size - 2) / 2 < child_idx)
+                break;
+
+            // recompute the child based off of the updated parent
+            child_idx = 2 * child_idx + 1;
+            child_it = begin + child_idx;
+
+            if ((child_idx + 1) < size && *child_it < *(child_it + 1))
+            {
+                /// Right child exists and is greater than left child.
+                ++child_it;
+                ++child_idx;
+            }
+
+            /// Check if we are in order.
+        } while (!(*child_it < top));
+        *curr_it = std::move(top);
     }
 };
 
