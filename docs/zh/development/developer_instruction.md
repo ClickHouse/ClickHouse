@@ -9,7 +9,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 您需要(申请)一个GitHub账户来使用ClickHouse。
 
-如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将其上传到GitHub上。这些交互都是必须的，也可以使用与其他任何SSH服务器相同的密钥。
+如果没有账户，请在https://github.com上注册一个。如果没有SSH密钥，请在本地创建密钥并将公钥上传到GitHub上。这有助于你提交更新代码。并且在不同的SSH服务端，你也可以使用相同的SSH密钥。
 
 要创建ClickHouse源码库的分支，请在https://github.com/ClickHouse/ClickHouse页面上点击右上角的"fork"按钮。它会在本账户上创建您个人的ClickHouse/ClickHouse分支。
 
@@ -105,11 +105,11 @@ brew install cmake ninja
 
 ClickHouse使用多个外部库进行构建。大多数外部库不需要单独安装，而是和ClickHouse一起在子模块中构建。可以查看`contrib`中罗列的清单。
 
-有一些库不是由源构建的，而是由系统提供，例如：ICU以及Readline，也建议安装。
+有一些库不是由源构建的，而是由系统提供，例如：Readline，也建议安装。
 
-Ubuntu: `sudo apt install libicu-dev libreadline-dev`
+Ubuntu: `sudo apt install libreadline-dev`
 
-Mac OS X: `brew install icu4c readline`
+Mac OS X: `brew install readline`
 
 但是，这些库本身都是可选的，ClickHouse即便没有它们也可以构建。ICU用于支持`ORDER BY`中的`COLLATE`(例如，对土耳其字母进行排序)。Readline用于在clickhouse-client中更便捷的指令输入。
 

@@ -201,6 +201,7 @@ SELECT * FROM system.events LIMIT 5
 Содержит информацию о том, какие параметры [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
 
 Столбцы:
+
 - `config_name`     (String) - Имя параметра, используемого для `graphite_rollup`.
 - `regexp`          (String) - Шаблон имени метрики.
 - `function`        (String) - Имя агрегирующей функции.
@@ -410,8 +411,8 @@ ClickHouse создаёт таблицу только в том случае, к
     - `'QueryFinish' = 2` — успешное завершение выполнения запроса.
     - `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
     - `'ExceptionWhileProcessing' = 4` — исключение во время обработки запроса.
-- `event_date` (Date) — дата события.
-- `event_time` (DateTime) — время события.
+- `event_date` (Date) — дата начала запроса.
+- `event_time` (DateTime) — время начала запроса.
 - `query_start_time` (DateTime) — время начала обработки запроса.
 - `query_duration_ms` (UInt64) — длительность обработки запроса.
 - `read_rows` (UInt64) — количество прочитанных строк.
@@ -421,43 +422,39 @@ ClickHouse создаёт таблицу только в том случае, к
 - `result_rows` (UInt64) — количество строк в результате.
 - `result_bytes` (UInt64) — объём результата в байтах.
 - `memory_usage` (UInt64) — потребление RAM запросом.
-- `query` (String) — строка запроса.
-- `exception` (String) — сообщение исключения.
+- `query` (String) — текст запроса.
+- `exception` (String) — сообщение исключения, если запрос завершился по исключению.
 - `stack_trace` (String) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
 - `is_initial_query` (UInt8) — вид запроса. Возможные значения:
     - 1 — запрос был инициирован клиентом.
     - 0 — запрос был инициирован другим запросом при распределенном запросе.
 - `user` (String) — пользователь, запустивший текущий запрос.
 - `query_id` (String) — ID запроса.
-- `address` (FixedString(16)) — IP адрес, с которого пришел запрос.
-- `port` (UInt16) — порт, на котором сервер принял запрос.
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, с которого клиент сделал запрос
 - `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
 - `initial_query_id` (String) — ID родительского запроса.
-- `initial_address` (FixedString(16)) — IP адрес, с которого пришел родительский запрос.
-- `initial_port` (UInt16) — порт, на котором сервер принял родительский запрос от клиента.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, с которого клиент сделал родительский запрос.
 - `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` (String) — операционная система пользователя.
-- `client_hostname` (String) — имя сервера, к которому присоединился [clickhouse-client](../interfaces/cli.md).
-- `client_name` (String) — [clickhouse-client](../interfaces/cli.md).
-- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md).
-- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md).
-- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md).
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
 - `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
     - 0 — запрос запущен с интерфейса TCP.
     - 1 — `GET`.
     - 2 — `POST`.
 - `http_user_agent` (String) — HTTP заголовок `UserAgent`.
-- `quota_key` (String) — идентификатор квоты из настроек [квот](quotas.md).
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
 - `revision` (UInt32) — ревизия ClickHouse.
 - `thread_numbers` (Array(UInt32)) — количество потоков, участвующих в обработке запросов.
-- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
-    - Время, потраченное на чтение и запись по сети.
-    - Время, потраченное на чтение и запись на диск.
-    - Количество сетевых ошибок.
-    - Время, потраченное на ожидание, когда пропускная способность сети ограничена.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](#system_tables-events
 - `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
 - `Settings.Names` (Array(String)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 - `Settings.Values` (Array(String)) — Значения настроек, которые перечислены в столбце `Settings.Names`.
@@ -476,6 +473,72 @@ ClickHouse создаёт таблицу только в том случае, к
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_log](server_settings/settings.md#server_settings-query-log)  (параметр `partition_by`).
+
+## system.query_thread_log {#system_tables-query-thread-log}
+
+Содержит информацию о каждом потоке выполняемых запросов.
+
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+
+Чтобы включить логирование, задайте значение параметра [log_query_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+
+Столбцы:
+
+- `event_date` (Date) — дата завершения выполнения запроса потоком.
+- `event_time` (DateTime) — дата и время завершения выполнения запроса потоком.
+- `query_start_time` (DateTime) — время начала обработки запроса.
+- `query_duration_ms` (UInt64) — длительность обработки запроса в миллисекундах.
+- `read_rows` (UInt64) — количество прочитанных строк.
+- `read_bytes` (UInt64) — количество прочитанных байтов.
+- `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `memory_usage` (Int64) — разница между выделенной и освобождённой памятью в контексте потока.
+- `peak_memory_usage` (Int64) — максимальная разница между выделенной и освобождённой памятью в контексте потока.
+- `thread_name` (String) — Имя потока.
+- `thread_number` (UInt32) — Внутренний ID потока.
+- `os_thread_id` (Int32) — tid (ID потока операционной системы).
+- `master_thread_number` (UInt32) — Внутренний ID главного потока.
+- `master_os_thread_id` (Int32) — tid (ID потока операционной системы) главного потока.
+- `query` (String) — текст запроса.
+- `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+    - 1 — запрос был инициирован клиентом.
+    - 0 — запрос был инициирован другим запросом при распределенном запросе.
+- `user` (String) — пользователь, запустивший текущий запрос.
+- `query_id` (String) — ID запроса.
+- `address` (IPv6) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, с которого пришел запрос.
+- `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
+- `initial_query_id` (String) — ID родительского запроса.
+- `initial_address` (IPv6) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, пришел родительский запрос.
+- `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+- `client_hostname` (String) — hostname клиентской машины, с которой присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
+- `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+    - 0 — запрос запущен с интерфейса TCP.
+    - 1 — `GET`.
+    - 2 — `POST`.
+- `http_user_agent` (String) — HTTP заголовок `UserAgent`.
+- `quota_key` (String) — "ключ квоты" из настроек [квот](quotas.md) (см. `keyed`).
+- `revision` (UInt32) — ревизия ClickHouse.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events
+- `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
+
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+
+Если таблицу удалить вручную, она пересоздастся автоматически "на лету". При этом все логи на момент удаления таблицы будут удалены.
+
+!!! note "Примечание"
+    Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (параметр `partition_by`).
 
 ## system.replicas {#system_tables-replicas}
 

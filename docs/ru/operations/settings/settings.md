@@ -488,6 +488,16 @@ ClickHouse использует этот параметр при чтении д
 
     log_queries=1
 
+## log_query_threads {#settings-log-query-threads}
+
+Установка логирования информации о потоках выполнения запроса.
+
+Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log).
+
+**Пример** :
+
+    log_query_threads=1
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 Формировать блоки указанного размера, при вставке в таблицу.
@@ -569,6 +579,12 @@ Default value: 10000 seconds.
 Таймауты в секундах на сокет, по которому идёт общение с клиентом.
 
 Значение по умолчанию: 10, 300, 300.
+
+## cancel_http_readonly_queries_on_client_close
+
+Отменяет HTTP readonly запросы (например, SELECT), когда клиент обрывает соединение до завершения получения данных.
+
+Значение по умолчанию: 0
 
 ## poll_interval
 

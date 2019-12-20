@@ -107,6 +107,19 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         result_header = getCommonHeaderForUnion(headers);
     }
+
+    /// InterpreterSelectWithUnionQuery ignores limits if all nested interpreters ignore limits.
+    bool all_nested_ignore_limits = true;
+    bool all_nested_ignore_quota = true;
+    for (auto & interpreter : nested_interpreters)
+    {
+        if (!interpreter->ignoreLimits())
+            all_nested_ignore_limits = false;
+        if (!interpreter->ignoreQuota())
+            all_nested_ignore_quota = false;
+    }
+    options.ignore_limits |= all_nested_ignore_limits;
+    options.ignore_quota |= all_nested_ignore_quota;
 }
 
 

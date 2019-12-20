@@ -44,7 +44,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
@@ -419,6 +419,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
     sanitizeBlock(result_header);
+
+    /// Remove limits for some tables in the `system` database.
+    if (storage && (storage->getDatabaseName() == "system"))
+    {
+        String table_name = storage->getTableName();
+        if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
+        {
+            options.ignore_quota = true;
+            options.ignore_limits = true;
+        }
+    }
 }
 
 
@@ -1406,8 +1417,14 @@ void InterpreterSelectQuery::executeFetchColumns(
             auto column = ColumnAggregateFunction::create(func);
             column->insertFrom(place);
 
+            auto header = analysis_result.before_aggregation->getSampleBlock();
+            size_t arguments_size = desc->argument_names.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = header.getByName(desc->argument_names[j]).type;
+
             Block block_with_count{
-                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, DataTypes(), Array()), desc->column_name}};
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
 
             auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
             if constexpr (pipeline_with_processors)
@@ -1776,14 +1793,14 @@ void InterpreterSelectQuery::executeFetchColumns(
                 limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 
-            QuotaForIntervals & quota = context->getQuota();
+            auto quota = context->getQuota();
 
             for (auto & stream : streams)
             {
                 if (!options.ignore_limits)
                     stream->setLimits(limits);
 
-                if (options.to_stage == QueryProcessingStage::Complete)
+                if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
                     stream->setQuota(quota);
             }
 
@@ -1793,7 +1810,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (!options.ignore_limits)
                     pipe.setLimits(limits);
 
-                if (options.to_stage == QueryProcessingStage::Complete)
+                if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
                     pipe.setQuota(quota);
             }
         }
@@ -2639,29 +2656,30 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
 }
 
 
-// TODO: move to anonymous namespace
-bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
+namespace
 {
-    if (query.group_by_with_totals)
-        return true;
+    bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
+    {
+        if (query.group_by_with_totals)
+            return true;
 
-    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
+        /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
       * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
       */
 
-    if (auto query_table = extractTableExpression(query, 0))
-    {
-        if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
+        if (auto query_table = extractTableExpression(query, 0))
         {
-            for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                    return true;
+            if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
+            {
+                for (const auto & elem : ast_union->list_of_selects->children)
+                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
+                        return true;
+            }
         }
+
+        return false;
     }
-
-    return false;
 }
-
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
