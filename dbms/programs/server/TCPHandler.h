@@ -36,6 +36,12 @@ struct QueryState
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
     Protocol::Compression compression = Protocol::Compression::Disable;
 
+    /// A queue with internal logs that will be passed to client. It must be
+    /// destroyed after input/output blocks, because they may contain other
+    /// threads that use this queue.
+    InternalTextLogsQueuePtr logs_queue;
+    BlockOutputStreamPtr logs_block_out;
+
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     BlockInputStreamPtr block_in;
@@ -57,16 +63,21 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
+    /// Temporary tables read
+    bool temporary_tables_read = false;
+
+    /// Request requires data from client for function input()
+    bool need_receive_data_for_input = false;
+    /// temporary place for incoming data block for input()
+    Block block_for_input;
+    /// sample block from StorageInput
+    Block input_header;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
-
-    /// A queue with internal logs that will be passed to client
-    InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
 
     void reset()
     {
@@ -77,6 +88,13 @@ struct QueryState
     {
         return is_empty;
     }
+};
+
+
+struct LastBlockInputParameters
+{
+    Protocol::Compression compression = Protocol::Compression::Disable;
+    Block header;
 };
 
 
@@ -124,6 +142,9 @@ private:
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
 
+    /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
+    LastBlockInputParameters last_block_in;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
     /// It is the name of the server that will be sent to the client.
@@ -134,14 +155,23 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
-    bool receiveData();
+    bool receiveData(bool scalar);
+    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & global_settings);
+    std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);
+
+    [[noreturn]] void receiveUnexpectedData();
+    [[noreturn]] void receiveUnexpectedQuery();
+    [[noreturn]] void receiveUnexpectedHello();
+    [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
     void processInsertQuery(const Settings & global_settings);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
+
+    void processOrdinaryQueryWithProcessors(size_t num_threads);
 
     void processTablesStatusRequest();
 
@@ -153,9 +183,9 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendProfileInfo();
-    void sendTotals();
-    void sendExtremes();
+    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendTotals(const Block & totals);
+    void sendExtremes(const Block & extremes);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

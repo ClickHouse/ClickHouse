@@ -6,10 +6,11 @@
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
-
+#include "registerDictionaries.h"
 
 namespace DB
 {
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int EXTERNAL_LIBRARY_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -120,21 +122,32 @@ namespace
 LibraryDictionarySource::LibraryDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    Block & sample_block)
+    const std::string & config_prefix_,
+    Block & sample_block_,
+    const Context & context,
+    bool check_config)
     : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
-    , config_prefix{config_prefix}
+    , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
 {
+
+    if (check_config)
+    {
+        const String dictionaries_lib_path = context.getDictionariesLibPath();
+        if (!startsWith(path, dictionaries_lib_path))
+            throw Exception("LibraryDictionarySource: Library path " + dictionaries_lib_path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
     if (!Poco::File(path).exists())
         throw Exception(
             "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
+
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
-#if defined(RTLD_DEEPBIND) // Does not exists in freebsd
+#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
         | RTLD_DEEPBIND
 #endif
     );
@@ -285,9 +298,10 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context &) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, check_config);
     };
     factory.registerSource("library", createTableSource);
 }

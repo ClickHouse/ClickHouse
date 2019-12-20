@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -53,42 +54,49 @@ private:
     {
         AggregateFunctionForEachData & state = data(place);
 
-        /// Ensure we have aggreate states for new_size elements, allocate from arena if needed
-
+        /// Ensure we have aggreate states for new_size elements, allocate
+        /// from arena if needed. When reallocating, we can't copy the
+        /// states to new buffer with memcpy, because they may contain pointers
+        /// to themselves. In particular, this happens when a state contains
+        /// a PODArrayWithStackMemory, which stores small number of elements
+        /// inline. This is why we create new empty states in the new buffer,
+        /// and merge the old states to them.
         size_t old_size = state.dynamic_array_size;
         if (old_size < new_size)
         {
-            state.array_of_aggregate_datas = arena.alignedRealloc(
-                state.array_of_aggregate_datas,
-                old_size * nested_size_of_data,
+            char * old_state = state.array_of_aggregate_datas;
+            char * new_state = arena.alignedAlloc(
                 new_size * nested_size_of_data,
                 nested_func->alignOfData());
 
-            size_t i = old_size;
-            char * nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;
-
+            size_t i;
             try
             {
-                for (; i < new_size; ++i)
+                for (i = 0; i < new_size; ++i)
                 {
-                    nested_func->create(nested_state);
-                    nested_state += nested_size_of_data;
+                    nested_func->create(&new_state[i * nested_size_of_data]);
                 }
             }
             catch (...)
             {
                 size_t cleanup_size = i;
-                nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;
 
                 for (i = 0; i < cleanup_size; ++i)
                 {
-                    nested_func->destroy(nested_state);
-                    nested_state += nested_size_of_data;
+                    nested_func->destroy(&new_state[i * nested_size_of_data]);
                 }
 
                 throw;
             }
 
+            for (i = 0; i < old_size; i++)
+            {
+                nested_func->merge(&new_state[i * nested_size_of_data],
+                        &old_state[i * nested_size_of_data],
+                        &arena);
+            }
+
+            state.array_of_aggregate_datas = new_state;
             state.dynamic_array_size = new_size;
         }
 
@@ -142,9 +150,9 @@ public:
         const IColumn * nested[num_arguments];
 
         for (size_t i = 0; i < num_arguments; ++i)
-            nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
 
-        const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
         size_t begin = offsets[row_num - 1];
@@ -153,7 +161,7 @@ public:
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
         for (size_t i = 1; i < num_arguments; ++i)
         {
-            const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
+            const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
@@ -221,7 +229,7 @@ public:
     {
         const AggregateFunctionForEachData & state = data(place);
 
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 

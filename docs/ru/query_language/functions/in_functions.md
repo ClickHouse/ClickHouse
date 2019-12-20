@@ -1,6 +1,7 @@
 # Функции для реализации оператора IN.
 
-## in, notIn, globalIn, globalNotIn
+## in, notIn, globalIn, globalNotIn {#in-functions}
+
 Смотрите раздел [Операторы IN](../select.md#select-in-operators).
 
 ## tuple(x, y, ...), оператор (x, y, ...)

@@ -7,9 +7,11 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -45,11 +47,11 @@ namespace
 
         /// Such default parameters were picked because they did good on some tests,
         /// though it still requires to fit parameters to achieve better result
-        auto learning_rate = Float64(0.01);
-        auto l2_reg_coef = Float64(0.1);
-        UInt32 batch_size = 15;
+        auto learning_rate = Float64(1.0);
+        auto l2_reg_coef = Float64(0.5);
+        UInt64 batch_size = 15;
 
-        std::string weights_updater_name = "SGD";
+        std::string weights_updater_name = "Adam";
         std::unique_ptr<IGradientComputer> gradient_computer;
 
         if (!parameters.empty())
@@ -62,12 +64,12 @@ namespace
         }
         if (parameters.size() > 2)
         {
-            batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]);
+            batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[2]);
         }
         if (parameters.size() > 3)
         {
             weights_updater_name = parameters[3].safeGet<String>();
-            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov")
+            if (weights_updater_name != "SGD" && weights_updater_name != "Momentum" && weights_updater_name != "Nesterov" && weights_updater_name != "Adam")
                 throw Exception("Invalid parameter for weights updater. The only supported are 'SGD', 'Momentum' and 'Nesterov'",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -104,21 +106,21 @@ void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 }
 
 LinearModelData::LinearModelData(
-    Float64 learning_rate,
-    Float64 l2_reg_coef,
-    UInt32 param_num,
-    UInt32 batch_capacity,
-    std::shared_ptr<DB::IGradientComputer> gradient_computer,
-    std::shared_ptr<DB::IWeightsUpdater> weights_updater)
-    : learning_rate(learning_rate)
-    , l2_reg_coef(l2_reg_coef)
-    , batch_capacity(batch_capacity)
+    Float64 learning_rate_,
+    Float64 l2_reg_coef_,
+    UInt64 param_num_,
+    UInt64 batch_capacity_,
+    std::shared_ptr<DB::IGradientComputer> gradient_computer_,
+    std::shared_ptr<DB::IWeightsUpdater> weights_updater_)
+    : learning_rate(learning_rate_)
+    , l2_reg_coef(l2_reg_coef_)
+    , batch_capacity(batch_capacity_)
     , batch_size(0)
-    , gradient_computer(std::move(gradient_computer))
-    , weights_updater(std::move(weights_updater))
+    , gradient_computer(std::move(gradient_computer_))
+    , weights_updater(std::move(weights_updater_))
 {
-    weights.resize(param_num, Float64{0.0});
-    gradient_batch.resize(param_num + 1, Float64{0.0});
+    weights.resize(param_num_, Float64{0.0});
+    gradient_batch.resize(param_num_ + 1, Float64{0.0});
 }
 
 void LinearModelData::update_state()
@@ -126,7 +128,7 @@ void LinearModelData::update_state()
     if (batch_size == 0)
         return;
 
-    weights_updater->update(batch_size, weights, bias, gradient_batch);
+    weights_updater->update(batch_size, weights, bias, learning_rate, gradient_batch);
     batch_size = 0;
     ++iter_num;
     gradient_batch.assign(gradient_batch.size(), Float64{0.0});
@@ -147,14 +149,14 @@ void LinearModelData::returnWeights(IColumn & to) const
 {
     size_t size = weights.size() + 1;
 
-    ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+    ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
     ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
     size_t old_size = offsets_to.back();
     offsets_to.push_back(old_size + size);
 
     typename ColumnFloat64::Container & val_to
-            = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
+            = assert_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
     val_to.reserve(old_size + size);
     for (size_t i = 0; i + 1 < size; ++i)
@@ -191,6 +193,7 @@ void LinearModelData::merge(const DB::LinearModelData & rhs)
     update_state();
     /// can't update rhs state because it's constant
 
+    /// squared mean is more stable (in sence of quality of prediction) when two states with quietly different number of learning steps are merged
     Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
     for (size_t i = 0; i < weights.size(); ++i)
@@ -210,7 +213,7 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
 
     /// Here we have columns + 1 as first column corresponds to target value, and others - to features
     weights_updater->add_to_batch(
-        gradient_batch, *gradient_computer, weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
+        gradient_batch, *gradient_computer, weights, bias, l2_reg_coef, target, columns + 1, row_num);
 
     ++batch_size;
     if (batch_size == batch_capacity)
@@ -219,6 +222,94 @@ void LinearModelData::add(const IColumn ** columns, size_t row_num)
     }
 }
 
+/// Weights updaters
+
+void Adam::write(WriteBuffer & buf) const
+{
+    writeBinary(average_gradient, buf);
+    writeBinary(average_squared_gradient, buf);
+}
+
+void Adam::read(ReadBuffer & buf)
+{
+    readBinary(average_gradient, buf);
+    readBinary(average_squared_gradient, buf);
+}
+
+void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
+{
+    auto & adam_rhs = static_cast<const Adam &>(rhs);
+
+    if (adam_rhs.average_gradient.empty())
+        return;
+
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty() ||
+                adam_rhs.average_gradient.size() != adam_rhs.average_squared_gradient.size())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
+    }
+
+    for (size_t i = 0; i < average_gradient.size(); ++i)
+    {
+        average_gradient[i] = average_gradient[i] * frac + adam_rhs.average_gradient[i] * rhs_frac;
+        average_squared_gradient[i] = average_squared_gradient[i] * frac + adam_rhs.average_squared_gradient[i] * rhs_frac;
+    }
+    beta1_powered_ *= adam_rhs.beta1_powered_;
+    beta2_powered_ *= adam_rhs.beta2_powered_;
+}
+
+void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
+{
+    if (average_gradient.empty())
+    {
+        if (!average_squared_gradient.empty())
+            throw Exception("Average_gradient and average_squared_gradient must have same size", ErrorCodes::LOGICAL_ERROR);
+
+        average_gradient.resize(batch_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
+
+    for (size_t i = 0; i != average_gradient.size(); ++i)
+    {
+        Float64 normed_gradient = batch_gradient[i] / batch_size;
+        average_gradient[i] = beta1_ * average_gradient[i] + (1 - beta1_) * normed_gradient;
+        average_squared_gradient[i] = beta2_ * average_squared_gradient[i] +
+                (1 - beta2_) * normed_gradient * normed_gradient;
+    }
+
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        weights[i] += (learning_rate * average_gradient[i]) /
+                ((1 - beta1_powered_) * (sqrt(average_squared_gradient[i] / (1 - beta2_powered_)) + eps_));
+    }
+    bias += (learning_rate * average_gradient[weights.size()]) /
+            ((1 - beta1_powered_) * (sqrt(average_squared_gradient[weights.size()] / (1 - beta2_powered_)) + eps_));
+
+    beta1_powered_ *= beta1_;
+    beta2_powered_ *= beta2_;
+}
+
+void Adam::add_to_batch(
+        std::vector<Float64> & batch_gradient,
+        IGradientComputer & gradient_computer,
+        const std::vector<Float64> & weights,
+        Float64 bias,
+        Float64 l2_reg_coef,
+        Float64 target,
+        const IColumn ** columns,
+        size_t row_num)
+{
+    if (average_gradient.empty())
+    {
+        average_gradient.resize(batch_gradient.size(), Float64{0.0});
+        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
+    }
+    gradient_computer.compute(batch_gradient, weights, bias, l2_reg_coef, target, columns, row_num);
+}
 
 void Nesterov::read(ReadBuffer & buf)
 {
@@ -233,13 +324,16 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
+    if (accumulated_gradient.empty())
+        accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
+
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
         accumulated_gradient[i] = accumulated_gradient[i] * frac + nesterov_rhs.accumulated_gradient[i] * rhs_frac;
     }
 }
 
-void Nesterov::update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     if (accumulated_gradient.empty())
     {
@@ -248,7 +342,7 @@ void Nesterov::update(UInt32 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + batch_gradient[i] / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + (learning_rate * batch_gradient[i]) / batch_size;
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -262,7 +356,6 @@ void Nesterov::add_to_batch(
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,
     Float64 bias,
-    Float64 learning_rate,
     Float64 l2_reg_coef,
     Float64 target,
     const IColumn ** columns,
@@ -280,7 +373,7 @@ void Nesterov::add_to_batch(
     }
     auto shifted_bias = bias + accumulated_gradient[weights.size()] * alpha_;
 
-    gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, learning_rate, l2_reg_coef, target, columns, row_num);
+    gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, l2_reg_coef, target, columns, row_num);
 }
 
 void Momentum::read(ReadBuffer & buf)
@@ -302,7 +395,7 @@ void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
     }
 }
 
-void Momentum::update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
     if (accumulated_gradient.empty())
@@ -312,7 +405,7 @@ void Momentum::update(UInt32 batch_size, std::vector<Float64> & weights, Float64
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
-        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + batch_gradient[i] / batch_size;
+        accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + (learning_rate * batch_gradient[i]) / batch_size;
     }
     for (size_t i = 0; i < weights.size(); ++i)
     {
@@ -322,14 +415,14 @@ void Momentum::update(UInt32 batch_size, std::vector<Float64> & weights, Float64
 }
 
 void StochasticGradientDescent::update(
-    UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient)
+    UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than  0
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        weights[i] += batch_gradient[i] / batch_size;
+        weights[i] += (learning_rate * batch_gradient[i]) / batch_size;
     }
-    bias += batch_gradient[weights.size()] / batch_size;
+    bias += (learning_rate * batch_gradient[weights.size()]) / batch_size;
 }
 
 void IWeightsUpdater::add_to_batch(
@@ -337,14 +430,15 @@ void IWeightsUpdater::add_to_batch(
     IGradientComputer & gradient_computer,
     const std::vector<Float64> & weights,
     Float64 bias,
-    Float64 learning_rate,
     Float64 l2_reg_coef,
     Float64 target,
     const IColumn ** columns,
     size_t row_num)
 {
-    gradient_computer.compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
+    gradient_computer.compute(batch_gradient, weights, bias, l2_reg_coef, target, columns, row_num);
 }
+
+/// Gradient computers
 
 void LogisticRegression::predict(
     ColumnVector<Float64>::Container & container,
@@ -387,7 +481,6 @@ void LogisticRegression::compute(
     std::vector<Float64> & batch_gradient,
     const std::vector<Float64> & weights,
     Float64 bias,
-    Float64 learning_rate,
     Float64 l2_reg_coef,
     Float64 target,
     const IColumn ** columns,
@@ -402,11 +495,11 @@ void LogisticRegression::compute(
     derivative *= target;
     derivative = exp(derivative);
 
-    batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);
+    batch_gradient[weights.size()] += target / (derivative + 1);
     for (size_t i = 0; i < weights.size(); ++i)
     {
         auto value = (*columns[i]).getFloat64(row_num);
-        batch_gradient[i] += learning_rate * target * value / (derivative + 1) - 2 * learning_rate * l2_reg_coef * weights[i];
+        batch_gradient[i] += target * value / (derivative + 1) - 2 * l2_reg_coef * weights[i];
     }
 }
 
@@ -459,7 +552,6 @@ void LinearRegression::compute(
     std::vector<Float64> & batch_gradient,
     const std::vector<Float64> & weights,
     Float64 bias,
-    Float64 learning_rate,
     Float64 l2_reg_coef,
     Float64 target,
     const IColumn ** columns,
@@ -471,13 +563,13 @@ void LinearRegression::compute(
         auto value = (*columns[i]).getFloat64(row_num);
         derivative -= weights[i] * value;
     }
-    derivative *= (2 * learning_rate);
+    derivative *= 2;
 
     batch_gradient[weights.size()] += derivative;
     for (size_t i = 0; i < weights.size(); ++i)
     {
         auto value = (*columns[i]).getFloat64(row_num);
-        batch_gradient[i] += derivative * value - 2 * learning_rate * l2_reg_coef * weights[i];
+        batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
     }
 }
 

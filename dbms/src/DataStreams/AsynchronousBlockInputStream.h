@@ -33,6 +33,12 @@ public:
 
     String getName() const override { return "Asynchronous"; }
 
+    void waitInnerThread()
+    {
+        if (started)
+            pool.wait();
+    }
+
     void readPrefix() override
     {
         /// Do not call `readPrefix` on the child, so that the corresponding actions are performed in a separate thread.
@@ -73,6 +79,15 @@ public:
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
+    void cancel(bool kill) override
+    {
+        IBlockInputStream::cancel(kill);
+
+        /// Wait for some backgroud calculations to be sure,
+        ///  that after end of stream nothing is being executing.
+        if (started)
+            pool.wait();
+    }
 
     ~AsynchronousBlockInputStream() override
     {

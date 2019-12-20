@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <type_traits>
+#include <limits>
 
 namespace DB
 {
@@ -24,28 +25,23 @@ extern const int CANNOT_DECOMPRESS;
 
 namespace
 {
-UInt32 getDeltaTypeByteSize(UInt8 data_bytes_size)
+
+Int64 getMaxValueForByteSize(UInt8 byte_size)
 {
-    // both delta and double delta can be twice the size of data item, but not less than 32 bits and not more that 64.
-    return std::min(64/8, std::max(32/8, data_bytes_size * 2));
-}
-
-UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
-{
-    const UInt8 items_count_size = 4;
-
-    return items_count_size + data_bytes_size + getDeltaTypeByteSize(data_bytes_size);
-}
-
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
-{
-    const UInt32 items_count = uncompressed_size / data_bytes_size;
-
-    // 11111 + max 64 bits of double delta.
-    const UInt32 max_item_size_bits = 5 + getDeltaTypeByteSize(data_bytes_size) * 8;
-
-    // + 8 is to round up to next byte.
-    return (items_count * max_item_size_bits + 8) / 8;
+    switch (byte_size)
+    {
+        case sizeof(UInt8):
+            return std::numeric_limits<Int8>::max();
+        case sizeof(UInt16):
+            return std::numeric_limits<Int16>::max();
+        case sizeof(UInt32):
+            return std::numeric_limits<Int32>::max();
+        case sizeof(UInt64):
+            return std::numeric_limits<Int64>::max();
+        default:
+            assert(false && "only 1, 2, 4 and 8 data sizes are supported");
+    }
+    __builtin_unreachable();
 }
 
 struct WriteSpec
@@ -55,8 +51,10 @@ struct WriteSpec
     const UInt8 data_bits;
 };
 
+const std::array<UInt8, 5> DELTA_SIZES{7, 9, 12, 32, 64};
+
 template <typename T>
-WriteSpec getWriteSpec(const T & value)
+WriteSpec getDeltaWriteSpec(const T & value)
 {
     if (value > -63 && value < 64)
     {
@@ -80,26 +78,60 @@ WriteSpec getWriteSpec(const T & value)
     }
 }
 
-template <typename T, typename DeltaType>
+WriteSpec getDeltaMaxWriteSpecByteSize(UInt8 data_bytes_size)
+{
+    return getDeltaWriteSpec(getMaxValueForByteSize(data_bytes_size));
+}
+
+UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
+{
+    const UInt8 items_count_size = 4;
+    const UInt8 first_delta_bytes_size = data_bytes_size;
+
+    return items_count_size + data_bytes_size + first_delta_bytes_size;
+}
+
+UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+{
+    const UInt32 items_count = uncompressed_size / data_bytes_size;
+    const auto double_delta_write_spec = getDeltaMaxWriteSpecByteSize(data_bytes_size);
+
+    const UInt32 max_item_size_bits = double_delta_write_spec.prefix_bits + double_delta_write_spec.data_bits;
+
+    // + 8 is to round up to next byte.
+    auto result = (items_count * max_item_size_bits + 7) / 8;
+
+    return result;
+}
+
+template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    using UnsignedDeltaType = typename std::make_unsigned<DeltaType>::type;
+    // Since only unsinged int has granted 2-compliment overflow handling, we are doing math here on unsigned types.
+    // To simplify and booletproof code, we operate enforce ValueType to be unsigned too.
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    using UnsignedDeltaType = ValueType;
 
-    if (source_size % sizeof(T) != 0)
-        throw Exception("Cannot compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
+    // We use signed delta type to turn huge unsigned values into smaller signed:
+    // ffffffff => -1
+    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
+
+    if (source_size % sizeof(ValueType) != 0)
+        throw Exception("Cannot compress, data size " + toString(source_size)
+                        + " is not aligned to " + toString(sizeof(ValueType)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
 
-    const UInt32 items_count = source_size / sizeof(T);
-    unalignedStore(dest, items_count);
+    const UInt32 items_count = source_size / sizeof(ValueType);
+    unalignedStore<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
-    T prev_value{};
-    DeltaType prev_delta{};
+    ValueType prev_value{};
+    UnsignedDeltaType prev_delta{};
 
     if (source < source_end)
     {
-        prev_value = unalignedLoad<T>(source);
-        unalignedStore(dest, prev_value);
+        prev_value = unalignedLoad<ValueType>(source);
+        unalignedStore<ValueType>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -107,24 +139,26 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        const T curr_value = unalignedLoad<T>(source);
-        prev_delta = static_cast<DeltaType>(curr_value - prev_value);
-        unalignedStore(dest, prev_delta);
+        const ValueType curr_value = unalignedLoad<ValueType>(source);
+
+        prev_delta = curr_value - prev_value;
+        unalignedStore<UnsignedDeltaType>(dest, prev_delta);
 
         source += sizeof(curr_value);
         dest += sizeof(prev_delta);
         prev_value = curr_value;
     }
 
-    WriteBuffer buffer(dest, getCompressedDataSize(sizeof(T), source_size - sizeof(T)*2));
+    WriteBuffer buffer(dest, getCompressedDataSize(sizeof(ValueType), source_size - sizeof(ValueType)*2));
     BitWriter writer(buffer);
 
-    for (; source < source_end; source += sizeof(T))
+    int item = 2;
+    for (; source < source_end; source += sizeof(ValueType), ++item)
     {
-        const T curr_value = unalignedLoad<T>(source);
+        const ValueType curr_value = unalignedLoad<ValueType>(source);
 
-        const auto delta = curr_value - prev_value;
-        const DeltaType double_delta = static_cast<DeltaType>(delta - static_cast<T>(prev_delta));
+        const UnsignedDeltaType delta = curr_value - prev_value;
+        const UnsignedDeltaType double_delta = delta - prev_delta;
 
         prev_delta = delta;
         prev_value = curr_value;
@@ -135,9 +169,11 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         }
         else
         {
-            const auto sign = std::signbit(double_delta);
-            const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(double_delta));
-            const auto write_spec = getWriteSpec(double_delta);
+            const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
+            const auto sign = std::signbit(signed_dd);
+            // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
+            const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
+            const auto write_spec = getDeltaWriteSpec(signed_dd);
 
             writer.writeBits(write_spec.prefix_bits, write_spec.prefix);
             writer.writeBits(1, sign);
@@ -150,21 +186,25 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + buffer.count();
 }
 
-template <typename T, typename DeltaType>
+template <typename ValueType>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    using UnsignedDeltaType = ValueType;
+    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
+
     const char * source_end = source + source_size;
 
     const UInt32 items_count = unalignedLoad<UInt32>(source);
     source += sizeof(items_count);
 
-    T prev_value{};
-    DeltaType prev_delta{};
+    ValueType prev_value{};
+    UnsignedDeltaType prev_delta{};
 
     if (source < source_end)
     {
-        prev_value = unalignedLoad<T>(source);
-        unalignedStore(dest, prev_value);
+        prev_value = unalignedLoad<ValueType>(source);
+        unalignedStore<ValueType>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -172,9 +212,9 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        prev_delta = unalignedLoad<DeltaType>(source);
-        prev_value = static_cast<T>(prev_value + prev_delta);
-        unalignedStore(dest, prev_value);
+        prev_delta = unalignedLoad<UnsignedDeltaType>(source);
+        prev_value = prev_value + static_cast<ValueType>(prev_delta);
+        unalignedStore<ValueType>(dest, prev_value);
 
         source += sizeof(prev_delta);
         dest += sizeof(prev_value);
@@ -187,29 +227,32 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     // we have to keep track of items to avoid reading more that there is.
     for (UInt32 items_read = 2; items_read < items_count && !reader.eof(); ++items_read)
     {
-        DeltaType double_delta = 0;
+        UnsignedDeltaType double_delta = 0;
         if (reader.readBit() == 1)
         {
-            const UInt8 data_sizes[] = {6, 8, 11, 31, 63};
             UInt8 i = 0;
-            for (; i < sizeof(data_sizes) - 1; ++i)
+            for (; i < sizeof(DELTA_SIZES) - 1; ++i)
             {
                 const auto next_bit = reader.readBit();
                 if (next_bit == 0)
+                {
                     break;
+                }
             }
 
             const UInt8 sign = reader.readBit();
-            double_delta = static_cast<DeltaType>(reader.readBits(data_sizes[i]));
+            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(DELTA_SIZES[i] - 1) + 1);
             if (sign)
             {
-                double_delta *= -1;
+                signed_dd *= -1;
             }
+            double_delta = static_cast<UnsignedDeltaType>(signed_dd);
         }
         // else if first bit is zero, no need to read more data.
 
-        const T curr_value = static_cast<T>(prev_value + prev_delta + double_delta);
-        unalignedStore(dest, curr_value);
+        const UnsignedDeltaType delta = double_delta + prev_delta;
+        const ValueType curr_value = prev_value + delta;
+        unalignedStore<ValueType>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_delta = curr_value - prev_value;
@@ -261,49 +304,56 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
 {
     UInt8 bytes_to_skip = source_size % data_bytes_size;
     dest[0] = data_bytes_size;
-    dest[1] = bytes_to_skip;
+    dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
     UInt32 compressed_size = 0;
+
     switch (data_bytes_size)
     {
     case 1:
-        compressed_size = compressDataForType<UInt8, Int16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        compressed_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 2:
-        compressed_size = compressDataForType<UInt16, Int32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        compressed_size = compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 4:
-        compressed_size = compressDataForType<UInt32, Int64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        compressed_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     case 8:
-        compressed_size = compressDataForType<UInt64, Int64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        compressed_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
     }
 
     return 1 + 1 + compressed_size;
 }
 
-void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /* uncompressed_size */) const
+void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    if (source_size < 2)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
     UInt8 bytes_size = source[0];
-    UInt8 bytes_to_skip = source[1];
+    UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+
+    if (UInt32(2 + bytes_to_skip) > source_size)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8, Int16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 2:
-        decompressDataForType<UInt16, Int32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 4:
-        decompressDataForType<UInt32, Int64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 8:
-        decompressDataForType<UInt64, Int64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     }
 }

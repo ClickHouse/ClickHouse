@@ -4,6 +4,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 
 namespace DB
@@ -52,36 +53,81 @@ struct ScopeStack
     const Block & getSampleBlock() const;
 };
 
+class ASTIdentifier;
+class ASTFunction;
+class ASTLiteral;
 
 /// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
-/// After AST is visited source ExpressionActions should be updated with popActionsLevel() method.
-class ActionsVisitor
+class ActionsMatcher
 {
 public:
-    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                   const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
-                   PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                   bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr);
+    using Visitor = ConstInDepthNodeVisitor<ActionsMatcher, true>;
 
-    void visit(const ASTPtr & ast);
+    struct Data
+    {
+        const Context & context;
+        SizeLimits set_size_limit;
+        size_t subquery_depth;
+        const NamesAndTypesList & source_columns;
+        PreparedSets & prepared_sets;
+        SubqueriesForSets & subqueries_for_sets;
+        bool no_subqueries;
+        bool only_consts;
+        bool no_storage_or_local;
+        size_t visit_depth;
+        ScopeStack actions_stack;
 
-    ExpressionActionsPtr popActionsLevel() { return actions_stack.popLevel(); }
+        Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
+                const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
+                PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
+                bool no_subqueries_, bool only_consts_, bool no_storage_or_local_)
+        :   context(context_),
+            set_size_limit(set_size_limit_),
+            subquery_depth(subquery_depth_),
+            source_columns(source_columns_),
+            prepared_sets(prepared_sets_),
+            subqueries_for_sets(subqueries_for_sets_),
+            no_subqueries(no_subqueries_),
+            only_consts(only_consts_),
+            no_storage_or_local(no_storage_or_local_),
+            visit_depth(0),
+            actions_stack(actions, context)
+        {}
+
+        void updateActions(ExpressionActionsPtr & actions)
+        {
+            actions = actions_stack.popLevel();
+        }
+
+        void addAction(const ExpressionAction & action)
+        {
+            actions_stack.addAction(action);
+        }
+
+        const Block & getSampleBlock() const
+        {
+            return actions_stack.getSampleBlock();
+        }
+
+        /// Does result of the calculation already exists in the block.
+        bool hasColumn(const String & columnName) const
+        {
+            return actions_stack.getSampleBlock().has(columnName);
+        }
+    };
+
+    static void visit(const ASTPtr & ast, Data & data);
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 private:
-    const Context & context;
-    SizeLimits set_size_limit;
-    size_t subquery_depth;
-    const NamesAndTypesList & source_columns;
-    PreparedSets & prepared_sets;
-    SubqueriesForSets & subqueries_for_sets;
-    const bool no_subqueries;
-    const bool only_consts;
-    const bool no_storage_or_local;
-    mutable size_t visit_depth;
-    std::ostream * ostr;
-    ScopeStack actions_stack;
 
-    SetPtr makeSet(const ASTFunction * node, const Block & sample_block);
+    static void visit(const ASTIdentifier & identifier, const ASTPtr & ast, Data & data);
+    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
+    static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
+
+    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
 };
+
+using ActionsVisitor = ActionsMatcher::Visitor;
 
 }

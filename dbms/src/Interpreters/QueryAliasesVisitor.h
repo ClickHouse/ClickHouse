@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class ASTSelectWithUnionQuery;
+class ASTSelectQuery;
 class ASTSubquery;
 struct ASTTableExpression;
 struct ASTArrayJoin;
@@ -26,6 +26,7 @@ public:
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
+    static void visit(const ASTSelectQuery & select, const ASTPtr & ast, Data & data);
     static void visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
     static void visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
     static void visitOther(const ASTPtr & ast, Data & data);

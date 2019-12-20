@@ -16,6 +16,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -49,12 +50,7 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
     DataTypes res_types;
     res_types.reserve(types.size());
     for (const auto & type : types)
-    {
-        if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-            res_types.push_back(low_cardinality_type->getDictionaryType());
-        else
-            res_types.push_back(type);
-    }
+        res_types.emplace_back(recursiveRemoveLowCardinality(type));
 
     return res_types;
 }
@@ -69,7 +65,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
     /// If one of types is Nullable, we apply aggregate function combinator "Null".
 
-    if (std::any_of(argument_types.begin(), argument_types.end(),
+    if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
@@ -83,11 +79,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         /// A little hack - if we have NULL arguments, don't even create nested function.
         /// Combinator will check if nested_function was created.
-        if (name == "count" || std::none_of(argument_types.begin(), argument_types.end(),
+        if (name == "count" || std::none_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); }))
             nested_function = getImpl(name, nested_types, nested_parameters, recursion_level);
 
-        return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
+        return combinator->transformAggregateFunction(nested_function, type_without_low_cardinality, parameters);
     }
 
     auto res = getImpl(name, type_without_low_cardinality, parameters, recursion_level);
@@ -163,6 +159,12 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
         return isAggregateFunctionName(name.substr(0, name.size() - combinator->getName().size()), recursion_level + 1);
 
     return false;
+}
+
+AggregateFunctionFactory & AggregateFunctionFactory::instance()
+{
+    static AggregateFunctionFactory ret;
+    return ret;
 }
 
 }

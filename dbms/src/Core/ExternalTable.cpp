@@ -160,7 +160,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    StoragePtr storage = StorageMemory::create(data.second, ColumnsDescription{columns});
+    StoragePtr storage = StorageMemory::create("_external", data.second, ColumnsDescription{columns}, ConstraintsDescription{});
     storage->startup();
     context.addExternalTable(data.second, storage);
     BlockOutputStreamPtr output = storage->write(ASTPtr(), context);

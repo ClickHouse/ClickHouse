@@ -1,6 +1,6 @@
 #include <IO/ReadBufferAIO.h>
 #include <Core/Defines.h>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -18,7 +18,7 @@ void prepare2(std::string & filename, std::string & buf);
 void prepare3(std::string & filename, std::string & buf);
 void prepare4(std::string & filename, std::string & buf);
 std::string createTmpFile();
-void die(const std::string & msg);
+[[noreturn]] void die(const std::string & msg);
 void runTest(unsigned int num, const std::function<bool()> & func);
 
 bool test1(const std::string & filename);
@@ -44,7 +44,7 @@ bool test20(const std::string & filename, const std::string & buf);
 
 void run()
 {
-    namespace fs = boost::filesystem;
+    namespace fs = std::filesystem;
 
     std::string filename;
     std::string buf;

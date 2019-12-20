@@ -22,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -36,6 +37,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
+#include <Common/TerminalSize.h>
 
 
 static const char * documantation = R"(
@@ -121,14 +123,14 @@ UInt64 hash(Ts... xs)
 }
 
 
-UInt64 maskBits(UInt64 x, size_t num_bits)
+static UInt64 maskBits(UInt64 x, size_t num_bits)
 {
     return x & ((1ULL << num_bits) - 1);
 }
 
 
 /// Apply Feistel network round to least significant num_bits part of x.
-UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
+static UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
     size_t num_bits_left_half = num_bits / 2;
     size_t num_bits_right_half = num_bits - num_bits_left_half;
@@ -144,7 +146,7 @@ UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
-UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
+static UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
@@ -154,7 +156,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 
 
 /// Pseudorandom permutation within set of numbers with the same log2(x).
-UInt64 transform(UInt64 x, UInt64 seed)
+static UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
     if (x == 0 || x == 1)
@@ -176,7 +178,7 @@ private:
     const UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed) : seed(seed) {}
+    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -197,7 +199,7 @@ public:
 
 
 /// Keep sign and apply pseudorandom permutation after converting to unsigned as above.
-Int64 transformSigned(Int64 x, UInt64 seed)
+static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
@@ -212,7 +214,7 @@ private:
     const UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed) : seed(seed) {}
+    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -256,18 +258,18 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed) : seed(seed) {}
+    FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<Float> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<Float> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<Float>::create(size);
-        auto & res_data = static_cast<ColumnVector<Float> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<Float> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -296,7 +298,7 @@ public:
 
 
 /// Pseudorandom function, but keep word characters as word characters.
-void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
         SipHash hash;
@@ -348,14 +350,14 @@ private:
     const UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed) : seed(seed) {}
+    FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnFixedString & column_fixed_string = static_cast<const ColumnFixedString &>(column);
+        const ColumnFixedString & column_fixed_string = assert_cast<const ColumnFixedString &>(column);
         const size_t string_size = column_fixed_string.getN();
 
         const auto & src_data = column_fixed_string.getChars();
@@ -385,18 +387,18 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed) : seed(seed), date_lut(DateLUT::instance()) {}
+    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<UInt32> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<UInt32> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<UInt32>::create(size);
-        auto & res_data = static_cast<ColumnVector<UInt32> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<UInt32> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -533,8 +535,8 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params)
-        : params(std::move(params)), code_points(params.order, BEGIN) {}
+    MarkovModel(MarkovModelParameters params_)
+        : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -577,7 +579,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -591,7 +593,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -623,7 +625,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -639,7 +641,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -668,13 +670,13 @@ public:
 
         while (pos < end)
         {
-            Table::iterator it = table.end();
+            Table::LookupResult it;
 
             size_t context_size = params.order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->getSecond().total + it->getSecond().count_end != 0)
+                if (it && it->getMapped().total + it->getMapped().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -682,7 +684,7 @@ public:
                 --context_size;
             }
 
-            if (table.end() == it)
+            if (!it)
                 throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
 
             size_t offset_from_begin_of_string = pos - data;
@@ -708,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getMapped().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -745,11 +747,11 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed, MarkovModelParameters params) : seed(seed), markov_model(std::move(params)) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         for (size_t i = 0; i < size; ++i)
@@ -766,7 +768,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         auto res_column = ColumnString::create();
@@ -797,11 +799,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         nested_model->train(nested_column);
@@ -814,7 +816,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -830,11 +832,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         nested_model->train(nested_column);
@@ -847,7 +849,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -941,6 +943,8 @@ public:
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
@@ -948,7 +952,7 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description("Options");
+    po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
@@ -1024,6 +1028,7 @@ try
     }
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);

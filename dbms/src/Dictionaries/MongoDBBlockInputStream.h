@@ -25,7 +25,7 @@ public:
         std::shared_ptr<Poco::MongoDB::Connection> & connection_,
         std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
         const Block & sample_block,
-        const UInt64 max_block_size);
+        const UInt64 max_block_size_);
 
     ~MongoDBBlockInputStream() override;
 

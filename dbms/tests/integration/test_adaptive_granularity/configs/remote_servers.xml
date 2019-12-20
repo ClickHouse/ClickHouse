@@ -1,0 +1,68 @@
+<yandex>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <!-- both latest version -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <test_cluster>
+            <shard>
+                <!-- 19.6 + latest version -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <test_cluster>
+            <shard>
+                <!-- 19.1 + latest version -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node5</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node6</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <test_cluster>
+            <shard>
+                <!-- both 19.1 and update to new version -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node11</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <default_database>test</default_database>
+                    <host>node12</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</yandex>

@@ -1,9 +1,3 @@
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wundef"
-#endif
-
 #include <gtest/gtest.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
@@ -14,7 +8,7 @@
 
 using namespace DB;
 
-Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, size_t stride, size_t & start)
+static Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, size_t stride, size_t & start)
 {
 
     ColumnsWithTypeAndName cols;
@@ -33,7 +27,7 @@ Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, si
 }
 
 
-BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
     for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
@@ -49,7 +43,7 @@ BlockInputStreams getInputStreams(const std::vector<std::string> & column_names,
 }
 
 
-BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
+static BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
     size_t i = 0;
@@ -67,7 +61,7 @@ BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & co
 }
 
 
-SortDescription getSortDescription(const std::vector<std::string> & column_names)
+static SortDescription getSortDescription(const std::vector<std::string> & column_names)
 {
     SortDescription descr;
     for (const auto & column : column_names)

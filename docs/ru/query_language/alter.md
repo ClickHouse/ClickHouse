@@ -6,7 +6,7 @@
 
 Изменение структуры таблицы.
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
 ```
 
@@ -25,11 +25,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 
 #### ADD COLUMN {#alter_add-column}
 
-``` sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
+```sql
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Добавляет в таблицу новый столбец с именем `name`, типом `type` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)). 
+Добавляет в таблицу новый столбец с именем `name`, типом `type`, [кодеком](create.md#codecs) `codec` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)).
 
 Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Обратите внимание, ClickHouse не позволяет добавлять столбцы в начало таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
 
@@ -39,13 +39,13 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 
 Пример:
 
-``` sql
+```sql
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
 #### DROP COLUMN {#alter_drop-column}
 
-``` sql
+```sql
 DROP COLUMN [IF EXISTS] name
 ```
 
@@ -55,13 +55,13 @@ DROP COLUMN [IF EXISTS] name
 
 Пример:
 
-``` sql
+```sql
 ALTER TABLE visits DROP COLUMN browser
 ```
 
 #### CLEAR COLUMN {#alter_clear-column}
 
-``` sql
+```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 Сбрасывает все значения в столбце для заданной партиции. Если указано `IF EXISTS`, запрос не будет возвращать ошибку, если столбца не существует.
@@ -70,13 +70,13 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Пример:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
 #### COMMENT COLUMN {#alter_comment-column}
 
-``` sql
+```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
@@ -84,17 +84,17 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 
 Каждый столбец может содержать только один комментарий. При выполнении запроса существующий комментарий заменяется на новый.
 
-Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](misc.md#misc-describe-table). 
+Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](misc.md#misc-describe-table).
 
 Пример:
 
-``` sql
+```sql
 ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, из каких браузеров пользователи заходили на сайт.'
 ```
 
 #### MODIFY COLUMN {#alter_modify-column}
 
-``` sql
+```sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 ```
 
@@ -104,7 +104,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 
 Пример запроса:
 
-``` sql
+```sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
@@ -138,7 +138,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Поддерживается операция:
 
-``` sql
+```sql
 MODIFY ORDER BY new_expression
 ```
 
@@ -153,7 +153,7 @@ MODIFY ORDER BY new_expression
 ### Манипуляции с индексами
 
 Добавить или удалить индекс можно с помощью операций
-```
+```sql
 ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value [AFTER name]
 ALTER TABLE [db].name DROP INDEX name
 ```
@@ -165,17 +165,36 @@ ALTER TABLE [db].name DROP INDEX name
 
 Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
+### Манипуляции с ограничениями (constraints)
+
+Про ограничения подробнее написано [тут](create.md#constraints).
+
+Добавить или удалить ограничение можно с помощью запросов
+```sql
+ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
+```
+
+Запросы выполняют добавление или удаление метаданных об ограничениях таблицы `[db].name`, поэтому выполняются мнгновенно.
+
+Если ограничение появилось для непустой таблицы, то *проверка ограничения для имеющихся данных не производится*.
+
+Запрос на изменение ограничений для Replicated таблиц реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
+
 ### Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
 
 Для работы с [партициями](../operations/table_engines/custom_partitioning_key.md) доступны следующие операции:
 
-- [DETACH PARTITION](#alter_detach-partition) –  перенести партицию в директорию `detached`;
+- [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
 - [DROP PARTITION](#alter_drop-partition) – удалить партицию;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
-- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
+- [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
+- [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
+- [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
-- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера.
+- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
+- [MOVE PARTITION|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter_detach-partition}
 
@@ -209,6 +228,15 @@ ALTER TABLE table_name DROP PARTITION partition_expr
 
 Запрос реплицируется — данные будут удалены на всех репликах.
 
+#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+
+```sql
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
+```
+
+Удаляет из `detached` кусок или все куски, принадлежащие партиции.
+Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
 #### ATTACH PARTITION|PART {#alter_attach-partition}
 
 ```sql
@@ -224,9 +252,25 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Как корректно задать имя партиции или куска, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-Этот запрос реплицируется. Каждая реплика проверяет, есть ли данные в директории `detached`. Если данные есть, то запрос проверяет их целостность и соответствие данным на сервере-инициаторе запроса. В случае успеха данные добавляются в таблицу. В противном случае, реплика загружает данные с реплики-инициатора запроса или с другой реплики, на которой эти данные уже добавлены.
+Этот запрос реплицируется. Реплика-иницатор проверяет, есть ли данные в директории `detached`. Если данные есть, то запрос проверяет их целостность. В случае успеха данные добавляются в таблицу. Все остальные реплики загружают данные с реплики-инициатора запроса.
 
 Это означает, что вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
+
+#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+
+```sql
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
+```
+
+Копирует партицию из таблицы `table1` в таблицу `table2` и добавляет к существующим данным `table2`. Данные из `table1` не удаляются.
+
+Следует иметь в виду:
+
+- Таблицы должны иметь одинаковую структуру.
+- Для таблиц должен быть задан одинаковый ключ партиционирования.
+
+Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
 
 #### REPLACE PARTITION {#alter_replace-partition}
 
@@ -234,7 +278,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2`. Данные из `table1` не удаляются. 
+Копирует партицию из таблицы `table1` в таблицу `table2` с заменой существующих данных в `table2`. Данные из `table1` не удаляются.
 
 Следует иметь в виду:
 
@@ -257,25 +301,36 @@ ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
+
+```sql
+ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо данных в столбцах.
+
 #### FREEZE PARTITION {#alter_freeze-partition}
 
 ```sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.   
+Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.
 
-!!! note
-    Создание резервной копии не требует остановки сервера. 
- 
+!!! note "Примечание"
+    Создание резервной копии не требует остановки сервера.
+
 Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, '2019'). В этом случае резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
-   
+
 Запрос делает следующее — для текущего состояния таблицы он формирует жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
 
 - `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 - `N` — инкрементальный номер резервной копии.
 
-Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них. 
+!!! note "Примечание"
+    При использовании [нескольких дисков для хранения данных таблицы](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
+
+Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
 
@@ -321,14 +376,34 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 Несмотря на то что запрос называется `ALTER TABLE`, он не изменяет структуру таблицы и не изменяет сразу доступные данные в таблице.
 
+#### MOVE PARTITION|PART {#alter_move-partition}
+
+Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+```sql
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+Запрос `ALTER TABLE t MOVE`:
+
+- Не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
+- Возвращает ошибку, если указан несконфигурированный том или диск. Ошибка также возвращается в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
+- Может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
+
+Примеры:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
+
 #### Как задавать имя партиции в запросах ALTER {#alter-how-to-specify-part-expr}
 
-Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать: 
+Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
 
 - Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../operations/system_tables.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
 - Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 - Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- Для запросов [ATTACH PART](#alter_attach-partition): чтобы задать имя куска партиции, используйте значение из столбца `name` системной таблицы `system.parts`. Например, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
+- Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../operations/system_tables.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Использование кавычек в имени партиций зависит от типа данных столбца, по которому задано партиционирование. Например, для столбца с типом `String` имя партиции необходимо указывать в кавычках (одинарных). Для типов `Date` и `Int*` кавычки указывать не нужно.
 
@@ -340,7 +415,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
 ### Синхронность запросов ALTER
 
@@ -351,25 +426,29 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 
 ### Мутации {#alter-mutations}
 
-Мутации - разновидность запроса ALTER, позволяющая изменять или удалять данные в таблице. В отличие от стандартных запросов `DELETE` и `UPDATE`, рассчитанных на точечное изменение данных, область применения мутаций - достаточно тяжёлые изменения, затрагивающие много строк в таблице.
-
-Функциональность находится в состоянии beta и доступна начиная с версии 1.1.54388. Реализована поддержка \*MergeTree таблиц (с репликацией и без).
+Мутации - разновидность запроса ALTER, позволяющая изменять или удалять данные в таблице. В отличие от стандартных запросов `DELETE` и `UPDATE`, рассчитанных на точечное изменение данных, область применения мутаций - достаточно тяжёлые изменения, затрагивающие много строк в таблице. Поддержана для движков таблиц семейства `MergeTree`, в том числе для движков с репликацией.
 
 Конвертировать существующие таблицы для работы с мутациями не нужно. Но после применения первой мутации формат данных таблицы становится несовместимым с предыдущими версиями и откатиться на предыдущую версию уже не получится.
 
 На данный момент доступны команды:
 
-``` sql
+```sql
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
-Выражение `filter_expr` должно иметь тип UInt8. Запрос удаляет строки таблицы, для которых это выражение принимает ненулевое значение.
+Выражение `filter_expr` должно иметь тип `UInt8`. Запрос удаляет строки таблицы, для которых это выражение принимает ненулевое значение.
 
-``` sql
+```sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
-Команда доступна начиная с версии 18.12.14. Выражение `filter_expr` должно иметь тип UInt8. Запрос изменяет значение указанных столбцов на вычисленное значение соответствующих выражений в каждой строке, для которой `filter_expr` принимает ненулевое значение. Вычисленные значения преобразуются к типу столбца с помощью оператора `CAST`. Изменение столбцов, которые используются при вычислении первичного ключа или ключа партиционирования, не поддерживается.
+Выражение `filter_expr` должно иметь тип `UInt8`. Запрос изменяет значение указанных столбцов на вычисленное значение соответствующих выражений в каждой строке, для которой `filter_expr` принимает ненулевое значение. Вычисленные значения преобразуются к типу столбца с помощью оператора `CAST`. Изменение столбцов, которые используются при вычислении первичного ключа или ключа партиционирования, не поддерживается.
+
+```sql
+ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+```
+
+Команда перестроит вторичный индекс `name` для партиции `partition_name`.
 
 В одном запросе можно указать несколько команд через запятую.
 

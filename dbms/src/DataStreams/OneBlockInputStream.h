@@ -12,7 +12,7 @@ namespace DB
 class OneBlockInputStream : public IBlockInputStream
 {
 public:
-    OneBlockInputStream(const Block & block_) : block(block_) {}
+    explicit OneBlockInputStream(Block block_) : block(std::move(block_)) { block.checkNumberOfRows(); }
 
     String getName() const override { return "One"; }
 

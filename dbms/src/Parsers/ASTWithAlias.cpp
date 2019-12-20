@@ -16,27 +16,27 @@ void ASTWithAlias::writeAlias(const String & name, const FormatSettings & settin
 
 void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (!alias.empty())
+    /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
+    /// This is needed because the query can become extraordinary large after substitution of aliases.
+    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
     {
-        /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
-        if (!state.printed_asts_with_alias.emplace(frame.current_select, alias).second)
-        {
-            settings.writeIdentifier(alias);
-            return;
-        }
+        settings.writeIdentifier(alias);
     }
-
-    /// If there is an alias, then parentheses are required around the entire expression, including the alias. Because a record of the form `0 AS x + 0` is syntactically invalid.
-    if (frame.need_parens && !alias.empty())
-        settings.ostr <<'(';
-
-    formatImplWithoutAlias(settings, state, frame);
-
-    if (!alias.empty())
+    else
     {
-        writeAlias(alias, settings);
-        if (frame.need_parens)
-            settings.ostr <<')';
+        /// If there is an alias, then parentheses are required around the entire expression, including the alias.
+        /// Because a record of the form `0 AS x + 0` is syntactically invalid.
+        if (frame.need_parens && !alias.empty())
+            settings.ostr << '(';
+
+        formatImplWithoutAlias(settings, state, frame);
+
+        if (!alias.empty())
+        {
+            writeAlias(alias, settings);
+            if (frame.need_parens)
+                settings.ostr << ')';
+        }
     }
 }
 

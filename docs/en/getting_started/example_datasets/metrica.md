@@ -1,9 +1,13 @@
 # Anonymized Yandex.Metrica Data
-Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. Each of the tables can be downloaded as a compressed `tsv.xz` file or as prepared partitions.
+Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
+
+The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at <https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz> and as prepared partitions at <https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz>.
 
 ## Obtaining Tables from Prepared Partitions
-**Download and import hits:**
-```bash
+
+Download and import hits table:
+
+``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
 tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
@@ -11,8 +15,9 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-**Download and import visits:**
-```bash
+Download and import visits:
+
+``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
 tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
@@ -20,9 +25,11 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Obtaining Tables from Compressed tsv-file
-**Download and import hits from compressed tsv-file**
-```bash
+## Obtaining Tables from Compressed TSV File
+
+Download and import hits from compressed TSV file:
+
+``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv 
 # now create table
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
@@ -34,8 +41,9 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-**Download and import visits from compressed tsv-file**
-```bash
+Download and import visits from compressed tsv-file:
+
+``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv 
 # now create table
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
@@ -47,5 +55,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Queries
-Examples of queries to these tables (they are named `test.hits` and `test.visits`) can be found among [stateful tests](https://github.com/yandex/ClickHouse/tree/master/dbms/tests/queries/1_stateful) and in some [performance tests](https://github.com/yandex/ClickHouse/tree/master/dbms/tests/performance/test_hits) of ClickHouse.
+## Example Queries
+
+[ClickHouse tutorial](../../getting_started/tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
+
+Additional examples of queries to these tables can be found among [stateful tests](https://github.com/yandex/ClickHouse/tree/master/dbms/tests/queries/1_stateful) of ClickHouse (they are named `test.hists` and `test.visits` there).

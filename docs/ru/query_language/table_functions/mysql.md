@@ -2,7 +2,7 @@
 
 Позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
-```
+```sql
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
@@ -32,7 +32,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 Таблица в MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,

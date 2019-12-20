@@ -8,7 +8,7 @@
 
 Установить профиль `web`.
 
-``` sql
+```sql
 SET profile = 'web'
 ```
 

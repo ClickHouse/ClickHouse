@@ -28,10 +28,10 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
             Each list item has one of the following forms:
             <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
             <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.yandex\.ru$
+            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
                 To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
                 Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.yandex\.ru$.
+                We strongly recommend that the regex ends with \.host\.ru$.
 
             If you are installing ClickHouse yourself, specify here:
                 <networks>
@@ -56,6 +56,9 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
         <allow_databases>
            <database>test</database>
         </allow_databases>
+        <allow_dictionaries>
+           <dictionary>test</dictionary>
+        </allow_dictionaries>
     </web>
 </users>
 ```
@@ -93,11 +96,12 @@ Then specify the quota to be used (see the section "[Quotas](quotas.md#quotas)")
 
 In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
 
+In the optional `<allow_dictionaries>` section, you can also specify a list of dictionaries that the user can access. By default, all dictionaries are available to the user.
+
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
 The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn't allowed.
 
 Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can't grant full access to one database and `readonly` access to another one.
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/access_rights/) <!--hide-->

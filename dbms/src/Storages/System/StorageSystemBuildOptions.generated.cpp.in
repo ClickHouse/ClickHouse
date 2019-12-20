@@ -37,10 +37,10 @@ const char * auto_config_build[]
     "USE_GLIBC_COMPATIBILITY", "@GLIBC_COMPATIBILITY@",
     "USE_JEMALLOC", "@USE_JEMALLOC@",
     "USE_TCMALLOC", "@USE_TCMALLOC@",
-    "USE_LFALLOC", "@USE_LFALLOC@",
-    "USE_LFALLOC_RANDOM_HINT", "@USE_LFALLOC_RANDOM_HINT@",
+    "USE_MIMALLOC", "@USE_MIMALLOC@",
     "USE_UNWIND", "@USE_UNWIND@",
     "USE_ICU", "@USE_ICU@",
+    "USE_H3", "@USE_H3@",
     "USE_MYSQL", "@USE_MYSQL@",
     "USE_RE2_ST", "@USE_RE2_ST@",
     "USE_VECTORCLASS", "@USE_VECTORCLASS@",
@@ -61,6 +61,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_POCO_REDIS", "@USE_POCO_REDIS@",
 
     nullptr, nullptr
 };

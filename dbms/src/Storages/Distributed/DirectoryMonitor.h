@@ -20,7 +20,7 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker);
+        StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_);
 
     ~StorageDistributedDirectoryMonitor();
 
@@ -56,6 +56,7 @@ private:
     size_t error_count{};
     std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
+    std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
@@ -65,7 +66,7 @@ private:
     ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
 
     /// Read insert query and insert settings for backward compatible.
-    void readQueryAndSettings(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
+    void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
 };
 
 }

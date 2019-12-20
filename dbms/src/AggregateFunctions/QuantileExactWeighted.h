@@ -58,7 +58,7 @@ struct QuantileExactWeighted
     void merge(const QuantileExactWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getFirst()] += pair.getSecond();
+            map[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -72,7 +72,7 @@ struct QuantileExactWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.getFirst()] = pair.getSecond();
+            map[pair.first] = pair.second;
         }
     }
 
@@ -93,12 +93,12 @@ struct QuantileExactWeighted
         UInt64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getSecond();
+            sum_weight += pair.getMapped();
             array[i] = pair.getValue();
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.getFirst() < b.getFirst(); });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         UInt64 threshold = std::ceil(sum_weight * level);
         UInt64 accumulated = 0;
@@ -107,7 +107,7 @@ struct QuantileExactWeighted
         const Pair * end = array + size;
         while (it < end)
         {
-            accumulated += it->getSecond();
+            accumulated += it->second;
 
             if (accumulated >= threshold)
                 break;
@@ -118,7 +118,7 @@ struct QuantileExactWeighted
         if (it == end)
             --it;
 
-        return it->getFirst();
+        return it->first;
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -143,12 +143,12 @@ struct QuantileExactWeighted
         UInt64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getSecond();
+            sum_weight += pair.getMapped();
             array[i] = pair.getValue();
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.getFirst() < b.getFirst(); });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         UInt64 accumulated = 0;
 
@@ -160,11 +160,11 @@ struct QuantileExactWeighted
 
         while (it < end)
         {
-            accumulated += it->getSecond();
+            accumulated += it->second;
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = it->getFirst();
+                result[indices[level_index]] = it->first;
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -178,7 +178,7 @@ struct QuantileExactWeighted
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = array[size - 1].getFirst();
+            result[indices[level_index]] = array[size - 1].first;
             ++level_index;
         }
     }

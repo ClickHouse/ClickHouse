@@ -32,7 +32,7 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
 
     while (true)
     {
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
 
         if (Protocol::Server::Data == packet.type)
         {
@@ -49,6 +49,11 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
+        }
+        else if (Protocol::Server::TableColumns == packet.type)
+        {
+            /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
+            /// client's already got this information for remote table. Ignore.
         }
         else
             throw NetException("Unexpected packet from server (expected Data or Exception, got "
@@ -72,7 +77,7 @@ void RemoteBlockOutputStream::write(const Block & block)
         auto packet_type = connection.checkPacket();
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
-            Connection::Packet packet = connection.receivePacket();
+            Packet packet = connection.receivePacket();
             packet.exception->rethrow();
         }
 
@@ -96,7 +101,7 @@ void RemoteBlockOutputStream::writeSuffix()
     /// Wait for EndOfStream or Exception packet, skip Log packets.
     while (true)
     {
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;

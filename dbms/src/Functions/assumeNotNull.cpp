@@ -1,9 +1,10 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
+#include "registerFunctions.h"
 
 
 namespace DB
@@ -31,6 +32,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -42,11 +44,8 @@ public:
         const ColumnPtr & col = block.getByPosition(arguments[0]).column;
         ColumnPtr & res_col = block.getByPosition(result).column;
 
-        if (col->isColumnNullable())
-        {
-            const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-            res_col = nullable_col.getNestedColumnPtr();
-        }
+        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
+            res_col = nullable_col->getNestedColumnPtr();
         else
             res_col = col;
     }

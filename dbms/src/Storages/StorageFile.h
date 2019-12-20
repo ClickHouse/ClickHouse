@@ -20,16 +20,11 @@ class StorageFileBlockOutputStream;
 
 class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageFile>;
 public:
-    std::string getName() const override
-    {
-        return "File";
-    }
-
-    std::string getTableName() const override
-    {
-        return table_name;
-    }
+    std::string getName() const override { return "File"; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -43,11 +38,9 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void drop() override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
-
-    String getDataPath() const override { return path; }
+    Strings getDataPaths() const override;
 
 protected:
     friend class StorageFileBlockInputStream;
@@ -62,22 +55,27 @@ protected:
         const std::string & table_path_,
         int table_fd_,
         const std::string & db_dir_path,
+        const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
-        Context & context_);
+        const ConstraintsDescription & constraints_,
+        Context & context_,
+        const String & compression_method_);
 
 private:
-
     std::string table_name;
+    std::string database_name;
     std::string format_name;
     Context & context_global;
 
-    std::string path;
     int table_fd = -1;
+    String compression_method;
+
+    std::vector<std::string> paths;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd insted of path
+    bool use_table_fd = false;                    /// Use table_fd instead of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 

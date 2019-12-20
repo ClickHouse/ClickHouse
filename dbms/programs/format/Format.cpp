@@ -6,13 +6,16 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
+#include <Common/TerminalSize.h>
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {
     using namespace DB;
 
-    boost::program_options::options_description desc("Allowed options");
+    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")

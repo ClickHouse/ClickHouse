@@ -14,6 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -25,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -67,7 +68,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        if (!getIdentifierName(args[arg_num], cluster_name))
+        if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
@@ -155,6 +156,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto maybe_secure_port = context.getTCPPortSecure();
+
+        /// Check host and port on affiliation allowed hosts.
+        for (auto hosts : names)
+        {
+            for (auto host : hosts)
+            {
+                size_t colon = host.find(':');
+                if (colon == String::npos)
+                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                else
+                    context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+            }
+        }
+
         cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
     }
 
@@ -162,13 +177,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            getName(),
+            table_name,
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            getName(),
+            table_name,
             structure_remote_table,
             remote_database,
             remote_table,
@@ -180,8 +195,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name, bool secure)
-    : name{name}, secure{secure}
+TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
+    : name{name_}, secure{secure_}
 {
     is_cluster_function = name == "cluster";
 

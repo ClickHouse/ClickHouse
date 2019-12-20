@@ -10,7 +10,7 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
-
+enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.
@@ -54,8 +54,6 @@ private:
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
     MutableColumns current_totals;
-    /// Arena for aggregate function states in totals.
-    ArenaPtr arena;
 
     /// If filter == nullptr - add all rows. Otherwise, only the rows that pass the filter (HAVING).
     void addToTotals(const Block & block, const IColumn::Filter * filter);

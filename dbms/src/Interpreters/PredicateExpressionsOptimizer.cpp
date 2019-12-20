@@ -15,15 +15,19 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -83,7 +87,8 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     /// split predicate with `and`
     std::vector<ASTPtr> outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(*ast_select, context);
+    std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*ast_select);
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
 
     bool is_rewrite_subquery = false;
     for (auto & outer_predicate : outer_predicate_expressions)
@@ -136,7 +141,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     const std::vector<IdentifierWithQualifier> & dependencies,
     OptimizeKind & optimize_kind)
 {
-    if (!subquery || subquery->final() || subquery->limitBy() || subquery->limitLength() || subquery->with())
+    if (!subquery
+        || (!settings.enable_optimize_predicate_expression_to_final_subquery && subquery->final())
+        || subquery->limitBy() || subquery->limitLength()
+        || subquery->with() || subquery->withFill())
         return false;
     else
     {
@@ -266,7 +274,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(con
                     continue;
                 }
             }
-            idx++;
+            ++idx;
         }
     }
     return predicate_expressions;
@@ -353,7 +361,7 @@ PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsO
 {
     SubqueriesProjectionColumns projection_columns;
 
-    for (const auto & table_expression : getSelectTablesExpression(*ast_select))
+    for (const auto & table_expression : getTableExpressions(*ast_select))
         if (table_expression->subquery)
             getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
 
@@ -401,18 +409,21 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
     std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, std::move(tables_with_columns), false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};
     QueryAliasesVisitor(query_aliases_data).visit(ast);
+
+    MarkTableIdentifiersVisitor::Data mark_tables_data{aliases};
+    MarkTableIdentifiersVisitor(mark_tables_data).visit(ast);
 
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(ast);
 
     for (const auto & projection_column : select_query->select()->children)
     {
-        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsMatcher>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -433,7 +444,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     if (!select_query->tables() || select_query->tables()->children.empty())
         return {};
 
-    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
+    std::vector<const ASTTableExpression *> tables_expression = getTableExpressions(*select_query);
 
     if (const auto * qualified_asterisk = asterisk->as<ASTQualifiedAsterisk>())
     {
@@ -483,8 +494,20 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
-            for (size_t idx = 0; idx < block.columns(); idx++)
-                projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsMatcher>())
+            {
+                for (size_t idx = 0; idx < block.columns(); ++idx)
+                {
+                    auto & col = block.getByPosition(idx);
+                    if (asterisk_pattern->isColumnMatching(col.name))
+                        projection_columns.emplace_back(std::make_shared<ASTIdentifier>(col.name));
+                }
+            }
+            else
+            {
+                for (size_t idx = 0; idx < block.columns(); ++idx)
+                    projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            }
         }
     }
     return projection_columns;

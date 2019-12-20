@@ -4,11 +4,45 @@
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
+## FQDN {#fqdn}
+
+Возвращает полное имя домена. 
+
+**Синтаксис**
+
+```sql
+fqdn();
+```
+
+Эта функция регистронезависимая.
+
+**Возвращаемое значение**
+
+- Полное имя домена.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT FQDN();
+```
+
+Ответ:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
+
 ## basename
 
 Извлекает конечную часть строки после последнего слэша или бэкслэша. Функция часто используется для извлечения имени файла из пути.
 
-```
+```sql
 basename( expr )
 ```
 
@@ -65,9 +99,11 @@ SELECT 'some-file-name' AS a, basename(a)
 
 `NULL` представляется как строка, соответствующая отображению `NULL` в форматах `Pretty`.
 
-```
+```sql
 SELECT visibleWidth(NULL)
+```
 
+```text
 ┌─visibleWidth(NULL)─┐
 │                  4 │
 └────────────────────┘
@@ -97,6 +133,39 @@ SELECT visibleWidth(NULL)
 Возвращает имя текущей базы данных.
 Эта функция может использоваться в параметрах движка таблицы в запросе CREATE TABLE там, где нужно указать базу данных.
 
+## currentUser() {#other_function-currentuser}
+
+Возвращает логин текущего пользователя. При распределенном запросе, возвращается имя пользователя, инициировавшего запрос.
+
+```sql
+SELECT currentUser();
+```
+
+Алиас: `user()`, `USER()`.
+
+**Возвращаемые значения**
+
+- Логин текущего пользователя.
+- При распределенном запросе — логин пользователя, инициировавшего запрос.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT currentUser();
+```
+
+Ответ:
+
+```text
+┌─currentUser()─┐
+│ default       │
+└───────────────┘
+```
+
 ## isFinite(x)
 Принимает Float32 или Float64 и возвращает UInt8, равный 1, если аргумент не бесконечный и не NaN, иначе 0.
 
@@ -112,7 +181,7 @@ SELECT visibleWidth(NULL)
 Функция кидает исключение, если таблица не существует.
 Для элементов вложенной структуры данных функция проверяет существование столбца. Для самой же вложенной структуры данных функция возвращает 0.
 
-## bar
+## bar {#function-bar}
 
 Позволяет построить unicode-art диаграмму.
 
@@ -128,7 +197,7 @@ SELECT visibleWidth(NULL)
 
 Пример:
 
-``` sql
+```sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -138,7 +207,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```
+```text
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -196,7 +265,7 @@ ORDER BY h ASC
 
 Пример:
 
-``` sql
+```sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -206,7 +275,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```
+```text
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -225,7 +294,7 @@ ORDER BY c DESC
 
 Пример:
 
-``` sql
+```sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -235,7 +304,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -254,13 +323,13 @@ LIMIT 10
 
 Пример:
 
-``` sql
+```sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```
+```text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -288,6 +357,48 @@ SELECT
 ## rowNumberInAllBlocks()
 Возвращает порядковый номер строки в блоке данных. Функция учитывает только задействованные блоки данных.
 
+## neighbor(column, offset\[, default_value\])
+
+Функция позволяет получить доступ к значению в колонке `column`, находящемуся на смещении `offset` относительно текущей строки.
+Является частичной реализацией [оконных функций](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() и LAG().
+
+Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
+Если сделать подзапрос с ORDER BY и вызывать функцию извне подзапроса, можно будет получить ожидаемый результат.
+
+Если значение `offset` выходит за пределы блока данных, то берётся значение по-умолчанию для колонки `column`. Если передан параметр `default_value`, то значение берётся из него.
+Например, эта функция может использоваться чтобы оценить year-over-year значение показателя:
+
+```sql
+WITH toDate('2018-01-01') AS start_date
+SELECT
+    toStartOfMonth(start_date + (number * 32)) AS month,
+    toInt32(month) % 100 AS money,
+    neighbor(money, -12) AS prev_year,
+    round(prev_year / money, 2) AS year_over_year
+FROM numbers(16)
+```
+
+```text
+┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
+│ 2018-01-01 │    32 │         0 │              0 │
+│ 2018-02-01 │    63 │         0 │              0 │
+│ 2018-03-01 │    91 │         0 │              0 │
+│ 2018-04-01 │    22 │         0 │              0 │
+│ 2018-05-01 │    52 │         0 │              0 │
+│ 2018-06-01 │    83 │         0 │              0 │
+│ 2018-07-01 │    13 │         0 │              0 │
+│ 2018-08-01 │    44 │         0 │              0 │
+│ 2018-09-01 │    75 │         0 │              0 │
+│ 2018-10-01 │     5 │         0 │              0 │
+│ 2018-11-01 │    36 │         0 │              0 │
+│ 2018-12-01 │    66 │         0 │              0 │
+│ 2019-01-01 │    97 │        32 │           0.33 │
+│ 2019-02-01 │    28 │        63 │           2.25 │
+│ 2019-03-01 │    56 │        91 │           1.62 │
+│ 2019-04-01 │    87 │        22 │           0.25 │
+└────────────┴───────┴───────────┴────────────────┘
+```
+
 ## runningDifference(x)
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
@@ -297,7 +408,7 @@ SELECT
 
 Пример:
 
-``` sql
+```sql
 SELECT
     EventID,
     EventTime,
@@ -314,7 +425,7 @@ FROM
 )
 ```
 
-```
+```text
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -323,6 +434,41 @@ FROM
 │    1110 │ 2016-11-24 00:00:10 │     1 │
 └─────────┴─────────────────────┴───────┘
 ```
+
+Обратите внимание — размер блока влияет на результат. С каждым новым блоком состояние `runningDifference` сбрасывается.
+
+```sql
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+```
+```text
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
+└────────┴──────┘
+```
+```
+set max_block_size=100000 -- по умолчанию 65536!
+
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+```
+```text
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+```
+
+## runningDifferenceStartingWithFirstValue
+То же, что и [runningDifference] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num)
 Принимает число типа UInt64. Интерпретирует его, как MAC-адрес в big endian. Возвращает строку, содержащую соответствующий MAC-адрес в формате AA:BB:CC:DD:EE:FF (числа в шестнадцатеричной форме через двоеточие).
@@ -337,7 +483,7 @@ FROM
 
 Возвращает количество полей в [Enum](../../data_types/enum.md).
 
-```
+```sql
 getSizeOfEnumType(value)
 ```
 
@@ -353,9 +499,11 @@ getSizeOfEnumType(value)
 
 **Пример**
 
-```
+```sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
+```
 
+```text
 ┌─x─┐
 │ 2 │
 └───┘
@@ -365,7 +513,7 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 
 Возвращает имя класса, которым представлен тип данных столбца в оперативной памяти.
 
-```
+```sql
 toColumnTypeName(value)
 ```
 
@@ -379,21 +527,20 @@ toColumnTypeName(value)
 
 **Пример разницы между `toTypeName` и `toColumnTypeName`**
 
+```sql
+SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-:) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
 
-SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-
+```text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime                                            │
 └─────────────────────────────────────────────────────┘
+```
+```sql
+SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
+```
 
-1 rows in set. Elapsed: 0.008 sec.
-
-:) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
-
-SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-
+```text
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
@@ -405,7 +552,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 
 Выводит развернутое описание структур данных в оперативной памяти
 
-```
+```sql
 dumpColumnStructure(value)
 ```
 
@@ -419,9 +566,11 @@ dumpColumnStructure(value)
 
 **Пример**
 
-```
+```sql
 SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
+```
 
+```text
 ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime, Const(size = 1, UInt32(size = 1))                  │
 └──────────────────────────────────────────────────────────────┘
@@ -433,7 +582,7 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 
 Не учитывает значения по умолчанию для столбцов, заданные пользователем.
 
-```
+```sql
 defaultValueOfArgumentType(expression)
 ```
 
@@ -449,26 +598,23 @@ defaultValueOfArgumentType(expression)
 
 **Пример**
 
+```sql
+SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 ```
-:) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 
-SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
-
+```text
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
 │                                           0 │
 └─────────────────────────────────────────────┘
+```
+```sql
+SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
+```
 
-1 rows in set. Elapsed: 0.002 sec.
-
-:) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
-
-SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
-
+```text
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 ## indexHint
@@ -487,9 +633,11 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
-```
+```sql
 SELECT count() FROM ontime
+```
 
+```text
 ┌─count()─┐
 │ 4276457 │
 └─────────┘
@@ -499,16 +647,11 @@ SELECT count() FROM ontime
 
 Выполним выборку по дате следующим образом:
 
+```sql
+SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
-:) SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-GROUP BY k
-ORDER BY k ASC
-
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-01-01 │   13970 │
 │ 2017-01-02 │   15882 │
@@ -517,28 +660,18 @@ ORDER BY k ASC
 │ 2017-09-29 │   16384 │
 │ 2017-09-30 │   12520 │
 └────────────┴─────────┘
-
-273 rows in set. Elapsed: 0.072 sec. Processed 4.28 million rows, 8.55 MB (59.00 million rows/s., 118.01 MB/s.)
 ```
 
 В этой выборке индекс не используется и ClickHouse обработал всю таблицу (`Processed 4.28 million rows`). Для подключения индекса выберем конкретную дату и выполним следующий запрос:
 
+```sql
+SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
-:) SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE k = '2017-09-15'
-GROUP BY k
-ORDER BY k ASC
-
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-15 │   16428 │
 └────────────┴─────────┘
-
-1 rows in set. Elapsed: 0.014 sec. Processed 32.74 thousand rows, 65.49 KB (2.31 million rows/s., 4.63 MB/s.)
 ```
 
 В последней строке выдачи видно, что благодаря использованию индекса, ClickHouse обработал значительно меньшее количество строк (`Processed 32.74 thousand rows`).
@@ -546,9 +679,7 @@ ORDER BY k ASC
 
 Теперь передадим выражение `k = '2017-09-15'` в функцию `indexHint`:
 
-```
-:) SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
-
+```sql
 SELECT
     FlightDate AS k,
     count()
@@ -556,29 +687,29 @@ FROM ontime
 WHERE indexHint(k = '2017-09-15')
 GROUP BY k
 ORDER BY k ASC
+```
 
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-14 │    7071 │
 │ 2017-09-15 │   16428 │
 │ 2017-09-16 │    1077 │
 │ 2017-09-30 │    8167 │
 └────────────┴─────────┘
-
-4 rows in set. Elapsed: 0.004 sec. Processed 32.74 thousand rows, 65.49 KB (8.97 million rows/s., 17.94 MB/s.)
 ```
 
 В ответе на запрос видно, что ClickHouse применил индекс таким же образом, что и в предыдущий раз (`Processed 32.74 thousand rows`). Однако по результирующему набору строк видно, что выражение `k = '2017-09-15'` не использовалось при формировании результата.
 
 Поскольку индекс в ClickHouse разреженный, то при чтении диапазона в ответ попадают "лишние" данные, в данном случае соседние даты. Функция `indexHint` позволяет их увидеть.
 
-## replicate
+## replicate {#other_functions-replicate}
 
 Создает массив, заполненный одним значением.
 
 Используется для внутренней реализации [arrayJoin](array_join.md#functions_arrayjoin).
 
-```
-replicate(x, arr)
+```sql
+SELECT replicate(x, arr);
 ```
 
 **Параметры**
@@ -586,22 +717,108 @@ replicate(x, arr)
 - `arr` — Исходный массив. ClickHouse создаёт новый массив такой же длины как исходный и заполняет его значением `x`.
 - `x` — Значение, которым будет заполнен результирующий массив.
 
-**Выходное значение**
+**Возвращаемое значение**
 
-- Массив, заполненный значением `x`.
+Массив, заполненный значением `x`.
+
+Тип: `Array`.
 
 **Пример**
 
-```
-SELECT replicate(1, ['a', 'b', 'c'])
+Запрос:
 
+```sql
+SELECT replicate(1, ['a', 'b', 'c']);
+```
+
+Ответ:
+
+```text
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
 └───────────────────────────────┘
 ```
 
+## filesystemAvailable {#function-filesystemavailable}
+
+Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+
+```sql
+filesystemAvailable()
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места.
+
+Тип — [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+```sql
+SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+```
+```text
+┌──Free space─┬─Type───┐
+│ 18152624128 │ UInt64 │
+└─────────────┴────────┘
+```
+
+## filesystemCapacity
+
+Возвращает данные о ёмкости диска.
+
+## finalizeAggregation {#function-finalizeaggregation}
+
+Принимает состояние агрегатной функции. Возвращает результат агрегирования.
+
 ## runningAccumulate {#function-runningaccumulate}
 
 Принимает на вход состояния агрегатной функции и возвращает столбец со значениями, которые представляют собой результат мёржа этих состояний для выборки строк из блока от первой до текущей строки. Например, принимает состояние агрегатной функции (например,  `runningAccumulate(uniqState(UserID))`), и для каждой строки блока возвращает результат агрегатной функции после мёржа состояний функции для всех предыдущих строк и текущей. Таким образом, результат зависит от разбиения данных по блокам и от порядка данных в блоке.
 
+## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+
+Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
+
+Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+
+## modelEvaluate(model_name, ...)
+
+Вычислить модель.
+Принимает имя модели и аргументы модели. Возвращает Float64.
+
+## throwIf(x\[, custom_message\])
+
+Бросает исключение, если аргумент не равен нулю.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+
+```sql
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+```
+```text
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+```
+
+## identity()
+
+Возвращает то же значение, которое использовалось в качестве аргумента.
+
+```sql
+SELECT identity(42)
+```
+
+```text
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
+
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
+
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.

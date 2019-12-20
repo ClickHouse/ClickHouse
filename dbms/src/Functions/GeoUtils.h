@@ -91,8 +91,8 @@ public:
     using Box = boost::geometry::model::box<Point>;
     using Segment = boost::geometry::model::segment<Point>;
 
-    explicit PointInPolygonWithGrid(const Polygon & polygon, UInt16 grid_size = 8)
-            : grid_size(std::max<UInt16>(1, grid_size)), polygon(polygon) {}
+    explicit PointInPolygonWithGrid(const Polygon & polygon_, UInt16 grid_size_ = 8)
+            : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_) {}
 
     void init();
 
@@ -224,8 +224,15 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
 
+#pragma GCC diagnostic push
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
+
+#pragma GCC diagnostic pop
 
     if (cell_width == 0 || cell_height == 0)
     {
@@ -503,7 +510,7 @@ public:
     using Polygon = boost::geometry::model::polygon<Point, false>;
     using Box = boost::geometry::model::box<Point>;
 
-    explicit PointInPolygon(const Polygon & polygon) : polygon(polygon) {}
+    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_) {}
 
     void init()
     {
@@ -583,7 +590,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -609,7 +616,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
+    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
 }
 
@@ -699,10 +706,33 @@ std::string serialize(Polygon && polygon)
     return result;
 }
 
-size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char *& out);
+size_t geohashEncode(Float64 longitude, Float64 latitude, UInt8 precision, char * out);
 
 void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
 
+std::vector<std::pair<Float64, Float64>> geohashCoverBox(Float64 longitude_min, Float64 latitude_min, Float64 longitude_max, Float64 latitude_max, UInt8 precision, UInt32 max_items = 0);
+
+struct GeohashesInBoxPreparedArgs
+{
+    UInt64 items_count = 0;
+    UInt8 precision = 0;
+
+    Float64 longitude_min = 0.0;
+    Float64 latitude_min = 0.0;
+    Float64 longitude_max = 0.0;
+    Float64 latitude_max = 0.0;
+
+    Float64 longitude_step = 0.0;
+    Float64 latitude_step = 0.0;
+};
+
+GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
+                                              const Float64 latitude_min,
+                                              Float64 longitude_max,
+                                              Float64 latitude_max,
+                                              UInt8 precision);
+
+UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & estimation, char * out);
 
 } /// GeoUtils
 

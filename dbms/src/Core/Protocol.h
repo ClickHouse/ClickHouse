@@ -112,7 +112,8 @@ namespace Protocol
             Cancel = 3,              /// Cancel the query execution.
             Ping = 4,                /// Check that connection to the server is alive.
             TablesStatusRequest = 5, /// Check status of tables on the server.
-            KeepAlive = 6            /// Keep the connection alive
+            KeepAlive = 6,           /// Keep the connection alive
+            Scalar = 7               /// A block of data (compressed or not).
         };
 
         inline const char * toString(UInt64 packet)

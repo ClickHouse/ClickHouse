@@ -4,6 +4,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -140,11 +142,11 @@ struct IndexesSerializationType
     }
 
     IndexesSerializationType(const IColumn & column,
-                             bool has_additional_keys,
-                             bool need_global_dictionary,
+                             bool has_additional_keys_,
+                             bool need_global_dictionary_,
                              bool enumerate_dictionaries)
-        : has_additional_keys(has_additional_keys)
-        , need_global_dictionary(need_global_dictionary)
+        : has_additional_keys(has_additional_keys_)
+        , need_global_dictionary(need_global_dictionary_)
         , need_update_dictionary(enumerate_dictionaries)
     {
         if (typeid_cast<const ColumnUInt8 *>(&column))
@@ -182,7 +184,7 @@ struct SerializeStateLowCardinality : public IDataType::SerializeBinaryBulkState
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
-    explicit SerializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
+    explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
 struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkState
@@ -201,7 +203,7 @@ struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkS
     ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
-    explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
+    explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
 static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
@@ -544,7 +546,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (auto nullable_keys = typeid_cast<const ColumnNullable *>(keys.get()))
+    if (auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
@@ -741,6 +743,74 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
+void DataTypeLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeBinary, ostr);
+}
+void DataTypeLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+    deserializeImpl(column, &IDataType::deserializeBinary, istr);
+}
+
+void DataTypeLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextEscaped, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextQuoted, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
+}
+
+void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextCSV, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsText, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextJSON, ostr, settings);
+}
+void DataTypeLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextJSON, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
+}
+
 void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     if (allow_add_row)
@@ -791,8 +861,8 @@ namespace
         const IDataType & keys_type;
         const Creator & creator;
 
-        CreateColumnVector(MutableColumnUniquePtr & column, const IDataType & keys_type, const Creator & creator)
-                : column(column), keys_type(keys_type), creator(creator)
+        CreateColumnVector(MutableColumnUniquePtr & column_, const IDataType & keys_type_, const Creator & creator_)
+                : column(column_), keys_type(keys_type_), creator(creator_)
         {
         }
 
@@ -824,7 +894,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -862,6 +932,11 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+}
+
+Field DataTypeLowCardinality::getDefault() const
+{
+    return dictionary_type->getDefault();
 }
 
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const

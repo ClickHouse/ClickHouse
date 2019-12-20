@@ -50,6 +50,8 @@ public:
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
@@ -69,10 +71,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        return String();
-    }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

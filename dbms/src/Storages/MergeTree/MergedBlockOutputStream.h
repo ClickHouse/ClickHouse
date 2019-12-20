@@ -15,14 +15,14 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 public:
     MergedBlockOutputStream(
         MergeTreeData & storage_,
-        String part_path_,
+        const String & part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size_ = false);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
-        String part_path_,
+        const String & part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
@@ -64,8 +64,6 @@ private:
 
 private:
     NamesAndTypesList columns_list;
-    SerializationStates serialization_states;
-    String part_path;
 
     size_t rows_count = 0;
 
@@ -75,10 +73,6 @@ private:
     /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
     ColumnsWithTypeAndName last_index_row;
-
-    std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
-    MergeTreeIndexAggregators skip_indices_aggregators;
-    std::vector<size_t> skip_index_filling;
 };
 
 }

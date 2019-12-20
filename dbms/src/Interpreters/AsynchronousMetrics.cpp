@@ -16,19 +16,6 @@
 #include <common/config_common.h>
 #endif
 
-#if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h>
-
-    /// Initializing malloc extension in global constructor as required.
-    struct MallocExtensionInitializer
-    {
-        MallocExtensionInitializer()
-        {
-            MallocExtension::Initialize();
-        }
-    } malloc_extension_initializer;
-#endif
-
 #if USE_JEMALLOC
     #include <jemalloc/jemalloc.h>
 #endif
@@ -159,10 +146,17 @@ void AsynchronousMetrics::update()
 
         size_t max_part_count_for_partition = 0;
 
+        size_t number_of_databases = databases.size();
+        size_t total_number_of_tables = 0;
+
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            /// Lazy database can not contain MergeTree tables
+            if (db.second->getEngineName() == "Lazy")
+                continue;
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
+                ++total_number_of_tables;
                 auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
@@ -176,19 +170,22 @@ void AsynchronousMetrics::update()
                     calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
                     calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
 
-                    try
+                    if (!status.is_readonly)
                     {
-                        time_t absolute_delay = 0;
-                        time_t relative_delay = 0;
-                        table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                        try
+                        {
+                            time_t absolute_delay = 0;
+                            time_t relative_delay = 0;
+                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
 
-                        calculateMax(max_absolute_delay, absolute_delay);
-                        calculateMax(max_relative_delay, relative_delay);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__,
-                            "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                            calculateMax(max_absolute_delay, absolute_delay);
+                            calculateMax(max_relative_delay, relative_delay);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__,
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                        }
                     }
 
                     calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getMaxPartsCountForPartition());
@@ -213,34 +210,10 @@ void AsynchronousMetrics::update()
         set("ReplicasMaxRelativeDelay", max_relative_delay);
 
         set("MaxPartCountForPartition", max_part_count_for_partition);
+
+        set("NumberOfDatabases", number_of_databases);
+        set("NumberOfTables", total_number_of_tables);
     }
-
-#if USE_TCMALLOC
-    {
-        /// tcmalloc related metrics. Remove if you switch to different allocator.
-
-        MallocExtension & malloc_extension = *MallocExtension::instance();
-
-        auto malloc_metrics =
-        {
-            "generic.current_allocated_bytes",
-            "generic.heap_size",
-            "tcmalloc.current_total_thread_cache_bytes",
-            "tcmalloc.central_cache_free_bytes",
-            "tcmalloc.transfer_cache_free_bytes",
-            "tcmalloc.thread_cache_free_bytes",
-            "tcmalloc.pageheap_free_bytes",
-            "tcmalloc.pageheap_unmapped_bytes",
-        };
-
-        for (auto malloc_metric : malloc_metrics)
-        {
-            size_t value = 0;
-            if (malloc_extension.GetNumericProperty(malloc_metric, &value))
-                set(malloc_metric, value);
-        }
-    }
-#endif
 
 #if USE_JEMALLOC
     {

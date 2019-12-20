@@ -6,6 +6,7 @@
 #endif
 
 #include <double-conversion/double-conversion.h>
+#include <boost/noncopyable.hpp>
 
 #ifdef __clang__
 #pragma clang diagnostic pop
@@ -26,7 +27,7 @@ template <> struct DoubleToStringConverterFlags<true>
 };
 
 template <bool emit_decimal_point>
-class DoubleConverter
+class DoubleConverter : private boost::noncopyable
 {
     DoubleConverter(const DoubleConverter &) = delete;
     DoubleConverter & operator=(const DoubleConverter &) = delete;
@@ -34,19 +35,14 @@ class DoubleConverter
     DoubleConverter() = default;
 
 public:
-    /** @todo Add commentary on how this constant is deduced.
-     *    e.g. it's minus sign, integral zero, decimal point, up to 5 leading zeros and kBase10MaximalLength digits. */
-    static constexpr auto MAX_REPRESENTATION_LENGTH = 26;
+    /// Sign (1 byte) + DigitsBeforePoint + point (1 byte) + DigitsAfterPoint + zero byte.
+    /// See comment to DoubleToStringConverter::ToFixed method for explanation.
+    static constexpr auto MAX_REPRESENTATION_LENGTH =
+            1 + double_conversion::DoubleToStringConverter::kMaxFixedDigitsBeforePoint +
+            1 + double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint + 1;
     using BufferType = char[MAX_REPRESENTATION_LENGTH];
 
-    static const auto & instance()
-    {
-        static const double_conversion::DoubleToStringConverter instance{
-            DoubleToStringConverterFlags<emit_decimal_point>::flags, "inf", "nan", 'e', -6, 21, 6, 1
-        };
-
-        return instance;
-    }
+    static const double_conversion::DoubleToStringConverter & instance();
 };
 
 }

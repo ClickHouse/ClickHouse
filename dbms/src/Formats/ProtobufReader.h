@@ -9,7 +9,7 @@
 #if USE_PROTOBUF
 
 #include <boost/noncopyable.hpp>
-#include <Formats/ProtobufColumnMatcher.h>
+#include "ProtobufColumnMatcher.h"
 #include <IO/ReadBuffer.h>
 #include <memory>
 
@@ -42,7 +42,7 @@ public:
     bool startMessage();
 
     /// Ends reading a message.
-    void endMessage();
+    void endMessage(bool ignore_errors = false);
 
     /// Reads the column index.
     /// The function returns false if there are no more columns to read (call endMessage() in this case).
@@ -72,6 +72,7 @@ public:
     bool readUUID(UUID & uuid) { return current_converter->readUUID(uuid); }
     bool readDate(DayNum & date) { return current_converter->readDate(date); }
     bool readDateTime(time_t & tm) { return current_converter->readDateTime(tm); }
+    bool readDateTime64(DateTime64 & tm, UInt32 scale) { return current_converter->readDateTime64(tm, scale); }
 
     bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal32(decimal, precision, scale); }
     bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal64(decimal, precision, scale); }
@@ -79,9 +80,8 @@ public:
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) { return current_converter->readAggregateFunction(function, place, arena); }
 
-    /// When it returns false there is no more values left and from now on all the read<Type>() functions will return false
-    /// until readColumnIndex() is called. When it returns true it's unclear.
-    bool ALWAYS_INLINE maybeCanReadValue() const { return simple_reader.maybeCanReadValue(); }
+    /// Call it after calling one of the read*() function to determine if there are more values available for reading.
+    bool ALWAYS_INLINE canReadMoreValues() const { return simple_reader.canReadMoreValues(); }
 
 private:
     class SimpleReader
@@ -89,18 +89,20 @@ private:
     public:
         SimpleReader(ReadBuffer & in_);
         bool startMessage();
-        void endMessage();
-        void endRootMessage();
+        void endMessage(bool ignore_errors);
+        void startNestedMessage();
+        void endNestedMessage();
         bool readFieldNumber(UInt32 & field_number);
         bool readInt(Int64 & value);
         bool readSInt(Int64 & value);
         bool readUInt(UInt64 & value);
         template<typename T> bool readFixed(T & value);
         bool readStringInto(PaddedPODArray<UInt8> & str);
-        bool ALWAYS_INLINE maybeCanReadValue() const { return field_end != REACHED_END; }
+
+        bool ALWAYS_INLINE canReadMoreValues() const { return cursor < field_end; }
 
     private:
-        void readBinary(void* data, size_t size);
+        void readBinary(void * data, size_t size);
         void ignore(UInt64 num_bytes);
         void moveCursorBackward(UInt64 num_bytes);
 
@@ -119,13 +121,13 @@ private:
         void ignoreVarint();
         void ignoreGroup();
 
-        static constexpr UInt64 REACHED_END = 0;
-
         ReadBuffer & in;
         UInt64 cursor;
-        std::vector<UInt64> parent_message_ends;
+        size_t current_message_level;
         UInt64 current_message_end;
+        std::vector<UInt64> parent_message_ends;
         UInt64 field_end;
+        UInt64 last_string_pos;
     };
 
     class IConverter
@@ -151,6 +153,7 @@ private:
        virtual bool readUUID(UUID &) = 0;
        virtual bool readDate(DayNum &) = 0;
        virtual bool readDateTime(time_t &) = 0;
+       virtual bool readDateTime64(DateTime64 &, UInt32) = 0;
        virtual bool readDecimal32(Decimal32 &, UInt32, UInt32) = 0;
        virtual bool readDecimal64(Decimal64 &, UInt32, UInt32) = 0;
        virtual bool readDecimal128(Decimal128 &, UInt32, UInt32) = 0;
@@ -226,11 +229,12 @@ public:
     bool readUUID(UUID &) { return false; }
     bool readDate(DayNum &) { return false; }
     bool readDateTime(time_t &) { return false; }
+    bool readDateTime64(DateTime64 & /*tm*/, UInt32 /*scale*/) { return false; }
     bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) { return false; }
-    bool maybeCanReadValue() const { return false; }
+    bool canReadMoreValues() const { return false; }
 };
 
 }

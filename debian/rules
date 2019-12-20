@@ -32,10 +32,8 @@ endif
 
 CMAKE_FLAGS += -DENABLE_UTILS=0
 
-#DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
-
-#DEB_CC ?= gcc-7
-#DEB_CXX ?= g++-7
+DEB_CC ?= $(shell which gcc-9 gcc-8 gcc | head -n1)
+DEB_CXX ?= $(shell which g++-9 g++-8 g++ | head -n1)
 
 ifdef DEB_CXX
     DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
@@ -88,17 +86,13 @@ override_dh_auto_configure:
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
 	$(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
-#	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
-#	#TODO, use ENABLE_TESTS=1
-#	#./debian/tests_wrapper.sh
-#	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -R GLIBC_required_version
 	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
 
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
-	dh_clean
+	dh_clean -X contrib
 
 override_dh_strip:
 	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
@@ -116,11 +110,6 @@ override_dh_install:
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
-
-	# fake metrika files when private dir is empty
-	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
-	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml
-	touch $(DESTDIR)/etc/clickhouse-server/metrika/users.xml
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 

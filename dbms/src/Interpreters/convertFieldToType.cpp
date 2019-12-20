@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -146,12 +147,32 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
+DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
+{
+    ReadBufferFromString in(s);
+    DateTime64 datetime64 {0};
+
+    readDateTime64Text(datetime64, scale, in);
+    if (!in.eof())
+        throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
+
+    return datetime64.value;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
+    {
         which_from_type = WhichDataType(*from_type_hint);
+
+        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatitable type.
+        if (from_type_hint && from_type_hint->equals(type))
+        {
+            return src;
+        }
+    }
 
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
@@ -181,9 +202,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
             throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
-        /// Numeric values for Enums should not be used directly in IN section
-        if (src.getType() == Field::Types::UInt64 && !which_type.isEnum())
+        if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        {
+            /// Convert UInt64 or Int64 to Enum's value
+            return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
+        }
+
+        if (which_type.isDateOrDateTime() && !which_type.isDateTime64() && src.getType() == Field::Types::UInt64)
+        {
+            /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
+        }
+        // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
 
         if (src.getType() == Field::Types::String)
         {
@@ -196,6 +226,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
                 return stringToDateTime(src.get<const String &>());
+            }
+            else if (which_type.isDateTime64())
+            {
+                const auto date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
+                /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
+                return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
             }
             else if (which_type.isUUID())
             {
@@ -217,28 +253,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::Array)
         {
-            const DataTypePtr nested_type = removeNullable(type_array->getNestedType());
-
             const Array & src_arr = src.get<Array>();
             size_t src_arr_size = src_arr.size();
 
+            auto & element_type = *(type_array->getNestedType());
+            bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], *nested_type);
-                if (res[i].isNull() && !type_array->getNestedType()->isNullable())
-                    throw Exception("Type mismatch of array elements in IN or VALUES section. Expected: " + type_array->getNestedType()->getName()
-                        + ". Got NULL in position " + toString(i + 1), ErrorCodes::TYPE_MISMATCH);
+                res[i] = convertFieldToType(src_arr[i], element_type);
+                if (res[i].isNull() && !element_type.isNullable())
+                {
+                    // See the comment for Tuples below.
+                    have_unconvertible_element = true;
+                }
             }
 
-            return res;
+            return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
     else if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
         if (src.getType() == Field::Types::Tuple)
         {
-            const TupleBackend & src_tuple = src.get<Tuple>();
+            const auto & src_tuple = src.get<Tuple>();
             size_t src_tuple_size = src_tuple.size();
             size_t dst_tuple_size = type_tuple->getElements().size();
 
@@ -246,11 +284,34 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 throw Exception("Bad size of tuple in IN or VALUES section. Expected size: "
                     + toString(dst_tuple_size) + ", actual size: " + toString(src_tuple_size), ErrorCodes::TYPE_MISMATCH);
 
-            TupleBackend res(dst_tuple_size);
+            Tuple res(dst_tuple_size);
+            bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
-                res[i] = convertFieldToType(src_tuple[i], *type_tuple->getElements()[i]);
+            {
+                auto & element_type = *(type_tuple->getElements()[i]);
+                res[i] = convertFieldToType(src_tuple[i], element_type);
+                if (!res[i].isNull() || element_type.isNullable())
+                    continue;
 
-            return res;
+                /*
+                 * Either the source element was Null, or the conversion did not
+                 * succeed, because the source and the requested types of the
+                 * element are compatible, but the value is not convertible
+                 * (e.g. trying to convert -1 from Int8 to UInt8). In these
+                 * cases, consider the whole tuple also compatible but not
+                 * convertible. According to the specification of this function,
+                 * we must return Null in this case.
+                 *
+                 * The following elements might be not even compatible, so it
+                 * makes sense to check them to detect user errors. Remember
+                 * that there is an unconvertible element, and try to process
+                 * the remaining ones. The convertFieldToType for each element
+                 * will throw if it detects incompatibility.
+                 */
+                have_unconvertible_element = true;
+            }
+
+            return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))

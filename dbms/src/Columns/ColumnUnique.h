@@ -11,6 +11,7 @@
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 
 #include <common/unaligned.h>
@@ -64,6 +65,9 @@ public:
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
+    Float64 getFloat64(size_t n) const override { return getNestedColumn()->getFloat64(n); }
+    Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
+    bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
@@ -138,8 +142,8 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder.get()); }
-    const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
+    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -184,14 +188,14 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
     : column_holder(std::move(holder))
-    , is_nullable(is_nullable)
-    , index(numSpecialValues(is_nullable), 0)
+    , is_nullable(is_nullable_)
+    , index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
-    if (column_holder->isColumnNullable())
+    if (isColumnNullable(*column_holder))
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
     index.setColumn(getRawColumnPtr());
@@ -230,7 +234,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-            static_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
 }
 
@@ -259,7 +263,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getNullValueIndex();
 
     if (size_of_value_if_fixed)
-        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());
@@ -271,7 +275,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
     if (is_nullable && src.isNullAt(n))
         return getNullValueIndex();
 
-    if (auto * nullable = typeid_cast<const ColumnNullable *>(&src))
+    if (auto * nullable = checkAndGetColumn<ColumnNullable>(src))
         return uniqueInsertFrom(nullable->getNestedColumn(), n);
 
     auto ref = src.getDataAt(n);
@@ -298,19 +302,19 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 {
     if (is_nullable)
     {
-        const UInt8 null_flag = 1;
-        const UInt8 not_null_flag = 0;
+        static constexpr auto s = sizeof(UInt8);
 
-        auto pos = arena.allocContinue(sizeof(null_flag), begin);
-        auto & flag = (n == getNullValueIndex() ? null_flag : not_null_flag);
-        memcpy(pos, &flag, sizeof(flag));
+        auto pos = arena.allocContinue(s, begin);
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(pos, flag);
 
-        size_t nested_size = 0;
+        if (n == getNullValueIndex())
+            return StringRef(pos, s);
 
-        if (n != getNullValueIndex())
-            nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
+        auto nested_ref = column_holder->serializeValueIntoArena(n, arena, begin);
 
-        return StringRef(pos, sizeof(null_flag) + nested_size);
+        /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+        return StringRef(nested_ref.data - s, nested_ref.size + s);
     }
 
     return column_holder->serializeValueIntoArena(n, arena, begin);
@@ -430,7 +434,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         return nullptr;
     };
 
-    if (auto nullable_column = typeid_cast<const ColumnNullable *>(&src))
+    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src))
     {
         src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
         null_map = &nullable_column->getNullMapData();

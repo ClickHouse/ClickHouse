@@ -11,24 +11,19 @@ Tuples can be the result of a query. In this case, for text formats other than J
 
 You can use a function to create a tuple:
 
-```
+```sql
 tuple(T1, T2, ...)
 ```
 
 Example of creating a tuple:
 
+```sql
+SELECT tuple(1,'a') AS x, toTypeName(x)
 ```
-:) SELECT tuple(1,'a') AS x, toTypeName(x)
-
-SELECT
-    (1, 'a') AS x,
-    toTypeName(x)
-
+```text
 ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
 │ (1,'a') │ Tuple(UInt8, String)      │
 └─────────┴───────────────────────────┘
-
-1 rows in set. Elapsed: 0.021 sec.
 ```
 
 ## Working with data types
@@ -37,18 +32,13 @@ When creating a tuple on the fly, ClickHouse automatically detects the type of e
 
 Example of automatic data type detection:
 
-```
+```sql
 SELECT tuple(1, NULL) AS x, toTypeName(x)
-
-SELECT
-    (1, NULL) AS x,
-    toTypeName(x)
-
+```
+```text
 ┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
 │ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
 └──────────┴─────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 

@@ -31,6 +31,7 @@ try
     DateLUT::instance();
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     context.setPath("./");
 
@@ -38,7 +39,7 @@ try
 
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context);
     context.addDatabase("system", system);
-    system->loadTables(context, nullptr, false);
+    system->loadStoredObjects(context, false);
     attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 

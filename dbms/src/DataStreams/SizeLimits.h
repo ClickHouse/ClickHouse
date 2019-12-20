@@ -27,11 +27,17 @@ struct SizeLimits
     OverflowMode overflow_mode = OverflowMode::THROW;
 
     SizeLimits() {}
-    SizeLimits(UInt64 max_rows, UInt64 max_bytes, OverflowMode overflow_mode)
-        : max_rows(max_rows), max_bytes(max_bytes), overflow_mode(overflow_mode) {}
+    SizeLimits(UInt64 max_rows_, UInt64 max_bytes_, OverflowMode overflow_mode_)
+        : max_rows(max_rows_), max_bytes(max_bytes_), overflow_mode(overflow_mode_) {}
 
     /// Check limits. If exceeded, return false or throw an exception, depending on overflow_mode.
+    bool check(UInt64 rows, UInt64 bytes, const char * what, int too_many_rows_exception_code, int too_many_bytes_exception_code) const;
     bool check(UInt64 rows, UInt64 bytes, const char * what, int exception_code) const;
+
+    /// Check limits. No exceptions.
+    bool softCheck(UInt64 rows, UInt64 bytes) const;
+
+    bool hasLimits() const { return max_rows || max_bytes; }
 };
 
 }

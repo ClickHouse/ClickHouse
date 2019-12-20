@@ -103,12 +103,38 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Copying binary back")
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official):
-    result = []
-    cmake_flags = ['$CMAKE_FLAGS']
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
+    CLANG_PREFIX = "clang"
+    DARWIN_SUFFIX = "-darwin"
+    ARM_SUFFIX = "-aarch64"
 
-    cc = compiler
+    result = []
+    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
+
+    is_clang = compiler.startswith(CLANG_PREFIX)
+    is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
+    is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_compile = is_cross_darwin or is_cross_arm
+
+    # Explicitly use LLD with Clang by default.
+    # Don't force linker for cross-compilation.
+    if is_clang and not is_cross_compile:
+        cmake_flags.append("-DLINKER_NAME=lld")
+
+    if is_cross_darwin:
+        cc = compiler[:-len(DARWIN_SUFFIX)]
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
+    elif is_cross_arm:
+        cc = compiler[:-len(ARM_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
+    else:
+        cc = compiler
+
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
+
     if package_type == "deb":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
@@ -139,11 +165,17 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     elif cache == "distcc":
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
+    if alien_pkgs:
+        result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
+
     if unbundled:
         cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
+
+    if with_coverage:
+        cmake_flags.append('-DWITH_COVERAGE=1')
 
     if version:
         result.append("VERSION_STRING='{}'".format(version))
@@ -160,12 +192,12 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse building script via virtualization mechanisms")
+    parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
     parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "gcc-8", "gcc-9"), default="gcc-7")
+    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "clang-8-darwin", "clang-8-aarch64", "gcc-8", "gcc-9"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
@@ -176,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument("--version")
     parser.add_argument("--author", default="clickhouse")
     parser.add_argument("--official", action="store_true")
+    parser.add_argument("--alien-pkgs", nargs='+', default=[])
+    parser.add_argument("--with-coverage", action="store_true")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -188,6 +222,9 @@ if __name__ == "__main__":
     else:
         ch_root = args.clickhouse_repo_path
 
+    if args.alien_pkgs and not args.package_type == "deb":
+        raise Exception("Can add alien packages only in deb build")
+
     dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
     if args.package_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
@@ -195,7 +232,7 @@ if __name__ == "__main__":
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
-        args.version, args.author, args.official)
+        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage)
     if args.package_type != "freebsd":
         run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
     else:

@@ -4,10 +4,13 @@
 #include <cassert>
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
+#include <Core/Field.h>
 
 
 class Collator;
@@ -121,7 +124,7 @@ public:
 
     void insertFrom(const IColumn & src_, size_t n) override
     {
-        const ColumnString & src = static_cast<const ColumnString &>(src_);
+        const ColumnString & src = assert_cast<const ColumnString &>(src_);
         const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
 
         if (size_to_append == 1)
@@ -202,9 +205,16 @@ public:
         offsets.push_back(offsets.back() + 1);
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + length);
+        for (size_t i = 0; i < length; ++i)
+            offsets.push_back(offsets.back() + 1);
+    }
+
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
-        const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
+        const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 

@@ -22,27 +22,39 @@ Overall structure:
 </dictionary>
 ```
 
-Columns are described in the structure:
+or
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    -- attributes
+)
+PRIMARY KEY Id
+...
+```
+
+
+In xml-file attributes are described in the structure section:
 
 - `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a large number of columns.
+- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a large number of attributes.
 
+In DDL-query attributes are described the body of `CREATE` query:
+- `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
+- `AttrName AttrType` —  [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes)
 
 ## Key {#ext_dict_structure-key}
 
 ClickHouse supports the following types of keys:
 
-- Numeric key. UInt64. Defined in the tag `<id>` .
-- Composite key. Set of values of different types. Defined in the tag `<key>` .
+- Numeric key. UInt64. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
+- Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
 
-A structure can contain either `<id>` or `<key>` .
-
-!!! warning
-    The key doesn't need to be defined separately in attributes.
+A xml-structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
 ### Numeric Key
 
-Format: `UInt64`.
+Type: `UInt64`.
 
 Configuration example:
 
@@ -54,7 +66,21 @@ Configuration example:
 
 Configuration fields:
 
-- name – The name of the column with keys.
+- `name` – The name of the column with keys.
+
+
+For DDL-query:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+- `PRIMARY KEY` – The name of the column with keys.
 
 ### Composite Key
 
@@ -81,6 +107,18 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 ...
 ```
 
+or
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 String
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 
@@ -93,7 +131,7 @@ Configuration example:
     ...
     <attribute>
         <name>Name</name>
-        <type>Type</type>
+        <type>ClickHouseDataType</type>
         <null_value></null_value>
         <expression>rand64()</expression>
         <hierarchical>true</hierarchical>
@@ -103,16 +141,24 @@ Configuration example:
 </structure>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
 Configuration fields:
 
 Tag | Description | Required
 ----|-------------|---------
 `name`| Column name. | Yes
-`type`| Column type.<br/>Sets the method for interpreting data in the source. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the source table, but it can be uploaded as `String`. | Yes
-`null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. | Yes
-`expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it for creating an alias for the remote column.<br/><br/>Default value: no expression. | No
+`type`| ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../data_types/nullable.md) is not supported. | Yes
+`null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field. | Yes
+`expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression. | No
 `hierarchical` | Hierarchical support. Mirrored to the parent identifier.<br/><br/>Default value: `false`. | No
-`injective` | Flag that shows whether the `id -> attribute` image is injective.<br/>If `true`, then you can optimize the `GROUP BY` clause.<br/><br/>Default value: `false`. | No
+`injective` | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No
 `is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`. | No
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

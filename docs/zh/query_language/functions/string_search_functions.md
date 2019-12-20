@@ -39,7 +39,8 @@
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchAnyCaseInsensitive，multiSearchAnyUTF8，multiSearchAnyCaseInsensitiveUTF8`。
 
-**注意：在所有`multiSearch*`函数中，由于实现规范，needles的数量应小于2<sup>8</sup>。**
+!!! note "注意"
+    在所有`multiSearch*`函数中，由于实现规范，needles的数量应小于2<sup>8</sup>。
 
 ## match(haystack, pattern)
 
@@ -56,7 +57,8 @@
 
 与`match`相同，但如果所有正则表达式都不匹配，则返回0；如果任何模式匹配，则返回1。它使用[hyperscan](https://github.com/intel/hyperscan)库。对于在字符串中搜索子字符串的模式，最好使用“multisearchany”，因为它更高效。
 
-**注意：任何`haystack`字符串的长度必须小于2<sup>32</ sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。**
+!!! note "注意"
+    任何`haystack`字符串的长度必须小于2<sup>32</ sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。
 
 ## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
@@ -70,9 +72,11 @@
 
 与`multiFuzzyMatchAny`相同，但返回匹配项的匹配能容的索引位置。
 
-**注意：`multiFuzzyMatch*`函数不支持UTF-8正则表达式，由于hyperscan限制，这些表达式被按字节解析。**
+!!! note "注意"
+    `multiFuzzyMatch*`函数不支持UTF-8正则表达式，由于hyperscan限制，这些表达式被按字节解析。
 
-**注意：如要关闭所有hyperscan函数的使用，请设置`SET allow_hyperscan = 0;`。**
+!!! note "注意"
+    如要关闭所有hyperscan函数的使用，请设置`SET allow_hyperscan = 0;`。
 
 ## extract(haystack, pattern)
 
@@ -112,7 +116,8 @@
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`ngramSearchCaseInsensitive，ngramSearchUTF8，ngramSearchCaseInsensitiveUTF8`。
 
-**注意：对于UTF-8，我们使用3-gram。所有这些都不是完全公平的n-gram距离。我们使用2字节哈希来散列n-gram，然后计算这些哈希表之间的（非）对称差异 - 可能会发生冲突。对于UTF-8不区分大小写的格式，我们不使用公平的`tolower`函数 - 我们将每个Unicode字符字节的第5位（从零开始）和字节的第一位归零 - 这适用于拉丁语，主要用于所有西里尔字母。**
+!!! note "注意"
+    对于UTF-8，我们使用3-gram。所有这些都不是完全公平的n-gram距离。我们使用2字节哈希来散列n-gram，然后计算这些哈希表之间的（非）对称差异 - 可能会发生冲突。对于UTF-8不区分大小写的格式，我们不使用公平的`tolower`函数 - 我们将每个Unicode字符字节的第5位（从零开始）和字节的第一位归零 - 这适用于拉丁语，主要用于所有西里尔字母。
 
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

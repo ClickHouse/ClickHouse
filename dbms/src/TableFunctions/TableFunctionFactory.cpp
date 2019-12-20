@@ -1,10 +1,9 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
-
 #include <Common/Exception.h>
-
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -17,11 +16,16 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, Creator creator)
+void TableFunctionFactory::registerFunction(const std::string & name, Creator creator, CaseSensitiveness case_sensitiveness)
 {
-    if (!functions.emplace(name, std::move(creator)).second)
+    if (!table_functions.emplace(name, creator).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
+
+    if (case_sensitiveness == CaseInsensitive
+        && !case_insensitive_table_functions.emplace(Poco::toLower(name), creator).second)
+        throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 TableFunctionPtr TableFunctionFactory::get(
@@ -31,8 +35,8 @@ TableFunctionPtr TableFunctionFactory::get(
     if (context.getSettings().readonly == 1)        /** For example, for readonly = 2 - allowed. */
         throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
 
-    auto it = functions.find(name);
-    if (it == functions.end())
+    auto res = tryGet(name, context);
+    if (!res)
     {
         auto hints = getHints(name);
         if (!hints.empty())
@@ -41,12 +45,35 @@ TableFunctionPtr TableFunctionFactory::get(
             throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
     }
 
-    return it->second();
+    return res;
+}
+
+TableFunctionPtr TableFunctionFactory::tryGet(
+        const std::string & name_param,
+        const Context &) const
+{
+    String name = getAliasToOrName(name_param);
+
+    auto it = table_functions.find(name);
+    if (table_functions.end() != it)
+        return it->second();
+
+    it = case_insensitive_table_functions.find(Poco::toLower(name));
+    if (case_insensitive_table_functions.end() != it)
+        return it->second();
+
+    return {};
 }
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    return functions.count(name);
+    return table_functions.count(name);
+}
+
+TableFunctionFactory & TableFunctionFactory::instance()
+{
+    static TableFunctionFactory ret;
+    return ret;
 }
 
 }

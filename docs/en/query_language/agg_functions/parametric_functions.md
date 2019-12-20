@@ -2,64 +2,237 @@
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## sequenceMatch(pattern)(time, cond1, cond2, ...)
+## histogram
 
-Pattern matching for event chains.
+Calculates an adaptive histogram. It doesn't guarantee precise results.
 
-`pattern` is a string containing a pattern to match. The pattern is similar to a regular expression.
-
-`time` is the time of the event, type support: `Date`,`DateTime`, and other unsigned integer types.
-
-`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event.
-
-The function collects a sequence of events in RAM. Then it checks whether this sequence matches the pattern.
-It returns UInt8: 0 if the pattern isn't matched, or 1 if it matches.
-
-Example: `sequenceMatch ('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')`
-
-- whether there was a chain of events in which a pageview with 'company' in the address occurred earlier than a pageview with 'cart' in the address.
-
-This is a singular example. You could write it using other aggregate functions:
-
+```sql
+histogram(number_of_bins)(values)
 ```
-minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
+ 
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
+
+**Parameters**
+
+`number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
+`values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
+
+**Returned values**
+
+- [Array](../../data_types/array.md) of [Tuples](../../data_types/tuple.md) of the following format:
+
+    ```
+    [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+    ```
+
+    - `lower` — Lower bound of the bin.
+    - `upper` — Upper bound of the bin.
+    - `height` — Calculated height of the bin.
+
+**Example**
+
+```sql
+SELECT histogram(5)(number + 1) 
+FROM (
+    SELECT * 
+    FROM system.numbers 
+    LIMIT 20
+)
+```
+```text
+┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
+│ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-However, there is no such solution for more complex situations.
+You can visualize a histogram with the [bar](../functions/other_functions.md#function-bar) function, for example:
 
-Pattern syntax:
+```sql
+WITH histogram(5)(rand() % 100) AS hist
+SELECT 
+    arrayJoin(hist).3 AS height, 
+    bar(height, 0, 6, 5) AS bar
+FROM 
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+```text
+┌─height─┬─bar───┐
+│  2.125 │ █▋    │
+│   3.25 │ ██▌   │
+│  5.625 │ ████▏ │
+│  5.625 │ ████▏ │
+│  3.375 │ ██▌   │
+└────────┴───────┘
+```
 
-`(?1)` refers to the condition (any number can be used in place of 1).
+In this case, you should remember that you don't know the histogram bin borders.
 
-`.*` is any number of any events.
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
-`(?t>=1800)` is a time condition.
+Checks whether the sequence contains an event chain that matches the pattern.
 
-Any quantity of any type of events is allowed over the specified time.
+```sql
+sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
+```
 
-Instead of `>=`, the following operators can be used:`<`, `>`, `<=`.
+!!! warning "Warning"
+    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 
-Any number may be specified in place of 1800.
 
-Events that occur during the same second can be put in the chain in any order. This may affect the result of the function.
+**Parameters**
 
-## sequenceCount(pattern)(time, cond1, cond2, ...)
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
-Works the same way as the sequenceMatch function, but instead of returning whether there is an event chain, it returns UInt64 with the number of event chains found.
-Chains are searched for without overlapping. In other words, the next chain can start only after the end of the previous one.
+- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-## windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+
+
+**Returned values**
+
+- 1, if the pattern is matched.
+- 0, if the pattern isn't matched.
+
+
+Type: `UInt8`.
+
+
+<a name="sequence-function-pattern-syntax"></a>
+**Pattern syntax**
+
+- `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
+
+- `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
+
+- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+
+**Examples**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+└──────┴────────┘
+```
+
+Perform the query:
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                     1 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+The function found the event chain where number 2 follows number 1. It skipped number 3 between them, because the number is not described as an event. If we want to take this number into account when searching for the event chain given in the example, we should make a condition for it.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
+│                                                                                        0 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+In this case, the function couldn't find the event chain matching the pattern, because the event for number 3 occured between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+**See Also**
+
+- [sequenceCount](#function-sequencecount)
+
+
+## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
+
+Counts the number of event chains that matched the pattern. The function searches event chains that don't overlap. It starts to search for the next chain after the current chain is matched.
+
+!!! warning "Warning"
+    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+
+```sql
+sequenceCount(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Parameters**
+
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+
+- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
+
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+
+
+**Returned values**
+
+- Number of non-overlapping event chains that are matched.
+
+Type: `UInt64`.
+
+
+**Example**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Count how many times the number 2 occurs after the number 1 with any amount of other numbers between them:
+
+```sql
+SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
+```
+```text
+┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                       2 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [sequenceMatch](#function-sequencematch)
+
+
+## windowFunnel(window, [mode])(timestamp, cond1, cond2, cond3, ...)
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
 ```
-windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
+windowFunnel(window, [mode])(timestamp, cond1, cond2, cond3, ...)
 ```
 
 **Parameters:**
 
 - `window` — Length of the sliding window in seconds.
-- `timestamp` — Name of the column containing the timestamp. Data type support: `Date`,`DateTime`, and other unsigned integer types(Note that though timestamp support `UInt64` type, there is a limitation it's value can't overflow maximum of Int64, which is 2^63 - 1).
+- `mode` - It is an optional argument.
+  * `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
+- `timestamp` — Name of the column containing the timestamp. Data types supported: `Date`, `DateTime`, and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
 - `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
 **Algorithm**
@@ -84,7 +257,7 @@ Set the following chain of events:
 
 To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
 
-```
+```sql
 SELECT
     level,
     count() AS c
@@ -115,7 +288,7 @@ Consider you are doing a website analytics, intend to calculate the retention of
 
 This could be easily calculate by `retention`
 
-```
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -149,7 +322,7 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```
+```text
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

@@ -1,5 +1,6 @@
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -23,7 +24,7 @@ struct ArraySortImpl
     {
         const IColumn & column;
 
-        Less(const IColumn & column) : column(column) {}
+        Less(const IColumn & column_) : column(column_) {}
 
         bool operator()(size_t lhs, size_t rhs) const
         {

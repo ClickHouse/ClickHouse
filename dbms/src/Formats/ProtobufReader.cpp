@@ -34,15 +34,15 @@ namespace
         BITS32 = 5,
     };
 
-    // The following should be always true:
-    // REACHED_END < any cursor position < min(END_OF_VARINT, END_OF_GROUP)
+    // The following condition must always be true:
+    // any_cursor_position < min(END_OF_VARINT, END_OF_GROUP)
     // This inequation helps to check conditions in SimpleReader.
     constexpr UInt64 END_OF_VARINT = static_cast<UInt64>(-1);
     constexpr UInt64 END_OF_GROUP = static_cast<UInt64>(-2);
 
     Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 
-    void unknownFormat()
+    [[noreturn]] void throwUnknownFormat()
     {
         throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
     }
@@ -53,100 +53,117 @@ namespace
 // Knows nothing about protobuf schemas, just provides useful functions to deserialize data.
 ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_)
     : in(in_)
-    , cursor(1 /* We starts at cursor == 1 to keep any cursor value > REACHED_END, this allows to simplify conditions */)
-    , current_message_end(REACHED_END)
-    , field_end(REACHED_END)
+    , cursor(0)
+    , current_message_level(0)
+    , current_message_end(0)
+    , field_end(0)
+    , last_string_pos(-1)
 {
 }
 
 bool ProtobufReader::SimpleReader::startMessage()
 {
-    if ((current_message_end == REACHED_END) && parent_message_ends.empty())
-    {
-        // Start reading a root message.
-        if (unlikely(in.eof()))
-            return false;
-        size_t size_of_message = readVarint();
-        current_message_end = cursor + size_of_message;
-    }
-    else
-    {
-        // Start reading a nested message which is located inside a length-delimited field
-        // of another message.s
-        parent_message_ends.emplace_back(current_message_end);
-        current_message_end = field_end;
-    }
-    field_end = REACHED_END;
+    // Start reading a root message.
+    assert(!current_message_level);
+    if (unlikely(in.eof()))
+        return false;
+    size_t size_of_message = readVarint();
+    current_message_end = cursor + size_of_message;
+    ++current_message_level;
+    field_end = cursor;
     return true;
 }
 
-void ProtobufReader::SimpleReader::endMessage()
+void ProtobufReader::SimpleReader::endMessage(bool ignore_errors)
 {
-    if (current_message_end != REACHED_END)
+    if (!current_message_level)
+        return;
+
+    UInt64 root_message_end = (current_message_level == 1) ? current_message_end : parent_message_ends.front();
+    if (cursor != root_message_end)
     {
-        if (current_message_end == END_OF_GROUP)
-            ignoreGroup();
-        else if (cursor < current_message_end)
-            ignore(current_message_end - cursor);
-        else if (unlikely(cursor > current_message_end))
-        {
-            if (!parent_message_ends.empty())
-                unknownFormat();
-            moveCursorBackward(cursor - current_message_end);
-        }
-        current_message_end = REACHED_END;
+        if (cursor < root_message_end)
+            ignore(root_message_end - cursor);
+        else if (ignore_errors)
+            moveCursorBackward(cursor - root_message_end);
+        else
+            throwUnknownFormat();
     }
 
-    field_end = REACHED_END;
-    if (!parent_message_ends.empty())
-    {
-        current_message_end = parent_message_ends.back();
-        parent_message_ends.pop_back();
-    }
+    current_message_level = 0;
+    parent_message_ends.clear();
 }
 
-void ProtobufReader::SimpleReader::endRootMessage()
+void ProtobufReader::SimpleReader::startNestedMessage()
 {
-    UInt64 message_end = parent_message_ends.empty() ? current_message_end : parent_message_ends.front();
-    if (message_end != REACHED_END)
+    assert(current_message_level >= 1);
+    // Start reading a nested message which is located inside a length-delimited field
+    // of another message.
+    parent_message_ends.emplace_back(current_message_end);
+    current_message_end = field_end;
+    ++current_message_level;
+    field_end = cursor;
+}
+
+void ProtobufReader::SimpleReader::endNestedMessage()
+{
+    assert(current_message_level >= 2);
+    if (cursor != current_message_end)
     {
-        if (cursor < message_end)
-            ignore(message_end - cursor);
-        else if (unlikely(cursor > message_end))
-            moveCursorBackward(cursor - message_end);
+        if (current_message_end == END_OF_GROUP)
+        {
+            ignoreGroup();
+            current_message_end = cursor;
+        }
+        else if (cursor < current_message_end)
+            ignore(current_message_end - cursor);
+        else
+            throwUnknownFormat();
     }
-    parent_message_ends.clear();
-    current_message_end = REACHED_END;
-    field_end = REACHED_END;
+
+    --current_message_level;
+    current_message_end = parent_message_ends.back();
+    parent_message_ends.pop_back();
+    field_end = cursor;
 }
 
 bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
 {
-    if (field_end != REACHED_END)
+    assert(current_message_level);
+    if (field_end != cursor)
     {
         if (field_end == END_OF_VARINT)
+        {
             ignoreVarint();
+            field_end = cursor;
+        }
         else if (field_end == END_OF_GROUP)
+        {
             ignoreGroup();
+            field_end = cursor;
+        }
         else if (cursor < field_end)
             ignore(field_end - cursor);
-        field_end = REACHED_END;
+        else
+            throwUnknownFormat();
     }
 
     if (cursor >= current_message_end)
-    {
-        current_message_end = REACHED_END;
         return false;
-    }
 
     UInt64 varint = readVarint();
     if (unlikely(varint & (static_cast<UInt64>(0xFFFFFFFF) << 32)))
-        unknownFormat();
+        throwUnknownFormat();
     UInt32 key = static_cast<UInt32>(varint);
     field_number = (key >> 3);
     WireType wire_type = static_cast<WireType>(key & 0x07);
     switch (wire_type)
     {
+        case BITS32:
+        {
+            field_end = cursor + 4;
+            return true;
+        }
         case BITS64:
         {
             field_end = cursor + 8;
@@ -171,30 +188,21 @@ bool ProtobufReader::SimpleReader::readFieldNumber(UInt32 & field_number)
         case GROUP_END:
         {
             if (current_message_end != END_OF_GROUP)
-                unknownFormat();
-            current_message_end = REACHED_END;
+                throwUnknownFormat();
+            current_message_end = cursor;
             return false;
         }
-        case BITS32:
-        {
-            field_end = cursor + 4;
-            return true;
-        }
     }
-    unknownFormat();
-    __builtin_unreachable();
+    throwUnknownFormat();
 }
 
 bool ProtobufReader::SimpleReader::readUInt(UInt64 & value)
 {
     if (unlikely(cursor >= field_end))
-    {
-        field_end = REACHED_END;
         return false;
-    }
     value = readVarint();
-    if ((field_end == END_OF_VARINT) || (cursor >= field_end))
-        field_end = REACHED_END;
+    if (field_end == END_OF_VARINT)
+        field_end = cursor;
     return true;
 }
 
@@ -220,25 +228,22 @@ template<typename T>
 bool ProtobufReader::SimpleReader::readFixed(T & value)
 {
     if (unlikely(cursor >= field_end))
-    {
-        field_end = REACHED_END;
         return false;
-    }
     readBinary(&value, sizeof(T));
-    if (cursor >= field_end)
-        field_end = REACHED_END;
     return true;
 }
 
 bool ProtobufReader::SimpleReader::readStringInto(PaddedPODArray<UInt8> & str)
 {
+    if (unlikely(cursor == last_string_pos))
+        return false; /// We don't want to read the same empty string again.
+    last_string_pos = cursor;
     if (unlikely(cursor > field_end))
-        return false;
+        throwUnknownFormat();
     size_t length = field_end - cursor;
     size_t old_size = str.size();
     str.resize(old_size + length);
     readBinary(reinterpret_cast<char*>(str.data() + old_size), length);
-    field_end = REACHED_END;
     return true;
 }
 
@@ -257,7 +262,7 @@ void ProtobufReader::SimpleReader::ignore(UInt64 num_bytes)
 void ProtobufReader::SimpleReader::moveCursorBackward(UInt64 num_bytes)
 {
     if (in.offset() < num_bytes)
-        unknownFormat();
+        throwUnknownFormat();
     in.position() -= num_bytes;
     cursor -= num_bytes;
 }
@@ -294,8 +299,7 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     PROTOBUF_READER_READ_VARINT_BYTE(10)
 #undef PROTOBUF_READER_READ_VARINT_BYTE
 
-    unknownFormat();
-    __builtin_unreachable();
+    throwUnknownFormat();
 }
 
 void ProtobufReader::SimpleReader::ignoreVarint()
@@ -327,7 +331,7 @@ void ProtobufReader::SimpleReader::ignoreVarint()
     PROTOBUF_READER_IGNORE_VARINT_BYTE(10)
 #undef PROTOBUF_READER_IGNORE_VARINT_BYTE
 
-    unknownFormat();
+    throwUnknownFormat();
 }
 
 void ProtobufReader::SimpleReader::ignoreGroup()
@@ -371,10 +375,9 @@ void ProtobufReader::SimpleReader::ignoreGroup()
                 break;
             }
         }
-        unknownFormat();
+        throwUnknownFormat();
     }
 }
-
 
 // Implementation for a converter from any protobuf field type to any DB data type.
 class ProtobufReader::ConverterBaseImpl : public ProtobufReader::IConverter
@@ -469,6 +472,11 @@ public:
     bool readDateTime(time_t &) override
     {
         cannotConvertType("DateTime");
+    }
+
+    bool readDateTime64(DateTime64 &, UInt32) override
+    {
+        cannotConvertType("DateTime64");
     }
 
     bool readDecimal32(Decimal32 &, UInt32, UInt32) override
@@ -600,6 +608,15 @@ public:
             return false;
         ReadBufferFromString buf(temp_string);
         readDateTimeText(tm, buf);
+        return true;
+    }
+
+    bool readDateTime64(DateTime64 & date_time, UInt32 scale) override
+    {
+        if (!readTempString())
+            return false;
+        ReadBufferFromString buf(temp_string);
+        readDateTime64Text(date_time, scale, buf);
         return true;
     }
 
@@ -738,6 +755,11 @@ public:
         return true;
     }
 
+    bool readDateTime64(DateTime64 & date_time, UInt32 scale) override
+    {
+        return readDecimal(date_time, scale);
+    }
+
     bool readDecimal32(Decimal32 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
     bool readDecimal64(Decimal64 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
     bool readDecimal128(Decimal128 & decimal, UInt32, UInt32 scale) override { return readDecimal(decimal, scale); }
@@ -756,7 +778,7 @@ private:
     template<typename EnumType>
     bool readEnum(EnumType & value)
     {
-        if constexpr (!std::is_integral_v<FromType>)
+        if constexpr (!is_integral_v<FromType>)
             cannotConvertType("Enum"); // It's not correct to convert floating point to enum.
         FromType number;
         if (!readField(number))
@@ -1080,9 +1102,9 @@ bool ProtobufReader::startMessage()
     return true;
 }
 
-void ProtobufReader::endMessage()
+void ProtobufReader::endMessage(bool try_ignore_errors)
 {
-    simple_reader.endRootMessage();
+    simple_reader.endMessage(try_ignore_errors);
     current_message = nullptr;
     current_converter = nullptr;
 }
@@ -1099,7 +1121,7 @@ bool ProtobufReader::readColumnIndex(size_t & column_index)
                 current_converter = nullptr;
                 return false;
             }
-            simple_reader.endMessage();
+            simple_reader.endNestedMessage();
             current_field_index = current_message->index_in_parent;
             current_message = current_message->parent;
             continue;
@@ -1129,7 +1151,7 @@ bool ProtobufReader::readColumnIndex(size_t & column_index)
 
         if (field->nested_message)
         {
-            simple_reader.startMessage();
+            simple_reader.startNestedMessage();
             current_message = field->nested_message.get();
             current_field_index = 0;
             continue;

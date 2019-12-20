@@ -1,4 +1,4 @@
-# Machine learning methods
+# Machine learning functions
 
 ## evalMLMethod (prediction) {#machine_learning_methods-evalmlmethod}
 

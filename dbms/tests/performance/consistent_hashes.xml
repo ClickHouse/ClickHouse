@@ -26,7 +26,7 @@
            <values>
                <value>2</value>
                <value>500</value>
-               <value>65535</value>
+               <value>32768</value>
            </values>
        </substitution>
     </substitutions>

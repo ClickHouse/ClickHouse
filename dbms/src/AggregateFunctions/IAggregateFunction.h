@@ -6,10 +6,10 @@
 #include <type_traits>
 
 #include <Core/Types.h>
-#include <Core/Field.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -128,6 +128,26 @@ public:
     using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
     virtual AddFunc getAddressOfAddFunction() const = 0;
 
+    /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
+      *  and do a single call to "addBatch" for devirtualization and inlining.
+      */
+    virtual void
+    addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena)
+        const = 0;
+
+    /** The same for single place.
+      */
+    virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
+    /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
+      *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
+      *  -Array combinator. It might also be used generally to break data dependency when array
+      *  "places" contains a large number of same values consecutively.
+      */
+    virtual void
+    addBatchArray(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const = 0;
+
     /** This is used for runtime code generation to determine, which header files to include in generated source.
       * Always implement it as
       * const char * getHeaderFilePath() const override { return __FILE__; }
@@ -156,7 +176,34 @@ private:
 public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunction(argument_types_, parameters_) {}
+
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
+
+    void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchArray(
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const override
+    {
+        size_t current_offset = 0;
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            size_t next_offset = offsets[i];
+            for (size_t j = current_offset; j < next_offset; ++j)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+            current_offset = next_offset;
+        }
+    }
 };
 
 

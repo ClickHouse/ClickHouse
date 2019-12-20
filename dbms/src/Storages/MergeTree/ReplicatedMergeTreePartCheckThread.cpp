@@ -45,7 +45,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
-    //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
+    //based on discussion on https://github.com/ClickHouse/ClickHouse/pull/1489#issuecomment-344756259
     //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
 
     std::lock_guard lock(start_stop_mutex);
@@ -181,7 +181,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 }
 
 
-void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
+CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 {
     LOG_WARNING(log, "Checking part " << part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
@@ -197,6 +197,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     if (!part)
     {
         searchForMissingPart(part_name);
+        return {part_name, false, "Part is missing, will search for it"};
     }
     /// We have this part, and it's active. We will check whether we need this part and whether it has the right data.
     else if (part->name == part_name)
@@ -242,7 +243,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 if (need_stop)
                 {
                     LOG_INFO(log, "Checking part was cancelled.");
-                    return;
+                    return {part_name, false, "Checking part was cancelled"};
                 }
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
@@ -253,13 +254,15 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-                LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
+                String message = "Part " + part_name + " looks broken. Removing it and queueing a fetch.";
+                LOG_ERROR(log, message);
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
                 storage.removePartAndEnqueueFetch(part_name);
 
                 /// Delete part locally.
                 storage.forgetPartAndMoveToDetached(part, "broken");
+                return {part_name, false, message};
             }
         }
         else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
@@ -269,8 +272,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             /// Therefore, delete only if the part is old (not very reliable).
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-            LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
+            String message = "Unexpected part " + part_name + " in filesystem. Removing.";
+            LOG_ERROR(log, message);
             storage.forgetPartAndMoveToDetached(part, "unexpected");
+            return {part_name, false, message};
         }
         else
         {
@@ -290,6 +295,8 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         /// In the worst case, errors will still appear `old_parts_lifetime` seconds in error log until the part is removed as the old one.
         LOG_WARNING(log, "We have part " << part->name << " covering part " << part_name);
     }
+
+    return {part_name, true, ""};
 }
 
 

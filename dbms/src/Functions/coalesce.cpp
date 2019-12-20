@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,6 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
@@ -25,7 +26,7 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    FunctionCoalesce(const Context & context) : context(context) {}
+    FunctionCoalesce(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -35,6 +36,13 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        ColumnNumbers args;
+        for (size_t i = 0; i + 1 < number_of_arguments; ++i)
+            args.push_back(i);
+        return args;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -150,8 +158,15 @@ public:
         ColumnPtr res = std::move(temp_block.getByPosition(result).column);
 
         /// if last argument is not nullable, result should be also not nullable
-        if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
-            res = static_cast<const ColumnNullable &>(*res).getNestedColumnPtr();
+        if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
+        {
+            if (auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
+                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
+            else if (auto * column_const = checkAndGetColumn<ColumnConst>(*res))
+                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
+            else
+                res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();
+        }
 
         block.getByPosition(result).column = std::move(res);
     }

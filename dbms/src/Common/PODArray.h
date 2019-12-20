@@ -21,6 +21,8 @@
     #include <sys/mman.h>
 #endif
 
+#include <Common/PODArray_fwd.h>
+
 
 namespace DB
 {
@@ -28,11 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
-}
-
-inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
-{
-    return ((value + dividend - 1) / dividend) * dividend;
 }
 
 /** A dynamic array for POD types.
@@ -45,7 +42,7 @@ inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
   * Only part of the std::vector interface is supported.
   *
   * The default constructor creates an empty object that does not allocate memory.
-  * Then the memory is allocated at least INITIAL_SIZE bytes.
+  * Then the memory is allocated at least initial_bytes bytes.
   *
   * If you insert elements with push_back, without making a `reserve`, then PODArray is about 2.5 times faster than std::vector.
   *
@@ -74,7 +71,10 @@ extern const char EmptyPODArray[EmptyPODArraySize];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
-template <size_t ELEMENT_SIZE, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_, size_t pad_left_>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+
+template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
 protected:
@@ -161,7 +161,8 @@ protected:
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
-            realloc(std::max(((INITIAL_SIZE - 1) / ELEMENT_SIZE + 1) * ELEMENT_SIZE, minimum_memory_for_elements(1)),
+            realloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
+                             minimum_memory_for_elements(1)),
                     std::forward<TAllocatorParams>(allocator_params)...);
         }
         else
@@ -257,11 +258,11 @@ public:
     }
 };
 
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
-class PODArray : public PODArrayBase<sizeof(T), INITIAL_SIZE, TAllocator, pad_right_, pad_left_>
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
+class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
 protected:
-    using Base = PODArrayBase<sizeof(T), INITIAL_SIZE, TAllocator, pad_right_, pad_left_>;
+    using Base = PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>;
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
@@ -432,10 +433,10 @@ public:
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        insertPrepare(from_begin, from_end);
-
         size_t bytes_to_copy = this->byte_size(from_end - from_begin);
         size_t bytes_to_move = (end() - it) * sizeof(T);
+
+        insertPrepare(from_begin, from_end);
 
         if (unlikely(bytes_to_move))
             memcpy(this->c_end + bytes_to_copy - bytes_to_move, this->c_end - bytes_to_move, bytes_to_move);
@@ -618,17 +619,11 @@ public:
     }
 };
 
-template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
-void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & rhs)
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_>
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_> & rhs)
 {
     lhs.swap(rhs);
 }
-
-/** For columns. Padding is enough to read and write xmm-register at the address of the last element. */
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
-using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15, 16>;
-
-template <typename T, size_t stack_size_in_bytes>
-using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRoundUp(stack_size_in_bytes, sizeof(T))>>;
+#pragma GCC diagnostic pop
 
 }

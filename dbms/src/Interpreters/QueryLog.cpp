@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Poco/Net/IPAddress.h>
@@ -22,9 +23,18 @@ namespace DB
 
 Block QueryLogElement::createBlock()
 {
+    auto query_status_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"QueryStart",                  static_cast<Int8>(QUERY_START)},
+            {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
+            {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
+            {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+        });
+
     return
     {
-        {std::make_shared<DataTypeUInt8>(),                                   "type"},
+        {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
@@ -66,6 +76,7 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "os_thread_ids"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
@@ -80,7 +91,7 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(UInt64(type));
+    columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_start_time);
@@ -107,6 +118,14 @@ void QueryLogElement::appendToBlock(Block & block) const
         Array threads_array;
         threads_array.reserve(thread_numbers.size());
         for (const UInt32 thread_number : thread_numbers)
+            threads_array.emplace_back(UInt64(thread_number));
+        columns[i++]->insert(threads_array);
+    }
+
+    {
+        Array threads_array;
+        threads_array.reserve(os_thread_ids.size());
+        for (const UInt32 thread_number : os_thread_ids)
             threads_array.emplace_back(UInt64(thread_number));
         columns[i++]->insert(threads_array);
     }

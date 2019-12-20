@@ -11,9 +11,12 @@ namespace DB
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
@@ -29,9 +32,10 @@ public:
     }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
-    void drop() override;
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void drop(TableStructureWriteLockHolder &) override;
+
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
@@ -39,7 +43,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void shutdown() override;
 
@@ -61,7 +65,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    String getDataPath() const override;
+    Strings getDataPaths() const override;
 
 private:
     String select_database_name;

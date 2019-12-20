@@ -65,7 +65,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Примеры: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-### Строковые
+### Строковые {#syntax-string-literal}
 
 Поддерживаются только строковые литералы в одинарных кавычках. Символы внутри могут быть экранированы с помощью обратного слеша. Следующие escape-последовательности имеют соответствующее специальное значение: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. Во всех остальных случаях, последовательности вида `\c`, где `c`  — любой символ, преобразуется в `c` . Таким образом, могут быть использованы последовательности  `\'`  и `\\`. Значение будет иметь тип [String](../data_types/string.md).
 
@@ -108,7 +108,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Синоним — это пользовательское имя выражения в запросе.
 
-```
+```sql
 expr AS alias
 ```
 
@@ -136,7 +136,7 @@ expr AS alias
 
 Будьте осторожны с синонимами, совпадающими с именами столбцов или таблиц. Рассмотрим следующий пример:
 
-```
+```sql
 CREATE TABLE t
 (
     a Int,
@@ -145,12 +145,13 @@ CREATE TABLE t
 ENGINE = TinyLog()
 ```
 
-```
+```sql
 SELECT
     argMax(a, b),
     sum(b) AS b
 FROM t
-
+```
+```text
 Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```

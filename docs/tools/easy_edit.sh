@@ -14,7 +14,7 @@ popd
 
 rm -rf "${EDIT_DIR}" || true
 
-for DOCS_LANG in en ru zh fa
+for DOCS_LANG in en ru zh ja fa
 do
     for ARTICLE in ${ARTICLES}
     do

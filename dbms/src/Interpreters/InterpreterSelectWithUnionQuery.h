@@ -5,6 +5,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
@@ -28,7 +29,13 @@ public:
     BlockIO execute() override;
 
     /// Execute the query without union of streams.
-    BlockInputStreams executeWithMultipleStreams();
+    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
+
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
+
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
 
     Block getSampleBlock();
 
@@ -41,13 +48,15 @@ public:
     ASTPtr getQuery() const { return query_ptr; }
 
 private:
-    const SelectQueryOptions options;
+    SelectQueryOptions options;
     ASTPtr query_ptr;
-    Context context;
+    std::shared_ptr<Context> context;
 
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
     Block result_header;
+
+    static Block getCommonHeaderForUnion(const Blocks & headers);
 };
 
 }

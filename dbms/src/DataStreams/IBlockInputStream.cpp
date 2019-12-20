@@ -1,9 +1,10 @@
 #include <DataStreams/IBlockInputStream.h>
 
+#include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 #include <Common/CurrentThread.h>
-
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -26,6 +27,10 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
+const SortDescription & IBlockInputStream::getSortDescription() const
+{
+    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
+}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 
@@ -65,7 +70,7 @@ Block IBlockInputStream::read()
         if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
-        if (quota != nullptr)
+        if (quota)
             checkQuota(res);
     }
     else
@@ -144,7 +149,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             const ColumnPtr & src = block.safeGetByPosition(i).column;
 
-            if (src->isColumnConst())
+            if (isColumnConst(*src))
             {
                 /// Equal min and max.
                 extremes_columns[i] = src->cloneResized(2);
@@ -171,7 +176,7 @@ void IBlockInputStream::updateExtremes(Block & block)
         {
             ColumnPtr & old_extremes = extremes.safeGetByPosition(i).column;
 
-            if (old_extremes->isColumnConst())
+            if (isColumnConst(*old_extremes))
                 continue;
 
             Field min_value = (*old_extremes)[0];
@@ -214,11 +219,11 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
 
 bool IBlockInputStream::checkTimeLimit()
 {
-    if (limits.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
+    if (limits.speed_limits.max_execution_time != 0
+        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
         return handleOverflowMode(limits.timeout_overflow_mode,
             "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.max_execution_time.totalMicroseconds() / 1000000.0),
+                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
             ErrorCodes::TIMEOUT_EXCEEDED);
 
     return true;
@@ -235,35 +240,11 @@ void IBlockInputStream::checkQuota(Block & block)
 
         case LIMITS_CURRENT:
         {
-            time_t current_time = time(nullptr);
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
-            quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
-            quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
-
+            UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
+            quota->used({Quota::RESULT_ROWS, block.rows()}, {Quota::RESULT_BYTES, block.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }
-    }
-}
-
-static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
-{
-    /// How much time to wait for the average speed to become `max_speed_in_seconds`.
-    UInt64 desired_microseconds = total_progress_size * 1000000 / max_speed_in_seconds;
-
-    if (desired_microseconds > total_elapsed_microseconds)
-    {
-        UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
-        ::timespec sleep_ts;
-        sleep_ts.tv_sec = sleep_microseconds / 1000000;
-        sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
-
-        /// NOTE: Returns early in case of a signal. This is considered normal.
-        /// NOTE: It's worth noting that this behavior affects kill of queries.
-        ::nanosleep(&sleep_ts, nullptr);
-
-        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
     }
 }
 
@@ -286,40 +267,11 @@ void IBlockInputStream::progressImpl(const Progress & value)
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
             */
-
-        if (limits.mode == LIMITS_TOTAL
-            && ((limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
-                || (limits.size_limits.max_bytes && progress.read_bytes > limits.size_limits.max_bytes)))
+        if (limits.mode == LIMITS_TOTAL)
         {
-            switch (limits.size_limits.overflow_mode)
-            {
-                case OverflowMode::THROW:
-                {
-                    if (limits.size_limits.max_rows && total_rows_estimate > limits.size_limits.max_rows)
-                        throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-                            + " rows read (or to read), maximum: " + toString(limits.size_limits.max_rows),
-                            ErrorCodes::TOO_MANY_ROWS);
-                    else
-                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.read_bytes)
-                            + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
-                            ErrorCodes::TOO_MANY_BYTES);
-                }
-
-                case OverflowMode::BREAK:
-                {
-                    /// For `break`, we will stop only if so many rows were actually read, and not just supposed to be read.
-                    if ((limits.size_limits.max_rows && progress.read_rows > limits.size_limits.max_rows)
-                        || (limits.size_limits.max_bytes && progress.read_bytes > limits.size_limits.max_bytes))
-                    {
-                        cancel(false);
-                    }
-
-                    break;
-                }
-
-                default:
-                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-            }
+            if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
+                                         ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+                cancel(false);
         }
 
         size_t total_rows = progress.total_rows_to_read;
@@ -333,51 +285,10 @@ void IBlockInputStream::progressImpl(const Progress & value)
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        if ((limits.min_execution_speed || limits.max_execution_speed || limits.min_execution_speed_bytes ||
-             limits.max_execution_speed_bytes || (total_rows && limits.timeout_before_checking_execution_speed != 0)) &&
-            (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
-        {
-            /// Do not count sleeps in throttlers
-            UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
-            double elapsed_seconds = (throttler_sleep_microseconds > total_elapsed_microseconds)
-                                     ? 0.0 : (total_elapsed_microseconds - throttler_sleep_microseconds) / 1000000.0;
+        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-            if (elapsed_seconds > 0)
-            {
-                if (limits.min_execution_speed && progress.read_rows / elapsed_seconds < limits.min_execution_speed)
-                    throw Exception("Query is executing too slow: " + toString(progress.read_rows / elapsed_seconds)
-                        + " rows/sec., minimum: " + toString(limits.min_execution_speed),
-                        ErrorCodes::TOO_SLOW);
-
-                if (limits.min_execution_speed_bytes && progress.read_bytes / elapsed_seconds < limits.min_execution_speed_bytes)
-                    throw Exception("Query is executing too slow: " + toString(progress.read_bytes / elapsed_seconds)
-                        + " bytes/sec., minimum: " + toString(limits.min_execution_speed_bytes),
-                        ErrorCodes::TOO_SLOW);
-
-                /// If the predicted execution time is longer than `max_execution_time`.
-                if (limits.max_execution_time != 0 && total_rows)
-                {
-                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows) / progress.read_rows);
-
-                    if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
-                        throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
-                            + " is too long. Maximum: " + toString(limits.max_execution_time.totalSeconds())
-                            + ". Estimated rows to process: " + toString(total_rows),
-                            ErrorCodes::TOO_SLOW);
-                }
-
-                if (limits.max_execution_speed && progress.read_rows / elapsed_seconds >= limits.max_execution_speed)
-                    limitProgressingSpeed(progress.read_rows, limits.max_execution_speed, total_elapsed_microseconds);
-
-                if (limits.max_execution_speed_bytes && progress.read_bytes / elapsed_seconds >= limits.max_execution_speed_bytes)
-                    limitProgressingSpeed(progress.read_bytes, limits.max_execution_speed_bytes, total_elapsed_microseconds);
-            }
-        }
-
-        if (quota != nullptr && limits.mode == LIMITS_TOTAL)
-        {
-            quota->checkAndAddReadRowsBytes(time(nullptr), value.read_rows, value.read_bytes);
-        }
+        if (quota && limits.mode == LIMITS_TOTAL)
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 }
 

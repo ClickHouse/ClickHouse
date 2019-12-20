@@ -30,6 +30,7 @@
 
 namespace CurrentMetrics
 {
+    extern const Metric SendScalars;
     extern const Metric SendExternalTables;
 }
 
@@ -73,7 +74,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(current_resolved_address, timeouts.connection_timeout);
+        socket->connect(*current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -408,7 +409,11 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-        settings->serialize(*out);
+    {
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                          : SettingsBinaryFormat::OLD;
+        settings->serialize(*out, settings_format);
+    }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
@@ -434,6 +439,10 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
@@ -441,7 +450,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block, const String & name)
+void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
     //LOG_TRACE(log_wrapper.get(), "Sending data");
 
@@ -455,7 +464,10 @@ void Connection::sendData(const Block & block, const String & name)
         block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
-    writeVarUInt(Protocol::Client::Data, *out);
+    if (scalar)
+        writeVarUInt(Protocol::Client::Scalar, *out);
+    else
+        writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
     size_t prev_bytes = out->count();
@@ -481,6 +493,44 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     else
         copyData(input, *out, size);
     out->next();
+}
+
+
+void Connection::sendScalarsData(Scalars & data)
+{
+    if (data.empty())
+        return;
+
+    Stopwatch watch;
+    size_t out_bytes = out ? out->count() : 0;
+    size_t maybe_compressed_out_bytes = maybe_compressed_out ? maybe_compressed_out->count() : 0;
+    size_t rows = 0;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::SendScalars};
+
+    for (auto & elem : data)
+    {
+        rows += elem.second.rows();
+        sendData(elem.second, elem.first, true /* scalar */);
+    }
+
+    out_bytes = out->count() - out_bytes;
+    maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
+    double elapsed = watch.elapsedSeconds();
+
+    std::stringstream msg;
+    msg << std::fixed << std::setprecision(3);
+    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
+        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
+        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+
+    if (compression == Protocol::Compression::Enable)
+        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
+            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+    else
+        msg << ", no compression.";
+
+    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
 
@@ -533,12 +583,9 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
-Poco::Net::SocketAddress Connection::getResolvedAddress() const
+std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 {
-    if (connected)
-        return current_resolved_address;
-
-    return DNSResolver::instance().resolveAddress(host, port);
+    return current_resolved_address;
 }
 
 
@@ -573,7 +620,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Connection::Packet Connection::receivePacket()
+Packet Connection::receivePacket()
 {
     try
     {
@@ -592,10 +639,12 @@ Connection::Packet Connection::receivePacket()
         }
 
         //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-
+        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
-            case Protocol::Server::Data:
+            case Protocol::Server::Data: [[fallthrough]];
+            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
 
@@ -609,16 +658,6 @@ Connection::Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileInfo:
                 res.profile_info = receiveProfileInfo();
-                return res;
-
-            case Protocol::Server::Totals:
-                /// Block with total values is passed in same form as ordinary block. The only difference is packed id.
-                res.block = receiveData();
-                return res;
-
-            case Protocol::Server::Extremes:
-                /// Same as above.
-                res.block = receiveData();
                 return res;
 
             case Protocol::Server::Log:
@@ -720,11 +759,14 @@ void Connection::initBlockLogsInput()
 void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
-    description = host + ":" + toString(resolved_address.port());
-    auto ip_address = resolved_address.host().toString();
+    description = host + ":" + toString(port);
 
-    if (host != ip_address)
-        description += ", " + ip_address;
+    if (resolved_address)
+    {
+        auto ip_address = resolved_address->host().toString();
+        if (host != ip_address)
+            description += ", " + ip_address;
+    }
 }
 
 

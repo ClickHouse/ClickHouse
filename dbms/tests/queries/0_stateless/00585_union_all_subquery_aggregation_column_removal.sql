@@ -189,7 +189,7 @@ FROM
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -214,7 +214,7 @@ UNION ALL
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 
@@ -243,7 +243,7 @@ FROM
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -268,7 +268,7 @@ UNION ALL
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 
@@ -297,7 +297,7 @@ FROM
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -322,7 +322,7 @@ UNION ALL
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 

@@ -1,8 +1,8 @@
 #include <Interpreters/Cluster.h>
+#include <common/SimpleCache.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
-#include <Common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <IO/HexWriteBuffer.h>
@@ -29,9 +29,9 @@ namespace
 /// Default shard weight.
 static constexpr UInt32 default_weight = 1;
 
-inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
+inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
-    ///    If there is replica, for which:
+    /// If there is replica, for which:
     /// - its port is the same that the server is listening;
     /// - its host is resolved to set of addresses, one of which is the same as one of addresses of network interfaces of the server machine*;
     /// then we must go to this shard without any inter-process communication.
@@ -48,10 +48,31 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
 
 /// Implementation of Cluster::Address class
 
+std::optional<Poco::Net::SocketAddress> Cluster::Address::getResolvedAddress() const
+{
+    try
+    {
+        return DNSResolver::instance().resolveAddress(host_name, port);
+    }
+    catch (...)
+    {
+        /// Failure in DNS resolution in cluster initialization is Ok.
+        tryLogCurrentException("Cluster");
+        return {};
+    }
+}
+
+
+bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
+{
+    if (auto resolved = getResolvedAddress())
+        return isLocalImpl(*this, *resolved, clickhouse_port);
+    return false;
+}
+
+
 Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    UInt16 clickhouse_port = static_cast<UInt16>(config.getInt("tcp_port", 0));
-
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     if (config.has(config_prefix + ".user"))
@@ -60,10 +81,9 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    initially_resolved_address = DNSResolver::instance().resolveAddress(host_name, port);
-    is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
     secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     compression = config.getBool(config_prefix + ".compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
+    is_local = isLocal(config.getInt("tcp_port", 0));
 }
 
 
@@ -74,9 +94,7 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-
-    initially_resolved_address = DNSResolver::instance().resolveAddress(parsed_host_port.first, parsed_host_port.second);
-    is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
+    is_local = isLocal(clickhouse_port);
 }
 
 
@@ -329,7 +347,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                        all_replicas_pools, settings.load_balancing);
+                        all_replicas_pools, settings.load_balancing,
+                        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -380,7 +399,8 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                all_replicas, settings.load_balancing);
+                all_replicas, settings.load_balancing,
+                settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), std::move(shard_pool),

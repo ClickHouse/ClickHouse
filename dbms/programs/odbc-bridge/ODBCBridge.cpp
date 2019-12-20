@@ -15,6 +15,7 @@
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include <ext/range.h>
+#include <Common/SensitiveDataMasker.h>
 
 namespace DB
 {
@@ -124,6 +125,7 @@ void ODBCBridge::initialize(Application & self)
     config().setString("logger", "ODBCBridge");
 
     buildLoggers(config(), logger());
+
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -160,7 +162,12 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     context = std::make_shared<Context>(Context::createGlobal());
-    context->setGlobalContext(*context);
+    context->makeGlobalContext();
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
 
     auto server = Poco::Net::HTTPServer(
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
@@ -186,6 +193,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 }
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 int mainEntryClickHouseODBCBridge(int argc, char ** argv)
 {
     DB::ODBCBridge app;

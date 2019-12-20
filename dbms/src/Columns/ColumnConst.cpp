@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 
 
@@ -13,8 +14,8 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s)
-    : data(data_), s(s)
+ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
+    : data(data_), s(s_)
 {
     /// Squash Const of Const.
     while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))

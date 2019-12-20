@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/SortDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/Progress.h>
-#include <Core/SettingsCommon.h>
 #include <Storages/TableStructureLockHolder.h>
+#include <Common/TypePromotion.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -23,8 +23,10 @@ namespace ErrorCodes
 }
 
 class ProcessListElement;
-class QuotaForIntervals;
+class QuotaContext;
 class QueryStatus;
+struct SortColumnDescription;
+using SortDescription = std::vector<SortColumnDescription>;
 
 /** Callback to track the progress of the query.
   * Used in IBlockInputStream and Context.
@@ -40,7 +42,7 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
   * Lets you get information for profiling: rows per second, blocks per second, megabytes per second, etc.
   * Allows you to stop reading data (in nested sources).
   */
-class IBlockInputStream
+class IBlockInputStream : public TypePromotion<IBlockInputStream>
 {
     friend struct BlockStreamProfileInfo;
 
@@ -70,10 +72,7 @@ public:
     virtual bool isSortedOutput() const { return false; }
 
     /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const
-    {
-        throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-    }
+    virtual const SortDescription & getSortDescription() const;
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
@@ -128,7 +127,7 @@ public:
     virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    Block getExtremes();
+    virtual Block getExtremes();
 
 
     /** Set the execution progress bar callback.
@@ -138,7 +137,7 @@ public:
       * The function takes the number of rows in the last block, the number of bytes in the last block.
       * Note that the callback can be called from different threads.
       */
-    void setProgressCallback(const ProgressCallback & callback);
+    virtual void setProgressCallback(const ProgressCallback & callback);
 
 
     /** In this method:
@@ -163,11 +162,11 @@ public:
       * Based on this information, the quota and some restrictions will be checked.
       * This information will also be available in the SHOW PROCESSLIST request.
       */
-    void setProcessListElement(QueryStatus * elem);
+    virtual void setProcessListElement(QueryStatus * elem);
 
     /** Set the approximate total number of rows to read.
       */
-    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.
@@ -202,20 +201,13 @@ public:
 
         SizeLimits size_limits;
 
-        Poco::Timespan max_execution_time = 0;
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
+        ExecutionSpeedLimits speed_limits;
 
-        /// in rows per second
-        size_t min_execution_speed = 0;
-        size_t max_execution_speed = 0;
-        size_t min_execution_speed_bytes = 0;
-        size_t max_execution_speed_bytes = 0;
-        /// Verify that the speed is not too low after the specified time has elapsed.
-        Poco::Timespan timeout_before_checking_execution_speed = 0;
+        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
     };
 
     /** Set limitations that checked on each block. */
-    void setLimits(const LocalLimits & limits_)
+    virtual void setLimits(const LocalLimits & limits_)
     {
         limits = limits_;
     }
@@ -228,9 +220,9 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    void setQuota(QuotaForIntervals & quota_)
+    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_)
     {
-        quota = &quota_;
+        quota = quota_;
     }
 
     /// Enable calculation of minimums and maximums by the result columns.
@@ -271,6 +263,11 @@ protected:
       */
     bool checkTimeLimit();
 
+#ifndef NDEBUG
+    bool read_prefix_is_called = false;
+    bool read_suffix_is_called = false;
+#endif
+
 private:
     bool enabled_extremes = false;
 
@@ -281,8 +278,8 @@ private:
 
     LocalLimits limits;
 
-    QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
-    double prev_elapsed = 0;
+    std::shared_ptr<QuotaContext> quota;    /// If nullptr - the quota is not used.
+    UInt64 prev_elapsed = 0;
 
     /// The approximate total number of rows to read. For progress bar.
     size_t total_rows_approx = 0;
@@ -314,15 +311,15 @@ private:
         /// NOTE: Acquire a read lock, therefore f() should be thread safe
         std::shared_lock lock(children_mutex);
 
-        for (auto & child : children)
+        // Reduce lock scope and avoid recursive locking since that is undefined for shared_mutex.
+        const auto children_copy = children;
+        lock.unlock();
+
+        for (auto & child : children_copy)
             if (f(*child))
                 return;
     }
 
-#ifndef NDEBUG
-    bool read_prefix_is_called = false;
-    bool read_suffix_is_called = false;
-#endif
 };
 
 }

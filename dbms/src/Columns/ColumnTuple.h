@@ -42,6 +42,7 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
 
     MutableColumnPtr cloneEmpty() const override;
+    MutableColumnPtr cloneResized(size_t size) const override;
 
     size_t size() const override
     {

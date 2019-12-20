@@ -43,6 +43,7 @@ When you use the image with mounting local directories inside you probably would
 ## How to extend this image
 
 If you would like to do additional initialization in an image derived from this one, add one or more `*.sql`, `*.sql.gz`, or `*.sh` scripts under `/docker-entrypoint-initdb.d`. After the entrypoint calls `initdb` it will run any `*.sql` files, run any executable `*.sh` scripts, and source any non-executable `*.sh` scripts found in that directory to do further initialization before starting the service.
+Also you can provide environment variables `CLICKHOUSE_USER` & `CLICKHOUSE_PASSWORD` that will be used for clickhouse-client during initialization.
 
 For example, to add an additional user and database, add the following to `/docker-entrypoint-initdb.d/init-db.sh`:
 
@@ -58,4 +59,4 @@ EOSQL
 
 ## License
 
-View [license information](https://github.com/yandex/ClickHouse/blob/master/LICENSE) for the software contained in this image.
+View [license information](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE) for the software contained in this image.

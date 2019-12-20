@@ -1,8 +1,8 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -11,19 +11,19 @@ namespace DB
 struct FilesystemAvailable
 {
     static constexpr auto name = "filesystemAvailable";
-    static boost::uintmax_t get(boost::filesystem::space_info & spaceinfo) { return spaceinfo.available; }
+    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.available; }
 };
 
 struct FilesystemFree
 {
     static constexpr auto name = "filesystemFree";
-    static boost::uintmax_t get(boost::filesystem::space_info & spaceinfo) { return spaceinfo.free; }
+    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.free; }
 };
 
 struct FilesystemCapacity
 {
     static constexpr auto name = "filesystemCapacity";
-    static boost::uintmax_t get(boost::filesystem::space_info & spaceinfo) { return spaceinfo.capacity; }
+    static std::uintmax_t get(std::filesystem::space_info & spaceinfo) { return spaceinfo.capacity; }
 };
 
 template <typename Impl>
@@ -34,10 +34,10 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FilesystemImpl<Impl>>(boost::filesystem::space(context.getConfigRef().getString("path")));
+        return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context.getConfigRef().getString("path")));
     }
 
-    explicit FilesystemImpl(boost::filesystem::space_info spaceinfo_) : spaceinfo(spaceinfo_) { }
+    explicit FilesystemImpl(std::filesystem::space_info spaceinfo_) : spaceinfo(spaceinfo_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -54,7 +54,7 @@ public:
     }
 
 private:
-    boost::filesystem::space_info spaceinfo;
+    std::filesystem::space_info spaceinfo;
 };
 
 

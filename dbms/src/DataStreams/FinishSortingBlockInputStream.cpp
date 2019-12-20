@@ -52,7 +52,7 @@ struct Less
     {
         for (auto it = left_columns.begin(), jt = right_columns.begin(); it != left_columns.end(); ++it, ++jt)
         {
-            int res = it->second.direction * it->first->compareAt(a, b, *jt->first, it->second.nulls_direction);
+            int res = it->description.direction * it->column->compareAt(a, b, *jt->column, it->description.nulls_direction);
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -61,6 +61,7 @@ struct Less
         return false;
     }
 };
+
 
 Block FinishSortingBlockInputStream::readImpl()
 {
@@ -98,12 +99,9 @@ Block FinishSortingBlockInputStream::readImpl()
             if (description_to_sort.empty())
                 return block;
 
-            size_t size = block.rows();
-            if (size == 0)
+            if (block.rows() == 0)
                 continue;
 
-            /// We need to sort each block separately before merging.
-            sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);
 
@@ -116,6 +114,7 @@ Block FinishSortingBlockInputStream::readImpl()
 
                 Less less(last_columns, current_columns);
 
+                size_t size = block.rows();
                 IColumn::Permutation perm(size);
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
@@ -148,8 +147,11 @@ Block FinishSortingBlockInputStream::readImpl()
             blocks.push_back(block);
         }
 
-        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
-        res = impl->read();
+        if (!blocks.empty())
+        {
+            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+            res = impl->read();
+        }
     }
 
     if (res)

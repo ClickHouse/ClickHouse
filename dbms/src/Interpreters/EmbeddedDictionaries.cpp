@@ -1,12 +1,10 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
-#include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
+#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include "config_core.h"
 #include <common/logger_useful.h>
 #include <Poco/Util/Application.h>
 
@@ -74,22 +72,6 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 
     bool was_exception = false;
 
-#if USE_MYSQL
-    DictionaryReloader<TechDataHierarchy> reload_tech_data = [=] (const Poco::Util::AbstractConfiguration & config)
-        -> std::unique_ptr<TechDataHierarchy>
-    {
-        if (!TechDataHierarchy::isConfigured(config))
-            return {};
-
-        auto dictionary = std::make_unique<TechDataHierarchy>();
-        dictionary->reload();
-        return dictionary;
-    };
-
-    if (!reloadDictionary<TechDataHierarchy>(tech_data_hierarchy, reload_tech_data, throw_on_error, force_reload))
-        was_exception = true;
-#endif
-
     DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=] (const Poco::Util::AbstractConfiguration & config)
     {
         return geo_dictionaries_loader->reloadRegionsHierarchies(config);
@@ -139,7 +121,7 @@ void EmbeddedDictionaries::reloadPeriodically()
 
 
 EmbeddedDictionaries::EmbeddedDictionaries(
-    std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader_,
+    std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader_,
     Context & context_,
     const bool throw_on_error)
     : log(&Logger::get("EmbeddedDictionaries"))

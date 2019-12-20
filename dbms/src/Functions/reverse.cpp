@@ -112,30 +112,29 @@ public:
 
 
 /// Also works with arrays.
-class FunctionBuilderReverse : public FunctionBuilderImpl
+class ReverseOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    FunctionBuilderReverse(const Context & context) : context(context) {}
+    explicit ReverseOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
-protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().get("arrayReverse", context)->build(arguments);
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayReverse", context)).buildImpl(arguments);
         else
-            return std::make_shared<DefaultFunction>(
+            return std::make_unique<DefaultFunction>(
                 FunctionReverse::create(context),
                 ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         return arguments.at(0);
     }
@@ -147,7 +146,7 @@ private:
 
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderReverse>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

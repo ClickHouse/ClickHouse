@@ -129,8 +129,8 @@ private:
     std::vector<AggregateDescription> columns_to_aggregate;
     std::vector<MapDescription> maps_to_sum;
 
-    RowRef current_key;        /// The current primary key.
-    RowRef next_key;           /// The primary key of the next row.
+    SharedBlockRowRef current_key;        /// The current primary key.
+    SharedBlockRowRef next_key;           /// The primary key of the next row.
 
     Row current_row;
     bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.

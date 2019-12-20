@@ -1,18 +1,19 @@
 <test>
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
-        <all_of>
-            <total_time_ms>10000</total_time_ms>
+          <all_of>
+            <iterations>3</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
-            <total_time_ms>20000</total_time_ms>
+            <iterations>5</iterations>
+            <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
 
     <main_metric>
-        <max_bytes_per_second/>
+        <min_time/>
     </main_metric>
 
     <substitutions>
@@ -45,11 +46,11 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers</value>
-               <value>numbers_mt</value>
+               <value>numbers(1000000)</value>
+               <value>numbers_mt(10000000)</value>
            </values>
         </substitution>
     </substitutions>
 
-    <query>SELECT ignore({gp_hash_func}({string})) FROM system.{table}</query>
+    <query>SELECT count() from {table} where not ignore({gp_hash_func}({string}))</query>
 </test>

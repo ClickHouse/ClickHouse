@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
+#include "registerFunctions.h"
 
 
 namespace DB
@@ -57,10 +58,10 @@ void RandImpl::execute(char * output, size_t size)
 
     for (const char * end = output + size; output < end; output += 16)
     {
-        unalignedStore(output, generator0.next());
-        unalignedStore(output + 4, generator1.next());
-        unalignedStore(output + 8, generator2.next());
-        unalignedStore(output + 12, generator3.next());
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
     }
 
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.

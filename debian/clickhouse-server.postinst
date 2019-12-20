@@ -1,8 +1,10 @@
 #!/bin/sh
 set -e
+# set -x
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+# Please note that we don't support paths with whitespaces. This is rather ignorant.
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
@@ -12,16 +14,14 @@ EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
 OS=${OS=`lsb_release -is 2>/dev/null ||:`}
-if [ -z "$OS" ]; then
-    test -f /etc/os-release && . /etc/os-release && OS=$ID
-fi
-OS=${OS=`uname -s ||:`}
+[ -z "$OS" ] && [ -f /etc/os-release ] && . /etc/os-release && OS=$ID
+[ -z "$OS" ] && [ -f /etc/centos-release ] && OS=centos
+[ -z "$OS" ] && OS=`uname -s ||:`
 
-test -f /usr/share/debconf/confmodule && . /usr/share/debconf/confmodule
+[ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
+[ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
 
-test -f /etc/default/clickhouse && . /etc/default/clickhouse
-
-if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ]; then
+if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ] || [ "$OS" = "ol" ]; then
     is_rh=1
 fi
 
@@ -122,9 +122,9 @@ Please fix this and reinstall this package." >&2
     TMPFILE=/tmp/test_setcap.sh
 
     command -v setcap >/dev/null \
-        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
-        && setcap "cap_net_admin,cap_ipc_lock+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
-        || echo "Cannot set 'net_admin' or 'ipc_lock' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
+        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
+        && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
+        || echo "Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
@@ -136,6 +136,8 @@ Please fix this and reinstall this package." >&2
         defaultpassword="$RET"
         if [ -n "$defaultpassword" ]; then
             echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
         fi
 
         # everything went well, so now let's reset the password

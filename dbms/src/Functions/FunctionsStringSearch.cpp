@@ -1,4 +1,5 @@
 #include "FunctionsStringSearch.h"
+#include "registerFunctions.h"
 
 #include <algorithm>
 #include <memory>
@@ -47,7 +48,7 @@ struct PositionCaseSensitiveASCII
 
     /// Convert string to lowercase. Only for case-insensitive search.
     /// Implementation is permitted to be inefficient because it is called for single string.
-    static void toLowerIfNeed(std::string &) {}
+    static void toLowerIfNeed(std::string &) { }
 };
 
 struct PositionCaseInsensitiveASCII
@@ -107,7 +108,7 @@ struct PositionCaseSensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string &) {}
+    static void toLowerIfNeed(std::string &) { }
 };
 
 struct PositionCaseInsensitiveUTF8
@@ -335,15 +336,21 @@ struct MultiSearchImpl
 {
     using ResultType = UInt8;
     static constexpr bool is_using_hyperscan = false;
+    /// Variable for understanding, if we used offsets for the output, most
+    /// likely to determine whether the function returns ColumnVector of ColumnArray.
+    static constexpr bool is_column_array = false;
+    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
-        PaddedPODArray<UInt8> & res)
+        PaddedPODArray<UInt8> & res,
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
     {
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        res.resize(haystack_string_size);
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
@@ -366,12 +373,17 @@ struct MultiSearchFirstPositionImpl
 {
     using ResultType = UInt64;
     static constexpr bool is_using_hyperscan = false;
+    /// Variable for understanding, if we used offsets for the output, most
+    /// likely to determine whether the function returns ColumnVector of ColumnArray.
+    static constexpr bool is_column_array = false;
+    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt64> & res,
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
     {
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
@@ -379,6 +391,7 @@ struct MultiSearchFirstPositionImpl
         };
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        res.resize(haystack_string_size);
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
@@ -407,15 +420,21 @@ struct MultiSearchFirstIndexImpl
 {
     using ResultType = UInt64;
     static constexpr bool is_using_hyperscan = false;
+    /// Variable for understanding, if we used offsets for the output, most
+    /// likely to determine whether the function returns ColumnVector of ColumnArray.
+    static constexpr bool is_column_array = false;
+    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt64> & res,
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets)
     {
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
+        res.resize(haystack_string_size);
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
@@ -431,6 +450,74 @@ struct MultiSearchFirstIndexImpl
             }
             ++iteration;
         }
+    }
+};
+
+/** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
+  */
+template <typename TokenSearcher, bool negate_result = false>
+struct HasTokenImpl
+{
+    using ResultType = UInt8;
+
+    static void vector_constant(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
+    {
+        if (offsets.empty())
+            return;
+
+        const UInt8 * begin = data.data();
+        const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
+
+        /// The current index in the array of strings.
+        size_t i = 0;
+
+        TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
+
+        /// We will search for the next occurrence in all rows at once.
+        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        {
+            /// Let's determine which index it refers to.
+            while (begin + offsets[i] <= pos)
+            {
+                res[i] = negate_result;
+                ++i;
+            }
+
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (pos + pattern.size() < begin + offsets[i])
+                res[i] = !negate_result;
+            else
+                res[i] = negate_result;
+
+            pos = begin + offsets[i];
+            ++i;
+        }
+
+        /// Tail, in which there can be no substring.
+        if (i < res.size())
+            memset(&res[i], negate_result, (res.size() - i) * sizeof(res[0]));
+    }
+
+    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
+    {
+        TokenSearcher searcher(pattern.data(), pattern.size(), data.size());
+        const auto found = searcher.search(data.c_str(), data.size()) != data.end().base();
+        res = negate_result ^ found;
+    }
+
+    template <typename... Args>
+    static void vector_vector(Args &&...)
+    {
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    /// Search different needles in single haystack.
+    template <typename... Args>
+    static void constant_vector(Args &&...)
+    {
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -516,32 +603,62 @@ struct NameMultiSearchFirstPositionCaseInsensitiveUTF8
     static constexpr auto name = "multiSearchFirstPositionCaseInsensitiveUTF8";
 };
 
+struct NameHasToken
+{
+    static constexpr auto name = "hasToken";
+};
+
+struct NameHasTokenCaseInsensitive
+{
+    static constexpr auto name = "hasTokenCaseInsensitive";
+};
+
 
 using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
 using FunctionPositionUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveUTF8>, NamePositionUTF8>;
 using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive>;
-using FunctionPositionCaseInsensitiveUTF8 = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
+using FunctionPositionCaseInsensitiveUTF8
+    = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
-using FunctionMultiSearchAllPositions = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseSensitiveASCII>, NameMultiSearchAllPositions>;
-using FunctionMultiSearchAllPositionsUTF8 = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseSensitiveUTF8>, NameMultiSearchAllPositionsUTF8>;
-using FunctionMultiSearchAllPositionsCaseInsensitive = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseInsensitiveASCII>, NameMultiSearchAllPositionsCaseInsensitive>;
-using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8 = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchAllPositionsCaseInsensitiveUTF8>;
+using FunctionMultiSearchAllPositions
+    = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseSensitiveASCII>, NameMultiSearchAllPositions>;
+using FunctionMultiSearchAllPositionsUTF8
+    = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseSensitiveUTF8>, NameMultiSearchAllPositionsUTF8>;
+using FunctionMultiSearchAllPositionsCaseInsensitive
+    = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<PositionCaseInsensitiveASCII>, NameMultiSearchAllPositionsCaseInsensitive>;
+using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8 = FunctionsMultiStringPosition<
+    MultiSearchAllPositionsImpl<PositionCaseInsensitiveUTF8>,
+    NameMultiSearchAllPositionsCaseInsensitiveUTF8>;
 
 using FunctionMultiSearch = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveASCII>, NameMultiSearchAny>;
 using FunctionMultiSearchUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveUTF8>, NameMultiSearchAnyUTF8>;
-using FunctionMultiSearchCaseInsensitive = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveASCII>, NameMultiSearchAnyCaseInsensitive>;
-using FunctionMultiSearchCaseInsensitiveUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchAnyCaseInsensitiveUTF8>;
+using FunctionMultiSearchCaseInsensitive
+    = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveASCII>, NameMultiSearchAnyCaseInsensitive>;
+using FunctionMultiSearchCaseInsensitiveUTF8
+    = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchAnyCaseInsensitiveUTF8>;
 
-using FunctionMultiSearchFirstIndex = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstIndex>;
-using FunctionMultiSearchFirstIndexUTF8 = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseSensitiveUTF8>, NameMultiSearchFirstIndexUTF8>;
-using FunctionMultiSearchFirstIndexCaseInsensitive = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstIndexCaseInsensitive>;
-using FunctionMultiSearchFirstIndexCaseInsensitiveUTF8 = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstIndexCaseInsensitiveUTF8>;
+using FunctionMultiSearchFirstIndex
+    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstIndex>;
+using FunctionMultiSearchFirstIndexUTF8
+    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseSensitiveUTF8>, NameMultiSearchFirstIndexUTF8>;
+using FunctionMultiSearchFirstIndexCaseInsensitive
+    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstIndexCaseInsensitive>;
+using FunctionMultiSearchFirstIndexCaseInsensitiveUTF8
+    = FunctionsMultiStringSearch<MultiSearchFirstIndexImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstIndexCaseInsensitiveUTF8>;
 
-using FunctionMultiSearchFirstPosition = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstPosition>;
-using FunctionMultiSearchFirstPositionUTF8 = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseSensitiveUTF8>, NameMultiSearchFirstPositionUTF8>;
-using FunctionMultiSearchFirstPositionCaseInsensitive = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
-using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchFirstPositionCaseInsensitiveUTF8>;
+using FunctionMultiSearchFirstPosition
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstPosition>;
+using FunctionMultiSearchFirstPositionUTF8
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseSensitiveUTF8>, NameMultiSearchFirstPositionUTF8>;
+using FunctionMultiSearchFirstPositionCaseInsensitive
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
+using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiStringSearch<
+    MultiSearchFirstPositionImpl<PositionCaseInsensitiveUTF8>,
+    NameMultiSearchFirstPositionCaseInsensitiveUTF8>;
 
+using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseSensitiveToken, false>, NameHasToken>;
+using FunctionHasTokenCaseInsensitive
+    = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseInsensitiveToken, false>, NameHasTokenCaseInsensitive>;
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
@@ -569,6 +686,9 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionMultiSearchFirstPositionUTF8>();
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitive>();
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionHasToken>();
+    factory.registerFunction<FunctionHasTokenCaseInsensitive>();
 
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
 }

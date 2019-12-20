@@ -16,6 +16,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/config.h>
+#include <Common/SettingsChanges.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -33,7 +34,6 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -60,6 +60,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
 
     extern const int SYNTAX_ERROR;
+
+    extern const int INCORRECT_DATA;
+    extern const int TYPE_MISMATCH;
 
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
@@ -99,15 +102,18 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
+             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
+
+             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
+             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
+
+             exception_code == ErrorCodes::SYNTAX_ERROR ||
+
+             exception_code == ErrorCodes::INCORRECT_DATA ||
+             exception_code == ErrorCodes::TYPE_MISMATCH)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
@@ -119,9 +125,9 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE)
-        return HTTPResponse::HTTP_NOT_FOUND;
-    else if (exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
+
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
         return HTTPResponse::HTTP_NOT_FOUND;
     else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
         return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
@@ -211,7 +217,6 @@ void HTTPHandler::processQuery(
     Output & used_output)
 {
     Context context = server.context();
-    context.setGlobalContext(server.context());
 
     CurrentThread::QueryScope query_scope(context);
 
@@ -401,16 +406,16 @@ void HTTPHandler::processQuery(
     {
         if (http_request_compression_method_str == "gzip")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Zlib);
         }
 #if USE_BROTLI
         else if (http_request_compression_method_str == "br")
         {
-            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+            in_post = std::make_unique<BrotliReadBuffer>(std::move(in_post_raw));
         }
 #endif
         else
@@ -475,9 +480,9 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    bool isExternalData = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
 
-    if (isExternalData)
+    if (has_external_data)
     {
         /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
         reserved_param_suffixes.reserve(3);
@@ -501,6 +506,12 @@ void HTTPHandler::processQuery(
         else if (param_could_be_skipped(key))
         {
         }
+        else if (startsWith(key, "param_"))
+        {
+            /// Save name and values of substitution in dictionary.
+            const String parameter_name = key.substr(strlen("param_"));
+            context.setQueryParameter(parameter_name, value);
+        }
         else
         {
             /// All other query parameters are treated as settings.
@@ -516,7 +527,7 @@ void HTTPHandler::processQuery(
     std::string full_query;
 
     /// Support for "external data for query processing".
-    if (isExternalData)
+    if (has_external_data)
     {
         ExternalTablesHandler handler(context, params);
         params.load(request, istr, handler);
