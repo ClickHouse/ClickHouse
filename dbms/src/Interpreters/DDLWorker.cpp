@@ -645,7 +645,8 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
         }
         catch (...)
         {
-            task.execution_status = ExecutionStatus::fromCurrentException("An error occured before execution");
+            tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
+            task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
 
         /// We need to distinguish ZK errors occured before and after query executing
