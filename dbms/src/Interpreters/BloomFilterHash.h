@@ -86,6 +86,7 @@ struct BloomFilterHash
 
             const auto & offsets = array_col->getOffsets();
             limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
+            pos = offsets[pos - 1];
 
             if (limit == 0)
             {
