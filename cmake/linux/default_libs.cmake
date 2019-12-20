@@ -18,6 +18,13 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
+# glibc-compatibility library relies to fixed version of libc headers
+# (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
+# This is for x86_64. For other architectures we have separate toolchains.
+if (ARCH_AMD64)
+    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+endif ()
+
 # Global libraries
 
 add_library(global-libs INTERFACE)
