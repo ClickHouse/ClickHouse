@@ -1,4 +1,5 @@
 include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
 
 set(LIBUNWIND_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libunwind)
 
@@ -36,7 +37,17 @@ target_compile_options(unwind PRIVATE -fno-exceptions -funwind-tables -fno-sanit
 
 check_c_compiler_flag(-Wunused-but-set-variable HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
 if (HAVE_WARNING_UNUSED_BUT_SET_VARIABLE)
-    target_compile_options(unwind PUBLIC -Wno-unused-but-set-variable)
+    target_compile_options(unwind PRIVATE -Wno-unused-but-set-variable)
+endif ()
+
+check_cxx_compiler_flag(-Wmissing-attributes HAVE_WARNING_MISSING_ATTRIBUTES)
+if (HAVE_WARNING_MISSING_ATTRIBUTES)
+    target_compile_options(unwind PRIVATE -Wno-missing-attributes)
+endif ()
+
+check_cxx_compiler_flag(-Wmaybe-uninitialized HAVE_WARNING_MAYBE_UNINITIALIZED)
+if (HAVE_WARNING_MAYBE_UNINITIALIZED)
+    target_compile_options(unwind PRIVATE -Wno-maybe-uninitialized)
 endif ()
 
 install(
