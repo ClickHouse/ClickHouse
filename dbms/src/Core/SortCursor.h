@@ -217,7 +217,7 @@ public:
     SortingHeap() = default;
 
     template <typename Cursors>
-    SortingHeap(const Cursors & cursors)
+    SortingHeap(Cursors & cursors)
     {
         size_t size = cursors.size();
         queue.reserve(size);
