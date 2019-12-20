@@ -5,7 +5,7 @@ Short description.
 **Syntax** (without SELECT)
 
 ```sql
-<function syntax>;
+<function syntax>
 ```
 
 Alias: `<alias name>`. (Optional)

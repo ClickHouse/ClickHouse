@@ -14,7 +14,7 @@ If you want to help ClickHouse with documentation you can face, for example, the
 
 - "I know what I want to write, but I don't know how to contribute to docs."
 
-    Here is some [tips](#how-to-contribute).
+    Here are some [tips](#how-to-contribute).
 
 - "I don't know what to describe."
 
@@ -200,7 +200,7 @@ When writing docs, you can use prepared templates for the following entities:
 
 - [Function](dscr-templates/template-function.md)
 - [Setting](dscr-templates/template-setting.md)
-- [Table engine](dscr-templates/template-table-engines.md)
+- [Table engine](dscr-templates/template-table-engine.md)
 
 
 <a name="how-to-build-docs"/>

@@ -14,12 +14,16 @@ Syntax codeblock
 **Query Clauses**
 
 
+## Virtual columns
+
+If they exist.
+
 ## Specifics and recommendations
 Algorithms
-Peculiarities of read/write processes
+Specifics of read/write processes
 Examples of tasks
 Recommendations for usage
-Peculiarities of data storage
+Specifics of data storage
 
 ## Usage Example
 
@@ -45,4 +49,3 @@ Any text clarifying the example.
 ## See Also
 
 - [link](#)
-
