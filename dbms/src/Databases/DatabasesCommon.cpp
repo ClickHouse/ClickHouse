@@ -153,7 +153,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 
         auto it = tables.find(table_name);
         if (it == tables.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + backQuote(name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second;
         tables.erase(it);
     }
