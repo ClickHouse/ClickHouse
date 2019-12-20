@@ -454,7 +454,7 @@ Dwarf::AttributeValue Dwarf::readAttributeValue(std::string_view & sp, uint64_t 
         case DW_FORM_flag:
             return uint64_t(read<uint8_t>(sp));
         case DW_FORM_flag_present:
-            return 1;
+            return uint64_t(1);
         case DW_FORM_sec_offset: [[fallthrough]];
         case DW_FORM_ref_addr:
             return readOffset(sp, is64Bit);
