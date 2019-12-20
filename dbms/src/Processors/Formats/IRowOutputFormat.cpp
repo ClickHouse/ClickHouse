@@ -20,6 +20,9 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
         first_row = false;
 
         write(columns, row);
+
+        if (write_single_row_callback)
+            write_single_row_callback();
     }
 }
 
@@ -96,6 +99,3 @@ void IRowOutputFormat::writeTotals(const DB::Columns & columns, size_t row_num)
 }
 
 }
-
-
-

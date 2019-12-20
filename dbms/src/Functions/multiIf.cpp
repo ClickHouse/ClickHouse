@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -32,13 +33,20 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
-    FunctionMultiIf(const Context & context) : context(context) {}
+    FunctionMultiIf(const Context & context_) : context(context_) {}
 
 public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        ColumnNumbers args;
+        for (size_t i = 0; i + 1 < number_of_arguments; i += 2)
+            args.push_back(i);
+        return args;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
@@ -192,11 +200,11 @@ public:
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = static_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
                 else
                 {
-                    const ColumnNullable & condition_nullable = static_cast<const ColumnNullable &>(*instruction.condition);
-                    const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                    const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                    const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
                     insert = !condition_null_map[i] && condition_nested.getData()[i];
@@ -207,7 +215,7 @@ public:
                     if (!instruction.source_is_constant)
                         res->insertFrom(*instruction.source, i);
                     else
-                        res->insertFrom(static_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
+                        res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 
                     break;
                 }

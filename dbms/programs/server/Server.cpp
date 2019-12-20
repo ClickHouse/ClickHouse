@@ -15,6 +15,7 @@
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
+#include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
@@ -28,16 +29,20 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getExecutablePath.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/SystemLog.cpp>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -45,15 +50,17 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
+#include <Common/SensitiveDataMasker.h>
 #include "MySQLHandlerFactory.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <Common/hasLinuxCapability.h>
 #include <sys/mman.h>
 #endif
@@ -83,6 +90,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -153,19 +161,19 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & _options)
+void Server::defineOptions(Poco::Util::OptionSet & options)
 {
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
             .required(false)
             .repeatable(false)
             .binding("help"));
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("version", "V", "show version and exit")
             .required(false)
             .repeatable(false)
             .binding("version"));
-    BaseDaemon::defineOptions(_options);
+    BaseDaemon::defineOptions(options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -180,6 +188,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -209,6 +218,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     const auto memory_amount = getMemoryAmount();
 
 #if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+    if (executable_path.empty())
+        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
+
     /// After full config loaded
     {
         if (config().getBool("mlock_executable", false))
@@ -225,12 +238,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
                     " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
                     " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
     }
 #endif
+
+    global_context->setRemoteHostFilter(config());
 
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
@@ -261,6 +276,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
+    /// Check that we have read and write access to all data paths
+    auto disk_selector = global_context->getDiskSelector();
+    for (const auto & [name, disk] : disk_selector.getDisksMap())
+    {
+        Poco::File disk_path(disk->getPath());
+        if (!disk_path.canRead() || !disk_path.canWrite())
+            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -270,14 +294,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
         global_context->shutdown();
+
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
         global_context.reset();
-
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -350,6 +375,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(user_files_path).createDirectories();
     }
 
+    {
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -400,6 +431,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),
@@ -407,9 +444,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
+            setTextLog(global_context->getTextLog());
             buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -440,13 +485,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 
@@ -492,6 +530,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata from " + path);
+
     try
     {
         loadMetadataSystem(*global_context);
@@ -510,8 +549,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
+    /// Disable it if we collect test coverage information, because it will work extremely slow.
+    ///
+    /// It also cannot work with sanitizers.
+    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    ///  and query profiler decide to unwind stack with libunwind at this moment.
+    ///
+    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+    ///
+    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+    ///
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
+    /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
+#endif
 
     global_context->setCurrentDatabase(default_database);
 
@@ -539,7 +593,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -548,7 +602,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
@@ -624,6 +678,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                return address;
         };
 
+        /// This object will periodically calculate some metrics.
+        AsynchronousMetrics async_metrics(*global_context);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+
         for (const auto & listen_host : listen_hosts)
         {
             auto create_server = [&](const char * port_name, auto && func)
@@ -663,13 +721,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening http://" + address.toString());
+                LOG_INFO(log, "Listening for http://" + address.toString());
             });
 
             /// HTTPS
@@ -681,13 +743,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening https://" + address.toString());
+                LOG_INFO(log, "Listening for https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -724,6 +787,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
                 LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                     ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -737,12 +801,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
+                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -753,13 +817,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
+                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
+                UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -767,7 +832,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
@@ -779,10 +843,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
+            });
+
+            /// Prometheus (if defined and not setup yet with http_port)
+            create_server("prometheus.port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });
         }
 
@@ -871,18 +949,20 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (!config().getBool("dictionaries_lazy_load", true))
             {
                 global_context->tryCreateEmbeddedDictionaries();
-                global_context->getExternalDictionaries().enableAlwaysLoadEverything(true);
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
+
+            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
+            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
+
+            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
+            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
         }
         catch (...)
         {
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
             throw;
         }
-
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
@@ -899,6 +979,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {

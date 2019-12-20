@@ -1,3 +1,5 @@
+#if defined(__ELF__) && !defined(__FreeBSD__)
+
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -7,6 +9,49 @@
 
 //#include <iostream>
 #include <filesystem>
+
+/**
+
+ELF object can contain three different places with symbol names and addresses:
+
+1. Symbol table in section headers. It is used for static linking and usually left in executable.
+It is not loaded in memory and they are not necessary for program to run.
+It does not relate to debug info and present regardless to -g flag.
+You can use strip to get rid of this symbol table.
+If you have this symbol table in your binary, you can manually read it and get symbol names, even for symbols from anonymous namespaces.
+
+2. Hashes in program headers such as DT_HASH and DT_GNU_HASH.
+It is necessary for dynamic object (.so libraries and any dynamically linked executable that depend on .so libraries)
+because it is used for dynamic linking that happens in runtime and performed by dynamic loader.
+Only exported symbols will be presented in that hash tables. Symbols from anonymous namespaces are not.
+This part of executable binary is loaded in memory and accessible via 'dl_iterate_phdr', 'dladdr' and 'backtrace_symbols' functions from libc.
+ClickHouse versions prior to 19.13 has used just these symbol names to symbolize stack traces
+and stack traces may be incomplete due to lack of symbols with internal linkage.
+But because ClickHouse is linked with most of the symbols exported (-rdynamic flag) it can still provide good enough stack traces.
+
+3. DWARF debug info. It contains the most detailed information about symbols and everything else.
+It allows to get source file names and line numbers from addresses. Only available if you use -g option for compiler.
+It is also used by default for ClickHouse builds, but because of its weight (about two gigabytes)
+it is splitted to separate binary and provided in clickhouse-common-static-dbg package.
+This separate binary is placed in /usr/lib/debug/usr/bin/clickhouse and is loaded automatically by tools like gdb, addr2line.
+When you build ClickHouse by yourself, debug info is not splitted and present in a single huge binary.
+
+What ClickHouse is using to provide good stack traces?
+
+In versions prior to 19.13, only "program headers" (2) was used.
+
+In version 19.13, ClickHouse will read program headers (2) and cache them,
+also it will read itself as ELF binary and extract symbol tables from section headers (1)
+to also symbolize functions that are not exported for dynamic linking.
+And finally, it will read DWARF info (3) if available to display file names and line numbers.
+
+What detail can you obtain depending on your binary?
+
+If you have debug info (you build ClickHouse by yourself or install clickhouse-common-static-dbg package), you will get source file names and line numbers.
+Otherwise you will get only symbol names. If your binary contains symbol table in section headers (the default, unless stripped), you will get all symbol names.
+Otherwise you will get only exported symbols from program headers.
+
+*/
 
 
 namespace DB
@@ -62,13 +107,14 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
         size_t sym_cnt = 0;
         for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
-            if (it->d_tag == DT_HASH)
-            {
-                const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
-                sym_cnt = hash[1];
-                break;
-            }
-            else if (it->d_tag == DT_GNU_HASH)
+            // TODO: this branch leads to invalid address of the hash table. Need further investigation.
+            // if (it->d_tag == DT_HASH)
+            // {
+            //     const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
+            //     sym_cnt = hash[1];
+            //     break;
+            // }
+            if (it->d_tag == DT_GNU_HASH)
             {
                 /// This code based on Musl-libc.
 
@@ -315,4 +361,12 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
     return find(address, data.objects);
 }
 
+SymbolIndex & SymbolIndex::instance()
+{
+    static SymbolIndex instance;
+    return instance;
 }
+
+}
+
+#endif

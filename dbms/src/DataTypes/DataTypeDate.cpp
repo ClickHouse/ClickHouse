@@ -7,13 +7,15 @@
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
 
 void DataTypeDate::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeDateText(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr);
+    writeDateText(DayNum(assert_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr);
 }
 
 void DataTypeDate::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -25,7 +27,7 @@ void DataTypeDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, c
 {
     DayNum x;
     readDateText(x, istr);
-    static_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
 void DataTypeDate::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -46,7 +48,7 @@ void DataTypeDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, co
     assertChar('\'', istr);
     readDateText(x, istr);
     assertChar('\'', istr);
-    static_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDate::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -62,7 +64,7 @@ void DataTypeDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr, cons
     assertChar('"', istr);
     readDateText(x, istr);
     assertChar('"', istr);
-    static_cast<ColumnUInt16 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
 void DataTypeDate::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -76,14 +78,14 @@ void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
 {
     LocalDate value;
     readCSV(value, istr);
-    static_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
+    assert_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
 }
 
 void DataTypeDate::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeDate(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num])));
+    value_index = static_cast<bool>(protobuf.writeDate(DayNum(assert_cast<const ColumnUInt16 &>(column).getData()[row_num])));
 }
 
 void DataTypeDate::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
@@ -93,7 +95,7 @@ void DataTypeDate::deserializeProtobuf(IColumn & column, ProtobufReader & protob
     if (!protobuf.readDate(d))
         return;
 
-    auto & container = static_cast<ColumnUInt16 &>(column).getData();
+    auto & container = assert_cast<ColumnUInt16 &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(d);

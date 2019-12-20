@@ -18,6 +18,19 @@ namespace DB
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
 {
+    if (auto * expr = table_expression->as<ASTTableExpression>())
+    {
+        ASTPtr table;
+        if (expr->subquery)
+            table = expr->subquery;
+        else if (expr->table_function)
+            table = expr->table_function;
+        else if (expr->database_and_table_name)
+            table = expr->database_and_table_name;
+
+        return interpretSubquery(table, context, subquery_depth, required_source_columns);
+    }
+
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const auto * subquery = table_expression->as<ASTSubquery>();
     const auto * function = table_expression->as<ASTFunction>();

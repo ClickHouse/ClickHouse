@@ -4,11 +4,45 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## FQDN {#fqdn}
+
+Returns the fully qualified domain name. 
+
+**Syntax**
+
+```sql
+fqdn();
+```
+
+This function is case-insensitive.
+
+**Returned value**
+
+- String with the fully qualified domain name.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT FQDN();
+```
+
+Result:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
+
 ## basename
 
 Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
-```
+```sql
 basename( expr )
 ```
 
@@ -60,9 +94,10 @@ This function is used by the system for implementing Pretty formats.
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
 
-```
+```sql
 SELECT visibleWidth(NULL)
-
+```
+```text
 ┌─visibleWidth(NULL)─┐
 │                  4 │
 └────────────────────┘
@@ -102,6 +137,39 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
+## currentUser() {#other_function-currentuser}
+
+Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
+
+```sql
+SELECT currentUser();
+```
+
+Alias: `user()`, `USER()`.
+
+**Returned values**
+
+- Login of current user.
+- Login of user that initiated query in case of disributed query.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentUser();
+```
+
+Result:
+
+```text
+┌─currentUser()─┐
+│ default       │
+└───────────────┘
+```
+
 ## isFinite(x)
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
@@ -120,7 +188,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 Allows building a unicode-art diagram.
 
@@ -136,7 +204,7 @@ The band is drawn with accuracy to one eighth of a symbol.
 
 Example:
 
-``` sql
+```sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -146,7 +214,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```
+```text
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -205,7 +273,7 @@ If the 'x' value is equal to one of the elements in the 'array_from' array, it r
 
 Example:
 
-``` sql
+```sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -215,7 +283,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```
+```text
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -234,7 +302,7 @@ Types:
 
 Example:
 
-``` sql
+```sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -244,7 +312,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -264,13 +332,13 @@ Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, M
 
 Example:
 
-``` sql
+```sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```
+```text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -311,6 +379,49 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
+## neighbor(column, offset\[, default_value\])
+
+Returns value for `column`, in `offset` distance from current row.
+This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
+
+The result of the function depends on the affected data blocks and the order of data in the block.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+If `offset` value is outside block bounds, a default value for `column` returned. If `default_value` is given, then it will be used.
+This function can be used to compute year-over-year metric value:
+
+```sql
+WITH toDate('2018-01-01') AS start_date
+SELECT
+    toStartOfMonth(start_date + (number * 32)) AS month,
+    toInt32(month) % 100 AS money,
+    neighbor(money, -12) AS prev_year,
+    round(prev_year / money, 2) AS year_over_year
+FROM numbers(16)
+```
+
+```text
+┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
+│ 2018-01-01 │    32 │         0 │              0 │
+│ 2018-02-01 │    63 │         0 │              0 │
+│ 2018-03-01 │    91 │         0 │              0 │
+│ 2018-04-01 │    22 │         0 │              0 │
+│ 2018-05-01 │    52 │         0 │              0 │
+│ 2018-06-01 │    83 │         0 │              0 │
+│ 2018-07-01 │    13 │         0 │              0 │
+│ 2018-08-01 │    44 │         0 │              0 │
+│ 2018-09-01 │    75 │         0 │              0 │
+│ 2018-10-01 │     5 │         0 │              0 │
+│ 2018-11-01 │    36 │         0 │              0 │
+│ 2018-12-01 │    66 │         0 │              0 │
+│ 2019-01-01 │    97 │        32 │           0.33 │
+│ 2019-02-01 │    28 │        63 │           2.25 │
+│ 2019-03-01 │    56 │        91 │           1.62 │
+│ 2019-04-01 │    87 │        22 │           0.25 │
+└────────────┴───────┴───────────┴────────────────┘
+```
+
+
 ## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
@@ -321,7 +432,7 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 Example:
 
-``` sql
+```sql
 SELECT
     EventID,
     EventTime,
@@ -338,7 +449,7 @@ FROM
 )
 ```
 
-```
+```text
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -346,6 +457,38 @@ FROM
 │    1109 │ 2016-11-24 00:00:09 │     4 │
 │    1110 │ 2016-11-24 00:00:10 │     1 │
 └─────────┴─────────────────────┴───────┘
+```
+
+Please note - block size affects the result. With each new block, the `runningDifference` state is reset.
+
+```sql
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+```
+```text
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
+└────────┴──────┘
+```
+```sql
+set max_block_size=100000 -- default value is 65536! 
+
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+```
+```text
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
 ```
 
 ## runningDifferenceStartingWithFirstValue
@@ -368,7 +511,7 @@ Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers i
 
 Returns the number of fields in [Enum](../../data_types/enum.md).
 
-```
+```sql
 getSizeOfEnumType(value)
 ```
 
@@ -383,9 +526,10 @@ getSizeOfEnumType(value)
 
 **Example**
 
-```
+```sql
 SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
-
+```
+```text
 ┌─x─┐
 │ 2 │
 └───┘
@@ -395,7 +539,7 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 
 Returns the name of the class that represents the data type of the column in RAM.
 
-```
+```sql
 toColumnTypeName(value)
 ```
 
@@ -409,21 +553,18 @@ toColumnTypeName(value)
 
 **Example of the difference between` toTypeName ' and ' toColumnTypeName`**
 
+```sql
+SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
-:) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
-
-SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-
+```text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime                                            │
 └─────────────────────────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.008 sec.
-
-:) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
-
-SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-
+```
+```sql
+SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
+```
+```text
 ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ Const(UInt32)                                             │
 └───────────────────────────────────────────────────────────┘
@@ -435,7 +576,7 @@ The example shows that the `DateTime` data type is stored in memory as `Const(UI
 
 Outputs a detailed description of data structures in RAM
 
-```
+```sql
 dumpColumnStructure(value)
 ```
 
@@ -449,9 +590,10 @@ dumpColumnStructure(value)
 
 **Example**
 
-```
+```sql
 SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
-
+```
+```text
 ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
 │ DateTime, Const(size = 1, UInt32(size = 1))                  │
 └──────────────────────────────────────────────────────────────┘
@@ -463,7 +605,7 @@ Outputs the default value for the data type.
 
 Does not include default values for custom columns set by the user.
 
-```
+```sql
 defaultValueOfArgumentType(expression)
 ```
 
@@ -479,26 +621,21 @@ defaultValueOfArgumentType(expression)
 
 **Example**
 
+```sql
+SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 ```
-:) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
-
-SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
-
+```text
 ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
 │                                           0 │
 └─────────────────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
-
-:) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
-
-SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
-
+```
+```sql
+SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
+```
+```text
 ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
 │                                                  ᴺᵁᴸᴸ │
 └───────────────────────────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 ## indexHint
@@ -515,9 +652,10 @@ The expression passed to the function is not calculated, but ClickHouse applies 
 
 Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md).
 
-```
+```sql
 SELECT count() FROM ontime
-
+```
+```text
 ┌─count()─┐
 │ 4276457 │
 └─────────┘
@@ -527,15 +665,10 @@ The table has indexes for the fields `(FlightDate, (Year, FlightDate))`.
 
 Create a selection by date like this:
 
+```sql
+SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
-:) SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-GROUP BY k
-ORDER BY k ASC
+```text
 
 ┌──────────k─┬─count()─┐
 │ 2017-01-01 │   13970 │
@@ -545,37 +678,24 @@ ORDER BY k ASC
 │ 2017-09-29 │   16384 │
 │ 2017-09-30 │   12520 │
 └────────────┴─────────┘
-
-273 rows in set. Elapsed: 0.072 sec. Processed 4.28 million rows, 8.55 MB (59.00 million rows/s., 118.01 MB/s.)
 ```
 
 In this selection, the index is not used and ClickHouse processed the entire table (`Processed 4.28 million rows`). To apply the index, select a specific date and run the following query:
 
+```sql
+SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
-:) SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE k = '2017-09-15'
-GROUP BY k
-ORDER BY k ASC
-
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-15 │   16428 │
 └────────────┴─────────┘
-
-1 rows in set. Elapsed: 0.014 sec. Processed 32.74 thousand rows, 65.49 KB (2.31 million rows/s., 4.63 MB/s.)
 ```
 
 The last line of output shows that by using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
 
 Now pass the expression `k = '2017-09-15'` to the `indexHint` function:
 
-```
-:) SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
-
+```sql
 SELECT
     FlightDate AS k,
     count()
@@ -583,29 +703,28 @@ FROM ontime
 WHERE indexHint(k = '2017-09-15')
 GROUP BY k
 ORDER BY k ASC
-
+```
+```text
 ┌──────────k─┬─count()─┐
 │ 2017-09-14 │    7071 │
 │ 2017-09-15 │   16428 │
 │ 2017-09-16 │    1077 │
 │ 2017-09-30 │    8167 │
 └────────────┴─────────┘
-
-4 rows in set. Elapsed: 0.004 sec. Processed 32.74 thousand rows, 65.49 KB (8.97 million rows/s., 17.94 MB/s.)
 ```
 
 The response to the request shows that ClickHouse applied the index in the same way as the previous time (`Processed 32.74 thousand rows`). However, the resulting set of rows shows that the expression `k = '2017-09-15'` was not used when generating the result.
 
 Because the index is sparse in ClickHouse, "extra" data ends up in the response when reading a range (in this case, the adjacent dates). Use the `indexHint` function to see it.
 
-## replicate
+## replicate {#other_functions-replicate}
 
 Creates an array with a single value.
 
 Used for internal implementation of [arrayJoin](array_join.md#functions_arrayjoin).
 
-```
-replicate(x, arr)
+```sql
+SELECT replicate(x, arr);
 ```
 
 **Parameters:**
@@ -613,15 +732,23 @@ replicate(x, arr)
 - `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 - `x` — The value that the resulting array will be filled with.
 
-**Output value**
+**Returned value**
 
-- An array filled with the value `x`.
+An array filled with the value `x`.
+
+Type: `Array`.
 
 **Example**
 
-```
-SELECT replicate(1, ['a', 'b', 'c'])
+Query:
 
+```sql
+SELECT replicate(1, ['a', 'b', 'c'])
+```
+
+Result:
+
+```text
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
 └───────────────────────────────┘
@@ -631,7 +758,7 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 Returns the amount of remaining space in the filesystem where the files of the databases located. See the [path](../../operations/server_settings/settings.md#server_settings-path) server setting description.
 
-```
+```sql
 filesystemAvailable()
 ```
 
@@ -672,12 +799,35 @@ Gets data from [Join](../../operations/table_engines/join.md) tables using the s
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
-## modelEvaluate(model_name, ...)
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x)
+## throwIf(x\[, custom_message\])
 
 Throw an exception if the argument is non zero.
+custom_message - is an optional parameter: a constant string, provides an error message
+
+```sql
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+```
+```text
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+```
+
+## identity()
+
+Returns the same value that was used as its argument. 
+
+```sql
+SELECT identity(42)
+```
+```text
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->

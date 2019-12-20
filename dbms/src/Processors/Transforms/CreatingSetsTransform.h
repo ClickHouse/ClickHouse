@@ -17,10 +17,10 @@ class CreatingSetsTransform : public IProcessor
 {
 public:
     CreatingSetsTransform(
-        Block out_header,
+        Block out_header_,
         const SubqueriesForSets & subqueries_for_sets_,
-        const SizeLimits & network_transfer_limits,
-        const Context & context);
+        const SizeLimits & network_transfer_limits_,
+        const Context & context_);
 
     String getName() const override { return "CreatingSetsTransform"; }
     Status prepare() override;

@@ -1,12 +1,18 @@
+#include <DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/StorageValues.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {
@@ -20,7 +26,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
+    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -42,14 +48,29 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         for (const auto & database_table : dependencies)
         {
             auto dependent_table = context.getTable(database_table.first, database_table.second);
-            auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
-            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
-                addTableLock(inner_table->lockStructureForShare(true, context.getCurrentQueryId()));
+            ASTPtr query;
+            BlockOutputStreamPtr out;
 
-            auto query = materialized_view.getInnerQuery();
-            BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
-                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
+            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
+            {
+                StoragePtr inner_table = materialized_view->getTargetTable();
+                query = materialized_view->getInnerQuery();
+                std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+                insert->database = inner_table->getDatabaseName();
+                insert->table = inner_table->getTableName();
+                ASTPtr insert_query_ptr(insert.release());
+                InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
+                BlockIO io = interpreter.execute();
+                out = io.out;
+            }
+            else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+                out = std::make_shared<PushingToViewsBlockOutputStream>(
+                        database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
+            else
+                out = std::make_shared<PushingToViewsBlockOutputStream>(
+                        database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
+
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
         }
     }
@@ -83,10 +104,17 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
       */
     Nested::validateArraySizes(block);
 
-    if (output)
-        /// TODO: to support virtual and alias columns inside MVs, we should return here the inserted block extended
-        ///       with additional columns directly from storage and pass it to MVs instead of raw block.
-        output->write(block);
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
+    {
+        StorageLiveView::writeIntoLiveView(*live_view, block, context);
+    }
+    else
+    {
+        if (output)
+            /// TODO: to support virtual and alias columns inside MVs, we should return here the inserted block extended
+            ///       with additional columns directly from storage and pass it to MVs instead of raw block.
+            output->write(block);
+    }
 
     /// Don't process materialized views if this block is duplicate
     if (replicated_output && replicated_output->lastBlockIsDuplicate())
@@ -101,7 +129,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.schedule([=]
+            pool.scheduleOrThrowOnError([=]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)
@@ -173,14 +201,42 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
 
     try
     {
-        BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-        InterpreterSelectQuery select(view.query, *views_context, from);
-        BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-        /// Squashing is needed here because the materialized view query can generate a lot of blocks
-        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-        /// and two-level aggregation is triggered).
-        in = std::make_shared<SquashingBlockInputStream>(
-            in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+        BlockInputStreamPtr in;
+
+        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+        ///
+        /// - We copy Context inside InterpreterSelectQuery to support
+        ///   modification of context (Settings) for subqueries
+        /// - InterpreterSelectQuery lives shorter than query pipeline.
+        ///   It's used just to build the query pipeline and no longer needed
+        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+        ///   **can** take a reference to Context from InterpreterSelectQuery
+        ///   (the problem raises only when function uses context from the
+        ///    execute*() method, like FunctionDictGet do)
+        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+        std::optional<InterpreterSelectQuery> select;
+
+        if (view.query)
+        {
+            /// We create a table with the same name as original table and the same alias columns,
+            ///  but it will contain single block (that is INSERT-ed into main table).
+            /// InterpreterSelectQuery will do processing of alias columns.
+            Context local_context = *views_context;
+            local_context.addViewSource(
+                    StorageValues::create(storage->getDatabaseName(), storage->getTableName(), storage->getColumns(),
+                                          block));
+            select.emplace(view.query, local_context, SelectQueryOptions());
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
+
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            in = std::make_shared<SquashingBlockInputStream>(
+                    in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+        }
+        else
+            in = std::make_shared<OneBlockInputStream>(block);
 
         in->readPrefix();
 

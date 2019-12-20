@@ -9,7 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <ext/map.h>
@@ -32,13 +32,13 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
-    const Names & queried_columns,
-    Logger * log)
+    const Names & queried_columns_,
+    Logger * log_)
         : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        queried_columns{queried_columns},
+        queried_columns{queried_columns_},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-        log{log}
+        log{log_}
 {
     if (!data.primary_key_columns.empty())
         first_primary_key_column = data.primary_key_columns[0];
@@ -62,7 +62,7 @@ void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, c
 
 static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
 {
-    if (auto opt_name = getIdentifierName(ast))
+    if (auto opt_name = tryGetIdentifierName(ast))
         return (void)set.insert(*opt_name);
 
     if (ast->as<ASTSubquery>())

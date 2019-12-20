@@ -25,9 +25,10 @@
 
 Примеры:
 
-``` sql
+```sql
 SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
-
+```
+```text
 ┌─res─────┐
 │ [3,4,5] │
 └─────────┘
@@ -35,9 +36,10 @@ SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
 
 Следующий пример показывает, как создать кортежи из элементов разных массивов:
 
-``` sql
+```sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
-
+```
+```text
 ┌─res─────────────────┐
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
@@ -51,17 +53,17 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Примеры:
 
-``` sql
+```sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```
+```text
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -70,7 +72,7 @@ SELECT
     AS res
 ```
 
-```
+```text
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -107,11 +109,11 @@ SELECT
 
 Пример:
 
-``` sql
+```sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```
+```text
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -126,11 +128,11 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Пример:
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```
+```text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -144,10 +146,10 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 
 Пример:
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
-``` sql
+```text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘

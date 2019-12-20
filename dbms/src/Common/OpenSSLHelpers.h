@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_SSL
 
 #include <Core/Types.h>
 
@@ -10,3 +12,4 @@ namespace DB
 String getOpenSSLErrors();
 
 }
+#endif

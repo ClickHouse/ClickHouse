@@ -1,5 +1,6 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

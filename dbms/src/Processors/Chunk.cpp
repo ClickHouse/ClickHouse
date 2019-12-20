@@ -7,6 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int POSITION_OUT_OF_BOUND;
 }
 
@@ -34,11 +35,13 @@ static Columns unmuteColumns(MutableColumns && mut_columns)
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
     : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_)
 {
+    checkNumRowsIsConsistent();
 }
 
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
 {
+    checkNumRowsIsConsistent();
 }
 
 Chunk Chunk::clone() const
@@ -94,6 +97,15 @@ Columns Chunk::detachColumns()
 {
     num_rows = 0;
     return std::move(columns);
+}
+
+void Chunk::addColumn(ColumnPtr column)
+{
+    if (column->size() != num_rows)
+        throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
+                        toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
+
+    columns.emplace_back(std::move(column));
 }
 
 void Chunk::erase(size_t position)

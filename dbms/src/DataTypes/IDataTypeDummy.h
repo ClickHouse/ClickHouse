@@ -1,10 +1,16 @@
 #pragma once
 
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <Core/Field.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** The base class for data types that do not support serialization and deserialization,
   *  but arise only as an intermediate result of the calculations.

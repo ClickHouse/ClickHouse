@@ -1,5 +1,6 @@
+include(CheckCXXCompilerFlag)
+
 set(LIBCXX_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx)
-#set(LIBCXX_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/libcxx)
 
 set(SRCS
 ${LIBCXX_SOURCE_DIR}/src/optional.cpp
@@ -16,10 +17,6 @@ ${LIBCXX_SOURCE_DIR}/src/condition_variable.cpp
 ${LIBCXX_SOURCE_DIR}/src/hash.cpp
 ${LIBCXX_SOURCE_DIR}/src/string.cpp
 ${LIBCXX_SOURCE_DIR}/src/debug.cpp
-#${LIBCXX_SOURCE_DIR}/src/support/win32/support.cpp
-#${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp
-#${LIBCXX_SOURCE_DIR}/src/support/win32/thread_win32.cpp
-#${LIBCXX_SOURCE_DIR}/src/support/solaris/xlocale.cpp
 ${LIBCXX_SOURCE_DIR}/src/stdexcept.cpp
 ${LIBCXX_SOURCE_DIR}/src/utility.cpp
 ${LIBCXX_SOURCE_DIR}/src/any.cpp
@@ -43,9 +40,29 @@ ${LIBCXX_SOURCE_DIR}/src/system_error.cpp
 ${LIBCXX_SOURCE_DIR}/src/random.cpp
 )
 
-add_library(cxx_static ${SRCS})
+add_library(cxx ${SRCS})
 
-target_include_directories(cxx_static PUBLIC ${LIBCXX_SOURCE_DIR}/include)
-target_compile_definitions(cxx_static PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
-target_compile_options(cxx_static PRIVATE -nostdinc++)
+target_include_directories(cxx SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
+target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
 
+target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
+
+check_cxx_compiler_flag(-Wreserved-id-macro HAVE_WARNING_RESERVED_ID_MACRO)
+if (HAVE_WARNING_RESERVED_ID_MACRO)
+    target_compile_options(cxx PUBLIC -Wno-reserved-id-macro)
+endif ()
+
+check_cxx_compiler_flag(-Wctad-maybe-unsupported HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
+if (HAVE_WARNING_CTAD_MAYBE_UNSUPPORTED)
+    target_compile_options(cxx PUBLIC -Wno-ctad-maybe-unsupported)
+endif ()
+
+target_link_libraries(cxx PUBLIC cxxabi)
+
+install(
+    TARGETS cxx
+    EXPORT global
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
+)

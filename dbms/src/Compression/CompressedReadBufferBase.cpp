@@ -1,11 +1,8 @@
 #include "CompressedReadBufferBase.h"
 
 #include <vector>
-
 #include <string.h>
 #include <city.h>
-#include <zstd.h>
-
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>

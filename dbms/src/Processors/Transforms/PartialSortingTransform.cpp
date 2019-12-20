@@ -5,9 +5,9 @@ namespace DB
 {
 
 PartialSortingTransform::PartialSortingTransform(
-    const Block & header, SortDescription & description, UInt64 limit, bool do_count_rows)
-    : ISimpleTransform(header, header, false)
-    , description(description), limit(limit), do_count_rows(do_count_rows)
+    const Block & header_, SortDescription & description_, UInt64 limit_, bool do_count_rows_)
+    : ISimpleTransform(header_, header_, false)
+    , description(description_), limit(limit_), do_count_rows(do_count_rows_)
 {
 }
 

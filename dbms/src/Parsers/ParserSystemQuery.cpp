@@ -2,9 +2,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace ErrorCodes
@@ -19,7 +17,7 @@ namespace DB
 
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SYSTEM"}.ignore(pos))
+    if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected))
         return false;
 
     using Type = ASTSystemQuery::Type;
@@ -30,7 +28,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
     {
         Type t = static_cast<Type>(i);
-        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos))
+        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
         {
             res->type = t;
             found = true;
@@ -56,6 +54,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
+        case Type::STOP_TTL_MERGES:
+        case Type::START_TTL_MERGES:
+        case Type::STOP_MOVES:
+        case Type::START_MOVES:
         case Type::STOP_FETCHES:
         case Type::START_FETCHES:
         case Type::STOP_REPLICATED_SENDS:

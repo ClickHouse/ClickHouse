@@ -15,8 +15,8 @@ class MergeTreeIndexMinMax;
 
 struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index);
-    MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index, std::vector<Range> && parallelogram);
+    explicit MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_);
+    MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_, std::vector<Range> && parallelogram_);
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;

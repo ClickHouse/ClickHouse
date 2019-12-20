@@ -7,10 +7,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/BloomFilterHash.h>
 
 
@@ -40,8 +42,8 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
 {
     const String & column_name = node->getColumnName();
 
-    for (const auto & name : columns)
-        if (column_name == name)
+    for (const auto & cname : columns)
+        if (column_name == cname)
             return true;
 
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
@@ -71,13 +73,14 @@ static void assertIndexColumnsType(const Block & header)
 
     const DataTypes & columns_data_types = header.getDataTypes();
 
-    for (size_t index = 0; index < columns_data_types.size(); ++index)
+    for (auto & type : columns_data_types)
     {
-        WhichDataType which(columns_data_types[index]);
+        const IDataType * actual_type = BloomFilter::getPrimitiveType(type).get();
+        WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDateOrDateTime() && !which.isEnum())
-            throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
+            throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/SortDescription.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
@@ -167,7 +168,7 @@ struct SortCursorWithCollation
             int res;
             if (impl->need_collation[i])
             {
-                const ColumnString & column_string = static_cast<const ColumnString &>(*impl->sort_columns[i]);
+                const ColumnString & column_string = assert_cast<const ColumnString &>(*impl->sort_columns[i]);
                 res = column_string.compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), *impl->desc[i].collator);
             }
             else

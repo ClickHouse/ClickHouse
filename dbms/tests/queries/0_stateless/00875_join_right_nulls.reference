@@ -6,12 +6,12 @@ n fj n	1	1
 n fj n	id	id
 n fj n	\N	\N
 n fj n	\N	\N
-t rj n		\N
 t rj n	1	1
 t rj n	id	id
-t fj n		\N
+t rj n	\N	\N
 t fj n	1	1
 t fj n	id	id
+t fj n	\N	\N
 n rj t	1	1
 n rj t	id	id
 n fj t	1	1
@@ -25,12 +25,12 @@ n fj n	1	1
 n fj n	id	id
 n fj n	\N	\N
 n fj n	\N	\N
-t rj n		\N
 t rj n	1	1
 t rj n	id	id
-t fj n		\N
+t rj n	\N	\N
 t fj n	1	1
 t fj n	id	id
+t fj n	\N	\N
 n rj t	1	1
 n rj t	id	id
 n fj t	1	1

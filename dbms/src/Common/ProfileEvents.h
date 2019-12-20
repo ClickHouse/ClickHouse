@@ -33,7 +33,7 @@ namespace ProfileEvents
         VariableContext level = VariableContext::Thread;
 
         /// By default, any instance have to increment global counters
-        Counters(VariableContext level = VariableContext::Thread, Counters * parent = &global_counters);
+        Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
         /// Global level static initializer
         Counters(Counter * allocated_counters)

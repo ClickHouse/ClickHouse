@@ -17,11 +17,13 @@ additional headers for getting a response from the server.
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
+You can limit the maximum number of HTTP GET redirect hops by the [max_http_get_redirects](../settings/settings.md#setting-max_http_get_redirects) setting.
+
 **Example:**
 
 **1.** Create a `url_engine_table` table on the server :
 
-``` sql
+```sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -46,16 +48,16 @@ if __name__ == "__main__":
 ```
 
 ```bash
-python3 server.py
+$ python3 server.py
 ```
 
 **3.** Request data:
 
-``` sql
+```sql
 SELECT * FROM url_engine_table
 ```
 
-```
+```text
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │

@@ -10,6 +10,7 @@
 #include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -77,7 +78,9 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         else
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
-            if (!column.type->isSummable() && !is_agg_func)
+
+            /// There are special const columns for example after prewere sections.
+            if ((!column.type->isSummable() && !is_agg_func) || isColumnConst(*column.column))
             {
                 column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -197,6 +200,10 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 
 void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns)
 {
+    /// We have nothing to aggregate. It means that it could be non-zero, because we have columns_not_to_aggregate.
+    if (columns_to_aggregate.empty())
+        current_row_is_zero = false;
+
     for (auto & desc : columns_to_aggregate)
     {
         // Do not insert if the aggregation state hasn't been created
@@ -297,7 +304,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                res.getByPosition(desc.column_numbers[i]).column = static_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
+                res.getByPosition(desc.column_numbers[i]).column = assert_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
         }
         else
             res.getByPosition(desc.column_numbers[0]).column = std::move(desc.merged_column);
@@ -491,7 +498,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
         {
             // desc.state is not used for AggregateFunction types
             auto & col = cursor->all_columns[desc.column_numbers[0]];
-            static_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
+            assert_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
         }
         else
         {

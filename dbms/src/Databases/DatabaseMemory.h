@@ -23,7 +23,7 @@ public:
 
     String getEngineName() const override { return "Memory"; }
 
-    void loadTables(
+    void loadStoredObjects(
         Context & context,
         bool has_force_restore_data_flag) override;
 
@@ -33,29 +33,33 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
+    void createDictionary(
+        const Context & context,
+        const String & dictionary_name,
+        const ASTPtr & query) override;
+
+    void attachDictionary(
+        const String & name,
+        const Context & context) override;
+
     void removeTable(
         const Context & context,
         const String & table_name) override;
 
-    void renameTable(
+    void removeDictionary(
         const Context & context,
-        const String & table_name,
-        IDatabase & to_database,
-        const String & to_table_name) override;
+        const String & dictionary_name) override;
 
-    void alterTable(
-        const Context & context,
+    void detachDictionary(
         const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ASTModifier & engine_modifier) override;
+        const Context & context) override;
 
-    time_t getTableMetadataModificationTime(
-        const Context & context,
-        const String & table_name) override;
+    time_t getObjectMetadataModificationTime(const Context & context, const String & table_name) override;
 
     ASTPtr getCreateTableQuery(const Context & context, const String & table_name) const override;
+    ASTPtr getCreateDictionaryQuery(const Context & context, const String & table_name) const override;
     ASTPtr tryGetCreateTableQuery(const Context &, const String &) const override { return nullptr; }
+    ASTPtr tryGetCreateDictionaryQuery(const Context &, const String &) const override { return nullptr; }
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 

@@ -8,8 +8,8 @@ namespace DB
 {
 
 JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & settings_)
-    : JSONRowOutputFormat(out_, header, settings_)
+    WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
+    : JSONRowOutputFormat(out_, header, callback, settings_)
 {
 }
 
@@ -34,8 +34,6 @@ void JSONCompactRowOutputFormat::writeTotalsFieldDelimiter()
 
 void JSONCompactRowOutputFormat::writeRowStartDelimiter()
 {
-    if (row_count > 0)
-        writeCString(",\n", *ostr);
     writeCString("\t\t[", *ostr);
 }
 
@@ -83,9 +81,10 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, callback, format_settings);
     });
 }
 

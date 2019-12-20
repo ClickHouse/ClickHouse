@@ -1,11 +1,9 @@
 #include "MySQLDictionarySource.h"
-
 #include <Poco/Util/AbstractConfiguration.h>
-#include "config_core.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-
-
+#include "config_core.h"
+#include "registerDictionaries.h"
 
 namespace DB
 {
@@ -20,7 +18,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */) -> DictionarySourcePtr {
+                                 const Context & /* context */,
+                                 bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 #else
@@ -57,7 +56,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const Block & sample_block)
+    const Block & sample_block_)
     : log(&Logger::get("MySQLDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -66,7 +65,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , where{config.getString(config_prefix + ".where", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
     , pool{config, config_prefix}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}

@@ -12,20 +12,20 @@ struct ExternalResultDescription
 {
     enum struct ValueType
     {
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        Float32,
-        Float64,
-        String,
-        Date,
-        DateTime,
-        UUID,
+        vtUInt8,
+        vtUInt16,
+        vtUInt32,
+        vtUInt64,
+        vtInt8,
+        vtInt16,
+        vtInt32,
+        vtInt64,
+        vtFloat32,
+        vtFloat64,
+        vtString,
+        vtDate,
+        vtDateTime,
+        vtUUID,
     };
 
     Block sample_block;

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
 #include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -650,11 +651,11 @@ private:
         {
             const auto & null_map1 = block.getByPosition(arguments[2]).column;
             if (null_map1)
-                null_map_data = &static_cast<const ColumnUInt8 &>(*null_map1).getData();
+                null_map_data = &assert_cast<const ColumnUInt8 &>(*null_map1).getData();
 
             const auto & null_map2 = block.getByPosition(arguments[3]).column;
             if (null_map2)
-                null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
+                null_map_item = &assert_cast<const ColumnUInt8 &>(*null_map2).getData();
         }
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
@@ -698,11 +699,11 @@ private:
         {
             const auto & col1 = block.getByPosition(arguments[2]).column;
             if (col1)
-                null_map_data = &static_cast<const ColumnUInt8 &>(*col1).getData();
+                null_map_data = &assert_cast<const ColumnUInt8 &>(*col1).getData();
 
             const auto & col2 = block.getByPosition(arguments[3]).column;
             if (col2)
-                null_map_item = &static_cast<const ColumnUInt8 &>(*col2).getData();
+                null_map_item = &assert_cast<const ColumnUInt8 &>(*col2).getData();
         }
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
@@ -778,7 +779,7 @@ private:
             {
                 const auto & col = block.getByPosition(arguments[3]).column;
                 if (col)
-                    null_map = &static_cast<const ColumnUInt8 &>(*col).getData();
+                    null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
             }
 
             const auto size = item_arg->size();
@@ -838,11 +839,11 @@ private:
         {
             const auto & null_map1 = block.getByPosition(arguments[2]).column;
             if (null_map1)
-                null_map_data = &static_cast<const ColumnUInt8 &>(*null_map1).getData();
+                null_map_data = &assert_cast<const ColumnUInt8 &>(*null_map1).getData();
 
             const auto & null_map2 = block.getByPosition(arguments[3]).column;
             if (null_map2)
-                null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
+                null_map_item = &assert_cast<const ColumnUInt8 &>(*null_map2).getData();
         }
 
         if (item_arg.onlyNull())
@@ -850,7 +851,7 @@ private:
                 col_res->getData(), null_map_data);
         else if (isColumnConst(item_arg))
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
-                static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
+                assert_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
         else
         {

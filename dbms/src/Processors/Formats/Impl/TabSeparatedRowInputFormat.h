@@ -2,25 +2,22 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 
 
 namespace DB
 {
 
-class ReadBuffer;
-
-
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat : public IRowInputFormat
+class TabSeparatedRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
 public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputFormat(
-        ReadBuffer & in_, Block header, bool with_names, bool with_types, Params params, const FormatSettings & format_settings);
+    TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                               bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
@@ -29,7 +26,7 @@ public:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::string getDiagnosticInfo() override;
+    void resetParser() override;
 
 private:
     bool with_names;
@@ -37,21 +34,25 @@ private:
     const FormatSettings format_settings;
     DataTypes data_types;
 
-    /// For convenient diagnostics in case of an error.
+    using IndexesMap = std::unordered_map<String, size_t>;
+    IndexesMap column_indexes_by_names;
 
-    size_t row_num = 0;
+    using OptionalIndexes = std::vector<std::optional<size_t>>;
+    OptionalIndexes column_indexes_for_input_fields;
 
-    /// How many bytes were read, not counting those still in the buffer.
-    size_t bytes_read_at_start_of_buffer_on_current_row = 0;
-    size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
+    std::vector<UInt8> read_columns;
+    std::vector<size_t> columns_to_fill_with_default_values;
 
-    char * pos_of_current_row = nullptr;
-    char * pos_of_prev_row = nullptr;
+    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
 
-    void updateDiagnosticInfo();
+    void addInputColumn(const String & column_name);
+    void setupAllColumnsByTableSchema();
+    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
 
-    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
-        WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
+    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
+    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                             ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
+    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 
 }

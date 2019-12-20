@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/queryToString.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -7,6 +8,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
 
 ASTPtr ASTIdentifier::clone() const
 {
@@ -27,10 +34,20 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
     , name_parts(name_parts_)
     , semantic(std::make_shared<IdentifierSemanticImpl>())
 {
+    if (name_parts.size() && name_parts[0] == "")
+        name_parts.erase(name_parts.begin());
+
+    if (name == "")
+    {
+        if (name_parts.size() == 2)
+            name = name_parts[0] + '.' + name_parts[1];
+        else if (name_parts.size() == 1)
+            name = name_parts[0];
+    }
 }
 
 ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
-    : ASTIdentifier(name_parts_.at(0) + '.' + name_parts_.at(1), std::move(name_parts_))
+    : ASTIdentifier("", std::move(name_parts_))
 {}
 
 void ASTIdentifier::setShortName(const String & new_name)
@@ -92,22 +109,32 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
     return database_and_table;
 }
 
-std::optional<String> getIdentifierName(const IAST * const ast)
+String getIdentifierName(const IAST * ast)
 {
-    if (ast)
-        if (const auto * node = ast->as<ASTIdentifier>())
-            return node->name;
+    String res;
+    if (tryGetIdentifierNameInto(ast, res))
+        return res;
+    throw Exception(ast ? queryToString(*ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
+
+std::optional<String> tryGetIdentifierName(const IAST * ast)
+{
+    String res;
+    if (tryGetIdentifierNameInto(ast, res))
+        return res;
     return {};
 }
 
-bool getIdentifierName(const ASTPtr & ast, String & name)
+bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 {
     if (ast)
+    {
         if (const auto * node = ast->as<ASTIdentifier>())
         {
             name = node->name;
             return true;
         }
+    }
     return false;
 }
 

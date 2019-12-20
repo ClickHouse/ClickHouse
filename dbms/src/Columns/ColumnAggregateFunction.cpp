@@ -1,5 +1,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
@@ -158,7 +159,7 @@ void ColumnAggregateFunction::ensureOwnership()
 
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
 {
-    const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
+    const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
     if (start + length > from_concrete.data.size())
         throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length)
@@ -353,7 +354,7 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 {
-    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(from).data[n]);
+    insertMergeFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
 }
 
 Arena & ColumnAggregateFunction::createOrGetArena()
@@ -492,7 +493,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     }
 
     for (size_t i = 0; i < num_rows; ++i)
-        static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+        assert_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
     return columns;
 }

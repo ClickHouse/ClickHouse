@@ -171,7 +171,15 @@ public:
       * - method 'prepare' cannot be executed in parallel even for different objects,
       *   if they are connected (including indirectly) to each other by their ports;
       */
-    virtual Status prepare() = 0;
+    virtual Status prepare()
+    {
+        throw Exception("Method 'prepare' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    using PortNumbers = std::vector<UInt64>;
+
+    /// Optimization for prepare in case we know ports were updated.
+    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -211,18 +219,65 @@ public:
         throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// In case if query was cancelled executor will wait till all processors finish their jobs.
+    /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
+    bool isCancelled() const { return is_cancelled; }
+    void cancel() { is_cancelled = true; }
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
+    UInt64 getInputPortNumber(const InputPort * input_port) const
+    {
+        UInt64 number = 0;
+        for (auto & port : inputs)
+        {
+            if (&port == input_port)
+                return number;
+
+            ++number;
+        }
+
+        throw Exception("Can't find input port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    UInt64 getOutputPortNumber(const OutputPort * output_port) const
+    {
+        UInt64 number = 0;
+        for (auto & port : outputs)
+        {
+            if (&port == output_port)
+                return number;
+
+            ++number;
+        }
+
+        throw Exception("Can't find output port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    const auto & getInputs() const { return inputs; }
+    const auto & getOutputs() const { return outputs; }
+
     /// Debug output.
     void dump() const;
 
-    std::string processor_description;
-
+    /// Used to print pipeline.
     void setDescription(const std::string & description_) { processor_description = description_; }
     const std::string & getDescription() const { return processor_description; }
+
+    /// Helpers for pipeline executor.
+    void setStream(size_t value) { stream_number = value; }
+    size_t getStream() const { return stream_number; }
+    constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
+
+private:
+    std::atomic<bool> is_cancelled{false};
+
+    std::string processor_description;
+
+    size_t stream_number = NO_STREAM;
 };
 
 

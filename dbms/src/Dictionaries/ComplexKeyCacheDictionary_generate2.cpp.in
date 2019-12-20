@@ -18,7 +18,7 @@ void ComplexKeyCacheDictionary::get@NAME@(const std::string & attribute_name,
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::@NAME@);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut@NAME@);
 
     getItemsNumberImpl<TYPE, TYPE>(attribute, key_columns, out, [&](const size_t row) { return def[row]; });
 }

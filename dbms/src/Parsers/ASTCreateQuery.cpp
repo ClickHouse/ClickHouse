@@ -1,8 +1,9 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -128,6 +129,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->columns, columns->clone());
     if (indices)
         res->set(res->indices, indices->clone());
+    if (constraints)
+        res->set(res->constraints, constraints->clone());
 
     return res;
 }
@@ -156,6 +159,16 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
             list.children.push_back(elem);
         }
     }
+    if (constraints)
+    {
+        for (const auto & constraint : constraints->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "CONSTRAINT";
+            elem->set(elem->elem, constraint->clone());
+            list.children.push_back(elem);
+        }
+    }
 
     if (!list.children.empty())
         list.formatImpl(s, state, frame);
@@ -173,6 +186,10 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
+    if (tables)
+        res->set(res->tables, tables->clone());
+    if (dictionary)
+        res->set(res->dictionary, dictionary->clone());
 
     cloneOutputOptions(*res);
 
@@ -198,12 +215,15 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         return;
     }
 
+    if (!is_dictionary)
     {
         std::string what = "TABLE";
         if (is_view)
             what = "VIEW";
         if (is_materialized_view)
             what = "MATERIALIZED VIEW";
+        if (is_live_view)
+            what = "LIVE VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
@@ -214,8 +234,17 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-            formatOnCluster(settings);
+        formatOnCluster(settings);
     }
+    else
+    {
+        /// Always DICTIONARY
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
+                      << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
+                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+        formatOnCluster(settings);
+    }
+
     if (as_table_function)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
@@ -244,20 +273,35 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
 
+    if (dictionary_attributes_list)
+    {
+        settings.ostr << (settings.one_line ? " (" : "\n(");
+        FormatStateStacked frame_nested = frame;
+        ++frame_nested.indent;
+        dictionary_attributes_list->formatImpl(settings, state, frame_nested);
+        settings.ostr << (settings.one_line ? ")" : "\n)");
+    }
+
     if (storage)
         storage->formatImpl(settings, state, frame);
 
+    if (dictionary)
+        dictionary->formatImpl(settings, state, frame);
+
     if (is_populate)
-    {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    }
 
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
+
+    if (tables)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
+        tables->formatImpl(settings, state, frame);
+    }
 }
 
 }
-

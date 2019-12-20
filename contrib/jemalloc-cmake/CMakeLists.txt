@@ -35,7 +35,7 @@ ${JEMALLOC_SOURCE_DIR}/src/tsd.c
 ${JEMALLOC_SOURCE_DIR}/src/witness.c
 )
 
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(OS_DARWIN)
   list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
 
@@ -45,9 +45,15 @@ endif ()
 
 add_library(jemalloc STATIC ${SRCS})
 
-target_include_directories(jemalloc PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64) # jemalloc.h
+target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+if (ARCH_AMD64)
+    target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64)
+elseif (ARCH_ARM)
+    target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_aarch64)
+else ()
+    message (FATAL_ERROR "jemalloc can only be used on x86_64 or aarch64.")
+endif ()
 
 target_include_directories(jemalloc PRIVATE
     ${JEMALLOC_SOURCE_DIR}/include)
@@ -59,7 +65,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
 
     if (USE_UNWIND)
         target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-        target_include_directories (jemalloc BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-        target_link_libraries (jemalloc PRIVATE ${UNWIND_LIBRARY})
+        target_link_libraries (jemalloc PRIVATE ${UNWIND_LIBRARIES})
     endif ()
 endif ()

@@ -58,6 +58,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"query", std::make_shared<DataTypeString>()},
 
         {"thread_numbers", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
+        {"os_thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
         {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -116,6 +117,14 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
             Array threads_array;
             threads_array.reserve(process.thread_numbers.size());
             for (const UInt32 thread_number : process.thread_numbers)
+                threads_array.emplace_back(thread_number);
+            res_columns[i++]->insert(threads_array);
+        }
+
+        {
+            Array threads_array;
+            threads_array.reserve(process.os_thread_ids.size());
+            for (const UInt32 thread_number : process.os_thread_ids)
                 threads_array.emplace_back(thread_number);
             res_columns[i++]->insert(threads_array);
         }

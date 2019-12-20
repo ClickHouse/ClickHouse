@@ -17,6 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -58,13 +59,13 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
 
 void DataTypeFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    ostr.write(reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
+    ostr.write(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
 }
 
 
 void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnFixedString::Chars & data = static_cast<ColumnFixedString &>(column).getChars();
+    ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();
     data.resize(old_size + n);
     try
@@ -112,13 +113,13 @@ void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 
 void DataTypeFixedString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeString(reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
+    writeString(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n, ostr);
 }
 
 
 void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeAnyEscapedString<'\''>(pos, pos + n, ostr);
 }
 
@@ -165,7 +166,7 @@ void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & 
 
 void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeAnyQuotedString<'\''>(pos, pos + n, ostr);
 }
 
@@ -184,7 +185,7 @@ void DataTypeFixedString::deserializeWholeText(IColumn & column, ReadBuffer & is
 
 void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeJSONString(pos, pos + n, ostr, settings);
 }
 
@@ -197,14 +198,14 @@ void DataTypeFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 
 void DataTypeFixedString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeXMLString(pos, pos + n, ostr);
 }
 
 
 void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeCSVString(pos, pos + n, ostr);
 }
 
@@ -219,7 +220,7 @@ void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_n
 {
     if (value_index)
         return;
-    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     value_index = static_cast<bool>(protobuf.writeString(StringRef(pos, n)));
 }
 
@@ -227,7 +228,7 @@ void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_n
 void DataTypeFixedString::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     row_added = false;
-    auto & column_string = static_cast<ColumnFixedString &>(column);
+    auto & column_string = assert_cast<ColumnFixedString &>(column);
     ColumnFixedString::Chars & data = column_string.getChars();
     size_t old_size = data.size();
     try
@@ -267,6 +268,10 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
     return ColumnFixedString::create(n);
 }
 
+Field DataTypeFixedString::getDefault() const
+{
+    return String();
+}
 
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {

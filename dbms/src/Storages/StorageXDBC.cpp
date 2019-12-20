@@ -7,6 +7,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
@@ -30,7 +31,8 @@ StorageXDBC::StorageXDBC(
     const ColumnsDescription & columns_,
     const Context & context_,
     const BridgeHelperPtr bridge_helper_)
-    : IStorageURLBase(Poco::URI(), context_, database_name_, table_name_, IXDBCBridgeHelper::DEFAULT_FORMAT, columns_)
+    /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
+    : IStorageURLBase(Poco::URI(), context_, database_name_, table_name_, IXDBCBridgeHelper::DEFAULT_FORMAT, columns_, ConstraintsDescription{}, "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -104,7 +106,7 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
-        factory.registerStorage(name, [&name](const StorageFactory::Arguments & args)
+        factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
 

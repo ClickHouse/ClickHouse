@@ -29,6 +29,38 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
+{
+    const auto & table = tables[table_pos].table;
+    auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
+    auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
+
+    String short_name = identifier.shortName();
+    const Names & column_names = tables[table_pos].columns;
+    for (auto & known_name : column_names)
+    {
+        if (short_name == known_name)
+            return false;
+        if (nested1 && *nested1 == known_name)
+            return false;
+        if (nested2 && *nested2 == known_name)
+            return false;
+    }
+
+    const Names & hidden_names = tables[table_pos].hidden_columns;
+    for (auto & known_name : hidden_names)
+    {
+        if (short_name == known_name)
+            return false;
+        if (nested1 && *nested1 == known_name)
+            return false;
+        if (nested2 && *nested2 == known_name)
+            return false;
+    }
+
+    return !column_names.empty();
+}
+
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Do not go to FROM, JOIN, subqueries.
@@ -61,24 +93,27 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
-        size_t best_table_pos = 0;
-        size_t best_match = 0;
-        for (size_t i = 0; i < data.tables.size(); ++i)
-            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, data.tables[i].first))
-                if (match > best_match)
-                {
-                    best_match = match;
-                    best_table_pos = i;
-                }
+        String short_name = identifier.shortName();
+        size_t table_pos = 0;
+        bool allow_ambiguous = data.join_using_columns.count(short_name);
+        if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
+        {
+            if (data.unknownColumn(table_pos, identifier))
+            {
+                String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
+                throw Exception("There's no column '" + identifier.name + "' in table '" + table_name + "'",
+                                ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
 
-        if (best_match)
-            IdentifierSemantic::setMembership(identifier, best_table_pos + 1);
+            IdentifierSemantic::setMembership(identifier, table_pos);
 
-        /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && data.source_columns.count(identifier.shortName()))
-            IdentifierSemantic::setNeedLongName(identifier, true);
-        if (!data.tables.empty())
-            IdentifierSemantic::setColumnNormalName(identifier, data.tables[best_table_pos].first);
+            /// In case if column from the joined table are in source columns, change it's name to qualified.
+            auto & table = data.tables[table_pos].table;
+            if (table_pos && data.hasColumn(short_name))
+                IdentifierSemantic::setColumnLongName(identifier, table);
+            else
+                IdentifierSemantic::setColumnShortName(identifier, table);
+        }
     }
 }
 
@@ -105,7 +140,7 @@ void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const 
     DatabaseAndTableWithAlias db_and_table(ident);
 
     for (const auto & known_table : data.tables)
-        if (db_and_table.satisfies(known_table.first, true))
+        if (db_and_table.satisfies(known_table.table, true))
             return;
 
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -134,8 +169,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
         Visitor(data).visit(select.refHaving());
 }
 
-static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)
+static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table, const String & column_name,
+                          AsteriskSemantic::RevertedAliasesPtr aliases)
 {
+    String table_name = table.getQualifiedNamePrefix(false);
     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
 
     bool added = false;
@@ -191,14 +228,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         if (const auto * asterisk = child->as<ASTAsterisk>())
         {
             bool first_table = true;
-            for (const auto & [table, table_columns] : tables_with_columns)
+            for (const auto & table : tables_with_columns)
             {
-                for (const auto & column_name : table_columns)
+                for (const auto & column_name : table.columns)
                 {
                     if (first_table || !data.join_using_columns.count(column_name))
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*asterisk));
                     }
                 }
 
@@ -208,14 +244,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
         {
             bool first_table = true;
-            for (const auto & [table, table_columns] : tables_with_columns)
+            for (const auto & table : tables_with_columns)
             {
-                for (const auto & column_name : table_columns)
+                for (const auto & column_name : table.columns)
                 {
                     if (asterisk_pattern->isColumnMatching(column_name) && (first_table || !data.join_using_columns.count(column_name)))
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
                     }
                 }
 
@@ -226,14 +261,13 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
-            for (const auto & [table, table_columns] : tables_with_columns)
+            for (const auto & table : tables_with_columns)
             {
-                if (ident_db_and_name.satisfies(table, true))
+                if (ident_db_and_name.satisfies(table.table, true))
                 {
-                    for (const auto & column_name : table_columns)
+                    for (const auto & column_name : table.columns)
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        addIdentifier(node.children, table.table, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
                     }
                     break;
                 }
@@ -253,7 +287,7 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
-            if (auto opt_column = getIdentifierName(key))
+            if (auto opt_column = tryGetIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
             else if (key->as<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());
@@ -269,11 +303,13 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
 
 void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
 {
-    if (IdentifierSemantic::getColumnName(identifier) &&
-        IdentifierSemantic::getMembership(identifier))
+    if (IdentifierSemantic::getColumnName(identifier))
     {
-        ast = identifier.clone();
-        ast->as<ASTIdentifier>()->restoreCompoundName();
+        if (IdentifierSemantic::getMembership(identifier))
+        {
+            ast = identifier.clone();
+            ast->as<ASTIdentifier>()->restoreCompoundName();
+        }
     }
 }
 

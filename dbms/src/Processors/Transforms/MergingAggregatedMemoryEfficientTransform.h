@@ -14,7 +14,7 @@ namespace DB
 class GroupingAggregatedTransform : public IProcessor
 {
 public:
-    GroupingAggregatedTransform(const Block & header, size_t num_inputs, AggregatingTransformParamsPtr params);
+    GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
     /// Special setting: in case if single source can return several chunks with same bucket.

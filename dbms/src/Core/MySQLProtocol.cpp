@@ -1,10 +1,11 @@
+#include "MySQLProtocol.h"
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <common/logger_useful.h>
+
 #include <random>
 #include <sstream>
-#include "MySQLProtocol.h"
 
 
 namespace DB::MySQLProtocol
@@ -97,6 +98,71 @@ size_t getLengthEncodedNumberSize(uint64_t x)
 size_t getLengthEncodedStringSize(const String & s)
 {
     return getLengthEncodedNumberSize(s.size()) + s.size();
+}
+
+ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)
+{
+    ColumnType column_type;
+    int flags = 0;
+    switch (type_index)
+    {
+        case TypeIndex::UInt8:
+            column_type = ColumnType::MYSQL_TYPE_TINY;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            break;
+        case TypeIndex::UInt16:
+            column_type = ColumnType::MYSQL_TYPE_SHORT;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            break;
+        case TypeIndex::UInt32:
+            column_type = ColumnType::MYSQL_TYPE_LONG;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            break;
+        case TypeIndex::UInt64:
+            column_type = ColumnType::MYSQL_TYPE_LONGLONG;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
+            break;
+        case TypeIndex::Int8:
+            column_type = ColumnType::MYSQL_TYPE_TINY;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Int16:
+            column_type = ColumnType::MYSQL_TYPE_SHORT;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Int32:
+            column_type = ColumnType::MYSQL_TYPE_LONG;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Int64:
+            column_type = ColumnType::MYSQL_TYPE_LONGLONG;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Float32:
+            column_type = ColumnType::MYSQL_TYPE_FLOAT;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Float64:
+            column_type = ColumnType::MYSQL_TYPE_DOUBLE;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::Date:
+            column_type = ColumnType::MYSQL_TYPE_DATE;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::DateTime:
+            column_type = ColumnType::MYSQL_TYPE_DATETIME;
+            flags = ColumnDefinitionFlags::BINARY_FLAG;
+            break;
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+            column_type = ColumnType::MYSQL_TYPE_STRING;
+            break;
+        default:
+            column_type = ColumnType::MYSQL_TYPE_STRING;
+            break;
+    }
+    return ColumnDefinition(column_name, CharacterSet::binary, 0, column_type, flags, 0);
 }
 
 }

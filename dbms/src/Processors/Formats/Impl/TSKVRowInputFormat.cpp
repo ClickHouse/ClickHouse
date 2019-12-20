@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -15,16 +16,17 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in_, params), format_settings(format_settings), name_map(header.columns())
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
     skipBOMIfExists(in);
 
-    size_t num_columns = header.columns();
+    const auto & sample_block = getPort().getHeader();
+    size_t num_columns = sample_block.columns();
     for (size_t i = 0; i < num_columns; ++i)
-        name_map[header.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+        name_map[sample_block.getByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
 }
 
 
@@ -97,6 +99,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     read_columns.assign(num_columns, false);
+    seen_columns.assign(num_columns, false);
 
     if (unlikely(*in.position() == '\n'))
     {
@@ -117,7 +120,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 /// and quickly checking for the next expected field, instead of searching the hash table.
 
                 auto it = name_map.find(name_ref);
-                if (name_map.end() == it)
+                if (!it)
                 {
                     if (!format_settings.skip_unknown_fields)
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -128,14 +131,17 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 }
                 else
                 {
-                    index = it->getSecond();
+                    index = it->getMapped();
 
-                    if (read_columns[index])
+                    if (seen_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-                    read_columns[index] = true;
-
-                    header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
+                    seen_columns[index] = read_columns[index] = true;
+                    const auto & type = getPort().getHeader().getByPosition(index).type;
+                    if (format_settings.null_as_default && !type->isNullable())
+                        read_columns[index] = DataTypeNullable::deserializeTextEscaped(*columns[index], in, format_settings, type);
+                    else
+                        header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
                 }
             }
             else
@@ -165,7 +171,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 if (index >= 0)
                 {
                     columns[index]->popBack(1);
-                    read_columns[index] = false;
+                    seen_columns[index] = read_columns[index] = false;
                 }
 
                 throw Exception("Found garbage after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
@@ -175,7 +181,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
     /// Fill in the not met columns with default values.
     for (size_t i = 0; i < num_columns; ++i)
-        if (!read_columns[i])
+        if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set
@@ -191,6 +197,14 @@ void TSKVRowInputFormat::syncAfterError()
 }
 
 
+void TSKVRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    read_columns.clear();
+    seen_columns.clear();
+    name_buf.clear();
+}
+
 void registerInputFormatProcessorTSKV(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("TSKV", [](
@@ -200,7 +214,7 @@ void registerInputFormatProcessorTSKV(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowInputFormat>(buf, sample, params, settings);
+        return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
     });
 }
 

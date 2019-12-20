@@ -3,15 +3,13 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -64,34 +62,6 @@ private:
 };
 
 
-void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
-{
-    auto & aliases = data.aliases;
-    String & func_name = node.name;
-    ASTPtr & func_arguments = node.arguments;
-
-    /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
-    if (functionIsInOrGlobalInOperator(func_name))
-    {
-        auto & ast = func_arguments->children.at(1);
-        if (auto opt_name = getIdentifierName(ast))
-            if (!aliases.count(*opt_name))
-                setIdentifierSpecial(ast);
-    }
-
-    /// Special cases for count function.
-    String func_name_lowercase = Poco::toLower(func_name);
-    if (startsWith(func_name_lowercase, "count"))
-    {
-        /// Select implementation of countDistinct based on settings.
-        /// Important that it is done as query rewrite. It means rewritten query
-        ///  will be sent to remote servers during distributed query execution,
-        ///  and on all remote servers, function implementation will be same.
-        if (endsWith(func_name, "Distinct") && func_name_lowercase == "countdistinct")
-            func_name = data.settings.count_distinct_implementation;
-    }
-}
-
 void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 {
     auto & current_asts = data.current_asts;
@@ -102,8 +72,24 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name);
-    if (IdentifierSemantic::canBeAlias(node) && it_alias != data.aliases.end() && current_alias != node.name)
+    if (it_alias != data.aliases.end() && current_alias != node.name)
     {
+        if (!IdentifierSemantic::canBeAlias(node))
+        {
+            /// This means that column had qualified name, which was translated (so, canBeAlias() returns false).
+            /// But there is an alias with the same name. So, let's use original name for that column.
+            /// If alias wasn't set, use original column name as alias.
+            /// That helps to avoid result set with columns which have same names but different values.
+            if (node.alias.empty())
+            {
+                node.name.swap(node.alias);
+                node.restoreCompoundName();
+                node.name.swap(node.alias);
+            }
+
+            return;
+        }
+
         auto & alias_node = it_alias->second;
 
         /// Let's replace it with the corresponding tree node.
@@ -129,16 +115,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     }
 }
 
-/// mark table identifiers as 'not columns'
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
-    /// mark table Identifiers as 'not a column'
-    if (node.table_expression)
-    {
-        auto & expr = node.table_expression->as<ASTTableExpression &>();
-        setIdentifierSpecial(expr.database_and_table_name);
-    }
-
     /// normalize JOIN ON section
     if (node.table_join)
     {
@@ -162,7 +140,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
         if (needVisitChild(child))
             visit(child, data);
 
-#if 1 /// TODO: legacy?
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
     if (select.prewhere())
@@ -171,7 +148,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
         visit(select.refWhere(), data);
     if (select.having())
         visit(select.refHaving(), data);
-#endif
 }
 
 /// Don't go into subqueries.
@@ -228,9 +204,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             data.current_alias = my_alias;
     }
 
-    if (auto * node_func = ast->as<ASTFunction>())
-        visit(*node_func, ast, data);
-    else if (auto * node_id = ast->as<ASTIdentifier>())
+    if (auto * node_id = ast->as<ASTIdentifier>())
         visit(*node_id, ast, data);
     else if (auto * node_tables = ast->as<ASTTablesInSelectQueryElement>())
         visit(*node_tables, ast, data);

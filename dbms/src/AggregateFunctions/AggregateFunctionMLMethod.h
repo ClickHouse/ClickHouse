@@ -248,12 +248,12 @@ public:
     LinearModelData() {}
 
     LinearModelData(
-        Float64 learning_rate,
-        Float64 l2_reg_coef,
-        UInt64 param_num,
-        UInt64 batch_capacity,
-        std::shared_ptr<IGradientComputer> gradient_computer,
-        std::shared_ptr<IWeightsUpdater> weights_updater);
+        Float64 learning_rate_,
+        Float64 l2_reg_coef_,
+        UInt64 param_num_,
+        UInt64 batch_capacity_,
+        std::shared_ptr<IGradientComputer> gradient_computer_,
+        std::shared_ptr<IWeightsUpdater> weights_updater_);
 
     void add(const IColumn ** columns, size_t row_num);
 
@@ -304,21 +304,21 @@ public:
     String getName() const override { return Name::name; }
 
     explicit AggregateFunctionMLMethod(
-        UInt32 param_num,
-        std::unique_ptr<IGradientComputer> gradient_computer,
-        std::string weights_updater_name,
-        Float64 learning_rate,
-        Float64 l2_reg_coef,
-        UInt64 batch_size,
+        UInt32 param_num_,
+        std::unique_ptr<IGradientComputer> gradient_computer_,
+        std::string weights_updater_name_,
+        Float64 learning_rate_,
+        Float64 l2_reg_coef_,
+        UInt64 batch_size_,
         const DataTypes & arguments_types,
         const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
-        , param_num(param_num)
-        , learning_rate(learning_rate)
-        , l2_reg_coef(l2_reg_coef)
-        , batch_size(batch_size)
-        , gradient_computer(std::move(gradient_computer))
-        , weights_updater_name(std::move(weights_updater_name))
+        , param_num(param_num_)
+        , learning_rate(learning_rate_)
+        , l2_reg_coef(l2_reg_coef_)
+        , batch_size(batch_size_)
+        , gradient_computer(std::move(gradient_computer_))
+        , weights_updater_name(std::move(weights_updater_name_))
     {
     }
 

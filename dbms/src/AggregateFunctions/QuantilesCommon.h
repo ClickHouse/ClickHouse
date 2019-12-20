@@ -2,7 +2,6 @@
 
 #include <vector>
 
-#include <Core/Field.h>
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
 

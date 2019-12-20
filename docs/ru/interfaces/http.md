@@ -28,8 +28,12 @@ $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
+Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
-Date: Fri, 16 Nov 2012 19:21:50 GMT
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
+X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
 ```
@@ -76,31 +80,31 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 Создаём таблицу:
 
 ```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Используем привычный запрос INSERT для вставки данных:
 
 ```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Данные можно отправить отдельно от запроса:
 
 ```bash
-echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 Можно указать любой формат для данных. Формат Values - то же, что используется при записи INSERT INTO t VALUES:
 
 ```bash
-echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
+$ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 Можно вставить данные из tab-separated дампа, указав соответствующий формат:
 
 ```bash
-echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
+$ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Прочитаем содержимое таблицы. Данные выводятся в произвольном порядке из-за параллельной обработки запроса:
@@ -124,7 +128,7 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 Удаляем таблицу.
 
 ```bash
-echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.
@@ -141,11 +145,11 @@ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Примеры отправки данных со сжатием:
 
 ```bash
-#Отправка данных на сервер:
-curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+$ #Отправка данных на сервер:
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
 
-#Отправка данных клиенту:
-echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+$ #Отправка данных клиенту:
+$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
 !!! note "Примечание"
@@ -174,13 +178,13 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 1. С использованием HTTP Basic Authentification. Пример:
 
 ```bash
-echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
+$ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
 2. В параметрах URL user и password. Пример:
 
 ```bash
-echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+$ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
@@ -208,7 +212,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 Прогресс выполнения запроса можно отслеживать с помощью заголовков ответа `X-ClickHouse-Progress`. Для этого включите [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Пример последовательности заголовков:
 
-```
+```text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
 X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
 X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
@@ -240,10 +244,20 @@ HTTP интерфейс позволяет передать внешние да�
 Пример:
 
 ```bash
-curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
+$ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
 Буферизация позволяет избежать ситуации когда код ответа и HTTP-заголовки были отправлены клиенту, после чего возникла ошибка выполнения запроса. В такой ситуации сообщение об ошибке записывается в конце тела ответа, и на стороне клиента ошибка может быть обнаружена только на этапе парсинга.
+
+### Запросы с параметрами {#cli-queries-with-parameters}
+
+Можно создать запрос с параметрами и передать для них значения из соответствующих параметров HTTP-запроса. Дополнительную информацию смотрите в [Запросы с параметрами для консольного клиента](cli.md#cli-queries-with-parameters).
+
+### Пример
+
+```bash
+$ curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/http_interface/) <!--hide-->
 

@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include <common/unaligned.h>
 
@@ -81,6 +82,8 @@ namespace
         template <typename T>
         static bool isZero(const T &, const State & /*state*/)
         {
+            /// Careful: apparently this uses SFINAE to redefine isZero for all types
+            /// except the IndexType, for which the default ZeroTraits::isZero is used.
             static_assert(!std::is_same_v<typename std::decay<T>::type, typename std::decay<IndexType>::type>);
             return false;
         }
@@ -113,7 +116,7 @@ namespace
                 return (*state.saved_hash_column)[index];
             else
             {
-                using ValueType = typename ColumnType::value_type;
+                using ValueType = typename ColumnType::ValueType;
                 ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
                 return DefaultHash<ValueType>()(value);
             }
@@ -121,19 +124,93 @@ namespace
     };
 
 
+    /**
+      * ReverseIndexHashTableBase implements a special hash table interface for
+      * reverse index.
+      *
+      * The following requirements are different compared to a plain hash table:
+      *
+      * 1) Provide public access to 'hash table state' that contains
+      * additional data needed to calculate cell hashes.
+      *
+      * 2) Support emplace() and find() with a Key different from the resulting
+      * hash table key. This means emplace() accepts a different kind of object
+      * as a key, and then the real key can be read from the returned cell iterator.
+      *
+      * These requirements are unique to ReverseIndex and are in conflict with
+      * supporting hash tables that use alternative key storage, such as FixedHashMap
+      * or StringHashMap. Therefore, we implement an interface for ReverseIndex
+      * separately.
+      */
     template <typename Key, typename Cell, typename Hash>
-    class HashTableWithPublicState : public HashTable<Key, Cell, Hash, HashTableGrower<>, HashTableAllocator>
+    class ReverseIndexHashTableBase : public HashTable<Key, Cell, Hash, HashTableGrower<>, HashTableAllocator>
     {
         using State = typename Cell::State;
         using Base = HashTable<Key, Cell, Hash, HashTableGrower<>, HashTableAllocator>;
 
     public:
         using Base::Base;
+        using iterator = typename Base::iterator;
+        using LookupResult = typename Base::LookupResult;
         State & getState() { return *this; }
+
+
+        template <typename ObjectToCompareWith>
+        size_t ALWAYS_INLINE reverseIndexFindCell(const ObjectToCompareWith & x,
+            size_t hash_value, size_t place_value) const
+        {
+            while (!this->buf[place_value].isZero(*this)
+                   && !this->buf[place_value].keyEquals(x, hash_value, *this))
+            {
+                place_value = this->grower.next(place_value);
+            }
+
+            return place_value;
+        }
+
+        template <typename ObjectToCompareWith>
+        void ALWAYS_INLINE reverseIndexEmplaceNonZero(const Key & key, LookupResult & it,
+            bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
+        {
+            size_t place_value = reverseIndexFindCell(object, hash_value,
+                  this->grower.place(hash_value));
+            // emplaceNonZeroImpl() might need to re-find the cell if the table grows,
+            // but it will find it correctly by the key alone, so we don't have to
+            // pass it the 'object'.
+            this->emplaceNonZeroImpl(place_value, key, it, inserted, hash_value);
+        }
+
+        /// Searches position by object.
+        template <typename ObjectToCompareWith>
+        void ALWAYS_INLINE reverseIndexEmplace(Key key, iterator & it, bool & inserted,
+            size_t hash_value, const ObjectToCompareWith& object)
+        {
+            LookupResult impl_it = nullptr;
+
+            if (!this->emplaceIfZero(key, impl_it, inserted, hash_value))
+            {
+                reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
+            }
+            assert(impl_it != nullptr);
+            it = iterator(this, impl_it);
+        }
+
+        template <typename ObjectToCompareWith>
+        iterator ALWAYS_INLINE reverseIndexFind(ObjectToCompareWith x, size_t hash_value)
+        {
+            if (Cell::isZero(x, *this))
+                return this->hasZero() ? this->iteratorToZero() : this->end();
+
+            size_t place_value = reverseIndexFindCell(x, hash_value,
+                                    this->grower.place(hash_value));
+            return !this->buf[place_value].isZero(*this)
+                    ? iterator(this, &this->buf[place_value])
+                    : this->end();
+        }
     };
 
     template <typename IndexType, typename ColumnType, bool has_base_index>
-    class ReverseIndexStringHashTable : public HashTableWithPublicState<
+    class ReverseIndexStringHashTable : public ReverseIndexHashTableBase<
             IndexType,
             ReverseIndexHashTableCell<
                     IndexType,
@@ -144,7 +221,7 @@ namespace
                     has_base_index>,
             ReverseIndexHash>
     {
-        using Base = HashTableWithPublicState<
+        using Base = ReverseIndexHashTableBase<
                 IndexType,
                 ReverseIndexHashTableCell<
                         IndexType,
@@ -166,7 +243,7 @@ namespace
     };
 
     template <typename IndexType, typename ColumnType, bool has_base_index>
-    class ReverseIndexNumberHashTable : public HashTableWithPublicState<
+    class ReverseIndexNumberHashTable : public ReverseIndexHashTableBase<
             IndexType,
             ReverseIndexHashTableCell<
                     IndexType,
@@ -177,7 +254,7 @@ namespace
                     has_base_index>,
             ReverseIndexHash>
     {
-        using Base = HashTableWithPublicState<
+        using Base = ReverseIndexHashTableBase<
                 IndexType,
                 ReverseIndexHashTableCell<
                         IndexType,
@@ -235,8 +312,8 @@ template <typename IndexType, typename ColumnType>
 class ReverseIndex
 {
 public:
-    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip, UInt64 base_index)
-            : num_prefix_rows_to_skip(num_prefix_rows_to_skip), base_index(base_index), saved_hash_ptr(nullptr) {}
+    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
+            : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -290,7 +367,7 @@ private:
     {
         if constexpr (is_numeric_column)
         {
-            using ValueType = typename ColumnType::value_type;
+            using ValueType = typename ColumnType::ValueType;
             ValueType value = unalignedLoad<ValueType>(ref.data);
             return DefaultHash<ValueType>()(value);
         }
@@ -356,7 +433,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         else
             hash = getHash(column->getDataAt(row));
 
-        index->emplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
+        index->reverseIndexEmplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
 
         if (!inserted)
             throw Exception("Duplicating keys found in ReverseIndex.", ErrorCodes::LOGICAL_ERROR);
@@ -401,7 +478,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
     else
         column->insertData(data.data, data.size);
 
-    index->emplace(num_rows + base_index, iterator, inserted, hash, data);
+    index->reverseIndexEmplace(num_rows + base_index, iterator, inserted, hash, data);
 
     if constexpr (use_saved_hash)
     {
@@ -427,7 +504,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
     IteratorType iterator;
 
     auto hash = getHash(data);
-    iterator = index->find(data, hash);
+    iterator = index->reverseIndexFind(data, hash);
 
     return iterator == index->end() ? size() + base_index : iterator->getValue();
 }

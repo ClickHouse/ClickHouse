@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_DROPPED;
 }
 
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
@@ -54,15 +55,15 @@ class ColumnsBlockInputStream : public IBlockInputStream
 {
 public:
     ColumnsBlockInputStream(
-        const std::vector<UInt8> & columns_mask,
-        const Block & header,
-        UInt64 max_block_size,
-        ColumnPtr databases,
-        ColumnPtr tables,
-        Storages storages,
+        const std::vector<UInt8> & columns_mask_,
+        const Block & header_,
+        UInt64 max_block_size_,
+        ColumnPtr databases_,
+        ColumnPtr tables_,
+        Storages storages_,
         String query_id_)
-        : columns_mask(columns_mask), header(header), max_block_size(max_block_size)
-        , databases(databases), tables(tables), storages(std::move(storages))
+        : columns_mask(columns_mask_), header(header_), max_block_size(max_block_size_)
+        , databases(databases_), tables(tables_), storages(std::move(storages_))
         , query_id(std::move(query_id_)), total_tables(tables->size())
     {
     }
@@ -126,6 +127,9 @@ protected:
 
             for (const auto & column : columns)
             {
+                if (column.is_virtual)
+                    continue;
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 
@@ -260,7 +264,11 @@ BlockInputStreams StorageSystemColumns::read(
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            if (context.hasDatabaseAccessRights(database.first))
+            /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
+            /// This should be documented.
+
+            if (context.hasDatabaseAccessRights(database.first)
+                && database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
 
@@ -284,7 +292,7 @@ BlockInputStreams StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesWithDictionaryTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 const String & table_name = iterator->name();
                 storages.emplace(std::piecewise_construct,

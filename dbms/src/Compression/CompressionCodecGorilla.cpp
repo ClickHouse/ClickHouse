@@ -78,11 +78,12 @@ binary_value_info getLeadingAndTrailingBits(const T & value)
     const UInt8 lz = getLeadingZeroBits(value);
     const UInt8 tz = getTrailingZeroBits(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
+
     return binary_value_info{lz, data_size, tz};
 }
 
 template <typename T>
-UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
+UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(sizeof(T));
     // -1 since there must be at least 1 non-zero bit.
@@ -91,6 +92,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source_size % sizeof(T) != 0)
         throw Exception("Cannot compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_end = dest + dest_size;
 
     const UInt32 items_count = source_size / sizeof(T);
 
@@ -110,7 +112,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         dest += sizeof(prev_value);
     }
 
-    WriteBuffer buffer(dest, getCompressedDataSize(sizeof(T), source_size - sizeof(items_count) - sizeof(prev_value)));
+    WriteBuffer buffer(dest, dest_end - dest);
     BitWriter writer(buffer);
 
     while (source < source_end)
@@ -262,33 +264,41 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
 {
     UInt8 bytes_to_skip = source_size % data_bytes_size;
     dest[0] = data_bytes_size;
-    dest[1] = bytes_to_skip;
+    dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    UInt32 compressed_size = 0;
+    UInt32 result_size = 0;
+
+    const UInt32 compressed_size = getMaxCompressedDataSize(source_size);
     switch (data_bytes_size)
     {
     case 1:
-        compressed_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
     case 2:
-        compressed_size = compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt16>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
     case 4:
-        compressed_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
     case 8:
-        compressed_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
+        result_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
     }
 
-    return 1 + 1 + compressed_size;
+    return 1 + 1 + result_size;
 }
 
-void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 /* uncompressed_size */) const
+void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    if (source_size < 2)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
     UInt8 bytes_size = source[0];
-    UInt8 bytes_to_skip = source[1];
+    UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+
+    if (UInt32(2 + bytes_to_skip) > source_size)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;

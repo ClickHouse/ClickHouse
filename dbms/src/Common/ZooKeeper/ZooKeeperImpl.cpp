@@ -264,24 +264,24 @@ using namespace DB;
 
 /// Assuming we are at little endian.
 
-void write(int64_t x, WriteBuffer & out)
+static void write(int64_t x, WriteBuffer & out)
 {
     x = __builtin_bswap64(x);
     writeBinary(x, out);
 }
 
-void write(int32_t x, WriteBuffer & out)
+static void write(int32_t x, WriteBuffer & out)
 {
     x = __builtin_bswap32(x);
     writeBinary(x, out);
 }
 
-void write(bool x, WriteBuffer & out)
+static void write(bool x, WriteBuffer & out)
 {
     writeBinary(x, out);
 }
 
-void write(const String & s, WriteBuffer & out)
+static void write(const String & s, WriteBuffer & out)
 {
     write(int32_t(s.size()), out);
     out.write(s.data(), s.size());
@@ -300,7 +300,7 @@ template <typename T> void write(const std::vector<T> & arr, WriteBuffer & out)
         write(elem, out);
 }
 
-void write(const ACL & acl, WriteBuffer & out)
+static void write(const ACL & acl, WriteBuffer & out)
 {
     write(acl.permissions, out);
     write(acl.scheme, out);
@@ -308,24 +308,24 @@ void write(const ACL & acl, WriteBuffer & out)
 }
 
 
-void read(int64_t & x, ReadBuffer & in)
+static void read(int64_t & x, ReadBuffer & in)
 {
     readBinary(x, in);
     x = __builtin_bswap64(x);
 }
 
-void read(int32_t & x, ReadBuffer & in)
+static void read(int32_t & x, ReadBuffer & in)
 {
     readBinary(x, in);
     x = __builtin_bswap32(x);
 }
 
-void read(bool & x, ReadBuffer & in)
+static void read(bool & x, ReadBuffer & in)
 {
     readBinary(x, in);
 }
 
-void read(String & s, ReadBuffer & in)
+static void read(String & s, ReadBuffer & in)
 {
     int32_t size = 0;
     read(size, in);
@@ -356,7 +356,7 @@ template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
     in.read(s.data(), N);
 }
 
-void read(Stat & stat, ReadBuffer & in)
+static void read(Stat & stat, ReadBuffer & in)
 {
     read(stat.czxid, in);
     read(stat.mzxid, in);
@@ -758,17 +758,17 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
         {
             ZooKeeper::OpNum op_num;
             bool done;
-            int32_t error;
+            int32_t error_;
 
             Coordination::read(op_num, in);
             Coordination::read(done, in);
-            Coordination::read(error, in);
+            Coordination::read(error_, in);
 
             if (!done)
                 throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
             if (op_num != -1)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error != -1)
+            if (error_ != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
         }
     }
@@ -821,12 +821,12 @@ ZooKeeper::ZooKeeper(
     const String & root_path_,
     const String & auth_scheme,
     const String & auth_data,
-    Poco::Timespan session_timeout,
+    Poco::Timespan session_timeout_,
     Poco::Timespan connection_timeout,
-    Poco::Timespan operation_timeout)
+    Poco::Timespan operation_timeout_)
     : root_path(root_path_),
-    session_timeout(session_timeout),
-    operation_timeout(std::min(operation_timeout, session_timeout))
+    session_timeout(session_timeout_),
+    operation_timeout(std::min(operation_timeout_, session_timeout_))
 {
     if (!root_path.empty())
     {
@@ -1387,14 +1387,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             if (info.callback)
             {
                 ResponsePtr response = info.request->makeResponse();
-                response->error = ZSESSIONEXPIRED;
-                try
+                if (response)
                 {
-                    info.callback(*response);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    response->error = ZSESSIONEXPIRED;
+                    try
+                    {
+                        info.callback(*response);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                    }
                 }
             }
             if (info.watch)

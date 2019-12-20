@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
-
+#include <Common/config.h>
+#include <common/config_common.h>
 #include <signal.h>
 #include <time.h>
 
@@ -35,7 +36,7 @@ template <typename ProfilerImpl>
 class QueryProfilerBase
 {
 public:
-    QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal);
+    QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
     ~QueryProfilerBase();
 
 private:
@@ -43,8 +44,10 @@ private:
 
     Poco::Logger * log;
 
+#if USE_UNWIND
     /// Timer id from timer_create(2)
     timer_t timer_id = nullptr;
+#endif
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;

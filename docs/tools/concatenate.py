@@ -11,11 +11,8 @@ def concatenate(lang, docs_path, single_page_file):
     az_re = re.compile(r'[a-z]')
 
     with open(proj_config) as cfg_file:
-        files_to_concatenate = []
-        for l in cfg_file:
-            if '.md' in l and 'single_page' not in l:
-                path = (l[l.index(':') + 1:]).strip(" '\n")
-                files_to_concatenate.append(path)
+        files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file 
+                        if '.md' in l and 'single_page' not in l]
 
     logging.info(
         str(len(files_to_concatenate)) +
@@ -23,6 +20,8 @@ def concatenate(lang, docs_path, single_page_file):
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
 
     for path in files_to_concatenate:
+        if path.endswith('introduction/info.md'):
+            continue
         try:
             with open(os.path.join(lang_path, path)) as f:
                 anchors = set()

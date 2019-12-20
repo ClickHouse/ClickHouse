@@ -26,6 +26,7 @@ def main():
         'bootstrap_servers': f'{args.server}:{args.port}',
         'client_id': args.client,
         'group_id': args.group,
+        'auto_offset_reset': 'earliest',
     }
     client = kafka.KafkaConsumer(**config)
 
@@ -33,6 +34,7 @@ def main():
     pprint(client.poll(10000))
     client.unsubscribe()
     client.close()
+    return 0
 
 
 if __name__ == "__main__":

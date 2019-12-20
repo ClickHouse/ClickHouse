@@ -44,11 +44,12 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     , log(&Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
-    check_period_ms = storage.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
+    const auto storage_settings = storage.getSettings();
+    check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
-    if (check_period_ms > static_cast<Int64>(storage.settings.check_delay_period) * 1000)
-        check_period_ms = storage.settings.check_delay_period * 1000;
+    if (check_period_ms > static_cast<Int64>(storage_settings->check_delay_period) * 1000)
+        check_period_ms = storage_settings->check_delay_period * 1000;
 
     task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
@@ -121,7 +122,8 @@ void ReplicatedMergeTreeRestartingThread::run()
         }
 
         time_t current_time = time(nullptr);
-        if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.settings.check_delay_period))
+        const auto storage_settings = storage.getSettings();
+        if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage_settings->check_delay_period))
         {
             /// Find out lag of replicas.
             time_t absolute_delay = 0;
@@ -136,10 +138,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             /// We give up leadership if the relative lag is greater than threshold.
             if (storage.is_leader
-                && relative_delay > static_cast<time_t>(storage.settings.min_relative_delay_to_yield_leadership))
+                && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
             {
                 LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
-                    << storage.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+                    << storage_settings->min_relative_delay_to_yield_leadership << "). Will yield leadership.");
 
                 ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
@@ -169,6 +171,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         activateReplica();
 
         const auto & zookeeper = storage.getZooKeeper();
+        const auto storage_settings = storage.getSettings();
 
         storage.cloneReplicaIfNeeded(zookeeper);
 
@@ -181,7 +184,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         updateQuorumIfWeHavePart();
 
-        if (storage.settings.replicated_can_become_leader)
+        if (storage_settings->replicated_can_become_leader)
             storage.enterLeaderElection();
         else
             LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
@@ -211,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -219,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
     }

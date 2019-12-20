@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
@@ -20,6 +21,7 @@ class StorageSystemDetachedParts :
     public ext::shared_ptr_helper<StorageSystemDetachedParts>,
     public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
     std::string getTableName() const override { return "detached_parts"; }
@@ -31,12 +33,13 @@ protected:
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
-            {"partition_id", std::make_shared<DataTypeString>()},
+            {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
             {"name", std::make_shared<DataTypeString>()},
-            {"reason", std::make_shared<DataTypeString>()},
-            {"min_block_number", std::make_shared<DataTypeInt64>()},
-            {"max_block_number", std::make_shared<DataTypeInt64>()},
-            {"level", std::make_shared<DataTypeUInt32>()}
+            {"disk", std::make_shared<DataTypeString>()},
+            {"reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+            {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+            {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
         }});
     }
 
@@ -52,27 +55,28 @@ protected:
 
         /// Create the result.
         Block block = getSampleBlock();
-        MutableColumns columns = block.cloneEmptyColumns();
+        MutableColumns new_columns = block.cloneEmptyColumns();
 
         while (StoragesInfo info = stream.next())
         {
             const auto parts = info.data->getDetachedParts();
             for (auto & p : parts)
             {
-                int i = 0;
-                columns[i++]->insert(info.database);
-                columns[i++]->insert(info.table);
-                columns[i++]->insert(p.partition_id);
-                columns[i++]->insert(p.getPartName());
-                columns[i++]->insert(p.prefix);
-                columns[i++]->insert(p.min_block);
-                columns[i++]->insert(p.max_block);
-                columns[i++]->insert(p.level);
+                size_t i = 0;
+                new_columns[i++]->insert(info.database);
+                new_columns[i++]->insert(info.table);
+                new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
+                new_columns[i++]->insert(p.dir_name);
+                new_columns[i++]->insert(p.disk);
+                new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
+                new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.max_block : Field());
+                new_columns[i++]->insert(p.valid_name ? p.level : Field());
             }
         }
 
         return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
-             block.cloneWithColumns(std::move(columns))));
+             block.cloneWithColumns(std::move(new_columns))));
     }
 };
 

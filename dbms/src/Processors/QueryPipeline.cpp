@@ -14,7 +14,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
@@ -48,35 +47,41 @@ void QueryPipeline::checkSource(const ProcessorPtr & source, bool can_have_total
                         toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void QueryPipeline::init(Processors sources)
+void QueryPipeline::init(Pipe pipe)
+{
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe));
+    init(std::move(pipes));
+}
+
+void QueryPipeline::init(Pipes pipes)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 
-    if (sources.empty())
-        throw Exception("Can't initialize pipeline with empty source list.", ErrorCodes::LOGICAL_ERROR);
+    if (pipes.empty())
+        throw Exception("Can't initialize pipeline with empty pipes list.", ErrorCodes::LOGICAL_ERROR);
 
     std::vector<OutputPort *> totals;
 
-    for (auto & source : sources)
+    for (auto & pipe : pipes)
     {
-        checkSource(source, true);
-
-        auto & header = source->getOutputs().front().getHeader();
+        auto & header = pipe.getHeader();
 
         if (current_header)
             assertBlocksHaveEqualStructure(current_header, header, "QueryPipeline");
         else
             current_header = header;
 
-        if (source->getOutputs().size() > 1)
+        if (auto * totals_port = pipe.getTotalsPort())
         {
-            assertBlocksHaveEqualStructure(current_header, source->getOutputs().back().getHeader(), "QueryPipeline");
-            totals.emplace_back(&source->getOutputs().back());
+            assertBlocksHaveEqualStructure(current_header, totals_port->getHeader(), "QueryPipeline");
+            totals.emplace_back(totals_port);
         }
 
-        streams.emplace_back(&source->getOutputs().front());
-        processors.emplace_back(std::move(source));
+        streams.emplace_back(&pipe.getPort());
+        auto cur_processors = std::move(pipe).detachProcessors();
+        processors.insert(processors.end(), cur_processors.begin(), cur_processors.end());
     }
 
     if (!totals.empty())
@@ -115,7 +120,7 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
     Block header;
 
-    auto add_transform = [&](OutputPort *& stream, StreamType stream_type)
+    auto add_transform = [&](OutputPort *& stream, StreamType stream_type, size_t stream_num [[maybe_unused]] = IProcessor::NO_STREAM)
     {
         if (!stream)
             return;
@@ -148,14 +153,17 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         if (transform)
         {
+//            if (stream_type == StreamType::Main)
+//                transform->setStream(stream_num);
+
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
             processors.emplace_back(std::move(transform));
         }
     };
 
-    for (auto & stream : streams)
-        add_transform(stream, StreamType::Main);
+    for (size_t stream_num = 0; stream_num < streams.size(); ++stream_num)
+        add_transform(streams[stream_num], StreamType::Main, stream_num);
 
     add_transform(delayed_stream_port, StreamType::Main);
     add_transform(totals_having_port, StreamType::Totals);
@@ -247,12 +255,12 @@ void QueryPipeline::concatDelayedStream()
     delayed_stream_port = nullptr;
 }
 
-void QueryPipeline::resize(size_t num_streams)
+void QueryPipeline::resize(size_t num_streams, bool force)
 {
     checkInitialized();
     concatDelayedStream();
 
-    if (num_streams == getNumStreams())
+    if (!force && num_streams == getNumStreams())
         return;
 
     has_resize = true;
@@ -478,6 +486,10 @@ void QueryPipeline::unitePipelines(
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
         streams.insert(streams.end(), pipeline.streams.begin(), pipeline.streams.end());
+
+        table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
+        interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
+        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
     }
 
     if (!extremes.empty())
@@ -511,8 +523,8 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & processor : processors)
     {
-        if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
-            source->getStream().setProgressCallback(callback);
+        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source->setProgressCallback(callback);
 
         if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProgressCallback(callback);
@@ -523,8 +535,8 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     for (auto & processor : processors)
     {
-        if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
-            source->getStream().setProcessListElement(elem);
+        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source->setProcessListElement(elem);
 
         if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
             source->setProcessListElement(elem);

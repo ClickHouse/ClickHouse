@@ -41,9 +41,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 start_number, UInt64 step, UInt64 block_size, unsigned sleep_useconds)
+    NumbersSource(UInt64 start_number, UInt64 step_, UInt64 block_size_, unsigned sleep_useconds_)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              current_number(start_number), step(step), block_size(block_size), sleep_useconds(sleep_useconds)
+              current_number(start_number), step(step_), block_size(block_size_), sleep_useconds(sleep_useconds_)
     {
     }
 
@@ -72,9 +72,9 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix, Block header)
+    PrintSink(String prefix_, Block header)
             : ISink(std::move(header)),
-              prefix(std::move(prefix))
+              prefix(std::move(prefix_))
     {
     }
 
@@ -141,7 +141,7 @@ private:
                 values[column_num] = chunk.getColumns()[column_num]->getUInt(row_num);
             }
 
-            if (3 * values[0] != values[1])
+            if (values.size() >= 2 && 3 * values[0] != values[1])
                 throw Exception("Check Failed. Got (" + toString(values[0]) + ", " + toString(values[1]) + ") in result,"
                                + "but "  + toString(values[0]) + " * 3 !=  " + toString(values[1]),
                                ErrorCodes::LOGICAL_ERROR);
@@ -224,14 +224,13 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
             );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
@@ -298,14 +297,13 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
         );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);

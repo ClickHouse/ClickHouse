@@ -4,7 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <cassert>
 
 
 namespace DB
@@ -546,11 +548,13 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
+    size_t left_args_count = 1;
     const auto * left_arg_tuple = left_arg->as<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
-        for (size_t i = 0; i < tuple_elements.size(); ++i)
+        left_args_count = tuple_elements.size();
+        for (size_t i = 0; i < left_args_count; ++i)
             get_key_tuple_position_mapping(tuple_elements[i], i);
     }
     else
@@ -576,6 +580,10 @@ bool KeyCondition::tryPrepareSetIndex(
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
         return false;
+
+    prepared_set->checkColumnsNumber(left_args_count);
+    for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
@@ -880,7 +888,7 @@ String KeyCondition::toString() const
   */
 
 template <typename F>
-static BoolMask forAnyParallelogram(
+static bool forAnyParallelogram(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
@@ -936,15 +944,16 @@ static BoolMask forAnyParallelogram(
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         parallelogram[i] = Range();
 
-    BoolMask result(false, false);
-    result = result | callback(parallelogram);
+    if (callback(parallelogram))
+        return true;
 
     /// [x1]       x [y1 .. +inf)
 
     if (left_bounded)
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback);
+        if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
+            return true;
     }
 
     /// [x2]       x (-inf .. y2]
@@ -952,14 +961,15 @@ static BoolMask forAnyParallelogram(
     if (right_bounded)
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback);
+        if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
+            return true;
     }
 
-    return result;
+    return false;
 }
 
 
-BoolMask KeyCondition::checkInRange(
+bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
     const Field * left_key,
     const Field * right_key,
@@ -985,7 +995,7 @@ BoolMask KeyCondition::checkInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -996,11 +1006,11 @@ BoolMask KeyCondition::checkInRange(
     });
 }
 
-
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type)
+    DataTypePtr current_type
+)
 {
     for (auto & func : functions)
     {
@@ -1033,7 +1043,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
+bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -1081,16 +1091,20 @@ BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelo
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
+            assert(!rpn_stack.empty());
+
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1098,6 +1112,8 @@ BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelo
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1116,23 +1132,22 @@ BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInParallelogram", ErrorCodes::LOGICAL_ERROR);
 
-    return rpn_stack[0];
+    return rpn_stack[0].can_be_true;
 }
 
 
-BoolMask KeyCondition::checkInRange(
+bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
 {
-    return checkInRange(used_key_size, left_key, right_key, data_types, true);
+    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
 }
 
-
-BoolMask KeyCondition::getMaskAfter(
+bool KeyCondition::mayBeTrueAfter(
     size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
 {
-    return checkInRange(used_key_size, left_key, nullptr, data_types, false);
+    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
 }
 
 
@@ -1216,6 +1231,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1223,6 +1240,8 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
+            assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -1231,6 +1250,9 @@ bool KeyCondition::alwaysUnknownOrTrue() const
         else
             throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::alwaysUnknownOrTrue", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0];
 }

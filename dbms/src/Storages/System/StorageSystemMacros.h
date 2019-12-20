@@ -15,6 +15,7 @@ class Context;
   */
 class StorageSystemMacros : public ext::shared_ptr_helper<StorageSystemMacros>, public IStorageSystemOneBlock<StorageSystemMacros>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemMacros>;
 public:
     std::string getName() const override { return "SystemMacros"; }
 

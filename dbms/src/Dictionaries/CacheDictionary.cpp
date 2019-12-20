@@ -2,18 +2,14 @@
 
 #include <functional>
 #include <memory>
-#include <sstream>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
-#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include "CacheDictionary.inc.h"
@@ -61,16 +57,17 @@ inline size_t CacheDictionary::getCellIdx(const Key id) const
 
 
 CacheDictionary::CacheDictionary(
-    const std::string & name,
-    const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime,
-    const size_t size)
-    : name{name}
-    , dict_struct(dict_struct)
-    , source_ptr{std::move(source_ptr)}
-    , dict_lifetime(dict_lifetime)
-    , size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))}
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    const size_t size_)
+    : name{name_}
+    , dict_struct(dict_struct_)
+    , source_ptr{std::move(source_ptr_)}
+    , dict_lifetime(dict_lifetime_)
+    , log(&Logger::get("ExternalDictionaries"))
+    , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
     , rnd_engine(randomSeed())
@@ -207,7 +204,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -218,7 +215,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -227,7 +224,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -354,7 +351,7 @@ void CacheDictionary::createAttributes()
         {
             hierarchical_attribute = &attributes.back();
 
-            if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
+            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
@@ -367,7 +364,7 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
     switch (type)
     {
 #define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::TYPE: \
+    case AttributeUnderlyingType::ut##TYPE: \
         attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
         attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
         bytes_allocated += size * sizeof(TYPE); \
@@ -387,7 +384,7 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
         DISPATCH(Float32)
         DISPATCH(Float64)
 #undef DISPATCH
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             attr.null_values = null_value.get<String>();
             attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
             bytes_allocated += size * sizeof(StringRef);
@@ -403,51 +400,51 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = std::get<UInt128>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values);
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = std::get<Decimal32>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = std::get<Decimal64>(attribute.null_values);
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = std::get<Decimal128>(attribute.null_values);
             break;
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             const auto & null_value_ref = std::get<String>(attribute.null_values);
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
@@ -469,51 +466,51 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>();
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>();
             break;
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
             auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
@@ -575,6 +572,12 @@ BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_na
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
 }
 
+std::exception_ptr CacheDictionary::getLastException() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+    return last_exception;
+}
+
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
@@ -604,7 +607,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("cache", create_layout);
+    factory.registerLayout("cache", create_layout, false);
 }
 
 

@@ -6,9 +6,9 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info)
-    : ISource(stream_->getHeader())
-    , force_add_aggregating_info(force_add_aggregating_info)
+SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
+    : ISourceWithProgress(stream_->getHeader())
+    , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
     auto & sample = getPort().getHeader();
@@ -115,15 +115,20 @@ Chunk SourceFromInputStream::generate()
 
         if (auto totals_block = stream->getTotals())
         {
-            totals.setColumns(totals_block.getColumns(), 1);
-            has_totals = true;
+            if (totals_block.rows() == 1) /// Sometimes we can get empty totals. Skip it.
+            {
+                totals.setColumns(totals_block.getColumns(), 1);
+                has_totals = true;
+            }
         }
 
         is_stream_finished = true;
         return {};
     }
 
+#ifndef NDEBUG
     assertBlocksHaveEqualStructure(getPort().getHeader(), block, "SourceFromInputStream");
+#endif
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);

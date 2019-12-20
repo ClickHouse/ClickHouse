@@ -5,13 +5,13 @@
 Всегда используйте `performance` scaling governor. `ondemand` scaling governor работает намного хуже при постоянно высоком спросе.
 
 ```bash
-echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## Ограничение CPU
 
 Процессоры могут перегреваться. С помощью `dmesg` можно увидеть, если тактовая частота процессора была ограничена из-за перегрева.
-Также ограничение может устанавливаться снаружи на уровне датацентра. С помощью `turbostat` можно за этим наблюдать под нагрузкой.
+Также ограничение может устанавливаться снаружи на уровне дата-центра. С помощью `turbostat` можно за этим наблюдать под нагрузкой.
 
 ## Оперативная память
 
@@ -21,8 +21,8 @@ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gover
 
 Не выключайте overcommit. Значение `cat /proc/sys/vm/overcommit_memory` должно быть 0 or 1. Выполните:
 
-```
-echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
 ## Huge pages
@@ -30,7 +30,7 @@ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Механизм прозрачных huge pages нужно отключить. Он мешает работе аллокаторов памяти, что приводит к значительной деградации производительности.
 
 ```bash
-echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 С помощью `perf top` можно наблюдать за временем, проведенном в ядре операционной системы для управления памятью.
@@ -55,7 +55,7 @@ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 При использовании RAID-5, RAID-6 или RAID-50, нужно всегда увеличивать stripe_cache_size, так как значение по умолчанию выбрано не самым удачным образом.
 
 ```bash
-echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
+$ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
 Точное число стоит вычислять из числа устройств и размер блока по формуле: `2 * num_devices * chunk_size_in_bytes / 4096`.
@@ -164,7 +164,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Версия Java:
 
-```
+```text
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -212,7 +212,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```
+```text
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]

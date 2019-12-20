@@ -3,6 +3,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
@@ -32,8 +34,8 @@ namespace
         auto & data = res_col->getData();
 
         data.resize(hash_map.size());
-        for (auto val : hash_map)
-            data[val.getSecond()] = val.getFirst();
+        for (const auto & val : hash_map)
+            data[val.getMapped()] = val.getKey();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -244,7 +246,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    const auto & low_cardinality_column = static_cast<const ColumnLowCardinality &>(rhs);
+    const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
@@ -360,12 +362,12 @@ bool ColumnLowCardinality::containsNull() const
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
-ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(MutableColumnPtr && positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
 
-ColumnLowCardinality::Index::Index(ColumnPtr positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(ColumnPtr positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }

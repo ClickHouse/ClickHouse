@@ -21,7 +21,7 @@ Hash函数可以用于将元素不可逆的伪随机打乱。
 SipHash是一种加密哈希函数。它的处理性能至少比MD5快三倍。
 有关详细信息，请参阅链接：<https://131002.net/siphash/>
 
-## sipHash128
+## sipHash128 {#hash_functions-siphash128}
 
 计算字符串的SipHash。
 接受String类型的参数，返回FixedString(16)。

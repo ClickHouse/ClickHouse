@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
+# (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
+# and when we do DETACH TABLE / ATTACH TABLE or SYSTEM RESTART REPLICA, these files may be discovered
+# and discarded after restart with Warning/Error messages in log. This is Ok.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
@@ -101,7 +107,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE test.src;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test.src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO test.src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO test.src VALUES (1, '1', 1);"
-$CLICKHOUSE_CLIENT --query="INSERT INTO test.dst_r1 VALUES (1, '1', 2);" -- trash part to be
+$CLICKHOUSE_CLIENT --query="INSERT INTO test.dst_r1 VALUES (1, '1', 2); -- trash part to be deleted"
 
 # Stop replication at the second replica and remove source table to use fetch instead of copying
 $CLICKHOUSE_CLIENT --query="SYSTEM STOP REPLICATION QUEUES test.dst_r2;"

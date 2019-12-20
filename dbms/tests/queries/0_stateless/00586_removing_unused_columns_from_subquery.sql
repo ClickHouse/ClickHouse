@@ -1,3 +1,6 @@
+SET any_join_distinct_right_table_keys = 1;
+SET joined_subquery_requires_alias = 0;
+
 DROP TABLE IF EXISTS local_statements;
 DROP TABLE IF EXISTS statements;
 
@@ -17,7 +20,7 @@ FROM
             learnerHash,
             passed - eventTime AS diff
         FROM statements
-        GLOBAL ANY INNER JOIN
+        GLOBAL SEMI LEFT JOIN
         (
             SELECT
                 learnerHash,

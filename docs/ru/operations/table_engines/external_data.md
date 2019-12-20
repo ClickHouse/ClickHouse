@@ -6,7 +6,7 @@ ClickHouse позволяет отправить на сервер данные,
 
 Если вам нужно будет выполнить более одного запроса с достаточно большими внешними данными - лучше не использовать эту функциональность, а загрузить данные в БД заранее.
 
-Внешние данные могут быть загружены как с помощью клиента командной строки (в неинтерактивном режиме), так и через HTTP-интерфейс.
+Внешние данные могут быть загружены как с помощью клиента командной строки (в не интерактивном режиме), так и через HTTP-интерфейс.
 
 В клиенте командной строки, может быть указана секция параметров вида
 
@@ -33,9 +33,9 @@ ClickHouse позволяет отправить на сервер данные,
 Примеры:
 
 ```bash
-echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
+$ echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
 849897
-cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
+$ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, count() AS c FROM passwd GROUP BY shell ORDER BY c DESC" --external --file=- --name=passwd --structure='login String, unused String, uid UInt16, gid UInt16, comment String, home String, shell String'
 /bin/sh 20
 /bin/false      5
 /bin/bash       4
@@ -48,9 +48,9 @@ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, coun
 Пример:
 
 ```bash
-cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
+$ cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
 
-curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count()+AS+c+FROM+passwd+GROUP+BY+shell+ORDER+BY+c+DESC&passwd_structure=login+String,+unused+String,+uid+UInt16,+gid+UInt16,+comment+String,+home+String,+shell+String'
+$ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count()+AS+c+FROM+passwd+GROUP+BY+shell+ORDER+BY+c+DESC&passwd_structure=login+String,+unused+String,+uid+UInt16,+gid+UInt16,+comment+String,+home+String,+shell+String'
 /bin/sh 20
 /bin/false      5
 /bin/bash       4

@@ -15,10 +15,10 @@ struct ChunksToMerge : public ChunkInfo
 };
 
 GroupingAggregatedTransform::GroupingAggregatedTransform(
-    const Block & header, size_t num_inputs, AggregatingTransformParamsPtr params)
-    : IProcessor(InputPorts(num_inputs, header), { Block() })
-    , num_inputs(num_inputs)
-    , params(std::move(params))
+    const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
+    : IProcessor(InputPorts(num_inputs_, header_), { Block() })
+    , num_inputs(num_inputs_)
+    , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
     , read_from_input(num_inputs, false)
 {
@@ -285,8 +285,8 @@ void GroupingAggregatedTransform::work()
 }
 
 
-MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(AggregatingTransformParamsPtr params)
-    : ISimpleTransform({}, params->getHeader(), false), params(std::move(params))
+MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_))
 {
     setInputNotNeededAfterRead(true);
 }
@@ -333,10 +333,10 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 }
 
 
-SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs, AggregatingTransformParamsPtr params)
-    : IProcessor(InputPorts(num_inputs, params->getHeader()), {params->getHeader()})
-    , num_inputs(num_inputs)
-    , params(std::move(params))
+SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, AggregatingTransformParamsPtr params_)
+    : IProcessor(InputPorts(num_inputs_, params_->getHeader()), {params_->getHeader()})
+    , num_inputs(num_inputs_)
+    , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
     , is_input_finished(num_inputs, false)
 {
@@ -507,6 +507,7 @@ Processors createMergingAggregatedMemoryEfficientPipe(
     for (size_t i = 0; i < num_merging_processors; ++i, ++in, ++out)
     {
         auto transform = std::make_shared<MergingAggregatedBucketTransform>(params);
+        transform->setStream(i);
         connect(*out, transform->getInputPort());
         connect(transform->getOutputPort(), *in);
         processors.emplace_back(std::move(transform));

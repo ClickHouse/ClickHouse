@@ -33,7 +33,7 @@ To insert data, use `INSERT SELECT` with aggregate `-State`- functions.
 
 **Function examples**
 
-```
+```sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```

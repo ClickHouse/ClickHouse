@@ -31,9 +31,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 start_number, unsigned sleep_useconds)
+    NumbersSource(UInt64 start_number, unsigned sleep_useconds_)
         : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-        current_number(start_number), sleep_useconds(sleep_useconds)
+        current_number(start_number), sleep_useconds(sleep_useconds_)
     {
     }
 
@@ -61,9 +61,9 @@ protected:
 public:
     String getName() const override { return "SleepyNumbers"; }
 
-    SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds)
+    SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds_)
         : IProcessor({}, {Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})})
-        , output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds)
+        , output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds_)
     {
     }
 
@@ -88,7 +88,7 @@ public:
     void schedule(EventCounter & watch) override
     {
         active = true;
-        pool.schedule([&watch, this]
+        pool.scheduleOrThrowOnError([&watch, this]
         {
             usleep(sleep_useconds);
             current_chunk = generate();
@@ -122,9 +122,9 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix)
+    PrintSink(String prefix_)
         : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-        prefix(std::move(prefix))
+        prefix(std::move(prefix_))
     {
     }
 

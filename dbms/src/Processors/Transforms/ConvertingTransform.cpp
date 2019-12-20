@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -33,12 +34,12 @@ static ColumnPtr castColumnWithDiagnostic(
 }
 
 ConvertingTransform::ConvertingTransform(
-    Block source_header,
-    Block result_header,
-    MatchColumnsMode mode,
-    const Context & context)
-    : ISimpleTransform(std::move(source_header), std::move(result_header), false)
-    , context(context)
+    Block source_header_,
+    Block result_header_,
+    MatchColumnsMode mode_,
+    const Context & context_)
+    : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
+    , context(context_)
     , conversion(getOutputPort().getHeader().columns())
 {
     auto & source = getInputPort().getHeader();
@@ -47,14 +48,14 @@ ConvertingTransform::ConvertingTransform(
     size_t num_input_columns = source.columns();
     size_t num_result_columns = result.columns();
 
-    if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
+    if (mode_ == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
     for (size_t result_col_num = 0; result_col_num < num_result_columns; ++result_col_num)
     {
         const auto & res_elem = result.getByPosition(result_col_num);
 
-        switch (mode)
+        switch (mode_)
         {
             case MatchColumnsMode::Position:
                 conversion[result_col_num] = result_col_num;

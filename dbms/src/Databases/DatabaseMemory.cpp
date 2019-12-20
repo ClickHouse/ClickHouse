@@ -9,6 +9,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseMemory::DatabaseMemory(String name_)
@@ -16,7 +18,7 @@ DatabaseMemory::DatabaseMemory(String name_)
     , log(&Logger::get("DatabaseMemory(" + name + ")"))
 {}
 
-void DatabaseMemory::loadTables(
+void DatabaseMemory::loadStoredObjects(
     Context & /*context*/,
     bool /*has_force_restore_data_flag*/)
 {
@@ -32,6 +34,21 @@ void DatabaseMemory::createTable(
     attachTable(table_name, table);
 }
 
+
+void DatabaseMemory::attachDictionary(const String & /*name*/, const Context & /*context*/)
+{
+    throw Exception("There is no ATTACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseMemory::createDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/,
+    const ASTPtr & /*query*/)
+{
+    throw Exception("There is no CREATE DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
 void DatabaseMemory::removeTable(
     const Context & /*context*/,
     const String & table_name)
@@ -39,28 +56,23 @@ void DatabaseMemory::removeTable(
     detachTable(table_name);
 }
 
-void DatabaseMemory::renameTable(
-    const Context &,
-    const String &,
-    IDatabase &,
-    const String &)
+
+void DatabaseMemory::detachDictionary(const String & /*name*/, const Context & /*context*/)
 {
-    throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("There is no DETACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-void DatabaseMemory::alterTable(
-    const Context &,
-    const String &,
-    const ColumnsDescription &,
-    const IndicesDescription &,
-    const ASTModifier &)
+
+void DatabaseMemory::removeDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/)
 {
-    throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("There is no DROP DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-time_t DatabaseMemory::getTableMetadataModificationTime(
-    const Context &,
-    const String &)
+
+time_t DatabaseMemory::getObjectMetadataModificationTime(
+    const Context &, const String &)
 {
     return static_cast<time_t>(0);
 }
@@ -71,6 +83,15 @@ ASTPtr DatabaseMemory::getCreateTableQuery(
 {
     throw Exception("There is no CREATE TABLE query for DatabaseMemory tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
+
+
+ASTPtr DatabaseMemory::getCreateDictionaryQuery(
+    const Context &,
+    const String &) const
+{
+    throw Exception("There is no CREATE DICTIONARY query for DatabaseMemory dictionaries", ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
+}
+
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery(
     const Context &) const

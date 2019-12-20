@@ -1,14 +1,14 @@
-#include "config_formats.h"
+#include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <capnp/serialize.h> // Y_IGNORE
-#include <capnp/dynamic.h> // Y_IGNORE
-#include <capnp/common.h> // Y_IGNORE
+#include <capnp/serialize.h>
+#include <capnp/dynamic.h>
+#include <capnp/common.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
@@ -81,12 +81,11 @@ static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
             auto structValue = value.as<capnp::DynamicStruct>();
             const auto & fields = structValue.getSchema().getFields();
 
-            Field field = Tuple(TupleBackend(fields.size()));
-            TupleBackend & tuple = get<Tuple &>(field).toUnderType();
+            Tuple tuple(fields.size());
             for (auto i : kj::indices(fields))
                 tuple[i] = convertNodeToField(structValue.get(fields[i]));
 
-            return field;
+            return tuple;
         }
         case capnp::DynamicValue::CAPABILITY:
             throw Exception("CAPABILITY type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -178,8 +177,8 @@ void CapnProtoRowInputFormat::createActions(const NestedFieldList & sorted_field
     }
 }
 
-CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSchemaInfo & info)
-    : IRowInputFormat(std::move(header), in_, params), parser(std::make_shared<SchemaParser>())
+CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info)
+    : IRowInputFormat(std::move(header), in_, std::move(params_)), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
 
@@ -206,28 +205,42 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
     createActions(list, root);
 }
 
+kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
+{
+    uint32_t segment_count;
+    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+
+    // one for segmentCount and one because segmentCount starts from 0
+    const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
+    const auto words_prefix_size = (segment_count + 1) / 2 + 1;
+    auto prefix = kj::heapArray<capnp::word>(words_prefix_size);
+    auto prefix_chars = prefix.asChars();
+    ::memcpy(prefix_chars.begin(), &segment_count, sizeof(uint32_t));
+
+    // read size of each segment
+    for (size_t i = 0; i <= segment_count; ++i)
+        in.readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
+
+    // calculate size of message
+    const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
+    const auto expected_bytes = expected_words * sizeof(capnp::word);
+    const auto data_size = expected_bytes - prefix_size;
+    auto msg = kj::heapArray<capnp::word>(expected_words);
+    auto msg_chars = msg.asChars();
+
+    // read full message
+    ::memcpy(msg_chars.begin(), prefix_chars.begin(), prefix_size);
+    in.readStrict(msg_chars.begin() + prefix_size, data_size);
+
+    return msg;
+}
 
 bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
     if (in.eof())
         return false;
 
-    // Read from underlying buffer directly
-    auto buf = in.buffer();
-    auto base = reinterpret_cast<const capnp::word *>(in.position());
-
-    // Check if there's enough bytes in the buffer to read the full message
-    kj::Array<capnp::word> heap_array;
-    auto array = kj::arrayPtr(base, buf.size() - in.offset());
-    auto expected_words = capnp::expectedSizeInWordsFromPrefix(array);
-    if (expected_words * sizeof(capnp::word) > array.size())
-    {
-        // We'll need to reassemble the message in a contiguous buffer
-        heap_array = kj::heapArray<capnp::word>(expected_words);
-        in.readStrict(heap_array.asChars().begin(), heap_array.asChars().size());
-        array = heap_array.asPtr();
-    }
-
+    auto array = readMessage();
 
 #if CAPNP_VERSION >= 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
@@ -257,7 +270,7 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
                         // Populate array with a single tuple elements
                         for (size_t off = 0; off < size; ++off)
                         {
-                            const TupleBackend & tuple = DB::get<const Tuple &>(collected[off]).toUnderType();
+                            const auto & tuple = DB::get<const Tuple &>(collected[off]);
                             flattened[off] = tuple[column_index];
                         }
                         auto & col = columns[action.columns[column_index]];
@@ -281,13 +294,6 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
         }
     }
 
-    // Advance buffer position if used directly
-    if (heap_array.size() == 0)
-    {
-        auto parsed = (msg.getEnd() - base) * sizeof(capnp::word);
-        in.position() += parsed;
-    }
-
     return true;
 }
 
@@ -297,7 +303,8 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
         {
-            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, params, FormatSchemaInfo(context, "capnp"));
+            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
+                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "CapnProto", true));
         });
 }
 

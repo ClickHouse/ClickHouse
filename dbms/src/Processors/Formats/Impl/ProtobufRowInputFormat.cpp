@@ -1,20 +1,20 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
+#include "ProtobufRowInputFormat.h"
 
+#if USE_PROTOBUF
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
-#include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSchemaInfo & info)
-    : IRowInputFormat(header, in_, params)
-    ,  data_types(header.getDataTypes())
-    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_)
+    : IRowInputFormat(header_, in_, params_)
+    , data_types(header_.getDataTypes())
+    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info_), header_.getNames())
 {
 }
 
@@ -65,7 +65,6 @@ void ProtobufRowInputFormat::syncAfterError()
     reader.endMessage(true);
 }
 
-
 void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Protobuf", [](
@@ -75,7 +74,8 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings &)
     {
-        return std::make_shared<ProtobufRowInputFormat>(buf, sample, params, FormatSchemaInfo(context, "proto"));
+        return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
+                                                        FormatSchemaInfo(context, context.getSettingsRef().format_schema, "Protobuf", true));
     });
 }
 

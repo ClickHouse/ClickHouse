@@ -1,7 +1,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 
-#include <iostream>
 #include <type_traits>
 
 
@@ -23,16 +22,38 @@ namespace CurrentMetrics
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
-    : ThreadPoolImpl(max_threads, max_threads, max_threads)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
+    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
-    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_)
+    : max_threads(max_threads_), max_free_threads(max_free_threads_), queue_size(queue_size_)
 {
 }
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
+{
+    std::lock_guard lock(mutex);
+    max_threads = value;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
+{
+    std::lock_guard lock(mutex);
+    max_free_threads = value;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
+{
+    std::lock_guard lock(mutex);
+    queue_size = value;
+}
+
 
 template <typename Thread>
 template <typename ReturnType>
@@ -59,7 +80,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
-        if (wait_microseconds)
+        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
         {
             if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
                 return on_error();
@@ -83,6 +104,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 threads.pop_front();
+
+                /// Remove the job and return error to caller.
+                /// Note that if we have allocated at least one thread, we may continue
+                /// (one thread is enough to process all jobs).
+                /// But this condition indicate an error nevertheless and better to refuse.
+
+                jobs.pop();
+                --scheduled_jobs;
+                return on_error();
             }
         }
     }
@@ -91,13 +121,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::schedule(Job job, int priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
 {
     scheduleImpl<void>(std::move(job), priority, std::nullopt);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds)
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
@@ -257,3 +287,8 @@ ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler 
     };
 }
 
+GlobalThreadPool & GlobalThreadPool::instance()
+{
+    static GlobalThreadPool ret;
+    return ret;
+}

@@ -4,7 +4,7 @@ There are two types of parsers in the system: the full SQL parser (a recursive d
 In all cases except the `INSERT` query, only the full SQL parser is used.
 The `INSERT` query uses both parsers:
 
-``` sql
+```sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -112,7 +112,7 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 An alias is a user-defined name for an expression in a query.
 
-```
+```sql
 expr AS alias
 ```
 
@@ -140,7 +140,7 @@ If an alias is defined for the result columns in the `SELECT` clause of a subque
 
 Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-```
+```sql
 CREATE TABLE t
 (
     a Int,
@@ -149,12 +149,13 @@ CREATE TABLE t
 ENGINE = TinyLog()
 ```
 
-```
+```sql
 SELECT
     argMax(a, b),
     sum(b) AS b
 FROM t
-
+```
+```text
 Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```

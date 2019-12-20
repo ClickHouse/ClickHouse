@@ -38,16 +38,16 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Contex
 {
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
-    for (const auto & name : function_names)
+    for (const auto & function_name : function_names)
     {
-        fillRow(res_columns, name, UInt64(0), functions_factory);
+        fillRow(res_columns, function_name, UInt64(0), functions_factory);
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
-    for (const auto & name : aggregate_function_names)
+    for (const auto & function_name : aggregate_function_names)
     {
-        fillRow(res_columns, name, UInt64(1), aggregate_functions_factory);
+        fillRow(res_columns, function_name, UInt64(1), aggregate_functions_factory);
     }
 }
 }

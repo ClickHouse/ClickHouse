@@ -1,7 +1,7 @@
 #pragma once
 
 #include <new>
-#include <common/likely.h>
+#include "likely.h"
 
 #if __has_include(<common/config_common.h>)
 #include <common/config_common.h>

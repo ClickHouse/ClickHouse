@@ -11,7 +11,7 @@ Usage examples:
 
 ## Usage in ClickHouse Server
 
-```
+```sql
 File(Format)
 ```
 
@@ -27,13 +27,13 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md) it to table information with matching name, so you can query data from that file.
 
 !!! warning
-    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+    Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 
 **1.** Set up the `file_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -49,11 +49,11 @@ two	2
 
 **3.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM file_engine_table
 ```
 
-```
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
@@ -72,10 +72,12 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 ## Details of Implementation
 
 - Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+- Supported creating new file by `INSERT` query.
+- If file exists, `INSERT` would append new values in it.
 - Not supported:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+    - `ALTER`
+    - `SELECT ... SAMPLE`
+    - Indices
+    - Replication
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->

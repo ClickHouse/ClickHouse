@@ -7,6 +7,7 @@
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
 
 #include <cmath>
 
@@ -54,7 +55,7 @@ struct EntropyData
     void merge(const EntropyData & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.getFirst()] += pair.getSecond();
+            map[pair.getKey()] += pair.getMapped();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -68,7 +69,7 @@ struct EntropyData
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.getFirst()] = pair.getSecond();
+            map[pair.first] = pair.second;
         }
     }
 
@@ -76,12 +77,12 @@ struct EntropyData
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
-            total_value += pair.getSecond();
+            total_value += pair.getMapped();
 
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.getSecond()) / total_value;
+            Float64 frequency = Float64(pair.getMapped()) / total_value;
             shannon_entropy -= frequency * log2(frequency);
         }
 
@@ -115,7 +116,7 @@ public:
         if constexpr (!std::is_same_v<UInt128, Value>)
         {
             /// Here we manage only with numerical types
-            const auto & column = static_cast<const ColumnVector <Value> &>(*columns[0]);
+            const auto & column = assert_cast<const ColumnVector <Value> &>(*columns[0]);
             this->data(place).add(column.getData()[row_num]);
         }
         else
@@ -141,7 +142,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & column = static_cast<ColumnVector<Float64> &>(to);
+        auto & column = assert_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(this->data(place).get());
     }
 

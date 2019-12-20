@@ -6,13 +6,14 @@
 
 
 #include <Core/iostream_debug_helpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
 {
 ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IOutputFormat(header, out_), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings(format_settings_)
 {
 }
 
@@ -38,7 +39,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Block & header, const Columns 
         {
             {
                 WriteBufferFromString text_out(buffer);
-                header.getByPosition(row_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
+                header.getByPosition(column_idx).type->serializeAsText(*column, row_idx, text_out, format_settings);
             }
             writeODBCString(out, buffer);
         }
@@ -95,8 +96,10 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {
-        const ColumnWithTypeAndName & col = header.getByPosition(i);
-        writeODBCString(out, col.type->getName());
+        auto type = header.getByPosition(i).type;
+        if (type->lowCardinality())
+            type = recursiveRemoveLowCardinality(type);
+        writeODBCString(out, type->getName());
     }
 }
 
@@ -104,7 +107,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & format_settings)
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, FormatFactory::WriteCallback, const FormatSettings & format_settings)
         {
             return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
         });

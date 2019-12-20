@@ -1,9 +1,12 @@
+#include <Common/config.h>
+#if USE_SSL
 #include "OpenSSLHelpers.h"
 #include <ext/scope_guard.h>
 #include <openssl/err.h>
 
 namespace DB
 {
+#pragma GCC diagnostic warning "-Wold-style-cast"
 
 String getOpenSSLErrors()
 {
@@ -16,3 +19,4 @@ String getOpenSSLErrors()
 }
 
 }
+#endif

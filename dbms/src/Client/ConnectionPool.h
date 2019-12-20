@@ -74,7 +74,7 @@ public:
     {
         Entry entry;
         if (settings)
-            entry = Base::get(settings->queue_max_wait_ms.totalMilliseconds());
+            entry = Base::get(settings->connection_pool_max_wait_ms.totalMilliseconds());
         else
             entry = Base::get(-1);
 
@@ -87,6 +87,10 @@ public:
     const std::string & getHost() const
     {
         return host;
+    }
+    std::string getDescription() const
+    {
+        return host + ":" + toString(port);
     }
 
 protected:

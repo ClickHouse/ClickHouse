@@ -2,14 +2,13 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/BlockOutputStreamFromRowOutputStream.h>
 
 
 namespace DB
 {
 
-JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings_)
-    : IRowOutputFormat(header, out_), settings(settings_)
+JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
+    : IRowOutputFormat(header, out_, callback), settings(settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
@@ -248,9 +247,10 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONRowOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONRowOutputFormat>(buf, sample, callback, format_settings);
     });
 }
 

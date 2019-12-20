@@ -1,6 +1,8 @@
 #include <Processors/Transforms/FilterTransform.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 namespace DB
 {
@@ -42,14 +44,14 @@ static Block transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    const Block & header,
+    const Block & header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
-    bool remove_filter_column)
-    : ISimpleTransform(header, transformHeader(header, expression_, filter_column_name_, remove_filter_column), true)
+    bool remove_filter_column_)
+    : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
-    , remove_filter_column(remove_filter_column)
+    , remove_filter_column(remove_filter_column_)
 {
     transformed_header = getInputPort().getHeader();
     expression->execute(transformed_header);
@@ -62,14 +64,24 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (constant_filter_description.always_false)
+    if (constant_filter_description.always_false
+        /// Optimization for `WHERE column in (empty set)`.
+        /// The result will not change after set was created, so we can skip this check.
+        /// It is implemented in prepare() stop pipeline before reading from input port.
+        || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name)))
     {
         input.close();
         output.finish();
         return Status::Finished;
     }
 
-    return ISimpleTransform::prepare();
+    auto status = ISimpleTransform::prepare();
+
+    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
+    if (status != IProcessor::Status::PortFull)
+        are_prepared_sets_initialized = true;
+
+    return status;
 }
 
 
@@ -128,7 +140,7 @@ void FilterTransform::transform(Chunk & chunk)
     size_t first_non_constant_column = num_columns;
     for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!isColumnConst(*columns[i]))
+        if (i != filter_column_position && !isColumnConst(*columns[i]))
         {
             first_non_constant_column = i;
             break;

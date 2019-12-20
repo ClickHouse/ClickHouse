@@ -18,7 +18,13 @@ public:
     /** with_names - output in the first line a header with column names
       * with_types - output the next line header with the names of the types
       */
-    TabSeparatedRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names, bool with_types, const FormatSettings & format_settings);
+    TabSeparatedRowOutputFormat(
+        WriteBuffer & out_,
+        const Block & header_,
+        bool with_names_,
+        bool with_types_,
+        FormatFactory::WriteCallback callback,
+        const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
@@ -40,4 +46,3 @@ protected:
 };
 
 }
-

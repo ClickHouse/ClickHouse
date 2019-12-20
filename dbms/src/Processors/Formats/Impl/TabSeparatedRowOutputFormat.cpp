@@ -6,10 +6,14 @@
 
 namespace DB
 {
-
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
-    WriteBuffer & out_, const Block & header, bool with_names, bool with_types, const FormatSettings & format_settings)
-    : IRowOutputFormat(header, out_), with_names(with_names), with_types(with_types), format_settings(format_settings)
+    WriteBuffer & out_,
+    const Block & header_,
+    bool with_names_,
+    bool with_types_,
+    FormatFactory::WriteCallback callback,
+    const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
 
@@ -75,9 +79,10 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, false, false, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, false, false, callback, settings);
         });
     }
 
@@ -87,9 +92,10 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRawRowOutputFormat>(buf, sample, false, false, settings);
+            return std::make_shared<TabSeparatedRawRowOutputFormat>(buf, sample, false, false, callback, settings);
         });
     }
 
@@ -99,9 +105,10 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, false, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, false, callback, settings);
         });
     }
 
@@ -111,9 +118,10 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const Context &,
+            FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, true, settings);
+            return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, true, true, callback, settings);
         });
     }
 }

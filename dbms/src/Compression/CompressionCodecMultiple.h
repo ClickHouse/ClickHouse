@@ -9,7 +9,7 @@ class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
     CompressionCodecMultiple() = default;
-    explicit CompressionCodecMultiple(Codecs codecs);
+    explicit CompressionCodecMultiple(Codecs codecs_);
 
     UInt8 getMethodByte() const override;
 
@@ -28,5 +28,9 @@ private:
     Codecs codecs;
 
 };
+
+
+class CompressionCodecFactory;
+void registerCodecMultiple(CompressionCodecFactory & factory);
 
 }

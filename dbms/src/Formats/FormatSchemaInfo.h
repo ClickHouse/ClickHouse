@@ -10,7 +10,7 @@ class Context;
 class FormatSchemaInfo
 {
 public:
-    FormatSchemaInfo(const Context & context, const String & format);
+    FormatSchemaInfo(const Context & context, const String & format_schema, const String & format, bool require_message);
 
     /// Returns path to the schema file.
     const String & schemaPath() const { return schema_path; }

@@ -11,6 +11,8 @@ struct FixedHashMapCell
     using State = TState;
 
     using value_type = PairNoInit<Key, Mapped>;
+    using mapped_type = TMapped;
+
     bool full;
     Mapped mapped;
 
@@ -18,12 +20,12 @@ struct FixedHashMapCell
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
 
-    Mapped & getSecond() { return mapped; }
-    const Mapped & getSecond() const { return mapped; }
+    const VoidKey getKey() const { return {}; }
+    Mapped & getMapped() { return mapped; }
+    const Mapped & getMapped() const { return mapped; }
+
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
-    static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & value) { mapped = value.getSecond(); }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
@@ -39,34 +41,70 @@ struct FixedHashMapCell
         Key key;
         FixedHashMapCell * ptr;
 
-        Key & getFirstMutable() { return key; }
-        const Key & getFirst() const { return key; }
-        Mapped & getSecond() { return ptr->mapped; }
-        const Mapped & getSecond() const { return ptr->mapped; }
+        const Key & getKey() const { return key; }
+        Mapped & getMapped() { return ptr->mapped; }
+        const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; }
     };
 };
 
-
-template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
-class FixedHashMap : public FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>
+template <typename Key, typename Mapped, typename Cell = FixedHashMapCell<Key, Mapped>, typename Allocator = HashTableAllocator>
+class FixedHashMap : public FixedHashTable<Key, Cell, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>;
-    using key_type = Key;
-    using mapped_type = Mapped;
-    using value_type = typename Base::cell_type::value_type;
+    using Base = FixedHashTable<Key, Cell, Allocator>;
+    using Self = FixedHashMap;
+    using LookupResult = typename Base::LookupResult;
 
     using Base::Base;
 
-    mapped_type & ALWAYS_INLINE operator[](Key x)
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        typename Base::iterator it;
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            typename Self::LookupResult res_it;
+            bool inserted;
+            that.emplace(it->getKey(), res_it, inserted, it.getHash());
+            func(res_it->getMapped(), it->getMapped(), inserted);
+        }
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            auto res_it = that.find(it->getKey(), it.getHash());
+            if (!res_it)
+                func(it->getMapped(), it->getMapped(), false);
+            else
+                func(res_it->getMapped(), it->getMapped(), true);
+        }
+    }
+
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getKey(), v.getMapped());
+    }
+
+    template <typename Func>
+    void forEachMapped(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getMapped());
+    }
+
+    Mapped & ALWAYS_INLINE operator[](const Key & x)
+    {
+        LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
-            new (&it->getSecond()) mapped_type();
+            new (&it->getMapped()) Mapped();
 
-        return it->getSecond();
+        return it->getMapped();
     }
 };

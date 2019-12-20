@@ -6,10 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 
-#include <Common/config.h>
-#if USE_MIMALLOC
-#include <Common/MiAllocator.h>
-#endif
 
 namespace DB
 {
@@ -43,9 +39,7 @@ struct MarkInCompressedFile
     }
 
 };
-#if USE_MIMALLOC
-using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, MiAllocator>;
-#else
+
 using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
-#endif
+
 }

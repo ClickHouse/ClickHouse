@@ -1,16 +1,11 @@
 #pragma once
 
-#include <Poco/UTF8Encoding.h>
-#include <Poco/Unicode.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Common/hex.h>
 #include <Common/Volnitsky.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -43,15 +38,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-struct HasParam
-{
-    using ResultType = UInt8;
-
-    static UInt8 extract(const UInt8 *, const UInt8 *)
-    {
-        return true;
-    }
-};
 
 template <typename NumericType>
 struct ExtractNumericType
@@ -75,77 +61,6 @@ struct ExtractNumericType
                 tryReadIntText(x, in);
         }
         return x;
-    }
-};
-
-struct ExtractBool
-{
-    using ResultType = UInt8;
-
-    static UInt8 extract(const UInt8 * begin, const UInt8 * end)
-    {
-        return begin + 4 <= end && 0 == strncmp(reinterpret_cast<const char *>(begin), "true", 4);
-    }
-};
-
-
-struct ExtractRaw
-{
-    using ExpectChars = PODArrayWithStackMemory<char, 64>;
-
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
-    {
-        ExpectChars expects_end;
-        UInt8 current_expect_end = 0;
-
-        for (auto extract_begin = pos; pos != end; ++pos)
-        {
-            if (current_expect_end && *pos == current_expect_end)
-            {
-                expects_end.pop_back();
-                current_expect_end = expects_end.empty() ? 0 : expects_end.back();
-            }
-            else
-            {
-                switch (*pos)
-                {
-                    case '[':
-                        current_expect_end = ']';
-                        expects_end.push_back(current_expect_end);
-                        break;
-                    case '{':
-                        current_expect_end = '}';
-                        expects_end.push_back(current_expect_end);
-                        break;
-                    case '"' :
-                        current_expect_end = '"';
-                        expects_end.push_back(current_expect_end);
-                        break;
-                    case '\\':
-                        /// skip backslash
-                        if (pos + 1 < end && pos[1] == '"')
-                            pos++;
-                        break;
-                    default:
-                        if (!current_expect_end && (*pos == ',' || *pos == '}'))
-                        {
-                            res_data.insert(extract_begin, pos);
-                            return;
-                        }
-                }
-            }
-        }
-    }
-};
-
-struct ExtractString
-{
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
-    {
-        size_t old_size = res_data.size();
-        ReadBufferFromMemory in(pos, end - pos);
-        if (!tryReadJSONStringInto(res_data, in))
-            res_data.resize(old_size);
     }
 };
 
@@ -284,7 +199,5 @@ struct ExtractParamToStringImpl
         }
     }
 };
-
-
 
 }

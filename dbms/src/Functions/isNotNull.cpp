@@ -1,9 +1,10 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -29,6 +30,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
@@ -43,7 +45,7 @@ public:
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
             const auto & src_data = nullable->getNullMapData();
-            auto & res_data = static_cast<ColumnUInt8 &>(*res_column).getData();
+            auto & res_data = assert_cast<ColumnUInt8 &>(*res_column).getData();
 
             for (size_t i = 0; i < input_rows_count; ++i)
                 res_data[i] = !src_data[i];

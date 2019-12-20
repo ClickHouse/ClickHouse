@@ -19,7 +19,11 @@ class Context;
 class InputStreamFromASTInsertQuery : public IBlockInputStream
 {
 public:
-    InputStreamFromASTInsertQuery(const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context);
+    InputStreamFromASTInsertQuery(const ASTPtr & ast,
+        ReadBuffer * input_buffer_tail_part,
+        const Block & header,
+        const Context & context,
+        const ASTPtr & input_function);
 
     Block readImpl() override { return res_stream->read(); }
     void readPrefixImpl() override { return res_stream->readPrefix(); }

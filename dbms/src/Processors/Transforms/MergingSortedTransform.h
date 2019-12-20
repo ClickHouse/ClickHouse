@@ -2,45 +2,12 @@
 #include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+#include <Processors/SharedChunk.h>
 
 #include <queue>
 
 namespace DB
 {
-
-/// Allows you refer to the row in the block and hold the block ownership,
-///  and thus avoid creating a temporary row object.
-/// Do not use std::shared_ptr, since there is no need for a place for `weak_count` and `deleter`;
-///  does not use Poco::SharedPtr, since you need to allocate a block and `refcount` in one piece;
-///  does not use Poco::AutoPtr, since it does not have a `move` constructor and there are extra checks for nullptr;
-/// The reference counter is not atomic, since it is used from one thread.
-namespace detail
-{
-struct SharedChunk : Chunk
-{
-    int refcount = 0;
-
-    ColumnRawPtrs all_columns;
-    ColumnRawPtrs sort_columns;
-
-    SharedChunk(Chunk && chunk) : Chunk(std::move(chunk)) {}
-};
-
-}
-
-using SharedChunkPtr = boost::intrusive_ptr<detail::SharedChunk>;
-
-
-inline void intrusive_ptr_add_ref(detail::SharedChunk * ptr)
-{
-    ++ptr->refcount;
-}
-
-inline void intrusive_ptr_release(detail::SharedChunk * ptr)
-{
-    if (0 == --ptr->refcount)
-        delete ptr;
-}
 
 class MergingSortedTransform : public IProcessor
 {
@@ -92,8 +59,11 @@ protected:
             auto num_rows = chunk.getNumRows();
             columns = chunk.mutateColumns();
             if (limit_rows && num_rows > limit_rows)
+            {
+                num_rows = limit_rows;
                 for (auto & column : columns)
-                    column = (*column->cut(0, limit_rows)).mutate();
+                    column = (*column->cut(0, num_rows)->convertToFullColumnIfConst()).mutate();
+            }
 
             total_merged_rows += num_rows;
             merged_rows = num_rows;
@@ -165,6 +135,13 @@ private:
 
     void updateCursor(Chunk chunk, size_t source_num)
     {
+        auto num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfConst();
+
+        chunk.setColumns(std::move(columns), num_rows);
+
         auto & shared_chunk_ptr = source_chunks[source_num];
 
         if (!shared_chunk_ptr)

@@ -21,7 +21,7 @@ class ZlibInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     ZlibInflatingReadBuffer(
-            ReadBuffer & in_,
+            std::unique_ptr<ReadBuffer> in_,
             CompressionMethod compression_method,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
             char * existing_memory = nullptr,
@@ -32,7 +32,7 @@ public:
 private:
     bool nextImpl() override;
 
-    ReadBuffer & in;
+    std::unique_ptr<ReadBuffer> in;
     z_stream zstr;
     bool eof;
 };

@@ -56,7 +56,7 @@ int main(int argc, char ** argv)
         };
 
         auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, columns);
-        ExpressionAnalyzer analyzer(ast, syntax_result, context);
+        SelectQueryExpressionAnalyzer analyzer(ast, syntax_result, context);
         ExpressionActionsChain chain(context);
         analyzer.appendSelect(chain, false);
         analyzer.appendProjectResult(chain);

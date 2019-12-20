@@ -2,24 +2,33 @@
 
 #include <Core/Names.h>
 #include <Core/Types.h>
-#include <IO/DelimitedReadBuffer.h>
-#include <common/logger_useful.h>
+#include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
 
-using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromKafkaConsumer(
-        ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_);
+        ConsumerPtr consumer_,
+        Poco::Logger * log_,
+        size_t max_batch_size,
+        size_t poll_timeout_,
+        bool intermediate_commit_,
+        const std::atomic<bool> & stopped_);
     ~ReadBufferFromKafkaConsumer() override;
 
+    void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
@@ -30,6 +39,8 @@ public:
     String currentTopic() const { return current[-1].get_topic(); }
     String currentKey() const { return current[-1].get_key(); }
     auto currentOffset() const { return current[-1].get_offset(); }
+    auto currentPartition() const { return current[-1].get_partition(); }
+    auto currentTimestamp() const { return current[-1].get_timestamp(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -40,6 +51,9 @@ private:
     const size_t poll_timeout = 0;
     bool stalled = false;
     bool intermediate_commit = true;
+    bool allowed = true;
+
+    const std::atomic<bool> & stopped;
 
     Messages messages;
     Messages::const_iterator current;

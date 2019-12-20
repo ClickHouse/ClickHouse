@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsCoding.h>
+#include "registerFunctions.h"
 
 namespace DB
 {
@@ -25,6 +26,7 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionUUIDStringToNum>();
     factory.registerFunction<FunctionHex>();
     factory.registerFunction<FunctionUnhex>();
+    factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionBitmaskToArray>();
     factory.registerFunction<FunctionToIPv4>();
     factory.registerFunction<FunctionToIPv6>();

@@ -235,17 +235,17 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
-    /// Whether the condition and its negation are (independently) feasible in the key range.
+    /// Whether the condition is feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
-    BoolMask checkInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
+    bool mayBeTrueInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
 
-    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `parallelogram`.
-    BoolMask checkInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
+    /// Whether the condition is feasible in the direct product of single column ranges specified by `parallelogram`.
+    bool mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
 
-    /// Are the condition and its negation valid in a semi-infinite (not limited to the right) key range.
+    /// Is the condition valid in a semi-infinite (not limited to the right) key range.
     /// left_key must contain all the fields in the sort_descr in the appropriate order.
-    BoolMask getMaskAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
+    bool mayBeTrueAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
 
     /// Checks that the index can not be used.
     bool alwaysUnknownOrTrue() const;
@@ -330,7 +330,7 @@ public:
     static const AtomMap atom_map;
 
 private:
-    BoolMask checkInRange(
+    bool mayBeTrueInRange(
         size_t used_key_size,
         const Field * left_key,
         const Field * right_key,

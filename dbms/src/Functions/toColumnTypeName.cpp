@@ -1,6 +1,7 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -37,6 +38,11 @@ public:
     {
         block.getByPosition(result).column
             = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
+    }
+
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
+    {
+        return DataTypeString().createColumnConst(1, block.getByPosition(arguments[0]).type->createColumn()->getName());
     }
 };
 

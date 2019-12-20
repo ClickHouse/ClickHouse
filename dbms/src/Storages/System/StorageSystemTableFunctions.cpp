@@ -12,9 +12,9 @@ NamesAndTypesList StorageSystemTableFunctions::getNamesAndTypes()
 void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & functions_names = TableFunctionFactory::instance().getAllRegisteredNames();
-    for (const auto & name : functions_names)
+    for (const auto & function_name : functions_names)
     {
-        res_columns[0]->insert(name);
+        res_columns[0]->insert(function_name);
     }
 }
 

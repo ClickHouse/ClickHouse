@@ -9,9 +9,9 @@ namespace DB
 class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
 {
 public:
-    MergeTreeIndexGranuleBloomFilter(size_t bits_per_row, size_t hash_functions, size_t index_columns);
+    MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);
 
-    MergeTreeIndexGranuleBloomFilter(size_t bits_per_row, size_t hash_functions, size_t total_rows, const Blocks & granule_index_blocks);
+    MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t total_rows_, const Blocks & granule_index_blocks_);
 
     bool empty() const override;
 
@@ -19,7 +19,7 @@ public:
 
     void deserializeBinary(ReadBuffer & istr) override;
 
-    const std::vector<BloomFilterPtr> getFilters() const { return bloom_filters; }
+    const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 
 private:
     size_t total_rows;
