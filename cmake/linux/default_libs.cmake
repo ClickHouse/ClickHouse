@@ -23,6 +23,7 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 # This is for x86_64. For other architectures we have separate toolchains.
 if (ARCH_AMD64)
     set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
 endif ()
 
 # Global libraries
