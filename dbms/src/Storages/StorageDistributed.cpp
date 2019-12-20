@@ -596,6 +596,21 @@ void StorageDistributed::flushClusterNodesAllData()
         it->second.flushAllData();
 }
 
+void StorageDistributed::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name,
+                                TableStructureWriteLockHolder &)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+    if (!path.empty())
+    {
+        Poco::File(path).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+        path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+        std::lock_guard lock(cluster_nodes_mutex);
+        for (auto & node : cluster_nodes_data)
+            node.second.directory_monitor->updatePath();
+    }
+}
+
 
 void registerStorageDistributed(StorageFactory & factory)
 {
