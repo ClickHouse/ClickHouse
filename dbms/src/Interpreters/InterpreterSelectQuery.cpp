@@ -770,11 +770,13 @@ InterpreterSelectQuery::analyzeExpressions(
             }
         }
 
+        bool has_stream_with_non_joned_rows = (res.before_join && res.before_join->getTableJoinAlgo()->hasStreamWithNonJoinedRows());
         res.optimize_read_in_order =
             context.getSettingsRef().optimize_read_in_order
             && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
-            && !query.final() && !query.join();
+            && !query.final()
+            && !has_stream_with_non_joned_rows;
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
@@ -1613,7 +1615,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 getSortDescription(query, *context),
                 query_info.syntax_analyzer_result);
 
-            query_info.input_sorting_info = query_info.order_by_optimizer->analyze(storage);
+            query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
         }
 
 

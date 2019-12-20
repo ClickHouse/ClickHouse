@@ -214,7 +214,7 @@ BlockInputStreams StorageMerge::read(
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_by_optimizer->analyze(it->first);
+            auto current_info = query_info.order_by_optimizer->getInputOrder(it->first);
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
