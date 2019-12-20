@@ -46,10 +46,9 @@ public:
         return true;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool isDeterministic() const override { return false; }
 
@@ -70,13 +69,21 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        size_t number_of_arguments = arguments.size();
+
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+
         if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+
+        ColumnPtr column_with_groups;
+
+        if (number_of_arguments == 2)
+            column_with_groups = block.getByPosition(arguments[1]).column;
 
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
@@ -85,6 +92,7 @@ public:
         agg_func.create(place.data());
         SCOPE_EXIT(agg_func.destroy(place.data()));
 
+        /// Will pass empty arena if agg_func does not allocate memory in arena
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
         auto result_column_ptr = agg_func.getReturnType()->createColumn();
@@ -92,11 +100,22 @@ public:
         result_column.reserve(column_with_states->size());
 
         const auto & states = column_with_states->getData();
+
+        size_t i = 0;
+
         for (const auto & state_to_add : states)
         {
-            /// Will pass empty arena if agg_func does not allocate memory in arena
+            if (column_with_groups && i > 0 &&
+                column_with_groups->compareAt(i, i - 1, *column_with_groups, 1) != 0)
+            {
+                agg_func.destroy(place.data());
+                agg_func.create(place.data());
+            }
+
             agg_func.merge(place.data(), state_to_add, arena.get());
             agg_func.insertResultInto(place.data(), result_column);
+
+            ++i;
         }
 
         block.getByPosition(result).column = std::move(result_column_ptr);
