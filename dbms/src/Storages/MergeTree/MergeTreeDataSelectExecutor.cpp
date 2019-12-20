@@ -795,7 +795,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
                 virt_columns, part.part_index_in_query);
 
-            Pipe pipe(std::move(source));
             res.emplace_back(std::move(source));
         }
     }
