@@ -104,7 +104,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Warn when the indentation of the code does not reflect the block structure
     add_cxx_compile_options(-Wmisleading-indentation)
     # Warn if a global function is defined without a previous declaration
-    add_cxx_compile_options(-Wmissing-declarations)
+    # add_cxx_compile_options(-Wmissing-declarations)
     # Warn if a user-supplied include directory does not exist
     # add_cxx_compile_options(-Wmissing-include-dirs)
     # Obvious
