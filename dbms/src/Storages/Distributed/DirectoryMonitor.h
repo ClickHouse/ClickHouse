@@ -26,6 +26,8 @@ public:
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
+    void updatePath();
+
     void flushAllData();
 
     void shutdownAndDropAllData();
@@ -43,6 +45,7 @@ private:
 
     StorageDistributed & storage;
     ConnectionPoolPtr pool;
+    std::string name;
     std::string path;
 
     bool should_batch_inserts = false;
