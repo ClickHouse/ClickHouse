@@ -31,10 +31,7 @@ void registerStorageS3(StorageFactory & factory);
 void registerStorageHDFS(StorageFactory & factory);
 #endif
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerStorageODBC(StorageFactory & factory);
-#endif
-
 void registerStorageJDBC(StorageFactory & factory);
 
 #if USE_MYSQL
