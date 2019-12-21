@@ -132,7 +132,7 @@ IProcessor::Status MergingSortedTransform::prepare()
             }
 
             auto chunk = input.pull();
-            if (chunk.hasNoRows())
+            if (!chunk.hasRows())
             {
                 all_inputs_has_data = false;
                 continue;
@@ -176,7 +176,7 @@ IProcessor::Status MergingSortedTransform::prepare()
                     return Status::NeedData;
 
                 auto chunk = input.pull();
-                if (chunk.hasNoRows())
+                if (!chunk.hasRows())
                     return Status::NeedData;
 
                 updateCursor(std::move(chunk), next_input_to_read);

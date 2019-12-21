@@ -151,8 +151,8 @@ void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const cha
         {
             map.emplace(DB::ArenaKeyHolder{data[i], pool}, it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getMapped() = 0;
+            ++it->getMapped();
         }
         watch.stop();
 

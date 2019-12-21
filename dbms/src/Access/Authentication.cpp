@@ -160,6 +160,35 @@ void Authentication::setPasswordHashBinary(const Digest & hash)
 }
 
 
+Digest Authentication::getPasswordDoubleSHA1() const
+{
+    switch (type)
+    {
+        case NO_PASSWORD:
+        {
+            Poco::SHA1Engine engine;
+            return engine.digest();
+        }
+
+        case PLAINTEXT_PASSWORD:
+        {
+            Poco::SHA1Engine engine;
+            engine.update(getPassword());
+            const Digest & first_sha1 = engine.digest();
+            engine.update(first_sha1.data(), first_sha1.size());
+            return engine.digest();
+        }
+
+        case SHA256_PASSWORD:
+            throw Exception("Cannot get password double SHA1 for user with 'SHA256_PASSWORD' authentication.", ErrorCodes::BAD_ARGUMENTS);
+
+        case DOUBLE_SHA1_PASSWORD:
+            return password_hash;
+    }
+    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+}
+
+
 bool Authentication::isCorrectPassword(const String & password_) const
 {
     switch (type)
@@ -168,7 +197,14 @@ bool Authentication::isCorrectPassword(const String & password_) const
             return true;
 
         case PLAINTEXT_PASSWORD:
-            return password_ == StringRef{reinterpret_cast<const char *>(password_hash.data()), password_hash.size()};
+        {
+            if (password_ == StringRef{reinterpret_cast<const char *>(password_hash.data()), password_hash.size()})
+                return true;
+
+            // For compatibility with MySQL clients which support only native authentication plugin, SHA1 can be passed instead of password.
+            auto password_sha1 = encodeSHA1(password_hash);
+            return password_ == StringRef{reinterpret_cast<const char *>(password_sha1.data()), password_sha1.size()};
+        }
 
         case SHA256_PASSWORD:
             return encodeSHA256(password_) == password_hash;

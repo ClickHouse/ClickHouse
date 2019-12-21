@@ -90,6 +90,10 @@ public:
     {
         Data & data_lhs = this->data(place);
         const Data & data_rhs = this->data(rhs);
+
+        if (!data_rhs.doneFirst)
+            return;
+
         if (!data_lhs.doneFirst)
         {
             data_lhs.doneFirst = true;

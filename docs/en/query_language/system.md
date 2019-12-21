@@ -3,7 +3,7 @@
 - [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 - [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 - [DROP DNS CACHE](#query_language-system-drop-dns-cache)
-- [DROP MARKS CACHE](#query_language-system-drop-marks-cache)
+- [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 - [FLUSH LOGS](#query_language-system-flush_logs)
 - [RELOAD CONFIG](#query_language-system-reload-config)
 - [SHUTDOWN](#query_language-system-shutdown)
@@ -11,6 +11,8 @@
 - [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
 - [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
 - [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+- [STOP MERGES](#query_language-system-stop-merges)
+- [START MERGES](#query_language-system-start-merges)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -34,7 +36,7 @@ Resets ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) 
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
-## DROP MARKS CACHE {#query_language-system-drop-marks-cache}
+## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
 Resets the mark cache. Used in development of ClickHouse and performance tests.
 
@@ -83,6 +85,26 @@ Enables background data distribution when inserting data into distributed tables
 
 ```sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
+```
+
+
+### STOP MERGES {#query_language-system-stop-merges}
+
+Provides possibility to stop background merges for tables in the MergeTree family:
+
+```sql
+SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+```
+!!! note "Note"
+    `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
+
+
+### START MERGES {#query_language-system-start-merges}
+
+Provides possibility to start background merges for tables in the MergeTree family:
+
+```sql
+SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/system/) <!--hide-->

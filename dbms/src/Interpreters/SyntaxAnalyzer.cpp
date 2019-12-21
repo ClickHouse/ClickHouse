@@ -20,6 +20,7 @@
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
+#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -53,19 +54,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int ALIAS_REQUIRED;
-}
-
-NameSet removeDuplicateColumns(NamesAndTypesList & columns)
-{
-    NameSet names;
-    for (auto it = columns.begin(); it != columns.end();)
-    {
-        if (names.emplace(it->name).second)
-            ++it;
-        else
-            columns.erase(it++);
-    }
-    return names;
 }
 
 namespace
@@ -112,41 +100,18 @@ void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList 
     }
 }
 
-std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, const Context & context,
-                                                       const ASTTablesInSelectQueryElement * table_join_node,
-                                                       NamesAndTypesList & columns_from_joined_table,
-                                                       std::function<Names()> get_column_names)
+std::vector<TableWithColumnNames> getTablesWithColumns(const std::vector<const ASTTableExpression * > & table_expressions,
+                                                       const Context & context)
 {
-    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
 
     auto & settings = context.getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (auto & pr : tables_with_columns)
-            if (pr.first.table.empty() && pr.first.alias.empty())
+            if (pr.table.table.empty() && pr.table.alias.empty())
                 throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
-    }
-
-    TableWithColumnNames joined_table;
-
-    if (table_join_node)
-    {
-        const auto & joined_expression = table_join_node->table_expression->as<ASTTableExpression &>();
-
-        columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
-
-        joined_table.first = DatabaseAndTableWithAlias(joined_expression, context.getCurrentDatabase());
-        for (const auto & column : columns_from_joined_table)
-            joined_table.second.push_back(column.name);
-    }
-
-    /// If empty make table(s) with list of source and joined columns
-    if (tables_with_columns.empty())
-    {
-        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, get_column_names());
-        if (!joined_table.second.empty())
-            tables_with_columns.emplace_back(std::move(joined_table));
     }
 
     return tables_with_columns;
@@ -540,7 +505,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
     }
 }
 
-void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, ASTTableJoin & out_table_join)
+void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_default_strictness, bool old_any, ASTTableJoin & out_table_join)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -559,6 +524,9 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
+
+    if (old_any && table_join.strictness == ASTTableJoin::Strictness::Any)
+        table_join.strictness = ASTTableJoin::Strictness::RightAny;
 
     out_table_join = table_join;
 }
@@ -628,13 +596,8 @@ void checkJoin(const ASTTablesInSelectQueryElement * join)
     const auto & table_join = join->table_join->as<ASTTableJoin &>();
 
     if (table_join.strictness == ASTTableJoin::Strictness::Any)
-        if (table_join.kind != ASTTableJoin::Kind::Left)
-            throw Exception("Old ANY INNER|RIGHT|FULL JOINs are disabled by default. Their logic would be changed. "
-                            "Old logic is many-to-one for all kinds of ANY JOINs. It's equil to apply distinct for right table keys. "
-                            "Default bahaviour is reserved for many-to-one LEFT JOIN, one-to-many RIGHT JOIN and one-to-one INNER JOIN. "
-                            "It would be equal to apply distinct for keys to right, left and both tables respectively. "
-                            "Set any_join_distinct_right_table_keys=1 to enable old bahaviour.",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        if (table_join.kind == ASTTableJoin::Kind::Full)
+            throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
@@ -727,6 +690,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
     {
+        maybe_optimize_trivial_count = true;
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple
@@ -872,24 +836,36 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
                 replaceJoinedTable(table_join_node);
         }
 
-        auto get_column_names = [&]() -> Names
+        std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*select_query);
+        auto tables_with_columns = getTablesWithColumns(table_expressions, context);
+
+        if (tables_with_columns.empty())
         {
             if (storage)
-                return storage->getColumns().getOrdinary().getNames();
+            {
+                const ColumnsDescription & starage_columns = storage->getColumns();
+                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, starage_columns.getOrdinary().getNames());
+                auto & table = tables_with_columns.back();
+                table.addHiddenColumns(starage_columns.getMaterialized());
+                table.addHiddenColumns(starage_columns.getAliases());
+                table.addHiddenColumns(starage_columns.getVirtuals());
+            }
+            else
+            {
+                Names columns;
+                columns.reserve(result.source_columns.size());
+                for (const auto & column : result.source_columns)
+                    columns.push_back(column.name);
+                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, columns);
+            }
+        }
 
-            Names columns;
-            columns.reserve(result.source_columns.size());
-            for (const auto & column : result.source_columns)
-                columns.push_back(column.name);
-            return columns;
-        };
-
-        auto tables_with_columns = getTablesWithColumns(*select_query, context, table_join_node,
-                                                        result.analyzed_join->columns_from_joined_table, get_column_names);
-
-        if (tables_with_columns.size() > 1)
+        if (table_expressions.size() > 1)
+        {
+            result.analyzed_join->columns_from_joined_table = getColumnsFromTableExpression(*table_expressions[1], context);
             result.analyzed_join->deduplicateAndQualifyColumnNames(
-                source_columns_set, tables_with_columns[1].first.getQualifiedNamePrefix());
+                source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
+        }
 
         translateQualifiedNames(query, *select_query, source_columns_set, std::move(tables_with_columns));
 
@@ -957,7 +933,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-        setJoinStrictness(*select_query, settings.join_default_strictness, result.analyzed_join->table_join);
+        setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
+                          result.analyzed_join->table_join);
         collectJoinedColumns(*result.analyzed_join, *select_query, source_columns_set, result.aliases);
     }
 

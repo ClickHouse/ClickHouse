@@ -67,11 +67,19 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
 }
 
 
-void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const
+HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
-    /// NOTE Could be more loose.
-    if (!(kind == kind_ && strictness == strictness_))
+    if (!(kind == analyzed_join->kind() && strictness == analyzed_join->strictness()))
         throw Exception("Table " + table_name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+
+    /// TODO: check key columns
+
+    /// Some HACK to remove wrong names qualifiers: table.column -> column.
+    analyzed_join->setRightKeys(key_names);
+
+    HashJoinPtr join_clone = std::make_shared<Join>(analyzed_join, getSampleBlock().sortColumns());
+    join_clone->reuseJoinedData(*join);
+    return join_clone;
 }
 
 
@@ -99,7 +107,7 @@ void registerStorageJoin(StorageFactory & factory)
         const String strictness_str = Poco::toLower(*opt_strictness_id);
         ASTTableJoin::Strictness strictness;
         if (strictness_str == "any")
-            strictness = ASTTableJoin::Strictness::Any;
+            strictness = ASTTableJoin::Strictness::RightAny;
         else if (strictness_str == "all")
             strictness = ASTTableJoin::Strictness::All;
         else
@@ -201,7 +209,7 @@ class JoinBlockInputStream : public IBlockInputStream
 {
 public:
     JoinBlockInputStream(const Join & parent_, UInt64 max_block_size_, Block && sample_block_)
-        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
+        : parent(parent_), lock(parent.data->rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
         column_indices.resize(sample_block.columns());
@@ -231,11 +239,11 @@ public:
 protected:
     Block readImpl() override
     {
-        if (parent.blocks.empty())
+        if (parent.data->blocks.empty())
             return Block();
 
         Block block;
-        if (!joinDispatch(parent.kind, parent.strictness, parent.maps,
+        if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps,
                 [&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
         return block;
@@ -278,7 +286,7 @@ private:
 
         size_t rows_added = 0;
 
-        switch (parent.type)
+        switch (parent.data->type)
         {
 #define M(TYPE)                                           \
     case Join::Type::TYPE:                                \
@@ -288,7 +296,7 @@ private:
 #undef M
 
             default:
-                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.type)),
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.data->type)),
                                 ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
@@ -329,25 +337,32 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
+            if constexpr (STRICTNESS == ASTTableJoin::Strictness::RightAny)
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
-                        columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                        columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                     else
-                        columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
+                        columns[j]->insertFrom(*it->getMapped().block->getByPosition(column_indices[j]).column.get(), it->getMapped().row_num);
                 ++rows_added;
             }
-            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
             {
-                throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("New ANY join storage is not implemented yet (set any_join_distinct_right_table_keys=1 to use old one)",
+                                ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof ||
+                               STRICTNESS == ASTTableJoin::Strictness::Semi ||
+                               STRICTNESS == ASTTableJoin::Strictness::Anti)
+            {
+                throw Exception("ASOF|SEMI|ANTI join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
-                for (auto ref_it = it->getSecond().begin(); ref_it.ok(); ++ref_it)
+                for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
-                            columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                            columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                         else
                             columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
                     ++rows_added;

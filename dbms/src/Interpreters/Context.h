@@ -13,7 +13,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/RemoteHostFilter.h>
 
 
 namespace Poco
@@ -43,7 +44,7 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class QuotaForIntervals;
+class QuotaContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -76,7 +77,9 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class AccessControlManager;
 class SettingsConstraints;
+class RemoteHostFilter;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -135,7 +138,8 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
-    std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
+    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -187,17 +191,24 @@ public:
     String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    String getDictionariesLibPath() const;
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
+    void setDictionariesLibPath(const String & path);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
+
+    AccessControlManager & getAccessControlManager();
+    const AccessControlManager & getAccessControlManager() const;
+    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
+    void checkQuotaManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -237,9 +248,6 @@ public:
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
-
-    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
-    QuotaForIntervals & getQuota();
 
     void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
@@ -319,12 +327,12 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Update checking that each setting is updatable
-    void updateSettingsChanges(const SettingsChanges & changes);
-
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
     void checkSettingsConstraints(const SettingsChanges & changes);
+
+    /// Returns the current constraints (can return null).
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -353,6 +361,10 @@ public:
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;
+
+    /// Storage of allowed hosts from config.xml
+    void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
+    const RemoteHostFilter & getRemoteHostFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -404,7 +416,6 @@ public:
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
 
-
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
@@ -450,6 +461,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -495,15 +507,16 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSpace::DiskSelector & getDiskSelector() const;
+    DiskSelector & getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
 
-    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelector & getStoragePolicySelector() const;
 
     /// Provides storage politics schemes
-    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

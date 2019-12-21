@@ -3,7 +3,7 @@
 - [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 - [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 - [DROP DNS CACHE](#query_language-system-drop-dns-cache)
-- [DROP MARKS CACHE](#query_language-system-drop-marks-cache)
+- [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 - [FLUSH LOGS](#query_language-system-flush_logs)
 - [RELOAD CONFIG](#query_language-system-reload-config)
 - [SHUTDOWN](#query_language-system-shutdown)
@@ -11,6 +11,8 @@
 - [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
 - [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
 - [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+- [STOP MERGES](#query_language-system-stop-merges)
+- [START MERGES](#query_language-system-start-merges)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -34,7 +36,7 @@ SELECT name, status FROM system.dictionaries;
 
 Для более удобного (автоматического) управления кешем см. параметры disable_internal_dns_cache, dns_cache_update_period.
 
-## DROP MARKS CACHE {#query_language-system-drop-marks-cache}
+## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
 Сбрасывает кеш "засечек" (`mark cache`). Используется при разработке ClickHouse и тестах производительности.
 
@@ -80,6 +82,25 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 
 ```sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
+```
+
+### STOP MERGES {#query_language-system-stop-merges}
+
+Позволяет остановить фоновые мержи для таблиц семейства MergeTree:
+
+```sql
+SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+```
+!!! note "Note"
+    `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
+
+
+### START MERGES {#query_language-system-start-merges}
+
+Включает фоновые мержи для таблиц семейства MergeTree:
+
+```sql
+SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/system/) <!--hide-->

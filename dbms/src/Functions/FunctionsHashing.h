@@ -36,7 +36,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
@@ -342,6 +342,41 @@ struct JavaHashImpl
         UInt32 h = 0;
         for (size_t i = 0; i < size; ++i)
             h = 31 * h + static_cast<UInt32>(static_cast<Int8>(data[i]));
+        return static_cast<Int32>(h);
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct JavaHashUTF16LEImpl
+{
+    static constexpr auto name = "javaHashUTF16LE";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * raw_data, const size_t raw_size)
+    {
+        char * data = const_cast<char *>(raw_data);
+        size_t size = raw_size;
+
+        // Remove Byte-order-mark(0xFFFE) for UTF-16LE
+        if (size >= 2 && data[0] == '\xFF' && data[1] == '\xFE')
+        {
+            data += 2;
+            size -= 2;
+        }
+
+        if (size % 2 != 0)
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
+
+        UInt32 h = 0;
+        for (size_t i = 0; i < size; i += 2)
+            h = 31 * h + static_cast<UInt16>(static_cast<UInt8>(data[i]) | static_cast<UInt8>(data[i + 1]) << 8);
+
         return static_cast<Int32>(h);
     }
 
@@ -673,6 +708,20 @@ private:
     }
 
     template <bool first>
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        for (size_t i = 0, size = column->size(); i < size; ++i)
+        {
+            StringRef bytes = column->getDataAt(i);
+            const ToType h = Impl::apply(bytes.data, bytes.size);
+            if (first)
+                vec_to[i] = h;
+            else
+                vec_to[i] = Impl::combineHashes(vec_to[i], h);
+        }
+    }
+
+    template <bool first>
     void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
@@ -808,8 +857,7 @@ private:
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else
-            throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)
@@ -1102,6 +1150,7 @@ using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
+using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 #if USE_XXHASH

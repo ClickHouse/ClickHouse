@@ -894,7 +894,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);

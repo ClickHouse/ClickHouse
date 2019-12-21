@@ -14,7 +14,7 @@ do                                    \
 } \
 while (0)
 
-void test1()
+static void test1()
 {
     using namespace DB;
 
@@ -135,7 +135,7 @@ void test1()
         std::cerr << "Some errors were found in test 1\n";
 }
 
-void test2()
+static void test2()
 {
     using namespace DB;
 
@@ -385,7 +385,7 @@ void test2()
         std::cerr << "Some errors were found in test 2\n";
 }
 
-void test3()
+static void test3()
 {
     using namespace DB;
 

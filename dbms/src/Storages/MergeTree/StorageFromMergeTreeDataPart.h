@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -28,8 +29,17 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
-        return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-            {part}, column_names, query_info, context, max_block_size, num_streams);
+        auto pipes = MergeTreeDataSelectExecutor(part->storage).readFromParts(
+                {part}, column_names, query_info, context, max_block_size, num_streams);
+
+        /// Wrap processors to BlockInputStreams. It is temporary. Will be changed to processors interface later.
+        BlockInputStreams streams;
+        streams.reserve(pipes.size());
+
+        for (auto & pipe : pipes)
+            streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+        return streams;
     }
 
     bool supportsIndexForIn() const override { return true; }

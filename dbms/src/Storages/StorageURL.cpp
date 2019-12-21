@@ -5,8 +5,10 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromHTTP.h>
+#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -22,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNACCEPTABLE_URL;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -31,9 +34,11 @@ IStorageURLBase::IStorageURLBase(
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_)
-    : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
+    const ConstraintsDescription & constraints_,
+    const String & compression_method_)
+    : uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -51,10 +56,22 @@ namespace
             const Block & sample_block,
             const Context & context,
             UInt64 max_block_size,
-            const ConnectionTimeouts & timeouts)
+            const ConnectionTimeouts & timeouts,
+            const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects);
+            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(
+                compression_method,
+                uri,
+                method,
+                callback,
+                timeouts,
+                context.getSettingsRef().max_http_get_redirects,
+                Poco::Net::HTTPBasicCredentials{},
+                DBMS_DEFAULT_BUFFER_SIZE,
+                ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                context.getRemoteHostFilter());
+
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -85,7 +102,7 @@ namespace
 
     private:
         String name;
-        std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
+        std::unique_ptr<ReadBuffer> read_buf;
         BlockInputStreamPtr reader;
     };
 
@@ -96,10 +113,11 @@ namespace
             const String & format,
             const Block & sample_block_,
             const Context & context,
-            const ConnectionTimeouts & timeouts)
+            const ConnectionTimeouts & timeouts,
+            const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            write_buf = getWriteBuffer<WriteBufferFromHTTP>(compression_method, uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -127,7 +145,7 @@ namespace
 
     private:
         Block sample_block;
-        std::unique_ptr<WriteBufferFromHTTP> write_buf;
+        std::unique_ptr<WriteBuffer> write_buf;
         BlockOutputStreamPtr writer;
     };
 }
@@ -177,8 +195,8 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context));
-
+        ConnectionTimeouts::getHTTPTimeouts(context),
+        IStorage::chooseCompressionMethod(request_uri.toString(), compression_method));
 
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
@@ -195,7 +213,9 @@ void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & n
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
+        uri, format_name, getSampleBlock(), context_global,
+        ConnectionTimeouts::getHTTPTimeouts(context_global),
+        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -204,9 +224,9 @@ void registerStorageURL(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+        if (engine_args.size() != 2 && engine_args.size() != 3)
             throw Exception(
-                "Storage URL requires exactly 2 arguments: url and name of used format.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
@@ -217,7 +237,19 @@ void registerStorageURL(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
+        String compression_method;
+        if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        } else compression_method = "auto";
+
+        return StorageURL::create(
+            uri,
+            args.database_name, args.table_name,
+            format_name,
+            args.columns, args.constraints, args.context,
+            compression_method);
     });
 }
 }

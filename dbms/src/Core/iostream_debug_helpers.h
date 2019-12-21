@@ -1,9 +1,6 @@
 #pragma once
 #include <iostream>
 
-#include <Client/Connection.h>
-
-
 namespace DB
 {
 
@@ -28,6 +25,9 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what);
 class TableStructureReadLock;
 std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock & what);
 
+class IFunctionOverloadResolver;
+std::ostream & operator<<(std::ostream & stream, const IFunctionOverloadResolver & what);
+
 class IFunctionBase;
 std::ostream & operator<<(std::ostream & stream, const IFunctionBase & what);
 
@@ -40,7 +40,8 @@ std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & w
 class IColumn;
 std::ostream & operator<<(std::ostream & stream, const IColumn & what);
 
-std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what);
+struct Packet;
+std::ostream & operator<<(std::ostream & stream, const Packet & what);
 
 struct ExpressionAction;
 std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);

@@ -13,8 +13,8 @@ template <typename T> auto first(const T & value) -> decltype(value.first) { ret
 template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return value.getFirst(); }
-template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return value.getSecond(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
 
 }
 
