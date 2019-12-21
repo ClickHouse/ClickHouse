@@ -49,7 +49,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    // bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -60,7 +63,7 @@ public:
             || executeType<Int8>(block, arguments, result)
             || executeType<Int16>(block, arguments, result)
             || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result))
+            || executeType<Int64>(block, arguments, result)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -72,11 +75,17 @@ private:
     {
 
         std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
-        std::cout<<"!!!!!!Number of input rows: "<<input_rows_count<<std::endl;
+//        std::cout<<"!!!!!!Number of input rows: "<<input_rows_count<<std::endl;
 
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            
+
+        const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
+
+        if (!col_from){
+            col_from = checkAndGetColumnConstData<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
+        }
+                
+        if (col_from){
+
             auto col_to = ColumnString::create();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
@@ -101,24 +110,17 @@ private:
             {
                 str_length = static_cast<size_t>(vec_from[i]);
 
-                if (str_length <= 0)
-                {
-                    writeChar(0, buf_to);
-                    offsets_to[i] = buf_to.count();    
-                    break;
-                }
-
                 std::cout<<"!!!!!! Argument of a function: "<< str_length << std::endl;
-
 
                 generator.seed( rd() );
 
-                
-                for (size_t j = 0; j < str_length; ++j)
-                {
-                    character = distribution(generator);
-                    writeChar(character, buf_to);
-//                    std::cout<<"==================="<<character<<std::endl;
+                if (str_length > 0){
+                    for (size_t j = 0; j < str_length; ++j)
+                    {
+                        character = distribution(generator);
+                        writeChar(character, buf_to);
+    //                    std::cout<<"==================="<<character<<std::endl;
+                    }
                 }
 
                 writeChar(0, buf_to);
