@@ -109,8 +109,7 @@ protected:
     size_t num_columns = 0;
     std::vector<SharedBlockPtr> source_blocks;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
     using Queue = std::priority_queue<SortCursor>;
     Queue queue_without_collation;

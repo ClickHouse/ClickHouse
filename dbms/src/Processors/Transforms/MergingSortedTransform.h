@@ -111,8 +111,7 @@ protected:
     /// Chunks currently being merged.
     std::vector<SharedChunkPtr> source_chunks;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
     using Queue = std::priority_queue<SortCursor>;
     Queue queue_without_collation;
