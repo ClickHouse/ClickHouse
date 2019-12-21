@@ -150,7 +150,6 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 
     blocks.swap(nonempty_blocks);
 
-    size_t size = cursors.size();
     if (!has_collation)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
