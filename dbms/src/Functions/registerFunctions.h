@@ -53,6 +53,7 @@ void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
+void registerFunctionRandomASCII(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
 
 #if USE_ICU
