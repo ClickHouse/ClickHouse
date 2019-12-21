@@ -41,15 +41,9 @@ MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t 
     chunks.swap(nonempty_chunks);
 
     if (!has_collation)
-    {
-        for (auto & cursor : cursors)
-            queue_without_collation.push(SortCursor(&cursor));
-    }
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-    {
-        for (auto & cursor : cursors)
-            queue_with_collation.push(SortCursorWithCollation(&cursor));
-    }
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
 }
 
 
@@ -66,49 +60,55 @@ Chunk MergeSorter::read()
     }
 
     return !has_collation
-           ? mergeImpl<SortCursor>(queue_without_collation)
-           : mergeImpl<SortCursorWithCollation>(queue_with_collation);
+        ? mergeImpl(queue_without_collation)
+        : mergeImpl(queue_with_collation);
 }
 
 
-template <typename TSortCursor>
-Chunk MergeSorter::mergeImpl(std::priority_queue<TSortCursor> & queue)
+template <typename TSortingHeap>
+Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
-
     MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
-    /// TODO: reserve (in each column)
+
+    /// Reserve
+    if (queue.isValid())
+    {
+        /// The expected size of output block is the same as input block
+        size_t size_to_reserve = chunks[0].getNumRows();
+        for (auto & column : merged_columns)
+            column->reserve(size_to_reserve);
+    }
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        TSortCursor current = queue.top();
-        queue.pop();
+        auto current = queue.current();
 
+        /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
             merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
         ++total_merged_rows;
         ++merged_rows;
 
-        if (!current->isLast())
-        {
-            current->next();
-            queue.push(current);
-        }
-
+        /// We don't need more rows because of limit has reached.
         if (limit && total_merged_rows == limit)
         {
             chunks.clear();
-            return Chunk(std::move(merged_columns), merged_rows);
+            break;
         }
 
+        queue.next();
+
+        /// It's enough for current output block but we will continue.
         if (merged_rows == max_merged_block_size)
-            return Chunk(std::move(merged_columns), merged_rows);
+            break;
     }
 
-    chunks.clear();
+    if (!queue.isValid())
+        chunks.clear();
 
     if (merged_rows == 0)
         return {};
