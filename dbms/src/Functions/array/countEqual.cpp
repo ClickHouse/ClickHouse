@@ -1,5 +1,6 @@
 #include "arrayIndex.h"
 #include <Functions/FunctionFactory.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

@@ -45,7 +45,7 @@
             </volumes>
         </jbods_with_external>
 
-        <!-- Moving all parts jbod1 if accuired more than 70% -->
+        <!-- Moving all parts jbod1 if acquired more than 70% -->
         <moving_jbod_with_external>
             <volumes>
                 <main>

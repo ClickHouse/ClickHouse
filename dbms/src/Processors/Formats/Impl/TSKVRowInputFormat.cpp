@@ -131,7 +131,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 }
                 else
                 {
-                    index = *lookupResultGetMapped(it);
+                    index = it->getMapped();
 
                     if (seen_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -196,6 +196,14 @@ void TSKVRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+
+void TSKVRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    read_columns.clear();
+    seen_columns.clear();
+    name_buf.clear();
+}
 
 void registerInputFormatProcessorTSKV(FormatFactory & factory)
 {

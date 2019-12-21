@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/CpuId.h>
+#include <Common/quoteString.h>
 #include <common/getMemoryAmount.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -35,7 +36,7 @@ void waitQuery(Connection & connection)
         if (!connection.poll(1000000))
             continue;
 
-        Connection::Packet packet = connection.receivePacket();
+        Packet packet = connection.receivePacket();
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
@@ -120,7 +121,7 @@ bool PerformanceTest::checkPreconditions() const
 
             while (true)
             {
-                Connection::Packet packet = connection.receivePacket();
+                Packet packet = connection.receivePacket();
 
                 if (packet.type == Protocol::Server::Data)
                 {
@@ -142,7 +143,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (!exist)
             {
-                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist");
+                LOG_WARNING(log, "Table " << backQuote(table_to_check) << " doesn't exist");
                 return false;
             }
         }

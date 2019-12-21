@@ -409,7 +409,11 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-        settings->serialize(*out);
+    {
+        auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
+                                                                                                          : SettingsBinaryFormat::OLD;
+        settings->serialize(*out, settings_format);
+    }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
@@ -435,6 +439,10 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
@@ -612,7 +620,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Connection::Packet Connection::receivePacket()
+Packet Connection::receivePacket()
 {
     try
     {

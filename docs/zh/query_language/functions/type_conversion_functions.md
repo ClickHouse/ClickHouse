@@ -145,7 +145,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toIntervalYear, toIntervalQuarter, toIntervalMonth, toIntervalWeek, toIntervalDay, toIntervalHour, toIntervalMinute, toIntervalSecond
+## toIntervalYear, toIntervalQuarter, toIntervalMonth, toIntervalWeek, toIntervalDay, toIntervalHour, toIntervalMinute, toIntervalSecond {#function-tointerval}
 
 将数字类型参数转换为Interval类型（时间区间）。
 Interval类型实际上是非常有用的，您可以使用此类型的数据直接与Date或DateTime执行算术运算。同时，ClickHouse为Interval类型数据的声明提供了更方便的语法。例如：

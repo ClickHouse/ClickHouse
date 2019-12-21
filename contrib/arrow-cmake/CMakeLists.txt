@@ -70,6 +70,14 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
 
+# arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features. 
+# Apple Clang compiler failed to compile this code without specifying c++11 standard. 
+# As result these compiler features detected as absent. In result it failed to compile orc itself.
+# In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  set (CXX11_FLAGS "-std=c++0x")
+endif()
+
 include(${ClickHouse_SOURCE_DIR}/contrib/orc/cmake_modules/CheckSourceCompiles.cmake)
 include(orc_check.cmake)
 configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"  "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")

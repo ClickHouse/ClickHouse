@@ -34,7 +34,6 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -407,16 +406,16 @@ void HTTPHandler::processQuery(
     {
         if (http_request_compression_method_str == "gzip")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Zlib);
         }
 #if USE_BROTLI
         else if (http_request_compression_method_str == "br")
         {
-            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+            in_post = std::make_unique<BrotliReadBuffer>(std::move(in_post_raw));
         }
 #endif
         else

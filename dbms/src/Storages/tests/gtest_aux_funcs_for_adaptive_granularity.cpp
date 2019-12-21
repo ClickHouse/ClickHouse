@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.cpp>
 
 using namespace DB;
-Block getBlockWithSize(size_t required_size_in_bytes, size_t size_of_row_in_bytes)
+static Block getBlockWithSize(size_t required_size_in_bytes, size_t size_of_row_in_bytes)
 {
 
     ColumnsWithTypeAndName cols;

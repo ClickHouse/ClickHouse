@@ -81,7 +81,7 @@ public:
         if (!it)
             throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
-        return *lookupResultGetMapped(it);
+        return it->getMapped();
     }
 
     Field castToName(const Field & value_or_name) const override;

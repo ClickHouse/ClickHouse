@@ -37,14 +37,14 @@ struct State
     }
 };
 
-State & state()
+static State & state()
 {
     static State res;
     return res;
 }
 
 
-void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
+static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000);
@@ -57,7 +57,7 @@ void check(const std::string & query, const std::string & expected, const Contex
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
     check("SELECT column FROM test.table WHERE 1 IN (1)",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1 IN (1)",
+          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column IN (1, 2)",
           "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" IN (1, 2)",

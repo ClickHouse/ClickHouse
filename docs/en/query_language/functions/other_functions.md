@@ -4,8 +4,39 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
-## FQDN(), fullHostName()
-Returns the Fully qualified domain name aka [FQDN](https://en.wikipedia.org/wiki/Fully_qualified_domain_name).
+## FQDN {#fqdn}
+
+Returns the fully qualified domain name. 
+
+**Syntax**
+
+```sql
+fqdn();
+```
+
+This function is case-insensitive.
+
+**Returned value**
+
+- String with the fully qualified domain name.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT FQDN();
+```
+
+Result:
+
+```text
+┌─FQDN()──────────────────────────┐
+│ clickhouse.ru-central1.internal │
+└─────────────────────────────────┘
+```
 
 ## basename
 

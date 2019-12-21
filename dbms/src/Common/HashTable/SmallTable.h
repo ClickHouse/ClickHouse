@@ -38,7 +38,6 @@ protected:
     friend class Reader;
 
     using Self = SmallTable;
-    using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements.
     Cell buf[capacity];       /// A piece of memory for all elements.
@@ -72,8 +71,9 @@ protected:
 
 public:
     using key_type = Key;
+    using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
-
+    using cell_type = Cell;
 
     class Reader final : private Cell::State
     {
@@ -391,16 +391,17 @@ class SmallMapTable : public SmallTable<Key, Cell, capacity>
 {
 public:
     using key_type = Key;
-    using mapped_type = typename Cell::Mapped;
+    using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
+    using cell_type = Cell;
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
         typename SmallMapTable::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        new(&it->getSecond()) mapped_type();
-        return it->getSecond();
+        new (&it->getMapped()) mapped_type();
+        return it->getMapped();
     }
 };
 

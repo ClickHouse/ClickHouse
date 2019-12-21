@@ -31,6 +31,7 @@ public:
 
     /// Access the innards.
     HashJoinPtr & getJoin() { return join; }
+    HashJoinPtr getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const;
 
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
@@ -55,6 +56,7 @@ private:
     HashJoinPtr join;
 
     void insertBlock(const Block & block) override;
+    void finishInsert() override {}
     size_t getSize() const override;
 
 protected:

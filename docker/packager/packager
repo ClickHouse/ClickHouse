@@ -104,22 +104,37 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
+    CLANG_PREFIX = "clang"
+    DARWIN_SUFFIX = "-darwin"
+    ARM_SUFFIX = "-aarch64"
+
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
-    is_clang = "clang" in compiler
-    is_cross_compile = ("darwin" in compiler) or ("aarch64" in compiler)
+    is_clang = compiler.startswith(CLANG_PREFIX)
+    is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
+    is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_compile = is_cross_darwin or is_cross_arm
 
     # Explicitly use LLD with Clang by default.
     # Don't force linker for cross-compilation.
     if is_clang and not is_cross_compile:
-        cmake_flags = ['$CMAKE_FLAGS', '-DLINKER_NAME=lld']
+        cmake_flags.append("-DLINKER_NAME=lld")
 
-    if compiler.endswith("-darwin"):
-        cc = compiler[:-len("-darwin")]
+    if is_cross_darwin:
+        cc = compiler[:-len(DARWIN_SUFFIX)]
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
+    elif is_cross_arm:
+        cc = compiler[:-len(ARM_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
     else:
         cc = compiler
+
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
+
     if package_type == "deb":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
@@ -128,15 +143,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append("CXX={}".format(cxx))
         cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
         cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
-
-    if "darwin" in compiler:
-        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
-        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
-        cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
-        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
-
-    if "aarch64" in compiler:
-        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))

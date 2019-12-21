@@ -75,7 +75,7 @@ void DataTypeEnum<Type>::fillMaps()
 
         if (!inserted_value.second)
             throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and " + toString(*lookupResultGetMapped(inserted_value.first)),
+                    + " and " + toString(inserted_value.first->getMapped()),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto inserted_name = value_to_name_map.insert(
@@ -127,7 +127,7 @@ void DataTypeEnum<Type>::serializeBinary(const IColumn & column, size_t row_num,
 template <typename Type>
 void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    typename ColumnType::value_type x;
+    typename ColumnType::ValueType x;
     readBinary(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
