@@ -471,7 +471,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
-        else if (identifier && node.name == "joinGet" && arg == 0)
+        else if (identifier && functionIsJoinGetOrDictGet(node.name) && arg == 0)
         {
             auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
             table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
@@ -480,7 +480,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                data.getUniqueName("__joinGet"));
+                data.getUniqueName("__joinGetOrDictGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);

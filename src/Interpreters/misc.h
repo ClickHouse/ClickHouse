@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/StringUtils/StringUtils.h>
+
 namespace DB
 {
 
@@ -16,6 +18,11 @@ inline bool functionIsInOrGlobalInOperator(const std::string & name)
 inline bool functionIsLikeOperator(const std::string & name)
 {
     return name == "like" || name == "notLike";
+}
+
+inline bool functionIsJoinGetOrDictGet(const std::string & name)
+{
+    return name == "joinGet" || startsWith(name, "dictGet");
 }
 
 }
