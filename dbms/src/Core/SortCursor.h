@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 
@@ -210,6 +211,8 @@ struct SortCursorWithCollation
 };
 
 
+/** Allows to fetch data from multiple sort cursors in sorted order (merging sorted data streams).
+  */
 template <typename Cursor>
 class SortingHeap
 {
@@ -232,13 +235,15 @@ public:
 
     void next()
     {
-        if (current()->isValid())
+        assert(isValid());
+
+        if (!current()->isLast())
         {
             current()->next();
-            updateTopHeap(queue.begin(), queue.end());
+            updateTop();
         }
         else
-            queue.erase(queue.begin());
+            removeTop();
     }
 
 private:
@@ -246,15 +251,17 @@ private:
     Container queue;
 
     /// This is adapted version of the function __sift_down from libc++.
-    template <typename It>
-    static void updateTopHeap(It begin, It end)
+    /// Why cannot simply use std::priority_queue?
+    /// - because it doesn't support updating the top element and requires pop and push instead.
+    void updateTop()
     {
-        size_t size = end - begin;
+        size_t size = queue.size();
         if (size < 2)
             return;
 
         size_t child_idx = 1;
-        It child_it = begin + 1;
+        auto begin = queue.begin();
+        auto child_it = begin + 1;
 
         /// Right child exists and is greater than left child.
         if (size > 2 && *child_it < *(child_it + 1))
@@ -292,6 +299,11 @@ private:
             /// Check if we are in order.
         } while (!(*child_it < top));
         *curr_it = std::move(top);
+    }
+
+    void removeTop()
+    {
+        std::pop_heap(queue.begin(), queue.end());
     }
 };
 
