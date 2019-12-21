@@ -22,8 +22,8 @@ namespace DB
   */
 struct SortCursorImpl
 {
-    ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
+    ColumnRawPtrs all_columns;
     SortDescription desc;
     size_t sort_columns_size = 0;
     size_t pos = 0;
