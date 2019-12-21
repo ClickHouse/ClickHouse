@@ -304,6 +304,7 @@ private:
     void removeTop()
     {
         std::pop_heap(queue.begin(), queue.end());
+        queue.pop_back();
     }
 };
 
