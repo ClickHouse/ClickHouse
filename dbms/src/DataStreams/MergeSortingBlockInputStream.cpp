@@ -178,9 +178,9 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
 template <typename TSortingHeap>
 Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 {
-    size_t num_columns = blocks[0].columns();
+    size_t num_columns = header.columns();
 
-    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
+    MutableColumns merged_columns = header.cloneEmptyColumns();
     /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
@@ -189,31 +189,31 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
     {
         auto current = queue.current();
 
+        /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
             merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-        if (queue.isValid())
-            queue.next();
-        else
-            break;
-
         ++total_merged_rows;
+        ++merged_rows;
+
+        /// We don't need more rows because of limit has reached.
         if (limit && total_merged_rows == limit)
         {
-            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return res;
+            break;
         }
 
-        ++merged_rows;
+        queue.next();
+
+        /// It's enough for current output block but we will continue.
         if (merged_rows == max_merged_block_size)
-            return blocks[0].cloneWithColumns(std::move(merged_columns));
+            break;
     }
 
     if (merged_rows == 0)
         return {};
 
-    return blocks[0].cloneWithColumns(std::move(merged_columns));
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 
