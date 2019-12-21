@@ -438,7 +438,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }
-        else if (identifier && node.name == "joinGet" && arg == 0)
+        else if (identifier && functionIsJoinGetOrDictGet(node.name) && arg == 0)
         {
             String database_name;
             String table_name;
@@ -450,7 +450,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                getUniqueName(data.getSampleBlock(), "__joinGet"));
+                getUniqueName(data.getSampleBlock(), "__joinGetOrDictGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
