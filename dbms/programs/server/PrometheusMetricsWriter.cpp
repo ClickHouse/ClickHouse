@@ -1,5 +1,7 @@
 #include "PrometheusMetricsWriter.h"
 
+#include <algorithm>
+
 #include <IO/WriteHelpers.h>
 
 namespace
@@ -18,6 +20,11 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
     DB::writeText(std::forward<T>(val), wb);
     DB::writeChar(' ', wb);
     writeOutLine(wb, std::forward<TArgs>(args)...);
+}
+
+void replaceInvalidChars(std::string & metric_name)
+{
+    std::replace(metric_name.begin(), metric_name.end(), '.', '_');
 }
 
 }
@@ -47,6 +54,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
 
+            replaceInvalidChars(metric_name);
             std::string key{profile_events_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);
@@ -64,6 +72,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_name{CurrentMetrics::getName(static_cast<CurrentMetrics::Metric>(i))};
             std::string metric_doc{CurrentMetrics::getDocumentation(static_cast<CurrentMetrics::Metric>(i))};
 
+            replaceInvalidChars(metric_name);
             std::string key{current_metrics_prefix + metric_name};
 
             writeOutLine(wb, "# HELP", key, metric_doc);
@@ -78,6 +87,8 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         for (const auto & name_value : async_metrics_values)
         {
             std::string key{asynchronous_metrics_prefix + name_value.first};
+
+            replaceInvalidChars(key);
             auto value = name_value.second;
 
             // TODO: add HELP section? asynchronous_metrics contains only key and value
