@@ -37,7 +37,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     {
         if (key == "constraints")
             continue;
-        if (key == "profile")   /// Inheritance of one profile from another.
+        if (key == "profile" || key.find("profile[") == 0)   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
