@@ -281,6 +281,13 @@ public:
         queue.pop_back();
     }
 
+    void push(SortCursorImpl & cursor)
+    {
+        queue.emplace_back(&cursor);
+        std::push_heap(queue.begin(), queue.end());
+        next_idx = 0;
+    }
+
 private:
     using Container = std::vector<Cursor>;
     Container queue;
