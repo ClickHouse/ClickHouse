@@ -1,5 +1,5 @@
 #include <daemon/BaseDaemon.h>
-#include <Common/Config/ConfigProcessor.h>
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -12,19 +12,15 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/Pipe.h>
-#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <memory>
+
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
-#include <common/getThreadNumber.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/TaskManager.h>
 #include <Poco/File.h>
@@ -36,16 +32,23 @@
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/Exception.h>
+
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/argsToConfig.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/config_version.h>
-#include <common/argsToConfig.h>
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
@@ -54,7 +57,7 @@
 #include <ucontext.h>
 
 
-Pipe signal_pipe;
+DB::PipeFDs signal_pipe;
 
 
 /** Reset signal handler to the default and send signal to itself.
@@ -67,8 +70,13 @@ static void call_default_signal_handler(int sig)
 }
 
 
-using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
+/// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
+/// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
+constexpr size_t QUERY_ID_MAX_LEN = 1024;
+
+static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(UInt32)
+    + QUERY_ID_MAX_LEN + 2 /* varint encoding query_id length */;
+
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -92,11 +100,12 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-/** Handler for "fault" signals. Send data about fault to separate thread to write into log.
+/** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
-static void faultSignalHandler(int sig, siginfo_t * info, void * context)
+static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     char buf[buf_size];
+    std::cerr << "Size of buffer: " << buf_size << "\n";
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -106,7 +115,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
-    DB::writeBinary(getThreadNumber(), out);
+    DB::writeBinary(UInt32(getThreadNumber()), out);
 
     out.next();
 
@@ -162,7 +171,7 @@ public:
             }
             else if (sig == Signals::StdTerminate)
             {
-                ThreadNumber thread_num;
+                UInt32 thread_num;
                 std::string message;
 
                 DB::readBinary(thread_num, in);
@@ -181,12 +190,26 @@ public:
                 siginfo_t info;
                 ucontext_t context;
                 StackTrace stack_trace(NoCapture{});
-                ThreadNumber thread_num;
+                UInt32 thread_num;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
+
+                if (sig == SIGTSTP && info.si_value.sival_ptr)
+                {
+                    /// TSTP signal with value is used to make a custom callback from this thread.
+                    try
+                    {
+                        reinterpret_cast<SignalCallback *>(info.si_value.sival_ptr)(info, stack_trace, thread_num);
+                        continue;
+                    }
+                    catch (...)
+                    {
+                        /// Failed to process, will use 'onFault' function.
+                    }
+                }
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
@@ -200,12 +223,12 @@ private:
     BaseDaemon & daemon;
 
 private:
-    void onTerminate(const std::string & message, ThreadNumber thread_num) const
+    void onTerminate(const std::string & message, UInt32 thread_num) const
     {
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, UInt32 thread_num) const
     {
         LOG_FATAL(log, "########################################");
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
@@ -264,7 +287,7 @@ static void terminate_handler()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(getThreadNumber(), out);
+    DB::writeBinary(UInt32(getThreadNumber()), out);
     DB::writeBinary(log_message, out);
     out.next();
 
@@ -721,13 +744,16 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, faultSignalHandler);
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
+
+    signal_pipe.setNonBlocking();
+    signal_pipe.tryIncreaseSize(1 << 20);
 
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);

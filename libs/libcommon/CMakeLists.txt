@@ -23,7 +23,6 @@ add_library (common
     src/getThreadNumber.cpp
     src/sleep.cpp
     src/argsToConfig.cpp
-    src/Pipe.cpp
     src/phdr_cache.cpp
 
     include/common/SimpleCache.h
@@ -46,7 +45,6 @@ add_library (common
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
-    include/common/Pipe.h
     include/common/getThreadNumber.h
     include/common/sleep.h
     include/common/SimpleCache.h

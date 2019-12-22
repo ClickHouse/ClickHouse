@@ -19,9 +19,11 @@
 #include <Poco/Version.h>
 #include <common/Types.h>
 #include <common/logger_useful.h>
+#include <common/getThreadNumber.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <loggers/Loggers.h>
+
 
 namespace Poco { class TaskManager; }
 
@@ -234,3 +236,9 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     else
         return {};
 }
+
+
+/// If you send TSTP signal with value (sigqueue) to a thread, it will make a callback
+///  from a separate thread and you can call non signal-safe function from there.
+using SignalCallback = void(const siginfo_t &, const StackTrace &, UInt32);
+
