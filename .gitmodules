@@ -128,3 +128,6 @@
 [submodule "contrib/icu"]
 	path = contrib/icu
 	url = https://github.com/unicode-org/icu.git
+[submodule "contrib/flatbuffers"]
+	path = contrib/flatbuffers
+	url = git@github.com:google/flatbuffers.git
