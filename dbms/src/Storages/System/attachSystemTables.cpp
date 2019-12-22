@@ -38,6 +38,7 @@
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <Storages/System/StorageSystemStackTrace.h>
 
 
 namespace DB
@@ -65,6 +66,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
+    system_database.attachTable("stack_trace", StorageSystemStackTrace::create("stack_trace"));
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
