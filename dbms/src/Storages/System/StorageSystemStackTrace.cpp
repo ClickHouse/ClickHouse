@@ -169,6 +169,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         }
 
         /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
+        /// TODO How to deal with stale values in a pipe? TSan will also argue.
 
         if (wait(100))
         {
