@@ -110,6 +110,7 @@ protected:
     SortCursorImpls cursors;
 
     SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SimpleSortCursor> queue_simple;
     SortingHeap<SortCursorWithCollation> queue_with_collation;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
