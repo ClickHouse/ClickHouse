@@ -105,7 +105,6 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     char buf[buf_size];
-    std::cerr << "Size of buffer: " << buf_size << "\n";
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -196,20 +195,6 @@ public:
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
-
-                if (sig == SIGTSTP && info.si_value.sival_ptr)
-                {
-                    /// TSTP signal with value is used to make a custom callback from this thread.
-                    try
-                    {
-                        reinterpret_cast<SignalCallback *>(info.si_value.sival_ptr)(info, stack_trace, thread_num);
-                        continue;
-                    }
-                    catch (...)
-                    {
-                        /// Failed to process, will use 'onFault' function.
-                    }
-                }
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
