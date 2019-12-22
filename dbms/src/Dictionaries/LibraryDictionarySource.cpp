@@ -142,7 +142,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     if (!Poco::File(path).exists())
         throw Exception(
-            "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+            "LibraryDictionarySource: Can't load library " + Poco::File(path).path() + ": file doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
 
     description.init(sample_block);
