@@ -60,10 +60,8 @@ void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
 
         if (has_collation)
             queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
-        else if (description.size() > 1)
-            queue_without_collation = SortingHeap<SortCursor>(cursors);
         else
-            queue_simple = SortingHeap<SimpleSortCursor>(cursors);
+            queue_without_collation = SortingHeap<SortCursor>(cursors);
     }
 
     /// Let's check that all source blocks have the same structure.
@@ -100,10 +98,8 @@ Block MergingSortedBlockInputStream::readImpl()
 
     if (has_collation)
         merge(merged_columns, queue_with_collation);
-    else if (description.size() > 1)
-        merge(merged_columns, queue_without_collation);
     else
-        merge(merged_columns, queue_simple);
+        merge(merged_columns, queue_without_collation);
 
     return header.cloneWithColumns(std::move(merged_columns));
 }
