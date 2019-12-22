@@ -58,10 +58,10 @@ void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
             has_collation |= cursors[i].has_collation;
         }
 
-        if (!has_collation)
-            queue_without_collation = SortingHeap<SortCursor>(cursors);
-        else if (description.size() > 1)
+        if (has_collation)
             queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+        else if (description.size() > 1)
+            queue_without_collation = SortingHeap<SortCursor>(cursors);
         else
             queue_simple = SortingHeap<SimpleSortCursor>(cursors);
     }
