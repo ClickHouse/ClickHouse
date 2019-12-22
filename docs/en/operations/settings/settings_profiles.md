@@ -60,7 +60,7 @@ Example:
 
 The example specifies two profiles: `default` and `web`. The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings. The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
 
-Settings profiles can inherit from each other. To use inheritance, indicate the `profile` setting before the other settings that are listed in the profile.
+Settings profiles can inherit from each other. To use inheritance, indicate one or multiple `profile` settings before the other settings that are listed in the profile.
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings_profiles/) <!--hide-->
