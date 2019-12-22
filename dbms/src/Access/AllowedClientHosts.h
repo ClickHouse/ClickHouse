@@ -94,7 +94,7 @@ private:
     void compileRegexps() const;
 
     std::vector<IPAddress> addresses;
-    bool loopback = false;
+    bool localhost = false;
     std::vector<IPSubnet> subnets;
     std::vector<String> host_names;
     std::vector<String> host_regexps;
