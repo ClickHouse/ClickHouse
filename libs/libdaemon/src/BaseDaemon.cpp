@@ -70,12 +70,7 @@ static void call_default_signal_handler(int sig)
 }
 
 
-/// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-/// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-constexpr size_t QUERY_ID_MAX_LEN = 1024;
-
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(UInt32)
-    + QUERY_ID_MAX_LEN + 2 /* varint encoding query_id length */;
+static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(UInt32);
 
 
 using signal_function = void(int, siginfo_t*, void*);
