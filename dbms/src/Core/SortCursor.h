@@ -110,21 +110,52 @@ using SortCursorImpls = std::vector<SortCursorImpl>;
 
 
 /// For easy copying.
-struct SortCursor
+template <typename Derived>
+struct SortCursorHelper
 {
     SortCursorImpl * impl;
 
-    SortCursor(SortCursorImpl * impl_) : impl(impl_) {}
+    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+
+    SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
+
+    bool greater(const SortCursorHelper & rhs) const
+    {
+        return derived().greaterAt(rhs.derived(), impl->pos, rhs.impl->pos);
+    }
+
+    /// Inverted so that the priority queue elements are removed in ascending order.
+    bool operator< (const SortCursorHelper & rhs) const
+    {
+        return derived().greater(rhs.derived());
+    }
+
+    /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
+    bool totallyLessOrEquals(const SortCursorHelper & rhs) const
+    {
+        if (impl->rows == 0 || rhs.impl->rows == 0)
+            return false;
+
+        /// The last row of this cursor is no larger than the first row of the another cursor.
+        return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
+    }
+};
+
+
+struct SortCursor : SortCursorHelper<SortCursor>
+{
+    using SortCursorHelper<SortCursor>::SortCursorHelper;
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
     bool greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
-            int direction = impl->desc[i].direction;
-            int nulls_direction = impl->desc[i].nulls_direction;
+            const auto & desc = impl->desc[i];
+            int direction = desc.direction;
+            int nulls_direction = desc.nulls_direction;
             int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
             if (res > 0)
                 return true;
@@ -133,45 +164,37 @@ struct SortCursor
         }
         return impl->order > rhs.impl->order;
     }
+};
 
-    /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
-    bool totallyLessOrEquals(const SortCursor & rhs) const
+
+/// For the case with a single column and when there is no order between different cursors.
+struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
+{
+    using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
+
+    bool greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
-        if (impl->rows == 0 || rhs.impl->rows == 0)
-            return false;
-
-        /// The last row of this cursor is no larger than the first row of the another cursor.
-        return !greaterAt(rhs, impl->rows - 1, 0);
-    }
-
-    bool greater(const SortCursor & rhs) const
-    {
-        return greaterAt(rhs, impl->pos, rhs.impl->pos);
-    }
-
-    /// Inverted so that the priority queue elements are removed in ascending order.
-    bool operator< (const SortCursor & rhs) const
-    {
-        return greater(rhs);
+        const auto & desc = impl->desc[0];
+        int direction = desc.direction;
+        int nulls_direction = desc.nulls_direction;
+        int res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+        return (res > 0) ^ (direction > 0);
     }
 };
 
 
 /// Separate comparator for locale-sensitive string comparisons
-struct SortCursorWithCollation
+struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
 {
-    SortCursorImpl * impl;
-
-    SortCursorWithCollation(SortCursorImpl * impl_) : impl(impl_) {}
-    SortCursorImpl * operator-> () { return impl; }
-    const SortCursorImpl * operator-> () const { return impl; }
+    using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
     bool greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
-            int direction = impl->desc[i].direction;
-            int nulls_direction = impl->desc[i].nulls_direction;
+            const auto & desc = impl->desc[i];
+            int direction = desc.direction;
+            int nulls_direction = desc.nulls_direction;
             int res;
             if (impl->need_collation[i])
             {
@@ -189,29 +212,11 @@ struct SortCursorWithCollation
         }
         return impl->order > rhs.impl->order;
     }
-
-    bool totallyLessOrEquals(const SortCursorWithCollation & rhs) const
-    {
-        if (impl->rows == 0 || rhs.impl->rows == 0)
-            return false;
-
-        /// The last row of this cursor is no larger than the first row of the another cursor.
-        return !greaterAt(rhs, impl->rows - 1, 0);
-    }
-
-    bool greater(const SortCursorWithCollation & rhs) const
-    {
-        return greaterAt(rhs, impl->pos, rhs.impl->pos);
-    }
-
-    bool operator< (const SortCursorWithCollation & rhs) const
-    {
-        return greater(rhs);
-    }
 };
 
 
 /** Allows to fetch data from multiple sort cursors in sorted order (merging sorted data streams).
+  * TODO: Replace with "Loser Tree", see https://en.wikipedia.org/wiki/K-way_merge_algorithm
   */
 template <typename Cursor>
 class SortingHeap
