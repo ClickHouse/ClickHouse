@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -17,13 +18,15 @@ class StorageSystemStackTrace : public ext::shared_ptr_helper<StorageSystemStack
     friend struct ext::shared_ptr_helper<StorageSystemStackTrace>;
 public:
     String getName() const override { return "SystemStackTrace"; }
-
     static NamesAndTypesList getNamesAndTypes();
+
+    StorageSystemStackTrace(const String & name);
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+
+    mutable std::mutex mutex;
 };
 
 }
