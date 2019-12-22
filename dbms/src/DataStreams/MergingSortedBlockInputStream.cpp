@@ -187,8 +187,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
           */
         if (current->isFirst()
             && (queue.size() == 1
-                || (queue.size() == 2 && current.totallyLessOrEquals(queue.firstChild()))
-                || (queue.size() >= 3 && current.totallyLessOrEquals(queue.firstChild()) && current.totallyLessOrEquals(queue.secondChild()))))
+                || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
         {
 //            std::cerr << "current block is totally less or equals\n";
 

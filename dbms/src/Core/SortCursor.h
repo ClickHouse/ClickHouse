@@ -241,8 +241,20 @@ public:
 
     size_t size() { return queue.size(); }
 
-    Cursor & firstChild() { return queue[1]; }
-    Cursor & secondChild() { return queue[2]; }
+    Cursor & nextChild()
+    {
+        if (next_idx)
+        {
+            return queue[next_idx];
+        }
+        else
+        {
+            next_idx = 1;
+            if (queue.size() > 2 && queue[1] < queue[2])
+                ++next_idx;
+            return queue[next_idx];
+        }
+    }
 
     void next()
     {
@@ -273,29 +285,45 @@ private:
     using Container = std::vector<Cursor>;
     Container queue;
 
+    /// Cache comparison between first and second child if the order in queue has not been changed.
+    size_t next_idx = 0;
+
     /// This is adapted version of the function __sift_down from libc++.
     /// Why cannot simply use std::priority_queue?
     /// - because it doesn't support updating the top element and requires pop and push instead.
+    /// Also look at "Boost.Heap" library.
     void updateTop()
     {
         size_t size = queue.size();
         if (size < 2)
             return;
 
-        size_t child_idx = 1;
         auto begin = queue.begin();
-        auto child_it = begin + 1;
+        typename Container::iterator child_it;
 
-        /// Right child exists and is greater than left child.
-        if (size > 2 && *child_it < *(child_it + 1))
+        if (next_idx)
         {
-            ++child_it;
-            ++child_idx;
+            child_it = begin + next_idx;
+        }
+        else
+        {
+            next_idx = 1;
+            child_it = begin + next_idx;
+
+            /// Right child exists and is greater than left child.
+            if (size > 2 && *child_it < *(child_it + 1))
+            {
+                ++child_it;
+                ++next_idx;
+            }
         }
 
         /// Check if we are in order.
         if (*child_it < *begin)
             return;
+
+        size_t child_idx = next_idx;
+        next_idx = 0;
 
         auto curr_it = begin;
         auto top(std::move(*begin));
