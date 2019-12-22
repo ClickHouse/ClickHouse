@@ -32,8 +32,14 @@ namespace
 {
     const pid_t expected_pid = getpid();
     const int sig = SIGRTMIN;
+
     UInt32 thread_number{0};
     std::optional<StackTrace> stack_trace;
+
+    static constexpr size_t max_query_id_size = 128;
+    char query_id_data[max_query_id_size];
+    size_t query_id_size = 0;
+
     LazyPipeFDs notification_pipe;
 
     void signalHandler(int, siginfo_t * info, void * context)
@@ -48,12 +54,16 @@ namespace
         stack_trace.emplace(signal_context);
         thread_number = getThreadNumber();
 
+        StringRef query_id = CurrentThread::getQueryId();
+        query_id_size = std::min(query_id.size, max_query_id_size);
+        memcpy(query_id_data, query_id.data, query_id_size);
+
         char buf = 0;
         /// We cannot do anything if write failed.
         (void)::write(notification_pipe.fds_rw[1], &buf, 1);
     }
 
-    /// Wait for data in pipe.
+    /// Wait for data in pipe and read it.
     bool wait(int timeout_ms)
     {
         while (true)
@@ -149,8 +159,6 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         sigval sig_value{};
         pid_t tid = parse<pid_t>(it->path().filename());
 
-        std::cerr << "Requested: " << tid << "\n";
-
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -161,6 +169,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         }
 
         /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
+
         if (wait(100))
         {
             size_t stack_trace_size = stack_trace->getSize();
@@ -171,17 +180,15 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
                 arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFrames()[i]));
 
-            std::cerr << tid << ", " << thread_number << " !!\n";
-
             res_columns[0]->insert(thread_number);
-            res_columns[1]->insertDefault();
+            res_columns[1]->insertData(query_id_data, query_id_size);
             res_columns[2]->insert(arr);
         }
         else
         {
             /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
-            res_columns[0]->insert(tid);
+            res_columns[0]->insert(tid);    /// TODO Replace all thread numbers to OS thread numbers.
             res_columns[1]->insertDefault();
             res_columns[2]->insertDefault();
         }
