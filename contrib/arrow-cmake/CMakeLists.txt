@@ -1,3 +1,5 @@
+include(ExternalProject)
+
 # === thrift
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)
@@ -70,6 +72,106 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
 
+
+# === flatbuffers
+
+##############################################################
+# fbs - Step 1: download flatbuffers and build flatc executable
+# TODO get rid of downloads. Should work offline.
+##############################################################
+set(FLATBUFFERS_VERSION v1.11.0) #flatbuffers-v1.11.0.tar.gz
+
+if (DEFINED ENV{ARROW_FLATBUFFERS_URL})
+    set(FLATBUFFERS_SOURCE_URL "$ENV{ARROW_FLATBUFFERS_URL}")
+else()
+    set(FLATBUFFERS_SOURCE_URL "https://github.com/google/flatbuffers/archive/${FLATBUFFERS_VERSION}.tar.gz")
+endif()
+
+macro(build_flatbuffers)
+    message(STATUS "Building flatbuffers from source")
+    set(FLATBUFFERS_PREFIX
+            "${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_ep-prefix/src/flatbuffers_ep-install")
+    if(MSVC)
+        set(FLATBUFFERS_CMAKE_CXX_FLAGS /EHsc)
+    else()
+        set(FLATBUFFERS_CMAKE_CXX_FLAGS -fPIC)
+    endif()
+    set(FLATBUFFERS_COMPILER "${FLATBUFFERS_PREFIX}/bin/flatc")
+    set(
+            FLATBUFFERS_STATIC_LIB
+            "${FLATBUFFERS_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}flatbuffers${CMAKE_STATIC_LIBRARY_SUFFIX}"
+    )
+    # We always need to do release builds, otherwise flatc will not be installed.
+    externalproject_add(flatbuffers_ep
+            URL ${FLATBUFFERS_SOURCE_URL}
+            BUILD_BYPRODUCTS ${FLATBUFFERS_COMPILER} ${FLATBUFFERS_STATIC_LIB}
+            CMAKE_ARGS ${EP_COMMON_CMAKE_ARGS}
+            "-DCMAKE_BUILD_TYPE=RELEASE"
+            "-DCMAKE_CXX_FLAGS=${FLATBUFFERS_CMAKE_CXX_FLAGS}"
+            "-DCMAKE_INSTALL_PREFIX:PATH=${FLATBUFFERS_PREFIX}"
+            "-DFLATBUFFERS_BUILD_TESTS=OFF"
+            ${EP_LOG_OPTIONS})
+
+    file(MAKE_DIRECTORY "${FLATBUFFERS_PREFIX}/include")
+
+    add_library(flatbuffers::flatbuffers STATIC IMPORTED)
+    set_target_properties(flatbuffers::flatbuffers
+            PROPERTIES IMPORTED_LOCATION "${FLATBUFFERS_STATIC_LIB}"
+            INTERFACE_INCLUDE_DIRECTORIES
+            "${FLATBUFFERS_PREFIX}/include")
+    add_executable(flatbuffers::flatc IMPORTED)
+    set_target_properties(flatbuffers::flatc
+            PROPERTIES IMPORTED_LOCATION "${FLATBUFFERS_COMPILER}")
+
+    add_dependencies(flatbuffers::flatbuffers flatbuffers_ep)
+    add_dependencies(flatbuffers::flatc flatbuffers_ep)
+endmacro()
+
+build_flatbuffers()
+
+###################################
+# fbs - Step 2: compile *.fbs files
+###################################
+set(ARROW_IPC_SRC_DIR ${ARROW_SRC_DIR}/arrow/ipc)
+set(ARROW_FORMAT_SRC_DIR ${ARROW_SRC_DIR}/../../format)
+
+set(FBS_OUTPUT_FILES "${ARROW_IPC_SRC_DIR}/File_generated.h" "${ARROW_IPC_SRC_DIR}/Message_generated.h"
+        "${ARROW_IPC_SRC_DIR}/feather_generated.h")
+
+set(FBS_SRC
+        ${ARROW_FORMAT_SRC_DIR}/Message.fbs
+        ${ARROW_FORMAT_SRC_DIR}/File.fbs
+        ${ARROW_FORMAT_SRC_DIR}/Schema.fbs
+        ${ARROW_FORMAT_SRC_DIR}/Tensor.fbs
+        ${ARROW_FORMAT_SRC_DIR}/SparseTensor.fbs
+        ${ARROW_IPC_SRC_DIR}/feather.fbs)
+
+foreach(FIL ${FBS_SRC})
+    get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
+    list(APPEND ABS_FBS_SRC ${ABS_FIL})
+endforeach()
+
+get_target_property(FLATC_EXECUTABLE flatbuffers::flatc IMPORTED_LOCATION)
+if(NOT FLATC_EXECUTABLE)
+    get_target_property(FLATC_EXECUTABLE flatbuffers::flatc IMPORTED_LOCATION_RELEASE)
+endif()
+
+# TODO compiled files should be stored in binary build dir instead of among submodule sources
+set(FLATBUFFERS_COMPILED_OUT_DIR ${ARROW_IPC_SRC_DIR})
+
+message(STATUS "flatc: ${FLATC_EXECUTABLE} -c -o ${FLATBUFFERS_COMPILED_OUT_DIR}/ ${ABS_FBS_SRC}")
+
+add_custom_command(TARGET flatbuffers_ep
+        POST_BUILD
+        COMMAND ${FLATC_EXECUTABLE}
+        -c
+        -o
+        ${FLATBUFFERS_COMPILED_OUT_DIR}/
+        ${ABS_FBS_SRC}
+        DEPENDS flatbuffers::flatc ${ABS_FBS_SRC}
+        COMMENT "Running flatc compiler on ${ABS_FBS_SRC}"
+        VERBATIM)
+
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features. 
 # Apple Clang compiler failed to compile this code without specifying c++11 standard. 
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
@@ -86,6 +188,7 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 
 set(ORC_SRCS
         ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc
+        ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc
         ${ORC_SOURCE_SRC_DIR}/Exceptions.cc
         ${ORC_SOURCE_SRC_DIR}/OrcFile.cc
         ${ORC_SOURCE_SRC_DIR}/Reader.cc
@@ -119,11 +222,29 @@ set(ORC_SRCS
 # === arrow
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow)
+
+configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${LIBRARY_DIR}/util/config.h")
+
 # arrow/cpp/src/arrow/CMakeLists.txt
 set(ARROW_SRCS
   ${LIBRARY_DIR}/array.cc
-
+  ${LIBRARY_DIR}/buffer.cc
   ${LIBRARY_DIR}/builder.cc
+  ${LIBRARY_DIR}/compare.cc
+  ${LIBRARY_DIR}/extension_type.cc
+  ${LIBRARY_DIR}/memory_pool.cc
+  ${LIBRARY_DIR}/pretty_print.cc
+  ${LIBRARY_DIR}/record_batch.cc
+  ${LIBRARY_DIR}/result.cc
+  ${LIBRARY_DIR}/scalar.cc
+  ${LIBRARY_DIR}/sparse_tensor.cc
+  ${LIBRARY_DIR}/status.cc
+  ${LIBRARY_DIR}/table_builder.cc
+  ${LIBRARY_DIR}/table.cc
+  ${LIBRARY_DIR}/tensor.cc
+  ${LIBRARY_DIR}/type.cc
+  ${LIBRARY_DIR}/visitor.cc
+
   ${LIBRARY_DIR}/array/builder_adaptive.cc
   ${LIBRARY_DIR}/array/builder_base.cc
   ${LIBRARY_DIR}/array/builder_binary.cc
@@ -131,26 +252,27 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/array/builder_dict.cc
   ${LIBRARY_DIR}/array/builder_nested.cc
   ${LIBRARY_DIR}/array/builder_primitive.cc
-
-  ${LIBRARY_DIR}/buffer.cc
-  ${LIBRARY_DIR}/compare.cc
-  ${LIBRARY_DIR}/memory_pool.cc
-  ${LIBRARY_DIR}/pretty_print.cc
-  ${LIBRARY_DIR}/record_batch.cc
-  ${LIBRARY_DIR}/status.cc
-  ${LIBRARY_DIR}/table.cc
-  ${LIBRARY_DIR}/table_builder.cc
-  ${LIBRARY_DIR}/tensor.cc
-  ${LIBRARY_DIR}/sparse_tensor.cc
-  ${LIBRARY_DIR}/type.cc
-  ${LIBRARY_DIR}/visitor.cc
+  ${LIBRARY_DIR}/array/builder_union.cc
+  ${LIBRARY_DIR}/array/concatenate.cc
+  ${LIBRARY_DIR}/array/dict_internal.cc
+  ${LIBRARY_DIR}/array/diff.cc
 
   ${LIBRARY_DIR}/csv/converter.cc
   ${LIBRARY_DIR}/csv/chunker.cc
-  ${LIBRARY_DIR}/csv/column-builder.cc
+  ${LIBRARY_DIR}/csv/column_builder.cc
   ${LIBRARY_DIR}/csv/options.cc
   ${LIBRARY_DIR}/csv/parser.cc
   ${LIBRARY_DIR}/csv/reader.cc
+
+  ${LIBRARY_DIR}/ipc/dictionary.cc
+  ${LIBRARY_DIR}/ipc/feather.cc
+  ${LIBRARY_DIR}/ipc/file_to_stream.cc
+  ${LIBRARY_DIR}/ipc/message.cc
+  ${LIBRARY_DIR}/ipc/metadata_internal.cc
+  ${LIBRARY_DIR}/ipc/options.cc
+  ${LIBRARY_DIR}/ipc/reader.cc
+  ${LIBRARY_DIR}/ipc/stream_to_file.cc
+  ${LIBRARY_DIR}/ipc/writer.cc
 
   ${LIBRARY_DIR}/io/buffered.cc
   ${LIBRARY_DIR}/io/compressed.cc
@@ -158,19 +280,33 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/io/interfaces.cc
   ${LIBRARY_DIR}/io/memory.cc
   ${LIBRARY_DIR}/io/readahead.cc
+  ${LIBRARY_DIR}/io/slow.cc
 
-  ${LIBRARY_DIR}/util/bit-util.cc
+  ${LIBRARY_DIR}/util/basic_decimal.cc
+  ${LIBRARY_DIR}/util/bit_util.cc
+#  ${LIBRARY_DIR}/util/compression_brotli.cc
+  ${LIBRARY_DIR}/util/compression_bz2.cc
   ${LIBRARY_DIR}/util/compression.cc
-  ${LIBRARY_DIR}/util/cpu-info.cc
+  ${LIBRARY_DIR}/util/compression_lz4.cc
+  ${LIBRARY_DIR}/util/compression_snappy.cc
+  ${LIBRARY_DIR}/util/compression_zlib.cc
+  ${LIBRARY_DIR}/util/compression_zstd.cc
+  ${LIBRARY_DIR}/util/cpu_info.cc
   ${LIBRARY_DIR}/util/decimal.cc
-  ${LIBRARY_DIR}/util/int-util.cc
-  ${LIBRARY_DIR}/util/io-util.cc
-  ${LIBRARY_DIR}/util/logging.cc
+  ${LIBRARY_DIR}/util/int_util.cc
+  ${LIBRARY_DIR}/util/io_util.cc
   ${LIBRARY_DIR}/util/key_value_metadata.cc
-  ${LIBRARY_DIR}/util/task-group.cc
-  ${LIBRARY_DIR}/util/thread-pool.cc
+  ${LIBRARY_DIR}/util/logging.cc
+  ${LIBRARY_DIR}/util/memory.cc
+  ${LIBRARY_DIR}/util/string_builder.cc
+  ${LIBRARY_DIR}/util/string.cc
+  ${LIBRARY_DIR}/util/task_group.cc
+  ${LIBRARY_DIR}/util/thread_pool.cc
   ${LIBRARY_DIR}/util/trie.cc
+#  ${LIBRARY_DIR}/util/uri.cc
   ${LIBRARY_DIR}/util/utf8.cc
+
+  ${LIBRARY_DIR}/vendored/base64.cpp
   ${ORC_SRCS}
 )
 
@@ -179,7 +315,7 @@ set(ARROW_SRCS ${ARROW_SRCS}
     ${LIBRARY_DIR}/compute/kernels/boolean.cc
     ${LIBRARY_DIR}/compute/kernels/cast.cc
     ${LIBRARY_DIR}/compute/kernels/hash.cc
-    ${LIBRARY_DIR}/compute/kernels/util-internal.cc
+    ${LIBRARY_DIR}/compute/kernels/util_internal.cc
 )
 
 if (LZ4_INCLUDE_DIR AND LZ4_LIBRARY)
@@ -221,6 +357,11 @@ endif()
 
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 
+# Arrow dependencies on external projects (ep): flatbuffers and Boost
+add_dependencies(${ARROW_LIBRARY} flatbuffers_ep)
+target_link_libraries(${ARROW_LIBRARY} PRIVATE boost_system_internal boost_filesystem_internal boost_regex_internal)
+target_link_libraries(${ARROW_LIBRARY} PRIVATE flatbuffers::flatbuffers)
+
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
 endif()
@@ -255,23 +396,25 @@ set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
   ${LIBRARY_DIR}/arrow/reader.cc
-  ${LIBRARY_DIR}/arrow/record_reader.cc
+  ${LIBRARY_DIR}/arrow/reader_internal.cc
   ${LIBRARY_DIR}/arrow/schema.cc
   ${LIBRARY_DIR}/arrow/writer.cc
   ${LIBRARY_DIR}/bloom_filter.cc
   ${LIBRARY_DIR}/column_reader.cc
   ${LIBRARY_DIR}/column_scanner.cc
   ${LIBRARY_DIR}/column_writer.cc
+  ${LIBRARY_DIR}/deprecated_io.cc
+  ${LIBRARY_DIR}/encoding.cc
   ${LIBRARY_DIR}/file_reader.cc
   ${LIBRARY_DIR}/file_writer.cc
   ${LIBRARY_DIR}/metadata.cc
   ${LIBRARY_DIR}/murmur3.cc
+  ${LIBRARY_DIR}/platform.cc
   ${LIBRARY_DIR}/printer.cc
+  ${LIBRARY_DIR}/properties.cc
   ${LIBRARY_DIR}/schema.cc
   ${LIBRARY_DIR}/statistics.cc
   ${LIBRARY_DIR}/types.cc
-  ${LIBRARY_DIR}/util/comparison.cc
-  ${LIBRARY_DIR}/util/memory.cc
 )
 #list(TRANSFORM PARQUET_SRCS PREPEND ${LIBRARY_DIR}/) # cmake 3.12
 list(APPEND PARQUET_SRCS
@@ -292,7 +435,7 @@ endif()
 # === tools
 
 set(TOOLS_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet)
-set(PARQUET_TOOLS parquet-dump-schema parquet-reader parquet-scan)
+set(PARQUET_TOOLS parquet_dump_schema parquet_reader parquet_scan)
 foreach(TOOL ${PARQUET_TOOLS})
     add_executable(${TOOL} ${TOOLS_DIR}/${TOOL}.cc)
     target_link_libraries(${TOOL} PRIVATE ${PARQUET_LIBRARY})

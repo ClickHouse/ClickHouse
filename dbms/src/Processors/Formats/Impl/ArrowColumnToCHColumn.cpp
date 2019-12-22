@@ -61,14 +61,14 @@ namespace DB
 
 /// Inserts numeric data right into internal column data to reduce an overhead
     template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
-    static void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithNumericData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column_data = static_cast<VectorType &>(*internal_column).getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            std::shared_ptr<arrow::Array> chunk = arrow_column->data()->chunk(chunk_i);
+            std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
             /// buffers[0] is a null bitmap and buffers[1] are actual values
             std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
 
@@ -80,15 +80,15 @@ namespace DB
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
-    static void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
         PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
         size_t chars_t_size = 0;
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->data()->chunk(chunk_i)));
+            arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
             const size_t chunk_length = chunk.length();
 
             chars_t_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
@@ -98,9 +98,9 @@ namespace DB
         column_chars_t.reserve(chars_t_size);
         column_offsets.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->data()->chunk(chunk_i)));
+            arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
             std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
             const size_t chunk_length = chunk.length();
 
@@ -118,14 +118,14 @@ namespace DB
         }
     }
 
-    static void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            arrow::BooleanArray & chunk = static_cast<arrow::BooleanArray &>(*(arrow_column->data()->chunk(chunk_i)));
+            arrow::BooleanArray & chunk = static_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
             /// buffers[0] is a null bitmap and buffers[1] are actual values
             std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
 
@@ -135,14 +135,14 @@ namespace DB
     }
 
 /// Arrow stores Parquet::DATE in Int32, while ClickHouse stores Date in UInt16. Therefore, it should be checked before saving
-    static void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         PaddedPODArray<UInt16> & column_data = assert_cast<ColumnVector<UInt16> &>(*internal_column).getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            arrow::Date32Array & chunk = static_cast<arrow::Date32Array &>(*(arrow_column->data()->chunk(chunk_i)));
+            arrow::Date32Array & chunk = static_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
@@ -150,7 +150,7 @@ namespace DB
                 if (days_num > DATE_LUT_MAX_DAY_NUM)
                 {
                     // TODO: will it rollback correctly?
-                    throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + arrow_column->name()
+                    throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + internal_column->getName()
                                     + "\" is greater than "
                                       "max allowed Date value, which is "
                                     + std::to_string(DATE_LUT_MAX_DAY_NUM),
@@ -163,14 +163,14 @@ namespace DB
     }
 
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
-    static void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithDate64Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::Date64Array &>(*(arrow_column->data()->chunk(chunk_i)));
+            auto & chunk = static_cast<arrow::Date64Array &>(*(arrow_column->chunk(chunk_i)));
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
@@ -179,14 +179,14 @@ namespace DB
         }
     }
 
-    static void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithTimestampData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::TimestampArray &>(*(arrow_column->data()->chunk(chunk_i)));
+            auto & chunk = static_cast<arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
             const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
 
             UInt32 divide = 1;
@@ -215,15 +215,15 @@ namespace DB
         }
     }
 
-    static void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+    static void fillColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & internal_column)
     {
         auto & column = assert_cast<ColumnDecimal<Decimal128> &>(*internal_column);
         auto & column_data = column.getData();
         column_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+        for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
         {
-            auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
+            auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->chunk(chunk_i)));
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
@@ -232,14 +232,14 @@ namespace DB
     }
 
 /// Creates a null bytemap from arrow's null bitmap
-    static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
+    static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column, MutableColumnPtr & bytemap)
     {
         PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*bytemap).getData();
         bytemap_data.reserve(arrow_column->length());
 
-        for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+        for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->num_chunks()); ++chunk_i)
         {
-            std::shared_ptr<arrow::Array> chunk = arrow_column->data()->chunk(chunk_i);
+            std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
 
             for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
                 bytemap_data.emplace_back(chunk->IsNull(value_i));
@@ -255,7 +255,7 @@ namespace DB
 
         columns_list.reserve(header.rows());
 
-        using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
+        using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
         if (!read_status.ok())
             throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
                             ErrorCodes::CANNOT_READ_ALL_DATA};
@@ -270,10 +270,10 @@ namespace DB
         ++row_group_current;
 
         NameToColumnPtr name_to_column_ptr;
-        for (size_t i = 0, num_columns = static_cast<size_t>(table->num_columns()); i < num_columns; ++i)
+        for (const auto column_name : table->ColumnNames())
         {
-            std::shared_ptr<arrow::Column> arrow_column = table->column(i);
-            name_to_column_ptr[arrow_column->name()] = arrow_column;
+            std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
+            name_to_column_ptr[column_name] = arrow_column;
         }
 
         for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
@@ -285,7 +285,7 @@ namespace DB
                 throw Exception{"Column \"" + header_column.name + "\" is not presented in input data",
                                 ErrorCodes::THERE_IS_NO_COLUMN};
 
-            std::shared_ptr<arrow::Column> arrow_column = name_to_column_ptr[header_column.name];
+            std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[header_column.name];
             arrow::Type::type arrow_type = arrow_column->type()->id();
 
             // TODO: check if a column is const?
@@ -313,7 +313,7 @@ namespace DB
             }
             else
             {
-                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + header_column.name
                         + "\" is not supported for conversion from a " + format_name + " data format",
                         ErrorCodes::CANNOT_CONVERT_TYPE};
             }
@@ -374,7 +374,7 @@ namespace DB
                     throw Exception
                     {
                             "Unsupported " + format_name + " type \"" + arrow_column->type()->name() + "\" of an input column \""
-                            + arrow_column->name() + "\"",
+                            + header_column.name + "\"",
                             ErrorCodes::UNKNOWN_TYPE
                     };
             }
