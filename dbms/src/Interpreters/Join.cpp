@@ -1417,7 +1417,7 @@ BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & result_sam
 }
 
 
-bool Join::hasStreamWithNonJoinedRows()
+bool Join::hasStreamWithNonJoinedRows() const
 {
      if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
         table_join->strictness() == ASTTableJoin::Strictness::Semi)
