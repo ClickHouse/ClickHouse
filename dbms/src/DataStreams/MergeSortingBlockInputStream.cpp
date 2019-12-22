@@ -150,10 +150,12 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 
     blocks.swap(nonempty_blocks);
 
-    if (!has_collation)
+    if (has_collation)
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else if (description.size() > 1)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
 }
 
 
@@ -169,9 +171,12 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
         return res;
     }
 
-    return !has_collation
-        ? mergeImpl(queue_without_collation)
-        : mergeImpl(queue_with_collation);
+    if (has_collation)
+        return mergeImpl(queue_with_collation);
+    else if (description.size() > 1)
+        return mergeImpl(queue_without_collation);
+    else
+        return mergeImpl(queue_simple);
 }
 
 
