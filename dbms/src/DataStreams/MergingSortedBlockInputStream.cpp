@@ -58,10 +58,10 @@ void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
             has_collation |= cursors[i].has_collation;
         }
 
-        if (has_collation)
-            initQueue(queue_with_collation);
+        if (!has_collation)
+            queue_without_collation = SortingHeap<SortCursor>(cursors);
         else
-            initQueue(queue_without_collation);
+            queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
     }
 
     /// Let's check that all source blocks have the same structure.
@@ -79,15 +79,6 @@ void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
         merged_columns[i] = header.safeGetByPosition(i).column->cloneEmpty();
         merged_columns[i]->reserve(expected_block_size);
     }
-}
-
-
-template <typename TSortCursor>
-void MergingSortedBlockInputStream::initQueue(std::priority_queue<TSortCursor> & queue)
-{
-    for (size_t i = 0; i < cursors.size(); ++i)
-        if (!cursors[i].empty())
-            queue.push(TSortCursor(&cursors[i]));
 }
 
 
@@ -115,7 +106,7 @@ Block MergingSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
+void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, SortingHeap<TSortCursor> & queue)
 {
     size_t order = current->order;
     size_t size = cursors.size();
@@ -125,15 +116,19 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 
     while (true)
     {
-        source_blocks[order] = new detail::SharedBlock(children[order]->read());
+        source_blocks[order] = new detail::SharedBlock(children[order]->read());    /// intrusive ptr
 
         if (!*source_blocks[order])
+        {
+            queue.removeTop();
             break;
+        }
 
         if (source_blocks[order]->rows())
         {
             cursors[order].reset(*source_blocks[order]);
-            queue.push(TSortCursor(&cursors[order]));
+            queue.replaceTop(&cursors[order]);
+
             source_blocks[order]->all_columns = cursors[order].all_columns;
             source_blocks[order]->sort_columns = cursors[order].sort_columns;
             break;
@@ -154,19 +149,14 @@ bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
     return sum_rows_count >= average;
 }
 
-template
-void MergingSortedBlockInputStream::fetchNextBlock<SortCursor>(const SortCursor & current, std::priority_queue<SortCursor> & queue);
 
-template
-void MergingSortedBlockInputStream::fetchNextBlock<SortCursorWithCollation>(const SortCursorWithCollation & current, std::priority_queue<SortCursorWithCollation> & queue);
-
-
-template <typename TSortCursor>
-void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<TSortCursor> & queue)
+template <typename TSortingHeap>
+void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSortingHeap & queue)
 {
     size_t merged_rows = 0;
 
     MergeStopCondition stop_condition(average_block_sizes, max_block_size);
+
     /** Increase row counters.
       * Return true if it's time to finish generating the current data block.
       */
@@ -186,123 +176,101 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         return stop_condition.checkStop();
     };
 
-    /// Take rows in required order and put them into `merged_columns`, while the rows are no more than `max_block_size`
-    while (!queue.empty())
+    /// Take rows in required order and put them into `merged_columns`, while the number of rows are no more than `max_block_size`
+    while (queue.isValid())
     {
-        TSortCursor current = queue.top();
+        auto current = queue.current();
         size_t current_block_granularity = current->rows;
-        queue.pop();
 
-        while (true)
+        /** And what if the block is totally less or equal than the rest for the current cursor?
+          * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
+          */
+        if (current->isFirst()
+            && (queue.size() == 1
+                || (queue.size() == 2 && current.totallyLessOrEquals(queue.firstChild()))
+                || (queue.size() == 3 && current.totallyLessOrEquals(queue.firstChild()) && current.totallyLessOrEquals(queue.secondChild()))))
         {
-            /** And what if the block is totally less or equal than the rest for the current cursor?
-              * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
-              */
-            if (current->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
+//            std::cerr << "current block is totally less or equals\n";
+
+            /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
+            if (merged_rows != 0)
             {
-    //            std::cerr << "current block is totally less or equals\n";
-
-                /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
-                if (merged_rows != 0)
-                {
-                    //std::cerr << "merged rows is non-zero\n";
-                    queue.push(current);
-                    return;
-                }
-
-                /// Actually, current->order stores source number (i.e. cursors[current->order] == current)
-                size_t source_num = current->order;
-
-                if (source_num >= cursors.size())
-                    throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
-
-                for (size_t i = 0; i < num_columns; ++i)
-                    merged_columns[i] = (*std::move(source_blocks[source_num]->getByPosition(i).column)).mutate();
-
-    //            std::cerr << "copied columns\n";
-
-                merged_rows = merged_columns.at(0)->size();
-
-                /// Limit output
-                if (limit && total_merged_rows + merged_rows > limit)
-                {
-                    merged_rows = limit - total_merged_rows;
-                    for (size_t i = 0; i < num_columns; ++i)
-                    {
-                        auto & column = merged_columns[i];
-                        column = (*column->cut(0, merged_rows)).mutate();
-                    }
-
-                    cancel(false);
-                    finished = true;
-                }
-
-                /// Write order of rows for other columns
-                /// this data will be used in grather stream
-                if (out_row_sources_buf)
-                {
-                    RowSourcePart row_source(source_num);
-                    for (size_t i = 0; i < merged_rows; ++i)
-                        out_row_sources_buf->write(row_source.data);
-                }
-
-                //std::cerr << "fetching next block\n";
-
-                total_merged_rows += merged_rows;
-                fetchNextBlock(current, queue);
+                //std::cerr << "merged rows is non-zero\n";
                 return;
             }
 
-    //        std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
-    //        std::cerr << "Inserting row\n";
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
+            /// Actually, current->order stores source number (i.e. cursors[current->order] == current)
+            size_t source_num = current->order;
 
+            if (source_num >= cursors.size())
+                throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+
+            for (size_t i = 0; i < num_columns; ++i)
+                merged_columns[i] = (*std::move(source_blocks[source_num]->getByPosition(i).column)).mutate();
+
+//            std::cerr << "copied columns\n";
+
+            merged_rows = merged_columns.at(0)->size();
+
+            /// Limit output
+            if (limit && total_merged_rows + merged_rows > limit)
+            {
+                merged_rows = limit - total_merged_rows;
+                for (size_t i = 0; i < num_columns; ++i)
+                {
+                    auto & column = merged_columns[i];
+                    column = (*column->cut(0, merged_rows)).mutate();
+                }
+
+                cancel(false);
+                finished = true;
+            }
+
+            /// Write order of rows for other columns
+            /// this data will be used in grather stream
             if (out_row_sources_buf)
             {
-                /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                RowSourcePart row_source(current->order);
-                out_row_sources_buf->write(row_source.data);
+                RowSourcePart row_source(source_num);
+                for (size_t i = 0; i < merged_rows; ++i)
+                    out_row_sources_buf->write(row_source.data);
             }
 
-            if (!current->isLast())
-            {
-    //            std::cerr << "moving to next row\n";
-                current->next();
+            //std::cerr << "fetching next block\n";
 
-                if (queue.empty() || !(current.greater(queue.top())))
-                {
-                    if (count_row_and_check_limit(current_block_granularity))
-                    {
-    //                    std::cerr << "pushing back to queue\n";
-                        queue.push(current);
-                        return;
-                    }
+            total_merged_rows += merged_rows;
+            fetchNextBlock(current, queue);
+            return;
+        }
 
-                    /// Do not put the cursor back in the queue, but continue to work with the current cursor.
-    //                std::cerr << "current is still on top, using current row\n";
-                    continue;
-                }
-                else
-                {
-    //                std::cerr << "next row is not least, pushing back to queue\n";
-                    queue.push(current);
-                }
-            }
-            else
-            {
-                /// We get the next block from the corresponding source, if there is one.
-    //            std::cerr << "It was last row, fetching next block\n";
-                fetchNextBlock(current, queue);
-            }
+//        std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
+//        std::cerr << "Inserting row\n";
+        for (size_t i = 0; i < num_columns; ++i)
+            merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-            break;
+        if (out_row_sources_buf)
+        {
+            /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
+            RowSourcePart row_source(current->order);
+            out_row_sources_buf->write(row_source.data);
+        }
+
+        if (!current->isLast())
+        {
+//            std::cerr << "moving to next row\n";
+            queue.next();
+        }
+        else
+        {
+            /// We get the next block from the corresponding source, if there is one.
+//            std::cerr << "It was last row, fetching next block\n";
+            fetchNextBlock(current, queue);
         }
 
         if (count_row_and_check_limit(current_block_granularity))
             return;
     }
 
+    /// We have read all data. Ask childs to cancel providing more data.
     cancel(false);
     finished = true;
 }

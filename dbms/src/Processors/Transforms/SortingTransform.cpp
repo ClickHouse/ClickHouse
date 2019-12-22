@@ -80,6 +80,8 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
             column->reserve(size_to_reserve);
     }
 
+    /// TODO: Optimization when a single block left.
+
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
     while (queue.isValid())

@@ -225,13 +225,19 @@ public:
         size_t size = cursors.size();
         queue.reserve(size);
         for (size_t i = 0; i < size; ++i)
-            queue.emplace_back(&cursors[i]);
+            if (!cursors[i].empty())
+                queue.emplace_back(&cursors[i]);
         std::make_heap(queue.begin(), queue.end());
     }
 
     bool isValid() const { return !queue.empty(); }
 
     Cursor & current() { return queue.front(); }
+
+    size_t size() { return queue.size(); }
+
+    Cursor & firstChild() { return queue[1]; }
+    Cursor & secondChild() { return queue[2]; }
 
     void next()
     {
@@ -244,6 +250,18 @@ public:
         }
         else
             removeTop();
+    }
+
+    void replaceTop(Cursor new_top)
+    {
+        current() = new_top;
+        updateTop();
+    }
+
+    void removeTop()
+    {
+        std::pop_heap(queue.begin(), queue.end());
+        queue.pop_back();
     }
 
 private:
@@ -299,12 +317,6 @@ private:
             /// Check if we are in order.
         } while (!(*child_it < top));
         *curr_it = std::move(top);
-    }
-
-    void removeTop()
-    {
-        std::pop_heap(queue.begin(), queue.end());
-        queue.pop_back();
     }
 };
 
