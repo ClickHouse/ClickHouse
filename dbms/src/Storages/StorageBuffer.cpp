@@ -402,7 +402,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            storage.flushBuffer(buffer, true, true /* locked */);
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
         }
 
         if (!buffer.first_write_time)
