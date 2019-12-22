@@ -1418,4 +1418,14 @@ BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & result_sam
     return {};
 }
 
+
+bool Join::hasStreamWithNonJoinedRows() const
+{
+     if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
+        table_join->strictness() == ASTTableJoin::Strictness::Semi)
+        return false;
+
+    return isRightOrFull(table_join->kind());
+}
+
 }
