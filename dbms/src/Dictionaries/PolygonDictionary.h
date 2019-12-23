@@ -3,6 +3,8 @@
 #include <atomic>
 #include <variant>
 #include <Core/Block.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
@@ -51,6 +53,90 @@ public:
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
+        DECLARE(UInt8)
+        DECLARE(UInt16)
+        DECLARE(UInt32)
+        DECLARE(UInt64)
+        DECLARE(UInt128)
+        DECLARE(Int8)
+        DECLARE(Int16)
+        DECLARE(Int32)
+        DECLARE(Int64)
+        DECLARE(Float32)
+        DECLARE(Float64)
+        DECLARE(Decimal32)
+        DECLARE(Decimal64)
+        DECLARE(Decimal128)
+#undef DECLARE
+
+        void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
+        DECLARE(UInt8)
+        DECLARE(UInt16)
+        DECLARE(UInt32)
+        DECLARE(UInt64)
+        DECLARE(UInt128)
+        DECLARE(Int8)
+        DECLARE(Int16)
+        DECLARE(Int32)
+        DECLARE(Int64)
+        DECLARE(Float32)
+        DECLARE(Float64)
+        DECLARE(Decimal32)
+        DECLARE(Decimal64)
+        DECLARE(Decimal128)
+#undef DECLARE
+
+        void getString(
+                const std::string & attribute_name,
+                const Columns & key_columns,
+                const DataTypes & key_types,
+                const ColumnString * const def,
+                ColumnString * const out) const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const;
+        DECLARE(UInt8)
+        DECLARE(UInt16)
+        DECLARE(UInt32)
+        DECLARE(UInt64)
+        DECLARE(UInt128)
+        DECLARE(Int8)
+        DECLARE(Int16)
+        DECLARE(Int32)
+        DECLARE(Int64)
+        DECLARE(Float32)
+        DECLARE(Float64)
+        DECLARE(Decimal32)
+        DECLARE(Decimal64)
+        DECLARE(Decimal128)
+#undef DECLARE
+
+        void getString(
+                const std::string & attribute_name,
+                const Columns & key_columns,
+                const DataTypes & key_types,
+                const String & def,
+                ColumnString * const out) const;
+
     // TODO: Refactor design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
@@ -75,14 +161,22 @@ private:
 
     void calculateBytesAllocated();
 
-    std::map<std::string, size_t> attribute_index_by_name;
-    std::vector<Block> blocks;
+    size_t getAttributeIndex(const std::string & attribute_name) const;
+    template <typename T>
+    static T getNullValue(const Field & field) const;
+
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    void getItemsImpl(size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
+
+
+        std::map<std::string, size_t> attribute_index_by_name;
+    Columns attributes;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-
+    static std::vector<Point> extractPoints(const Columns &key_columns);
     static Point fieldToPoint(const Field & field);
     static Polygon fieldToPolygon(const Field & field);
     static MultiPolygon fieldToMultiPolygon(const Field & field);
