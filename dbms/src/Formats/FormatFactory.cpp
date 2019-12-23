@@ -295,7 +295,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTemplate(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
-    /**  FIXME (akazz) - To provide a workaround these are temporarily disabled
+    /**  FIXME (akazz) - To provide a workaround for #8233 these are temporarily disabled
       *  registerFileSegmentationEngineCSV(*this);
       *  registerFileSegmentationEngineJSONEachRow(*this);
       */
