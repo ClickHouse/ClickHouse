@@ -242,36 +242,34 @@ static const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 class OstreamOutputStream : public arrow::io::OutputStream
 {
 public:
-    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
-    virtual ~OstreamOutputStream() {
-        is_open_ = true;
-    }
+    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
+    virtual ~OstreamOutputStream() {}
 
     // FileInterface
-    ::arrow::Status Close() override{
-        is_open_ = false;
+    ::arrow::Status Close() override
+    {
+        is_open = false;
         return ::arrow::Status::OK();
     }
-    ::arrow::Status Tell(int64_t* position) const override {
+    ::arrow::Status Tell(int64_t* position) const override
+    {
         *position = total_length;
         return ::arrow::Status::OK();
     };
-    bool closed() const override{
-        return is_open_;
-    };
+    bool closed() const override { return !is_open; };
 
     // Writable
-    ::arrow::Status Write(const void* data, int64_t length) override {
+    ::arrow::Status Write(const void* data, int64_t length) override
+    {
         ostr.write(reinterpret_cast<const char *>(data), length);
         total_length += length;
-        // TODO try catch write ?
         return ::arrow::Status::OK();
     }
 
 private:
     WriteBuffer & ostr;
     int64_t total_length = 0;
-    bool is_open_ = false;
+    bool is_open = false;
 
     PARQUET_DISALLOW_COPY_AND_ASSIGN(OstreamOutputStream);
 };
