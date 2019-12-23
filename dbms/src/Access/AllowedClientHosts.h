@@ -91,10 +91,10 @@ public:
     friend bool operator !=(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs) { return !(lhs == rhs); }
 
 private:
-    bool containsImpl(const IPAddress & address, const String & user_name, String * error) const;
     void compileRegexps() const;
 
     std::vector<IPAddress> addresses;
+    bool loopback = false;
     std::vector<IPSubnet> subnets;
     std::vector<String> host_names;
     std::vector<String> host_regexps;

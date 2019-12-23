@@ -11,7 +11,7 @@ $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/inst
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-$ brew install cmake ninja llvm icu4c openssl libtool gettext readline gperf
+$ brew install cmake ninja libtool gettext readline
 ```
 
 ## Checkout ClickHouse Sources

@@ -28,9 +28,9 @@ private:
     const bool send_metrics;
     const bool send_asynchronous_metrics;
 
-    static inline constexpr auto profile_events_prefix = "ClickHouseProfileEvents";
-    static inline constexpr auto current_metrics_prefix = "ClickHouseMetrics";
-    static inline constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics";
+    static inline constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
+    static inline constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
+    static inline constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
 };
 
 }

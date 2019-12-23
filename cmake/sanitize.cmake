@@ -76,6 +76,9 @@ if (SANITIZE)
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libubsan")
         endif ()
 
+        # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
+        set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
+
     elseif (SANITIZE STREQUAL "libfuzzer")
         # NOTE: Eldar Zaitov decided to name it "libfuzzer" instead of "fuzzer" to keep in mind another possible fuzzer backends.
         # NOTE: no-link means that all the targets are built with instrumentation for fuzzer, but only some of them (tests) have entry point for fuzzer and it's not checked.
