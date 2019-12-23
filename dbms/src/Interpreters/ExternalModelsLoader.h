@@ -22,7 +22,7 @@ public:
 
     ModelPtr getModel(const std::string & name) const
     {
-        return std::static_pointer_cast<const IModel>(getLoadable(name));
+        return std::static_pointer_cast<const IModel>(load(name));
     }
 
     void addConfigRepository(const String & name,
