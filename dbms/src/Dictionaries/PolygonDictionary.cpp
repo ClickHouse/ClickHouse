@@ -195,7 +195,7 @@ T IPolygonDictionary::getNullValue(const DB::Field &field)
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = getNullValue<TYPE>(dict_struct.attributes[ind].null_value); \
 \
