@@ -286,7 +286,9 @@ void DatabaseOnDisk::createDictionary(
     String full_name = database.getDatabaseName() + "." + dictionary_name;
     auto & external_loader = const_cast<ExternalDictionariesLoader &>(context.getExternalDictionariesLoader());
     if (external_loader.getCurrentStatus(full_name) != ExternalLoader::Status::NOT_EXIST)
-        throw Exception("Dictionary " + backQuote(full_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        throw Exception(
+            "Dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     if (database.isTableExist(context, dictionary_name))
         throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -326,9 +328,9 @@ void DatabaseOnDisk::createDictionary(
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        /// loadStrict() is called here to force loading the dictionary, wait until the loading is finished,
+        /// load() is called here to force loading the dictionary, wait until the loading is finished,
         /// and throw an exception if the loading is failed.
-        external_loader.loadStrict(full_name);
+        external_loader.load(full_name);
     }
 
     database.attachDictionary(dictionary_name, context);
