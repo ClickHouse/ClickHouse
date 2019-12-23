@@ -93,22 +93,33 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
     settings.ostr << typeToString(type);
 
-    auto print_database_table = [&] ()
+    auto print_database_table = [&]
     {
         settings.ostr << " ";
-
         if (!database.empty())
         {
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
                       << (settings.hilite ? hilite_none : "");
     };
 
+    auto print_database_dictionary = [&]
+    {
+        settings.ostr << " ";
+        if (!database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
+                      << (settings.hilite ? hilite_none : "");
+    };
+  
     if (!cluster.empty())
         formatOnCluster(settings);
+  
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
         || type == Type::STOP_TTL_MERGES
@@ -132,7 +143,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
-        settings.ostr << " " << backQuoteIfNeed(target_dictionary);
+        print_database_dictionary();
 }
 
 

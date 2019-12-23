@@ -46,7 +46,7 @@ struct TypesTestCase
     const char * expected_type = nullptr;
 };
 
-static std::ostream & operator<<(std::ostream & ostr, const TypesTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const TypesTestCase & test_case)
 {
     ostr << "TypesTestCase{\"" << test_case.from_types << "\", ";
     if (test_case.expected_type)
