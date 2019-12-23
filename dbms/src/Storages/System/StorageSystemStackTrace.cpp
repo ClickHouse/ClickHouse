@@ -61,8 +61,10 @@ namespace
         memcpy(query_id_data, query_id.data, query_id_size);
 
         char buf = 0;
+        ssize_t res = ::write(notification_pipe.fds_rw[1], &buf, 1);
+
         /// We cannot do anything if write failed.
-        (void)::write(notification_pipe.fds_rw[1], &buf, 1);
+        (void)res;
     }
 
     /// Wait for data in pipe and read it.
