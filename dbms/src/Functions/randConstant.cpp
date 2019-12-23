@@ -89,7 +89,7 @@ public:
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 
@@ -100,7 +100,7 @@ protected:
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
-        return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types);
+        return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
     }
 };
 
