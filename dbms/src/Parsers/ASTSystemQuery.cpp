@@ -93,17 +93,27 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
     settings.ostr << typeToString(type);
 
-    auto print_database_table = [&] ()
+    auto print_database_table = [&]
     {
         settings.ostr << " ";
-
         if (!target_database.empty())
         {
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_table)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
+    auto print_database_dictionary = [&]
+    {
+        settings.ostr << " ";
+        if (!target_database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
                       << (settings.hilite ? hilite_none : "");
     };
 
@@ -130,7 +140,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
-        settings.ostr << " " << backQuoteIfNeed(target_dictionary);
+        print_database_dictionary();
 }
 
 

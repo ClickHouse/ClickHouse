@@ -38,11 +38,8 @@ void registerStorages()
     registerStorageHDFS(factory);
     #endif
 
-    #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerStorageODBC(factory);
-    #endif
     registerStorageJDBC(factory);
-
 
     #if USE_MYSQL
     registerStorageMySQL(factory);

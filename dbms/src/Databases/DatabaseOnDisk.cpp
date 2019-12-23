@@ -326,9 +326,9 @@ void DatabaseOnDisk::createDictionary(
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        /// loadStrict() is called here to force loading the dictionary, wait until the loading is finished,
+        /// load() is called here to force loading the dictionary, wait until the loading is finished,
         /// and throw an exception if the loading is failed.
-        external_loader.loadStrict(full_name);
+        external_loader.load(full_name);
     }
 
     database.attachDictionary(dictionary_name, context);
