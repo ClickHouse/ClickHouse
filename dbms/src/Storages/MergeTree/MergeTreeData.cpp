@@ -1386,7 +1386,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     for (const AlterCommand & command : commands)
     {
-        if (!command.isMutable())
+        if (!command.isModifyingData())
         {
             continue;
         }
@@ -1433,9 +1433,9 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
             getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
-void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
-    NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
+void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns,
+    const NamesAndTypesList & new_columns, const IndicesASTs & old_indices, const IndicesASTs & new_indices,
+    ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     const auto settings = getSettings();
     out_expression = nullptr;
@@ -1457,7 +1457,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 
     /// Remove old indices
-    std::set<String> new_indices_set;
+    std::unordered_set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
         new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
     for (const auto & index_decl : old_indices)
@@ -1465,8 +1465,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         const auto & index = index_decl->as<ASTIndexDeclaration &>();
         if (!new_indices_set.count(index.name))
         {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = "";
+            out_rename_map["skp_idx_" + index.name + ".idx"] = ""; /// drop this file
+            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = ""; /// and this one
         }
     }
 
@@ -1494,8 +1494,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     /// Delete files if they are no longer shared with another column.
                     if (--stream_counts[file_name] == 0)
                     {
-                        out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + part_mrk_file_extension] = "";
+                        out_rename_map[file_name + ".bin"] = ""; /// drop this file
+                        out_rename_map[file_name + part_mrk_file_extension] = ""; /// and this one
                     }
                 }, {});
             }
@@ -1847,7 +1847,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.checksums = new_checksums;
         mutable_part.columns = new_columns;
 
-        /// 3) Delete the old files.
+        /// 3) Delete the old files and drop required columns (DROP COLUMN)
         for (const auto & from_to : rename_map)
         {
             String name = from_to.second.empty() ? from_to.first : from_to.second;
