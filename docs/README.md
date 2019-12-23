@@ -207,6 +207,7 @@ Templates:
 - [Function](dscr-templates/template-function.md)
 - [Setting](dscr-templates/template-setting.md)
 - [Table engine](dscr-templates/template-table-engine.md)
+- [System table](dscr-templates/template-system-table.md)
 
 
 <a name="how-to-build-docs"/>
