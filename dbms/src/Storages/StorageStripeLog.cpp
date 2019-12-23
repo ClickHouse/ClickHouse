@@ -6,11 +6,9 @@
 #include <optional>
 
 #include <Common/escapeForFileName.h>
-
 #include <Common/Exception.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -30,8 +28,6 @@
 
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageFactory.h>
-#include <Poco/DirectoryIterator.h>
-#include <Compression/CompressedReadBuffer.h>
 
 
 namespace DB
@@ -91,7 +87,6 @@ protected:
             {
                 block_in.reset();
                 data_in.reset();
-                data_in_compressed.reset();
                 index.reset();
             }
         }
@@ -113,8 +108,7 @@ private:
       * - to save RAM when using a large number of sources.
       */
     bool started = false;
-    std::unique_ptr<ReadBuffer> data_in_compressed;
-    std::optional<CompressedReadBuffer> data_in;
+    std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeBlockInputStream> block_in;
 
     void start()
@@ -126,8 +120,7 @@ private:
             String data_file = storage.table_path + "data.bin";
             size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file));
 
-            data_in_compressed = storage.disk->read(data_file, buffer_size);
-            data_in.emplace(*data_in_compressed);
+            data_in.emplace(fullPath(storage.disk, data_file), 0, 0, buffer_size);
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -259,8 +252,7 @@ BlockInputStreams StorageStripeLog::read(
     if (!disk->exists(index_file))
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
-    std::unique_ptr<ReadBuffer> index_in_compressed = disk->read(index_file, INDEX_BUFFER_SIZE);
-    CompressedReadBuffer index_in(*index_in_compressed);
+    CompressedReadBufferFromFile index_in(fullPath(disk, index_file), 0, 0, INDEX_BUFFER_SIZE);
 
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
