@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
+
 #include <mutex>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
@@ -31,3 +33,4 @@ protected:
 
 }
 
+#endif

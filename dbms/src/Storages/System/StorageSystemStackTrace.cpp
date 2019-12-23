@@ -1,3 +1,5 @@
+#ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
+
 #include <signal.h>
 #include <poll.h>
 
@@ -198,3 +200,4 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
 
 }
 
+#endif
