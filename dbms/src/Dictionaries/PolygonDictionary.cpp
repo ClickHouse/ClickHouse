@@ -391,6 +391,7 @@ IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & fie
     }
     else
         throw Exception{"Polygon is not represented by an array", ErrorCodes::TYPE_MISMATCH};
+    bg::correct(result);
     return result;
 }
 
