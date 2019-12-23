@@ -367,7 +367,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, external_table_functions_use_nulls, true, "If it is set to true, external table functions will implicitly use Nullable type if needed. Otherwise NULLs will be substituted with default values. Currently supported only by 'mysql' and 'odbc' table functions.", 0) \
     M(SettingBool, allow_experimental_data_skipping_indices, false, "If it is set to true, data skipping indices can be used in CREATE TABLE/ALTER TABLE queries.", 0) \
     \
-    M(SettingBool, experimental_use_processors, false, "Use processors pipeline.", 0) \
+    M(SettingBool, experimental_use_processors, true, "Use processors pipeline.", 0) \
     \
     M(SettingBool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.", 0) \
     M(SettingBool, allow_simdjson, true, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.", 0) \
