@@ -97,6 +97,7 @@ BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_
 }
 
 void IPolygonDictionary::createAttributes() {
+    attributes.resize(dict_struct.attributes.size());
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
     {
         attribute_index_by_name.emplace(dict_struct.attributes[i].name, i);
@@ -110,8 +111,17 @@ void IPolygonDictionary::createAttributes() {
 void IPolygonDictionary::blockToAttributes(const DB::Block &block) {
     const auto rows = block.rows();
     element_count += rows;
-    // TODO: Only save columns for attributes, since we are converting the key to a boost type separately.
-    blocks.push_back(block);
+    for (size_t i = 0; i < attributes.size(); ++i) {
+        const auto & column = block.safeGetByPosition(i + 1);
+        if (attributes[i])
+        {
+            MutableColumnPtr mutated = std::move(*attributes[i]).mutate();
+            mutated->insertRangeFrom(*column.column, 0, column.column->size());
+            attributes[i] = std::move(mutated);
+        }
+        else
+            attributes[i] = column.column;
+    }
     polygons.reserve(polygons.size() + rows);
 
     const auto & key = block.safeGetByPosition(0).column;
@@ -119,6 +129,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block) {
     for (const auto row : ext::range(0, rows))
     {
         const auto & field = (*key)[row];
+        // TODO: Get data more efficiently using
         polygons.push_back(fieldToMultiPolygon(field));
     }
 }
@@ -139,24 +150,205 @@ void IPolygonDictionary::calculateBytesAllocated()
 
 }
 
-void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &key_types, PaddedPODArray<UInt8> &out) const {
-    // TODO: Use constant in error message?
-    if (key_types.size() != DIM)
-        throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
-    for (const auto i : ext::range(0, DIM))
-    {
-        // TODO: Not sure if this is the best way to check.
-        if (key_types[i]->getName() != "Array(Float64)")
-            throw Exception{"Expected an array of Float64", ErrorCodes::TYPE_MISMATCH};
-    }
+std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns &key_columns)
+{
+    if (key_columns.size() != DIM)
+        throw Exception{"Expected " + std::to_string(DIM) + " columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
+    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
+    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
+    if (!column_x || !column_y)
+        throw Exception{"Expected columns of Float64", ErrorCodes::TYPE_MISMATCH};
     const auto rows = key_columns.front()->size();
+    std::vector<Point> result;
+    result.reserve(rows);
     for (const auto row : ext::range(0, rows))
+        result.emplace_back(column_x->getElement(row), column_y->getElement(row));
+    return result;
+}
+
+void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, PaddedPODArray<UInt8> &out) const {
+    size_t row = 0;
+    for (const auto & pt : extractPoints(key_columns))
     {
-        Point pt(key_columns[0]->getFloat64(row), key_columns[1]->getFloat64(row));
         // TODO: Check whether this will be optimized by the compiler.
-        size_t trash;
+        size_t trash = 0;
         out[row] = find(pt, trash);
+        ++row;
     }
+}
+
+size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const {
+    const auto it = attribute_index_by_name.find(attribute_name);
+    if (it == attribute_index_by_name.end())
+        throw Exception{"No such attribute: " + attribute_name, ErrorCodes::BAD_ARGUMENTS};
+    return it->second;
+}
+
+template <typename T>
+T IPolygonDictionary::getNullValue(const DB::Field &field) const
+{
+    return field.get<NearestFieldType<T>>();
+}
+
+#define DECLARE(TYPE) \
+    void IPolygonDictionary::get##TYPE( \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
+    { \
+        const auto ind = getAttributeIndex(attribute_name); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+\
+        const auto null_value = getNullValue(dict_struct.attributes[ind].null_value); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            ind, \
+            key_columns, \
+            [&](const size_t row, const auto value) { out[row] = value; }, \
+            [&](const size_t) { return null_value; }); \
+    }
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+void IPolygonDictionary::getString(
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
+{
+    dict_struct.validateKeyTypes(key_types);
+
+    const auto ind = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+
+    const auto & null_value = StringRef{getNullValue(dict_struct.attributes[ind].null_value)};
+
+    getItemsImpl<StringRef, StringRef>(
+            ind,
+            key_columns,
+            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+            [&](const size_t) { return null_value; });
+}
+
+#define DECLARE(TYPE) \
+    void IPolygonDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const \
+    { \
+        const auto ind = getAttributeIndex(attribute_name); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            ind, \
+            key_columns, \
+            [&](const size_t row, const auto value) { out[row] = value; }, \
+            [&](const size_t row) { return def[row]; }); \
+    }
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+void IPolygonDictionary::getString(
+        const std::string & attribute_name,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnString * const def,
+        ColumnString * const out) const
+{
+    const auto ind = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+
+    getItemsImpl<StringRef, StringRef>(
+            ind,
+            key_columns,
+            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+            [&](const size_t row) { return def->getDataAt(row); });
+}
+
+#define DECLARE(TYPE) \
+    void IPolygonDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const \
+    { \
+        const auto ind = getAttributeIndex(attribute_name); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+\
+        getItemsImpl<TYPE, TYPE>( \
+            ind, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
+    }
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+void IPolygonDictionary::getString(
+        const std::string & attribute_name,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const String & def,
+        ColumnString * const out) const
+{
+    const auto ind = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+
+    getItemsImpl<StringRef, StringRef>(
+            ind,
+            key_columns,
+            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+            [&](const size_t) { return StringRef{def}; });
+}
+
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+void IPolygonDictionary::getItemsImpl(
+        size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
+{
+    const auto points = extractPoints(key_columns);
+
+    for (const auto i : ext::range(0, points.size()))
+    {
+        size_t id = 0;
+        auto found = find(points[i], id);
+        set_value(i, found ? static_cast<OutputType>((*attributes[attribute_ind])[id].get<AttributeType>()) : get_default(i));
+    }
+
+    query_count.fetch_add(points.size(), std::memory_order_relaxed);
 }
 
 IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
@@ -218,11 +410,11 @@ IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const F
 }
 
 SimplePolygonDictionary::SimplePolygonDictionary(
-        const std::string & name_,
-        const DictionaryStructure & dict_struct_,
-        DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_)
-        : IPolygonDictionary(name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_)
+    : IPolygonDictionary(name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
 {
 }
 
