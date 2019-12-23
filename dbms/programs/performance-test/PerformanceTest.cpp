@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/CpuId.h>
+#include <Common/quoteString.h>
 #include <common/getMemoryAmount.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -142,7 +143,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (!exist)
             {
-                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist");
+                LOG_WARNING(log, "Table " << backQuote(table_to_check) << " doesn't exist");
                 return false;
             }
         }
