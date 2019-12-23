@@ -39,12 +39,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     if (!found)
         return false;
 
-
-    String cluster_str;
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
         {
+            String cluster_str;
             if (ParserKeyword{"ON"}.ignore(pos, expected))
             {
                 if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -54,7 +53,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserStringLiteral{}.parse(pos, ast, expected))
                 res->target_dictionary = ast->as<ASTLiteral &>().value.safeGet<String>();
-            else if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_dictionary))
+            else if (!parseDatabaseAndTableName(pos, expected, res->database, res->target_dictionary))
                 return false;
             break;
         }
