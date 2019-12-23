@@ -192,7 +192,7 @@ T IPolygonDictionary::getNullValue(const DB::Field &field)
 
 #define DECLARE(TYPE) \
     void IPolygonDictionary::get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
@@ -222,7 +222,7 @@ T IPolygonDictionary::getNullValue(const DB::Field &field)
 #undef DECLARE
 
 void IPolygonDictionary::getString(
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
