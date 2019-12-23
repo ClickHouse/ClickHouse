@@ -557,8 +557,7 @@ limitations under the License."""
 
         node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
 
-        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
-        assert r == "0" if positive else "6", error()
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["0"] if positive else ["3"]
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
