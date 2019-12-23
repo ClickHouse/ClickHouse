@@ -76,58 +76,25 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 # === flatbuffers
 
 ##############################################################
-# fbs - Step 1: download flatbuffers and build flatc executable
-# TODO get rid of downloads. Should work offline.
+# fbs - Step 1: build flatbuffers lib and flatc compiler
 ##############################################################
-set(FLATBUFFERS_VERSION v1.11.0) #flatbuffers-v1.11.0.tar.gz
+set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
+set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
+set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
+set(FLATBUFFERS_COMPILER "${FLATBUFFERS_BINARY_DIR}/flatc")
 
-if (DEFINED ENV{ARROW_FLATBUFFERS_URL})
-    set(FLATBUFFERS_SOURCE_URL "$ENV{ARROW_FLATBUFFERS_URL}")
+# set flatbuffers CMake options
+if(${USE_STATIC_LIBRARIES})
+    set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
+    set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
 else()
-    set(FLATBUFFERS_SOURCE_URL "https://github.com/google/flatbuffers/archive/${FLATBUFFERS_VERSION}.tar.gz")
+    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
+    set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
 endif()
+set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "Build flatbuffers compiler")
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
-macro(build_flatbuffers)
-    message(STATUS "Building flatbuffers from source")
-    set(FLATBUFFERS_PREFIX
-            "${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_ep-prefix/src/flatbuffers_ep-install")
-    if(MSVC)
-        set(FLATBUFFERS_CMAKE_CXX_FLAGS /EHsc)
-    else()
-        set(FLATBUFFERS_CMAKE_CXX_FLAGS -fPIC)
-    endif()
-    set(FLATBUFFERS_COMPILER "${FLATBUFFERS_PREFIX}/bin/flatc")
-    set(
-            FLATBUFFERS_STATIC_LIB
-            "${FLATBUFFERS_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}flatbuffers${CMAKE_STATIC_LIBRARY_SUFFIX}"
-    )
-    # We always need to do release builds, otherwise flatc will not be installed.
-    externalproject_add(flatbuffers_ep
-            URL ${FLATBUFFERS_SOURCE_URL}
-            BUILD_BYPRODUCTS ${FLATBUFFERS_COMPILER} ${FLATBUFFERS_STATIC_LIB}
-            CMAKE_ARGS ${EP_COMMON_CMAKE_ARGS}
-            "-DCMAKE_BUILD_TYPE=RELEASE"
-            "-DCMAKE_CXX_FLAGS=${FLATBUFFERS_CMAKE_CXX_FLAGS}"
-            "-DCMAKE_INSTALL_PREFIX:PATH=${FLATBUFFERS_PREFIX}"
-            "-DFLATBUFFERS_BUILD_TESTS=OFF"
-            ${EP_LOG_OPTIONS})
-
-    file(MAKE_DIRECTORY "${FLATBUFFERS_PREFIX}/include")
-
-    add_library(flatbuffers::flatbuffers STATIC IMPORTED)
-    set_target_properties(flatbuffers::flatbuffers
-            PROPERTIES IMPORTED_LOCATION "${FLATBUFFERS_STATIC_LIB}"
-            INTERFACE_INCLUDE_DIRECTORIES
-            "${FLATBUFFERS_PREFIX}/include")
-    add_executable(flatbuffers::flatc IMPORTED)
-    set_target_properties(flatbuffers::flatc
-            PROPERTIES IMPORTED_LOCATION "${FLATBUFFERS_COMPILER}")
-
-    add_dependencies(flatbuffers::flatbuffers flatbuffers_ep)
-    add_dependencies(flatbuffers::flatc flatbuffers_ep)
-endmacro()
-
-build_flatbuffers()
+add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
 ###################################
 # fbs - Step 2: compile *.fbs files
@@ -151,26 +118,25 @@ foreach(FIL ${FBS_SRC})
     list(APPEND ABS_FBS_SRC ${ABS_FIL})
 endforeach()
 
-get_target_property(FLATC_EXECUTABLE flatbuffers::flatc IMPORTED_LOCATION)
-if(NOT FLATC_EXECUTABLE)
-    get_target_property(FLATC_EXECUTABLE flatbuffers::flatc IMPORTED_LOCATION_RELEASE)
-endif()
+message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}, FLATBUFFERS_COMPILER: ${FLATBUFFERS_COMPILER}")
 
 # TODO compiled files should be stored in binary build dir instead of among submodule sources
 set(FLATBUFFERS_COMPILED_OUT_DIR ${ARROW_IPC_SRC_DIR})
 
-message(STATUS "flatc: ${FLATC_EXECUTABLE} -c -o ${FLATBUFFERS_COMPILED_OUT_DIR}/ ${ABS_FBS_SRC}")
+message(STATUS "flatc: ${FLATBUFFERS_COMPILER} -c -o ${FLATBUFFERS_COMPILED_OUT_DIR}/ ${ABS_FBS_SRC}")
 
-add_custom_command(TARGET flatbuffers_ep
-        POST_BUILD
-        COMMAND ${FLATC_EXECUTABLE}
+add_custom_command(OUTPUT ${FBS_OUTPUT_FILES}
+        COMMAND ${FLATBUFFERS_COMPILER}
         -c
         -o
         ${FLATBUFFERS_COMPILED_OUT_DIR}/
         ${ABS_FBS_SRC}
-        DEPENDS flatbuffers::flatc ${ABS_FBS_SRC}
+        DEPENDS flatc ${ABS_FBS_SRC}
         COMMENT "Running flatc compiler on ${ABS_FBS_SRC}"
         VERBATIM)
+
+add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
+add_dependencies (metadata_fbs flatc)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features. 
 # Apple Clang compiler failed to compile this code without specifying c++11 standard. 
@@ -357,10 +323,11 @@ endif()
 
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 
-# Arrow dependencies on external projects (ep): flatbuffers and Boost
-add_dependencies(${ARROW_LIBRARY} flatbuffers_ep)
+# Arrow dependencies
+add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
+
 target_link_libraries(${ARROW_LIBRARY} PRIVATE boost_system_internal boost_filesystem_internal boost_regex_internal)
-target_link_libraries(${ARROW_LIBRARY} PRIVATE flatbuffers::flatbuffers)
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY})
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
