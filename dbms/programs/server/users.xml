@@ -93,14 +93,14 @@
                     </filtered_table1>
 
                     <!-- Complex expression filter -->
-                    <filtered_table2>
+                    <table name='filtered_table2'>
                         <filter>a + b &lt; 1 or c - d &gt; 5</filter>
-                    </filtered_table2>
+                    </table>
 
                     <!-- Filter with ALIAS column -->
-                    <filtered_table3>
+                    <table name='.filtered_table3'>
                         <filter>c = 1</filter>
-                    </filtered_table3>
+                    </table>
                 </test>
             </databases>
         </default>

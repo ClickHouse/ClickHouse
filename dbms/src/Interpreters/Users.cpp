@@ -104,6 +104,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
 
     /// Read properties per "database.table"
     /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
+    /// Also if there node inside "database" has name "table" and attribute "name", then it's taken as table name instead.
     const auto config_databases = config_elem + ".databases";
     if (config.has(config_databases))
     {
@@ -120,11 +121,24 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
             /// Read table properties
             for (const auto & table : table_names)
             {
-                const auto config_filter = config_database + "." + table + ".filter";
+                String table_name = table;
+                String config_filter = config_database + "." + table_name + ".filter";
+
+                /// FIXME: naming scheme can be spoiled by user.
+                if (table.rfind("table[", 0) == 0)
+                {
+                    const auto config_table_name = config_database + "." + table_name + "[@name]";
+                    if (config.has(config_table_name))
+                    {
+                        table_name = config.getString(config_table_name);
+                        config_filter = config_database + ".table[@name='" + table_name + "']";
+                    }
+                }
+
                 if (config.has(config_filter))
                 {
                     const auto filter_query = config.getString(config_filter);
-                    table_props[database][table]["filter"] = filter_query;
+                    table_props[database][table_name]["filter"] = filter_query;
                 }
             }
         }
