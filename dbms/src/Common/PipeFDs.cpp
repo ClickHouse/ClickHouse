@@ -104,6 +104,8 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
 
         LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, desired_size)));
     }
+#else
+    (void)desired_size;
 #endif
 }
 
