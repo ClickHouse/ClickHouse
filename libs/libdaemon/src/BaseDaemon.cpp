@@ -72,7 +72,15 @@ static void call_default_signal_handler(int sig)
 }
 
 
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(UInt32);
+static constexpr size_t max_query_id_size = 127;
+
+static const size_t buf_size =
+    sizeof(int)
+    + sizeof(siginfo_t)
+    + sizeof(ucontext_t)
+    + sizeof(StackTrace)
+    + sizeof(UInt32)
+    + max_query_id_size + 1;    /// query_id + varint encoded length
 
 
 using signal_function = void(int, siginfo_t*, void*);
@@ -107,11 +115,15 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
 
+    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    query_id.size = std::min(query_id.size, max_query_id_size);
+
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeStringBinary(query_id, out);
 
     out.next();
 
@@ -187,15 +199,17 @@ public:
                 ucontext_t context;
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num;
+                std::string query_id;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
+                DB::readBinary(query_id, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
+                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
             }
         }
     }
@@ -210,11 +224,28 @@ private:
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, UInt32 thread_num) const
+    void onFault(
+        int sig,
+        const siginfo_t & info,
+        const ucontext_t & context,
+        const StackTrace & stack_trace,
+        UInt32 thread_num,
+        const std::string & query_id) const
     {
         LOG_FATAL(log, "########################################");
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
-            << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
+
+        {
+            std::stringstream message;
+            message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+            message << " (from thread " << thread_num << ")";
+            if (query_id.empty())
+                message << " (no query)";
+            else
+                message << " (query_id: " << query_id << ")";
+            message << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".";
+
+            LOG_FATAL(log, message.rdbuf());
+        }
 
         LOG_FATAL(log, signalToErrorMessage(sig, info, context));
 
