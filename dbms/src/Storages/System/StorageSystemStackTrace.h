@@ -15,6 +15,7 @@ class Context;
 
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
+/// More than one instance of this table cannot be used.
 class StorageSystemStackTrace : public ext::shared_ptr_helper<StorageSystemStackTrace>, public IStorageSystemOneBlock<StorageSystemStackTrace>
 {
     friend struct ext::shared_ptr_helper<StorageSystemStackTrace>;
