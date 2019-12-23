@@ -898,16 +898,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentTypeValidators mandatory_args = {{[](const auto &) {return true;}, "ANY TYPE"}};
-        FunctionArgumentTypeValidators optional_args;
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "ANY TYPE"}};
+        FunctionArgumentDescriptors optional_args;
 
         if constexpr (to_decimal || to_datetime64)
         {
-            mandatory_args.push_back(FunctionArgumentTypeValidator{&isNativeInteger, "Integer"}); // scale
+            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
-        else
+        // toString(DateTime or DateTime64, [timezone: String])
+        if ((std::is_same_v<Name, NameToString> && arguments.size() > 0 && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
+            // toDateTime(value, [timezone: String]) or toDateTime64(value, scale : Integer, [timezone: string])
+            || std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back(FunctionArgumentTypeValidator{&isString, "String"}); // timezone
+            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -918,8 +921,8 @@ public:
         }
         else if constexpr (to_decimal)
         {
-            if (!arguments[1].column)
-                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+//            if (!arguments[1].column)
+//                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
             UInt64 scale = extractToDecimalScale(arguments[1]);
 

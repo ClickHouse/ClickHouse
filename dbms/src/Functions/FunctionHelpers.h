@@ -91,13 +91,19 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
         const char * expected_type_description);
 
 // Simple validator that is used in conjunction with validateFunctionArgumentTypes() to check if function arguments are as expected.
-struct FunctionArgumentTypeValidator
+struct FunctionArgumentDescriptor
 {
-    bool (* validator_func)(const IDataType &);
+    const char * argument_name;
+
+    bool (* type_validator_func)(const IDataType &);
+    bool (* column_validator_func)(const IColumn &);
+
     const char * expected_type_description;
+
+    bool isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
 };
 
-using FunctionArgumentTypeValidators = std::vector<FunctionArgumentTypeValidator>;
+using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
 
 /** Validate that function arguments match specification.
  *
@@ -117,7 +123,9 @@ using FunctionArgumentTypeValidators = std::vector<FunctionArgumentTypeValidator
  *
  * If any mandatory arg is missing, throw an exception, with explicit description of expected arguments.
  */
-void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments, const FunctionArgumentTypeValidators & mandatory_args, const FunctionArgumentTypeValidators & optional_args = {});
+void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments,
+                                   const FunctionArgumentDescriptors & mandatory_args,
+                                   const FunctionArgumentDescriptors & optional_args = {});
 
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
