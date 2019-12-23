@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
@@ -124,9 +125,9 @@ namespace
 void validateArgumentsImpl(const IFunction & func,
                            const ColumnsWithTypeAndName & arguments,
                            size_t argument_offset,
-                           const FunctionArgumentTypeValidators & validators)
+                           const FunctionArgumentDescriptors & decriptors)
 {
-    for (size_t i = 0; i < validators.size(); ++i)
+    for (size_t i = 0; i < decriptors.size(); ++i)
     {
         const auto argument_index = i + argument_offset;
         if (argument_index >= arguments.size())
@@ -135,24 +136,36 @@ void validateArgumentsImpl(const IFunction & func,
         }
 
         const auto & arg = arguments[i + argument_offset];
-        const auto validator = validators[i];
-        if (!validator.validator_func(*arg.type))
-            throw Exception("Illegal type " + arg.type->getName() +
-                            " of " + std::to_string(i) +
-                            " argument of function " + func.getName() +
-                            " expected " + validator.expected_type_description,
+        const auto validator = decriptors[i];
+        if (!validator.isValid(arg.type, arg.column))
+            throw Exception("Illegal type of argument #" + std::to_string(i)
+                            + (validator.argument_name ? " '" + std::string(validator.argument_name) + "'": std::string{})
+                            + " of function " + func.getName()
+                            + ", expected " + validator.expected_type_description
+                            + (arg.type ? ", got " + arg.type->getName() : std::string{}),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 }
 
 }
 
+bool FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
+{
+    if (type_validator_func && !(data_type && type_validator_func(*data_type)))
+        return false;
+
+    if (column_validator_func && !(column && column_validator_func(*column)))
+        return false;
+
+    return true;
+}
+
 void validateFunctionArgumentTypes(const IFunction & func,
                                    const ColumnsWithTypeAndName & arguments,
-                                   const FunctionArgumentTypeValidators & mandatory_args,
-                                   const FunctionArgumentTypeValidators & optional_args)
+                                   const FunctionArgumentDescriptors & mandatory_args,
+                                   const FunctionArgumentDescriptors & optional_args)
 {
-    if (arguments.size() < mandatory_args.size())
+    if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
         auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
         {
@@ -160,8 +173,12 @@ void validateFunctionArgumentTypes(const IFunction & func,
             for (const auto & a : args)
             {
                 using A = std::decay_t<decltype(a)>;
-                if constexpr (std::is_same_v<A, FunctionArgumentTypeValidator>)
+                if constexpr (std::is_same_v<A, FunctionArgumentDescriptor>)
+                {
+                    if (a.argument_name)
+                        result += "'" + std::string(a.argument_name) + "' : ";
                     result += a.expected_type_description;
+                }
                 else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
                     result += a.type->getName();
 
@@ -174,10 +191,14 @@ void validateFunctionArgumentTypes(const IFunction & func,
             return result;
         };
 
-        throw Exception("Incorrect number of arguments of function " + func.getName()
-                        + " provided " + std::to_string(arguments.size()) + " (" + joinArgumentTypes(arguments) + ")"
-                        + " expected " + std::to_string(mandatory_args.size()) + (optional_args.size() ? " or " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + joinArgumentTypes(mandatory_args) + (optional_args.size() ? ", [" + joinArgumentTypes(mandatory_args) + "]" : "") + ")",
+        throw Exception("Incorrect number of arguments for function " + func.getName()
+                        + " provided " + std::to_string(arguments.size())
+                        + (arguments.size() ? " (" + joinArgumentTypes(arguments) + ")" : String{} )
+                        + ", expected " + std::to_string(mandatory_args.size())
+                        + (optional_args.size() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
+                        + " (" + joinArgumentTypes(mandatory_args)
+                        + (optional_args.size() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
+                        + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
