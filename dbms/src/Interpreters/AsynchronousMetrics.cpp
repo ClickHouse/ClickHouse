@@ -72,9 +72,6 @@ void AsynchronousMetrics::run()
 
     while (true)
     {
-        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
-            break;
-
         try
         {
             update();
@@ -83,6 +80,9 @@ void AsynchronousMetrics::run()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
+            break;
     }
 }
 
