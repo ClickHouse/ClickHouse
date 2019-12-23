@@ -4592,11 +4592,6 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     /// we have to wait
     if (query_context.getSettingsRef().mutations_sync != 0)
     {
-        auto check_callback = [mutation_number = entry.znode_name](const String & zk_value)
-        {
-            return zk_value >= mutation_number;
-        };
-
         Strings replicas;
         if (query_context.getSettingsRef().mutations_sync == 2) /// wait for all replicas
             replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
