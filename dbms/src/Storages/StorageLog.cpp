@@ -3,6 +3,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -18,12 +19,9 @@
 
 #include <Columns/ColumnArray.h>
 
-#include <Common/typeid_cast.h>
-
 #include <Interpreters/Context.h>
 
 #include <Poco/Path.h>
-#include <Poco/DirectoryIterator.h>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -86,8 +84,8 @@ private:
 
     struct Stream
     {
-        Stream(const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
+        Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
+            : plain(fullPath(disk, data_path), std::min(max_read_buffer_size_, disk->getFileSize(data_path))),
             compressed(plain)
         {
             if (offset)
@@ -142,11 +140,11 @@ private:
 
     struct Stream
     {
-        Stream(const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
-            plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, std::move(codec), max_compress_block_size)
+        Stream(const DiskPtr & disk, const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
+            plain(fullPath(disk, data_path), max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
+            compressed(plain, std::move(codec), max_compress_block_size),
+            plain_offset(disk->getFileSize(data_path))
         {
-            plain_offset = Poco::File(data_path).getSize();
         }
 
         WriteBufferFromFile plain;
@@ -251,7 +249,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
                 offset = file_it->second.marks[mark_number].offset;
 
             auto & data_file_path = file_it->second.data_file;
-            auto it = streams.try_emplace(stream_name, data_file_path, offset, max_read_buffer_size).first;
+            auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
             return &it->second.compressed;
         };
     };
@@ -341,8 +339,7 @@ IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const Str
 
 
 void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
-    MarksForColumns & out_marks,
-    WrittenStreams & written_streams)
+    MarksForColumns & out_marks, WrittenStreams & written_streams)
 {
     IDataType::SerializeBinaryBulkSettings settings;
 
@@ -355,6 +352,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         const auto & columns = storage.getColumns();
         streams.try_emplace(
             stream_name,
+            storage.disk,
             storage.files[stream_name].data_file,
             columns.getCodecOrDefault(name),
             storage.max_compress_block_size);
@@ -421,7 +419,7 @@ StorageLog::StorageLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_)
-    : disk(std::move(disk_)), database_name(database_name_),  table_name(table_name_),
+    : disk(std::move(disk_)), database_name(database_name_), table_name(table_name_),
     table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
     max_compress_block_size(max_compress_block_size_),
     file_checker(disk, table_path + "sizes.json")

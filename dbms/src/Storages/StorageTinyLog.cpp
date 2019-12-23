@@ -8,11 +8,10 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Common/escapeForFileName.h>
-
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -24,9 +23,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
-
-#include <Common/typeid_cast.h>
-#include <Compression/CompressionFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -84,8 +80,8 @@ private:
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size)
-            : plain(disk->read(data_path, std::min(max_read_buffer_size, disk->getFileSize(data_path)))),
+        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_)
+            : plain(disk->read(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
             compressed(*plain)
         {
         }
