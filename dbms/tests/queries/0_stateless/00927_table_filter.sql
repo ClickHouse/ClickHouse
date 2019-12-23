@@ -28,6 +28,7 @@ SELECT * FROM test.filtered_table3;
 SELECT a FROM test.filtered_table1;
 SELECT b FROM test.filtered_table1;
 SELECT a FROM test.filtered_table1 WHERE a = 1;
+SELECT a FROM test.filtered_table1 WHERE a IN (1);
 SELECT a = 1 FROM test.filtered_table1;
 
 SELECT a FROM test.filtered_table3;
