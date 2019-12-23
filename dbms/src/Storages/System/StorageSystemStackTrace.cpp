@@ -35,6 +35,8 @@ namespace
     const pid_t expected_pid = getpid();
     const int sig = SIGRTMIN;
 
+    int sequence_num = 0;    /// For messages sent via pipe.
+
     UInt32 thread_number{0};
     std::optional<StackTrace> stack_trace;
 
@@ -51,6 +53,10 @@ namespace
         if (info->si_pid != expected_pid)
             return;
 
+        /// Signal received too late.
+        if (info->si_value.sival_int != sequence_num)
+            return;
+
         /// All these methods are signal-safe.
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace.emplace(signal_context);
@@ -60,8 +66,8 @@ namespace
         query_id_size = std::min(query_id.size, max_query_id_size);
         memcpy(query_id_data, query_id.data, query_id_size);
 
-        char buf = 0;
-        ssize_t res = ::write(notification_pipe.fds_rw[1], &buf, 1);
+        int notification_num = info->si_value.sival_int;
+        ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
 
         /// We cannot do anything if write failed.
         (void)res;
@@ -91,10 +97,8 @@ namespace
             if (poll_res == 0)
                 return false;
 
-            char buf = 0;
-            ssize_t read_res = ::read(fd, &buf, 1);
-            if (read_res == 1)
-                return true;
+            int notification_num = 0;
+            ssize_t read_res = ::read(fd, &notification_num, sizeof(notification_num));
 
             if (read_res < 0)
             {
@@ -104,7 +108,15 @@ namespace
                 throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
 
-            throw Exception("Logical error: read for one byte returned more than one byte", ErrorCodes::LOGICAL_ERROR);
+            if (read_res == sizeof(notification_num))
+            {
+                if (notification_num == sequence_num)
+                    return true;
+                else
+                    continue;   /// Drain delayed notifications.
+            }
+
+            throw Exception("Logical error: read wrong number of bytes from pipe", ErrorCodes::LOGICAL_ERROR);
         }
     }
 }
@@ -160,9 +172,10 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
     std::filesystem::directory_iterator end;
     for (std::filesystem::directory_iterator it("/proc/self/task"); it != end; ++it)
     {
-        sigval sig_value{};
         pid_t tid = parse<pid_t>(it->path().filename());
 
+        sigval sig_value{};
+        sig_value.sival_int = sequence_num;
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -173,7 +186,6 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         }
 
         /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-        /// TODO How to deal with stale values in a pipe? TSan will also argue.
 
         if (wait(100))
         {
@@ -197,6 +209,8 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[1]->insertDefault();
             res_columns[2]->insertDefault();
         }
+
+        sequence_num = static_cast<int>(static_cast<unsigned>(sequence_num) + 1);
     }
 }
 
