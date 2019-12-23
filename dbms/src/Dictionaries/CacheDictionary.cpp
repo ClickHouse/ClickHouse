@@ -12,7 +12,6 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 #include <ext/size.h>
-#include <Interpreters/Context.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -292,9 +291,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
     size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 
-    Context * context = current_thread->getThreadGroup()->global_context;
-    const bool allow_read_expired_keys_from_cache_dictionary =
-            context->getSettingsRef().allow_read_expired_keys_from_cache_dictionary;
+    const bool allow_read_expired_keys_from_cache_dictionary = getAllowReadExpiredKeysSetting();
 
     const auto rows = ext::size(ids);
     {
@@ -380,8 +377,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             }
     };
 
-    UInt64 timeout{10};
-    const bool res = update_queue.tryPush(update_unit, timeout);
+    const bool res = update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds);
 
     if (!res)
         throw std::runtime_error("Too many updates");
