@@ -1,3 +1,4 @@
+from __future__ import print_function
 import pytest
 import os
 
@@ -162,13 +163,13 @@ def setup_module(module):
             if source.compatible_with_layout(layout):
                 DICTIONARIES.append(get_dict(source, layout, FIELDS[layout.layout_type]))               
             else:
-                print "Source", source.name, "incompatible with layout", layout.name
+                print("Source", source.name, "incompatible with layout", layout.name)
     
     for layout in LAYOUTS:
         field_keys = list(filter(lambda x: x.is_key, FIELDS[layout.layout_type]))
         for source in SOURCES_KV:
             if not source.compatible_with_layout(layout):
-                print "Source", source.name, "incompatible with layout", layout.name
+                print("Source", source.name, "incompatible with layout", layout.name)
                 continue
 
             for field in FIELDS[layout.layout_type]:
@@ -188,9 +189,9 @@ def started_cluster():
     try:
         cluster.start()
         for dictionary in DICTIONARIES + DICTIONARIES_KV:
-            print "Preparing", dictionary.name
+            # print "Preparing", dictionary.name
             dictionary.prepare_source(cluster)
-            print "Prepared"
+            # print "Prepared"
 
         yield cluster
 
@@ -235,10 +236,9 @@ def test_simple_dictionaries(started_cluster):
             queries_with_answers.append((query, 1))
 
     for query, answer in queries_with_answers:
-        print query
         if isinstance(answer, list):
             answer = str(answer).replace(' ', '')
-        assert node.query(query) == str(answer) + '\n'
+        assert node.query(query) == str(answer) + '\n', "Result and answer mismatched for query {}".format(query)
 
 
 def test_complex_dictionaries(started_cluster):
@@ -267,8 +267,7 @@ def test_complex_dictionaries(started_cluster):
                         queries_with_answers.append((query, field.default_value_for_get))
 
     for query, answer in queries_with_answers:
-        print query
-        assert node.query(query) == str(answer) + '\n'
+        assert node.query(query) == str(answer) + '\n',  "Result and answer mismatched for query {}".format(query)
 
 
 def test_ranged_dictionaries(started_cluster):
@@ -291,8 +290,7 @@ def test_ranged_dictionaries(started_cluster):
                         queries_with_answers.append((query, row.get_value_by_name(field.name)))
 
     for query, answer in queries_with_answers:
-        print query
-        assert node.query(query) == str(answer) + '\n'
+        assert node.query(query) == str(answer) + '\n', "Result and answer mismatched for query {}".format(query)
 
 
 def test_key_value_simple_dictionaries(started_cluster):
@@ -314,12 +312,12 @@ def test_key_value_simple_dictionaries(started_cluster):
 
         node.query("system reload dictionary {}".format(dct.name))
 
-        print 'name: ', dct.name
+        # print 'name: ', dct.name
 
         for row in local_data:
-            print dct.get_fields()
+            # print dct.get_fields()
             for field in dct.get_fields():
-                print field.name, field.is_key
+                # print field.name, field.is_key
                 if not field.is_key:
                     for query in dct.get_select_get_queries(field, row):
                         queries_with_answers.append((query, row.get_value_by_name(field.name)))
@@ -344,10 +342,9 @@ def test_key_value_simple_dictionaries(started_cluster):
                 queries_with_answers.append((query, 1))
 
         for query, answer in queries_with_answers:
-            print query
             if isinstance(answer, list):
                 answer = str(answer).replace(' ', '')
-            assert node.query(query) == str(answer) + '\n'
+            assert node.query(query) == str(answer) + '\n', "Result and answer mismatched for query {}".format(query)
 
 
 def test_key_value_complex_dictionaries(started_cluster):
@@ -386,5 +383,4 @@ def test_key_value_complex_dictionaries(started_cluster):
                         queries_with_answers.append((query, field.default_value_for_get))
 
     for query, answer in queries_with_answers:
-        print query
-        assert node.query(query) == str(answer) + '\n'
+        assert node.query(query) == str(answer) + '\n', "Result and answer mismatched for query {}".format(query)

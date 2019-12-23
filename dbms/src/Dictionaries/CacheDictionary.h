@@ -6,6 +6,7 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <utility>
 #include <variant>
 #include <vector>
 #include <common/logger_useful.h>
@@ -300,27 +301,37 @@ private:
 
     struct UpdateUnit
     {
+        UpdateUnit(
+                std::vector<Key> requested_ids_,
+                std::function<void(const Key, const size_t)> on_cell_updated_,
+                std::function<void(const Key, const size_t)> on_id_not_found_):
+            requested_ids(std::move(requested_ids_)),
+            on_cell_updated(std::move(on_cell_updated_)),
+            on_id_not_found(std::move(on_id_not_found_)) {}
+
+        std::atomic<bool> is_done{false};
         std::vector<Key> requested_ids;
         std::function<void(const Key, const size_t)> on_cell_updated;
         std::function<void(const Key, const size_t)> on_id_not_found;
     };
 
-    using UpdateQueue = ConcurrentBoundedQueue<UpdateUnit>;
+    using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
+    using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
 
     // TODO: make setting called max_updates_number
-    mutable UpdateQueue update_queue{10};
+    mutable UpdateQueue update_queue{100};
 
     ThreadFromGlobalPool update_thread;
     void updateThreadFunction();
     std::atomic<bool> finished{false};
 
-    bool getAllowReadExpiredKeysSetting() const
+    static bool getAllowReadExpiredKeysSetting()
     {
         Context * context = current_thread->getThreadGroup()->global_context;
         return context->getSettingsRef().allow_read_expired_keys_from_cache_dictionary;
     }
 
-    const size_t update_queue_push_timeout_milliseconds = 10;
+    const size_t update_queue_push_timeout_milliseconds = 100;
 
     void waitForCurrentUpdateFinish() const;
     mutable std::mutex update_mutex;

@@ -90,11 +90,12 @@ void CacheDictionary::getItemsNumberImpl(
     if (outdated_ids.empty())
         return;
 
-    std::vector<Key> required_ids(outdated_ids.size());
-    std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+    std::vector<Key> required_ids;
+    required_ids.reserve(outdated_ids.size());
+    std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
     /// request new values
-    update(
+    auto update_unit_ptr = std::make_shared<UpdateUnit>(
         required_ids,
         [&](const auto id, const auto cell_idx)
         {
@@ -108,6 +109,15 @@ void CacheDictionary::getItemsNumberImpl(
             for (const size_t row : outdated_ids[id])
                 out[row] = get_default(row);
         });
+
+    if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
+        throw std::runtime_error("Too many updates");
+
+//    waitForCurrentUpdateFinish();
+    while (!update_unit_ptr->is_done) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::yield();
+    }
 }
 
 template <typename DefaultGetter>
@@ -230,46 +240,52 @@ void CacheDictionary::getItemsString(
 
     if (!cache_expired_ids.empty())
     {
-        std::vector<Key> required_expired_ids(cache_not_found_ids.size());
-        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::begin(required_expired_ids), [](auto & pair) { return pair.first; });
+        std::vector<Key> required_expired_ids;
+        required_expired_ids.reserve(cache_not_found_ids.size());
+        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
 
         if (allow_read_expired_keys_from_cache_dictionary)
         {
-            UpdateUnit update_unit{required_expired_ids, [&](const auto, const auto) {}, [&](const auto, const auto) {}};
-            if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(required_expired_ids, [&](const auto, const auto){}, [&](const auto, const auto) {});
+            if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
                 throw std::runtime_error("Too many updates");
         }
         else
         {
-            UpdateUnit update_unit{
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(
                     required_expired_ids,
                     [&](const auto id, const auto cell_idx)
                     {
                         const auto attribute_value = attribute_array[cell_idx];
 
                         map[id] = String{attribute_value};
-                        total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
+                        total_length += (attribute_value.size + 1) * cache_expired_ids[id].size();
                     },
                     [&](const auto id, const auto)
                     {
-                        for (const auto row : cache_not_found_ids[id])
+                        for (const auto row : cache_expired_ids[id])
                             total_length += get_default(row).size + 1;
-                    }};
+                    });
 
-            if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+            if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
                 throw std::runtime_error("Too many updates");
 
-            waitForCurrentUpdateFinish();
+//            waitForCurrentUpdateFinish();
+            while (!update_unit_ptr->is_done) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::yield();
+            }
         }
     }
 
     /// request new values
     if (!cache_not_found_ids.empty())
     {
-        std::vector<Key> required_ids(cache_not_found_ids.size());
-        std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+        std::vector<Key> required_ids;
+        required_ids.reserve(cache_not_found_ids.size());
+        std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
-        UpdateUnit update_unit{
+        auto update_unit_ptr = std::make_shared<UpdateUnit>(
             required_ids,
             [&](const auto id, const auto cell_idx)
             {
@@ -282,10 +298,16 @@ void CacheDictionary::getItemsString(
             {
                 for (const auto row : cache_not_found_ids[id])
                     total_length += get_default(row).size + 1;
-            }};
+            });
 
-        if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+        if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
             throw std::runtime_error("Too many updates");
+
+//        waitForCurrentUpdateFinish();begin
+        while (!update_unit_ptr->is_done) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::yield();
+        }
     }
 
     out->getChars().reserve(total_length);
