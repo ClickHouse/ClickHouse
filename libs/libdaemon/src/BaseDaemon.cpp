@@ -25,6 +25,7 @@
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <common/getThreadNumber.h>
+#include <common/coverage.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/TaskManager.h>
 #include <Poco/File.h>
@@ -461,6 +462,7 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
+    dumpCoverageReportIfPossible();
     pid.clear();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
