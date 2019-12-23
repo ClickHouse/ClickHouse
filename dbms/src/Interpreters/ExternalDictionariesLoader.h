@@ -21,12 +21,12 @@ public:
 
     DictPtr getDictionary(const std::string & name) const
     {
-        return std::static_pointer_cast<const IDictionaryBase>(getLoadable(name));
+        return std::static_pointer_cast<const IDictionaryBase>(load(name));
     }
 
     DictPtr tryGetDictionary(const std::string & name) const
     {
-        return std::static_pointer_cast<const IDictionaryBase>(tryGetLoadable(name));
+        return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
     }
 
     void addConfigRepository(

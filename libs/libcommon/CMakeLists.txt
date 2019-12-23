@@ -25,6 +25,7 @@ add_library (common
     src/argsToConfig.cpp
     src/Pipe.cpp
     src/phdr_cache.cpp
+    src/coverage.cpp
 
     include/common/SimpleCache.h
     include/common/Types.h
@@ -51,6 +52,7 @@ add_library (common
     include/common/sleep.h
     include/common/SimpleCache.h
     include/common/phdr_cache.h
+    include/common/coverage.h
 
     include/ext/bit_cast.h
     include/ext/chrono_io.h

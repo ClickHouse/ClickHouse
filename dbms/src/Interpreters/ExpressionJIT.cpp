@@ -624,7 +624,12 @@ static std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependen
     return dependents;
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile_expression)
+void compileFunctions(
+    ExpressionActions::Actions & actions,
+    const Names & output_columns,
+    const Block & sample_block,
+    std::shared_ptr<CompiledExpressionCache> compilation_cache,
+    size_t min_count_to_compile_expression)
 {
     static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
     static std::mutex mutex;
