@@ -66,8 +66,6 @@ SELECT '==DROP DICTIONARY';
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;
 
-SYSTEM RELOAD DICTIONARY 'ordinary_db.dict1'; -- due to lazy_load at can persist for some time
-
 SHOW DICTIONARIES FROM ordinary_db LIKE 'dict1';
 
 EXISTS DICTIONARY ordinary_db.dict1;

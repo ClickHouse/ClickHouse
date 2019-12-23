@@ -16,13 +16,16 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_CLOCK_GETTIME;
 }
 
 static Field nowSubsecond(UInt32 scale)
 {
-    const Int32 fractional_scale = 9;
-    timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
+    static constexpr Int32 fractional_scale = 9;
+
+    timespec spec{};
+    if (clock_gettime(CLOCK_REALTIME, &spec))
+        throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
 
