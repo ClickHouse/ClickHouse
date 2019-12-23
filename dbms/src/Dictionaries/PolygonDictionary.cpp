@@ -145,8 +145,9 @@ void IPolygonDictionary::loadData() {
 
 void IPolygonDictionary::calculateBytesAllocated()
 {
-    for (const auto & block : blocks)
-        bytes_allocated += block.allocatedBytes();
+    // TODO:: Account for key.
+    for (const auto & column : attributes)
+        bytes_allocated += column->allocatedBytes();
 
 }
 
@@ -224,8 +225,6 @@ T IPolygonDictionary::getNullValue(const DB::Field &field)
 void IPolygonDictionary::getString(
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const
 {
-    dict_struct.validateKeyTypes(key_types);
-
     const auto ind = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
