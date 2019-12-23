@@ -16,6 +16,7 @@
 #include <pcg_random.hpp>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
+#include <Interpreters/Context.h>
 #include <ext/bit_cast.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -312,6 +313,14 @@ private:
     ThreadFromGlobalPool update_thread;
     void updateThreadFunction();
     std::atomic<bool> finished{false};
+
+    bool getAllowReadExpiredKeysSetting() const
+    {
+        Context * context = current_thread->getThreadGroup()->global_context;
+        return context->getSettingsRef().allow_read_expired_keys_from_cache_dictionary;
+    }
+
+    const size_t update_queue_push_timeout_milliseconds = 10;
 
     void waitForCurrentUpdateFinish() const;
     mutable std::mutex update_mutex;

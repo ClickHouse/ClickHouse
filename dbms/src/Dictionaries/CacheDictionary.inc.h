@@ -162,9 +162,12 @@ void CacheDictionary::getItemsString(
     out->getOffsets().resize_assume_reserved(0);
 
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
     /// we are going to store every string separately
     std::unordered_map<Key, String> map;
+
+    const bool allow_read_expired_keys_from_cache_dictionary = getAllowReadExpiredKeysSetting();
 
     size_t total_length = 0;
     size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
@@ -177,17 +180,10 @@ void CacheDictionary::getItemsString(
             const auto id = ids[row];
 
             const auto find_result = findCellIdx(id, now);
-            if (!find_result.valid)
+
+
+            auto insert_value_routine = [&]()
             {
-                outdated_ids[id].push_back(row);
-                if (find_result.outdated)
-                    ++cache_expired;
-                else
-                    ++cache_not_found;
-            }
-            else
-            {
-                ++cache_hit;
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
                 const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
@@ -196,6 +192,30 @@ void CacheDictionary::getItemsString(
                     map[id] = String{string_ref};
 
                 total_length += string_ref.size + 1;
+            };
+
+            if (!find_result.valid)
+            {
+                if (find_result.outdated)
+                {
+                    cache_expired_ids[id].push_back(row);
+                    ++cache_expired;
+
+                    if (allow_read_expired_keys_from_cache_dictionary)
+                    {
+                        insert_value_routine();
+                    }
+                }
+                else
+                {
+                    cache_not_found_ids[id].push_back(row);
+                    ++cache_not_found;
+                }
+            }
+            else
+            {
+                ++cache_hit;
+                insert_value_routine();
             }
         }
     }
@@ -205,28 +225,67 @@ void CacheDictionary::getItemsString(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
+    const size_t outdated_ids_count = cache_expired + cache_not_found;
+    hit_count.fetch_add(rows - outdated_ids_count, std::memory_order_release);
+
+    if (!cache_expired_ids.empty())
+    {
+        std::vector<Key> required_expired_ids(cache_not_found_ids.size());
+        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::begin(required_expired_ids), [](auto & pair) { return pair.first; });
+
+        if (allow_read_expired_keys_from_cache_dictionary)
+        {
+            UpdateUnit update_unit{required_expired_ids, [&](const auto, const auto) {}, [&](const auto, const auto) {}};
+            if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+                throw std::runtime_error("Too many updates");
+        }
+        else
+        {
+            UpdateUnit update_unit{
+                    required_expired_ids,
+                    [&](const auto id, const auto cell_idx)
+                    {
+                        const auto attribute_value = attribute_array[cell_idx];
+
+                        map[id] = String{attribute_value};
+                        total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
+                    },
+                    [&](const auto id, const auto)
+                    {
+                        for (const auto row : cache_not_found_ids[id])
+                            total_length += get_default(row).size + 1;
+                    }};
+
+            if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+                throw std::runtime_error("Too many updates");
+
+            waitForCurrentUpdateFinish();
+        }
+    }
 
     /// request new values
-    if (!outdated_ids.empty())
+    if (!cache_not_found_ids.empty())
     {
-        std::vector<Key> required_ids(outdated_ids.size());
-        std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+        std::vector<Key> required_ids(cache_not_found_ids.size());
+        std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
 
-        update(
+        UpdateUnit update_unit{
             required_ids,
             [&](const auto id, const auto cell_idx)
             {
                 const auto attribute_value = attribute_array[cell_idx];
 
                 map[id] = String{attribute_value};
-                total_length += (attribute_value.size + 1) * outdated_ids[id].size();
+                total_length += (attribute_value.size + 1) * cache_not_found_ids[id].size();
             },
             [&](const auto id, const auto)
             {
-                for (const auto row : outdated_ids[id])
+                for (const auto row : cache_not_found_ids[id])
                     total_length += get_default(row).size + 1;
-            });
+            }};
+
+        if (!update_queue.tryPush(update_unit, update_queue_push_timeout_milliseconds))
+            throw std::runtime_error("Too many updates");
     }
 
     out->getChars().reserve(total_length);
