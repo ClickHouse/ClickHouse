@@ -142,7 +142,6 @@ public:
     void getString(
         const std::string & attribute_name,
         const Columns & key_columns,
-        const Columns & key_columns,
         const DataTypes & key_types,
         const String & def,
         ColumnString * const out) const;

@@ -185,7 +185,7 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
 }
 
 template <typename T>
-T IPolygonDictionary::getNullValue(const DB::Field &field) const
+T IPolygonDictionary::getNullValue(const DB::Field &field)
 {
     return field.get<NearestFieldType<T>>();
 }
@@ -197,7 +197,7 @@ T IPolygonDictionary::getNullValue(const DB::Field &field) const
         const auto ind = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
 \
-        const auto null_value = getNullValue(dict_struct.attributes[ind].null_value); \
+        const auto null_value = getNullValue<TYPE>(dict_struct.attributes[ind].null_value); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, \
@@ -227,9 +227,9 @@ void IPolygonDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
-    const auto & null_value = StringRef{getNullValue(dict_struct.attributes[ind].null_value)};
+    const auto & null_value = StringRef{getNullValue<String>(dict_struct.attributes[ind].null_value)};
 
     getItemsImpl<StringRef, StringRef>(
             ind,
@@ -242,12 +242,12 @@ void IPolygonDictionary::getString(
     void IPolygonDictionary::get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
-        const DataTypes & key_types, \
+        const DataTypes &, \
         const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, \
@@ -274,12 +274,12 @@ void IPolygonDictionary::getString(
 void IPolygonDictionary::getString(
         const std::string & attribute_name,
         const Columns & key_columns,
-        const DataTypes & key_types,
+        const DataTypes &,
         const ColumnString * const def,
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
             ind,
@@ -292,12 +292,12 @@ void IPolygonDictionary::getString(
     void IPolygonDictionary::get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
-        const DataTypes & key_types, \
+        const DataTypes &, \
         const TYPE def, \
         ResultArrayType<TYPE> & out) const \
     { \
         const auto ind = getAttributeIndex(attribute_name); \
-        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -321,12 +321,12 @@ void IPolygonDictionary::getString(
 void IPolygonDictionary::getString(
         const std::string & attribute_name,
         const Columns & key_columns,
-        const DataTypes & key_types,
+        const DataTypes &,
         const String & def,
         ColumnString * const out) const
 {
     const auto ind = getAttributeIndex(attribute_name);
-    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
             ind,

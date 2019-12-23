@@ -58,7 +58,7 @@ public:
 
 #define DECLARE(TYPE) \
     void get##TYPE( \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const;
         DECLARE(UInt8)
         DECLARE(UInt16)
         DECLARE(UInt32)
@@ -75,13 +75,13 @@ public:
         DECLARE(Decimal128)
 #undef DECLARE
 
-        void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
+    void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ColumnString * out) const;
 
 #define DECLARE(TYPE) \
     void get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
-        const DataTypes & key_types, \
+        const DataTypes &, \
         const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
         DECLARE(UInt8)
@@ -100,18 +100,18 @@ public:
         DECLARE(Decimal128)
 #undef DECLARE
 
-        void getString(
-                const std::string & attribute_name,
-                const Columns & key_columns,
-                const DataTypes & key_types,
-                const ColumnString * const def,
-                ColumnString * const out) const;
+    void getString(
+            const std::string & attribute_name,
+            const Columns & key_columns,
+            const DataTypes &,
+            const ColumnString * const def,
+            ColumnString * const out) const;
 
 #define DECLARE(TYPE) \
     void get##TYPE( \
         const std::string & attribute_name, \
         const Columns & key_columns, \
-        const DataTypes & key_types, \
+        const DataTypes &, \
         const TYPE def, \
         ResultArrayType<TYPE> & out) const;
         DECLARE(UInt8)
@@ -163,7 +163,7 @@ private:
 
     size_t getAttributeIndex(const std::string & attribute_name) const;
     template <typename T>
-    static T getNullValue(const Field & field) const;
+    static T getNullValue(const Field & field);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
