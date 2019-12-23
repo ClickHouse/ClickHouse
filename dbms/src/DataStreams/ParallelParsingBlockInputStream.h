@@ -149,7 +149,7 @@ protected:
 
 private:
     const Block header;
-    const Context context;
+    const Context & context;
     const RowInputFormatParams row_input_format_params;
     const FormatSettings format_settings;
     const InputProcessorCreator input_processor_creator;
