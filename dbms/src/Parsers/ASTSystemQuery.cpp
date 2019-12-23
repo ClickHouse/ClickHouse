@@ -116,10 +116,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
                       << (settings.hilite ? hilite_none : "");
     };
-  
+
     if (!cluster.empty())
         formatOnCluster(settings);
-  
+
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
         || type == Type::STOP_TTL_MERGES

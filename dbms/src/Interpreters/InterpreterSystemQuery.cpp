@@ -144,8 +144,8 @@ BlockIO InterpreterSystemQuery::execute()
     if (!query.table.empty() && query.database.empty())
          query.database = context.getCurrentDatabase();
 
-    if (!query.target_dictionary.empty() && !query.target_database.empty())
-        query.target_dictionary = query.target_database + "." + query.target_dictionary;
+    if (!query.target_dictionary.empty() && !query.database.empty())
+        query.target_dictionary = query.database + "." + query.target_dictionary;
 
     switch (query.type)
     {
