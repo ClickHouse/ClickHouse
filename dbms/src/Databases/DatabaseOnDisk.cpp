@@ -286,7 +286,9 @@ void DatabaseOnDisk::createDictionary(
     String full_name = database.getDatabaseName() + "." + dictionary_name;
     auto & external_loader = const_cast<ExternalDictionariesLoader &>(context.getExternalDictionariesLoader());
     if (external_loader.getCurrentStatus(full_name) != ExternalLoader::Status::NOT_EXIST)
-        throw Exception("Dictionary " + backQuote(full_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        throw Exception(
+            "Dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     if (database.isTableExist(context, dictionary_name))
         throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);

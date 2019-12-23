@@ -36,6 +36,8 @@
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <common/argsToConfig.h>
+#include <common/getThreadNumber.h>
+#include <common/coverage.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -464,6 +466,7 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
+    dumpCoverageReportIfPossible();
     pid.clear();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
