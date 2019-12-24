@@ -794,13 +794,13 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 
-Converts array of arrays to a flat array.
+Converts an array of arrays to a flat array.
 
 Function:
 
-- Applies for any depth of nested arrays, but all the elements should lay at the same level.
+- Applies to any depth of nested arrays, but all the elements must be on the same level.
 
-    For example, the `[[[1]], [[2], [3]]]` array can be flattened, but the `[[1], [[2], [3]]]` array can't be flattened.
+    For example, array `[[[1]], [[2], [3]]]` can be flattened, but array `[[1], [[2], [3]]]` can't.
 
 - Does not change arrays that are already flat.
 
