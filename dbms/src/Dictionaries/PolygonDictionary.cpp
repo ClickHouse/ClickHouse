@@ -108,7 +108,8 @@ void IPolygonDictionary::createAttributes() {
     }
 }
 
-void IPolygonDictionary::blockToAttributes(const DB::Block &block) {
+void IPolygonDictionary::blockToAttributes(const DB::Block &block)
+{
     const auto rows = block.rows();
     element_count += rows;
     for (size_t i = 0; i < attributes.size(); ++i) {
@@ -134,12 +135,12 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block) {
     }
 }
 
-void IPolygonDictionary::loadData() {
+void IPolygonDictionary::loadData()
+{
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
         blockToAttributes(block);
-    }
     stream->readSuffix();
 }
 
@@ -178,7 +179,8 @@ void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, Padd
     }
 }
 
-size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const {
+size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const
+{
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == attribute_index_by_name.end())
         throw Exception{"No such attribute: " + attribute_name, ErrorCodes::BAD_ARGUMENTS};
@@ -356,7 +358,7 @@ IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
     {
         auto coordinate_array = field.get<Array>();
         if (coordinate_array.size() != DIM)
-            throw Exception{"All points should be two-dimensional", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::LOGICAL_ERROR};
         Float64 values[DIM];
         for (size_t i = 0; i < DIM; ++i)
         {
@@ -370,7 +372,8 @@ IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
         throw Exception{"Point is not represented by an array", ErrorCodes::TYPE_MISMATCH};
 }
 
-IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & field) {
+IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & field)
+{
     Polygon result;
     if (field.getType() == Field::Types::Array)
     {
@@ -395,7 +398,9 @@ IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & fie
     return result;
 }
 
-IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const Field &field) {
+// TODO: Do this more efficiently by casting to the corresponding Column and avoiding Fields.
+IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const Field &field)
+{
     MultiPolygon result;
     if (field.getType() == Field::Types::Array)
     {
@@ -431,7 +436,7 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 {
     for (size_t i = 0; i < (this->polygons).size(); ++i)
     {
-        if (bg::within(point, (this->polygons)[i])) {
+        if (bg::covered_by(point, (this->polygons)[i])) {
             id = i;
             return true;
         }
