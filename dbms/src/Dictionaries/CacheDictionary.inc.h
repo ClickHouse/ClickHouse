@@ -131,6 +131,9 @@ void CacheDictionary::getItemsNumberImpl(
         }
     }
 
+    if (cache_not_found_ids.empty())
+        return;
+
     std::vector<Key> required_ids;
 
     if (allow_read_expired_keys_from_cache_dictionary)
