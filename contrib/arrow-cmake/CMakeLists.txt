@@ -250,7 +250,7 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/basic_decimal.cc
         ${LIBRARY_DIR}/util/bit_util.cc
         #  ${LIBRARY_DIR}/util/compression_brotli.cc
-        ${LIBRARY_DIR}/util/compression_bz2.cc
+#        ${LIBRARY_DIR}/util/compression_bz2.cc
         ${LIBRARY_DIR}/util/compression.cc
         ${LIBRARY_DIR}/util/compression_lz4.cc
         ${LIBRARY_DIR}/util/compression_snappy.cc
