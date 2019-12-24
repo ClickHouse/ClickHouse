@@ -13,7 +13,7 @@ class WriteBufferFromFileBase : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
-    virtual ~WriteBufferFromFileBase();
+    ~WriteBufferFromFileBase() override = default;
 
     off_t seek(off_t off, int whence = SEEK_SET);
     void truncate(off_t length = 0);
