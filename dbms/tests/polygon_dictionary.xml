@@ -1,0 +1,37 @@
+<dictionaries>
+<dictionary>
+    <name>polygons</name>
+    <source>
+        <clickhouse>
+            <host>localhost</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>test_01037</db>
+            <table>polygons</table>
+        </clickhouse>
+    </source>
+    <lifetime>0</lifetime>
+    <layout>
+        <polygon/>
+    </layout>
+    <structure>
+        <key>
+            <attribute>
+                <name>key</name>
+                <type>Array(Array(Array(Array(Float64))))</type>
+            </attribute>
+        </key>
+        <attribute>
+            <name>name</name>
+            <type>String</type>
+            <null_value></null_value>
+        </attribute>
+        <attribute>
+            <name>u64</name>
+            <type>UInt64</type>
+            <null_value>0</null_value>
+        </attribute>
+    </structure>
+</dictionary>
+</dictionaries>
