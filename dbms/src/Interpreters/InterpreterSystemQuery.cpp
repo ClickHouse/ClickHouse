@@ -121,7 +121,9 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
+        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery"))
+{
+}
 
 
 BlockIO InterpreterSystemQuery::execute()
@@ -137,6 +139,9 @@ BlockIO InterpreterSystemQuery::execute()
     /// Make canonical query for simpler processing
     if (!query.target_table.empty() && query.target_database.empty())
          query.target_database = context.getCurrentDatabase();
+
+    if (!query.target_dictionary.empty() && !query.target_database.empty())
+        query.target_dictionary = query.target_database + "." + query.target_dictionary;
 
     switch (query.type)
     {
@@ -165,11 +170,11 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionariesLoader().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
+            system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
-                    [&] () { system_context.getExternalDictionariesLoader().reload(); },
+                    [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
             break;

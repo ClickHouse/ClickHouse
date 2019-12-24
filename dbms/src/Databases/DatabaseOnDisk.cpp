@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalLoaderPresetConfigRepository.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -18,6 +19,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -267,9 +269,11 @@ void DatabaseOnDisk::createDictionary(
 {
     const auto & settings = context.getSettingsRef();
 
-    /** The code is based on the assumption that all threads share the same order of operations
-      * - creating the .sql.tmp file;
-      * - adding a dictionary to `dictionaries`;
+    /** The code is based on the assumption that all threads share the same order of operations:
+      * - create the .sql.tmp file;
+      * - add the dictionary to ExternalDictionariesLoader;
+      * - load the dictionary in case dictionaries_lazy_load == false;
+      * - attach the dictionary;
       * - rename .sql.tmp to .sql.
       */
 
@@ -278,17 +282,22 @@ void DatabaseOnDisk::createDictionary(
     if (database.isDictionaryExist(context, dictionary_name))
         throw Exception("Dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
+    /// A dictionary with the same full name could be defined in *.xml config files.
+    String full_name = database.getDatabaseName() + "." + dictionary_name;
+    auto & external_loader = const_cast<ExternalDictionariesLoader &>(context.getExternalDictionariesLoader());
+    if (external_loader.getCurrentStatus(full_name) != ExternalLoader::Status::NOT_EXIST)
+        throw Exception(
+            "Dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
+            ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+
     if (database.isTableExist(context, dictionary_name))
         throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-
     String dictionary_metadata_path = database.getObjectMetadataPath(dictionary_name);
     String dictionary_metadata_tmp_path = dictionary_metadata_path + ".tmp";
-    String statement;
+    String statement = getObjectDefinitionFromCreateQuery(query);
 
     {
-        statement = getObjectDefinitionFromCreateQuery(query);
-
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
         WriteBufferFromFile out(dictionary_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
@@ -298,27 +307,48 @@ void DatabaseOnDisk::createDictionary(
         out.close();
     }
 
-    try
-    {
-        /// Do not load it now because we want more strict loading
-        database.attachDictionary(dictionary_name, context, false);
-        /// Load dictionary
-        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-        String dict_name = database.getDatabaseName() + "." + dictionary_name;
-        context.getExternalDictionariesLoader().addDictionaryWithConfig(
-            dict_name, database.getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load);
+    bool succeeded = false;
+    SCOPE_EXIT({
+        if (!succeeded)
+            Poco::File(dictionary_metadata_tmp_path).remove();
+    });
 
-        /// If it was ATTACH query and file with dictionary metadata already exist
-        /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
-        Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
+    /// Add a temporary repository containing the dictionary.
+    /// We need this temp repository to try loading the dictionary before actually attaching it to the database.
+    static std::atomic<size_t> counter = 0;
+    String temp_repository_name = String(IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX) + " creating " + full_name + " "
+        + std::to_string(++counter);
+    external_loader.addConfigRepository(
+        temp_repository_name,
+        std::make_unique<ExternalLoaderPresetConfigRepository>(
+            std::vector{std::pair{dictionary_metadata_tmp_path,
+                                  getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), database.getDatabaseName())}}));
+    SCOPE_EXIT({ external_loader.removeConfigRepository(temp_repository_name); });
 
-    }
-    catch (...)
+    bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+    if (!lazy_load)
     {
-        database.detachDictionary(dictionary_name, context);
-        Poco::File(dictionary_metadata_tmp_path).remove();
-        throw;
+        /// load() is called here to force loading the dictionary, wait until the loading is finished,
+        /// and throw an exception if the loading is failed.
+        external_loader.load(full_name);
     }
+
+    database.attachDictionary(dictionary_name, context);
+    SCOPE_EXIT({
+        if (!succeeded)
+            database.detachDictionary(dictionary_name, context);
+    });
+
+    /// If it was ATTACH query and file with dictionary metadata already exist
+    /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
+    Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
+
+    /// ExternalDictionariesLoader doesn't know we renamed the metadata path.
+    /// So we have to manually call reloadConfig() here.
+    external_loader.reloadConfig(database.getDatabaseName(), full_name);
+
+    /// Everything's ok.
+    succeeded = true;
 }
 
 
@@ -362,16 +392,18 @@ void DatabaseOnDisk::removeDictionary(
     database.detachDictionary(dictionary_name, context);
 
     String dictionary_metadata_path = database.getObjectMetadataPath(dictionary_name);
-
-    try
+    if (Poco::File(dictionary_metadata_path).exists())
     {
-        Poco::File(dictionary_metadata_path).remove();
-    }
-    catch (...)
-    {
-        /// If remove was not possible for some reason
-        database.attachDictionary(dictionary_name, context);
-        throw;
+        try
+        {
+            Poco::File(dictionary_metadata_path).remove();
+        }
+        catch (...)
+        {
+            /// If remove was not possible for some reason
+            database.attachDictionary(dictionary_name, context);
+            throw;
+        }
     }
 }
 
@@ -507,8 +539,10 @@ void DatabaseOnDisk::iterateMetadataFiles(const IDatabase & database, Poco::Logg
             const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
             if (Poco::File(database.getDataPath() + '/' + object_name).exists())
             {
-                Poco::File(dir_it->path()).renameTo(object_name + ".sql");
-                LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously");
+                /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
+                Poco::File(dir_it->path()).renameTo(database.getMetadataPath() + object_name + ".sql");
+                LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+                iterating_function(object_name + ".sql");
             }
             else
             {

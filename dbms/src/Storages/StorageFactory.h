@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/registerStorages.h>
 #include <unordered_map>
 
 
@@ -46,7 +47,7 @@ public:
     using Creator = std::function<StoragePtr(const Arguments & arguments)>;
 
     StoragePtr get(
-        ASTCreateQuery & query,
+        const ASTCreateQuery & query,
         const String & data_path,
         const String & table_name,
         const String & database_name,
