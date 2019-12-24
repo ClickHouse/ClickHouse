@@ -41,7 +41,11 @@ void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
+    std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
+
+    const bool allow_read_expired_keys_from_cache_dictionary = getAllowReadExpiredKeysSetting();
+
     auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
 
@@ -62,20 +66,35 @@ void CacheDictionary::getItemsNumberImpl(
                 *    3. explicit defaults were specified and cell was set default. */
 
             const auto find_result = findCellIdx(id, now);
+
+            auto update_routine = [&]()
+            {
+                const auto & cell_idx = find_result.cell_idx;
+                const auto & cell = cells[cell_idx];
+                out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
+            };
+
             if (!find_result.valid)
             {
-                outdated_ids[id].push_back(row);
+
                 if (find_result.outdated)
+                {
+                    cache_expired_ids[id].push_back(row);
                     ++cache_expired;
+
+                    if (allow_read_expired_keys_from_cache_dictionary)
+                        update_routine();
+                }
                 else
+                {
+                    cache_not_found_ids[id].push_back(row);
                     ++cache_not_found;
+                }
             }
             else
             {
                 ++cache_hit;
-                const auto & cell_idx = find_result.cell_idx;
-                const auto & cell = cells[cell_idx];
-                out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
+                update_routine();
             }
         }
     }
@@ -85,30 +104,73 @@ void CacheDictionary::getItemsNumberImpl(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
+    const size_t outdated_ids_count = cache_expired + cache_not_found;
+    hit_count.fetch_add(rows - outdated_ids_count, std::memory_order_release);
 
-    if (outdated_ids.empty())
+    if (outdated_ids_count == 0)
         return;
 
+
+    if (allow_read_expired_keys_from_cache_dictionary)
+    {
+        if (!cache_expired_ids.empty())
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_ids.size());
+            std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::back_inserter(required_expired_ids),
+                           [](auto & pair) { return pair.first; });
+
+            /// request new values
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(
+                    required_expired_ids,
+                    [&](const auto, const auto) {},
+                    [&](const auto, const auto) {});
+
+            if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
+                throw std::runtime_error("Too many updates");
+        }
+    }
+
     std::vector<Key> required_ids;
-    required_ids.reserve(outdated_ids.size());
-    std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+
+    if (allow_read_expired_keys_from_cache_dictionary)
+    {
+        /// In this case we have to update synchronously only cache_not_found_ids
+        required_ids.reserve(cache_not_found_ids.size());
+        std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::back_inserter(required_ids),
+                       [](auto & pair) { return pair.first; });
+    }
+    else
+    {
+        required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
+        std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::back_inserter(required_ids),
+                       [](auto & pair) { return pair.first; });
+        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::back_inserter(required_ids),
+                       [](auto & pair) { return pair.first; });
+    }
+
 
     /// request new values
     auto update_unit_ptr = std::make_shared<UpdateUnit>(
-        required_ids,
-        [&](const auto id, const auto cell_idx)
-        {
-            const auto attribute_value = attribute_array[cell_idx];
+            required_ids,
+            [&](const auto id, const auto cell_idx)
+            {
+                const auto attribute_value = attribute_array[cell_idx];
 
-            for (const size_t row : outdated_ids[id])
-                out[row] = static_cast<OutputType>(attribute_value);
-        },
-        [&](const auto id, const auto)
-        {
-            for (const size_t row : outdated_ids[id])
-                out[row] = get_default(row);
-        });
+                for (const size_t row : cache_not_found_ids[id])
+                    out[row] = static_cast<OutputType>(attribute_value);
+
+                for (const size_t row : cache_expired_ids[id])
+                    out[row] = static_cast<OutputType>(attribute_value);
+            },
+            [&](const auto id, const auto)
+            {
+                for (const size_t row : cache_not_found_ids[id])
+                    out[row] = get_default(row);
+
+                for (const size_t row : cache_expired_ids[id])
+                    out[row] = get_default(row);
+            });
 
     if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
         throw std::runtime_error("Too many updates");
