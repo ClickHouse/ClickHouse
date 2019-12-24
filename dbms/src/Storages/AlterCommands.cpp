@@ -257,10 +257,16 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
             if (ttl)
                 column.ttl = ttl;
 
-            column.type = data_type;
+            if (data_type)
+                column.type = data_type;
 
-            column.default_desc.kind = default_kind;
-            column.default_desc.expression = default_expression;
+            /// User specified default expression or changed
+            /// datatype. We have to replace default.
+            if (default_expression || data_type)
+            {
+                column.default_desc.kind = default_kind;
+                column.default_desc.expression = default_expression;
+            }
         });
     }
     else if (type == MODIFY_ORDER_BY)
@@ -389,13 +395,13 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
 
 bool AlterCommand::isModifyingData() const
 {
-    /// Change binary representation on disk
+    /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type.get() || default_expression;
+        return data_type != nullptr;
 
-    return type == ADD_COLUMN  /// We need to change columns.txt in each part
-        || type == DROP_COLUMN /// We need to change columns.txt in each part
-        || type == DROP_INDEX; /// We need to remove file from filesystem
+    return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
+        || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
+        || type == DROP_INDEX; /// We need to remove file from filesystem for MergeTree
 }
 
 bool AlterCommand::isSettingsAlter() const
