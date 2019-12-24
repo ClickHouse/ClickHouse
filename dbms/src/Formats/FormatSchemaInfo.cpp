@@ -59,10 +59,6 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
         static const String str = Poco::Path(format_schema_path).makeAbsolute().makeDirectory().toString();
         return str;
     };
-//    auto is_server = [&context]()
-//    {
-//        return context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
-//    };
 
     if (path.getExtension().empty() && !default_file_extension.empty())
         path.setExtension(default_file_extension);
