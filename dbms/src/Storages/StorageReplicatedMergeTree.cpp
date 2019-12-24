@@ -3755,10 +3755,10 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 
 
 void StorageReplicatedMergeTree::rename(
-    const String & new_path_to_db, const String & new_database_name,
+    const String & new_path_to_table_data, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder & lock)
 {
-    MergeTreeData::rename(new_path_to_db, new_database_name, new_table_name, lock);
+    MergeTreeData::rename(new_path_to_table_data, new_database_name, new_table_name, lock);
 
     /// Update table name in zookeeper
     auto zookeeper = getZooKeeper();

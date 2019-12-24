@@ -159,13 +159,14 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String table_dir_path = args.context.getPath() + relative_table_dir_path + "/";
+    String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();
     paths = {getTablePath(table_dir_path, format_name)};
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name), compression_method(args.compression_method)
+    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
+    , compression_method(args.compression_method), base_path(args.context.getPath())
 {
     setColumns(args.columns);
     setConstraints(args.constraints);
@@ -342,7 +343,7 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
-void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -352,7 +353,7 @@ void StorageFile::rename(const String & new_path_to_db, const String & new_datab
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(new_path_to_db + escapeForFileName(new_table_name), format_name);
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 

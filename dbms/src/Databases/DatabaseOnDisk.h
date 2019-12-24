@@ -156,7 +156,7 @@ void DatabaseOnDisk::renameTable(
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/",
+        table->rename("/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/" + escapeForFileName(to_table_name) + '/',
             to_database_concrete->getDatabaseName(),
             to_table_name, lock);
     }

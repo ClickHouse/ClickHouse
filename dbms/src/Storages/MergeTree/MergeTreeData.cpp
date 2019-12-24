@@ -1215,13 +1215,9 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
 }
 
 void MergeTreeData::rename(
-    const String & /*new_path_to_db*/, const String & new_database_name,
+    const String & new_table_path, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto old_table_path = relative_data_path;
-    auto new_db_path = "data/" + escapeForFileName(new_database_name) + '/';
-    auto new_table_path = new_db_path + escapeForFileName(new_table_name) + '/';
-
     auto disks = storage_policy->getDisks();
 
     for (const auto & disk : disks)
@@ -1232,15 +1228,16 @@ void MergeTreeData::rename(
 
     for (const auto & disk : disks)
     {
-        disk->createDirectory(new_db_path);
-        disk->moveFile(old_table_path, new_table_path);
+        auto new_table_path_parent = Poco::Path(new_table_path).makeParent().toString();
+        disk->createDirectory(new_table_path_parent);
+        disk->moveFile(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
 
-    database_name = new_database_name;
-    table_name = new_table_name;
     relative_data_path = new_table_path;
+    table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 void MergeTreeData::dropAllData()
@@ -3532,9 +3529,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
         String backup_part_absolute_path = backup_path
-            + "data/"
-            + escapeForFileName(getDatabaseName()) + "/"
-            + escapeForFileName(getTableName()) + "/"
+            + relative_data_path
             + part->relative_path;
         localBackup(part_absolute_path, backup_part_absolute_path);
         part->is_frozen.store(true, std::memory_order_relaxed);

@@ -38,7 +38,7 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override;
 
@@ -76,6 +76,7 @@ private:
     int table_fd = -1;
     String compression_method;
 
+    std::string base_path;
     std::vector<std::string> paths;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
