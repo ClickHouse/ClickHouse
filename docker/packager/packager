@@ -103,7 +103,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Copying binary back")
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     ARM_SUFFIX = "-aarch64"
@@ -135,14 +135,20 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if package_type == "deb":
+    if image_type == "deb":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
-    elif package_type == "binary":
+    elif image_type == "binary":
         result.append("CC={}".format(cc))
         result.append("CXX={}".format(cxx))
         cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
         cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
+
+    # Create combined output archive for split build and for performance tests.
+    if package_type == "performance":
+        result.append("COMBINED_OUTPUT=performance")
+    elif split_binary:
+        result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
@@ -193,7 +199,8 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
-    parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
+    # 'performance' creates a combined .tgz with server and configs to be used for performance test.
+    parser.add_argument("--package-type", choices=['deb', 'binary', 'performance', 'freebsd'], required=True)
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
@@ -215,25 +222,26 @@ if __name__ == "__main__":
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_name = IMAGE_MAP[args.package_type]
+    image_type = 'binary' if args.package_type == 'performance' else args.package_type
+    image_name = IMAGE_MAP[image_type]
 
     if not os.path.isabs(args.clickhouse_repo_path):
         ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))
     else:
         ch_root = args.clickhouse_repo_path
 
-    if args.alien_pkgs and not args.package_type == "deb":
+    if args.alien_pkgs and not image_type == "deb":
         raise Exception("Can add alien packages only in deb build")
 
-    dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
-    if args.package_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
+    dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
+    if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
             build_image(image_name, dockerfile)
     env_prepared = parse_env_variables(
-        args.build_type, args.compiler, args.sanitizer, args.package_type,
+        args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
         args.version, args.author, args.official, args.alien_pkgs, args.with_coverage)
-    if args.package_type != "freebsd":
+    if image_type != "freebsd":
         run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
     else:
         logging.info("Running freebsd build, arguments will be ignored")
