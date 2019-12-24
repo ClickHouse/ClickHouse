@@ -98,14 +98,6 @@ NameSet AnalyzedJoin::getQualifiedColumnsSet() const
     return out;
 }
 
-NameSet AnalyzedJoin::getOriginalColumnsSet() const
-{
-    NameSet out;
-    for (const auto & names : original_names)
-        out.insert(names.second);
-    return out;
-}
-
 NamesWithAliases AnalyzedJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
