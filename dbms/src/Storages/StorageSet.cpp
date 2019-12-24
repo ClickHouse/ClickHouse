@@ -102,7 +102,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     if (relative_path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    path = context_.getPath() + relative_path_;
+    base_path = context_.getPath();
+    path = base_path + relative_path_;
 }
 
 
@@ -201,10 +202,10 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
 
 void StorageSetOrJoinBase::rename(
-    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+    const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     /// Rename directory with data.
-    String new_path = new_path_to_db + escapeForFileName(new_table_name) + "/";
+    String new_path = base_path + new_path_to_table_data;
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
