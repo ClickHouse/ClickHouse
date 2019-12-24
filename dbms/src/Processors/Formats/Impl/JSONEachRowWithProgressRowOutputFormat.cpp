@@ -33,7 +33,6 @@ void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factor
     factory.registerOutputFormatProcessor("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
     {

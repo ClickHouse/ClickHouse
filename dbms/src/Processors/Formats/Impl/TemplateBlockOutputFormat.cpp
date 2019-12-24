@@ -230,7 +230,6 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context & context,
             FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
@@ -247,7 +246,8 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
         {
             /// Read format string from file
             resultset_format = ParsedTemplateFormatString(
-                    FormatSchemaInfo(context, settings.template_settings.resultset_format, "Template", false),
+                    FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
+                            settings.schema.is_server, settings.schema.format_schema_path),
                     [&](const String & partName)
                     {
                         return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
@@ -255,7 +255,8 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
         }
 
         ParsedTemplateFormatString row_format = ParsedTemplateFormatString(
-                FormatSchemaInfo(context, settings.template_settings.row_format, "Template", false),
+                FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
+                        settings.schema.is_server, settings.schema.format_schema_path),
                 [&](const String & colName)
                 {
                     return sample.getPositionByName(colName);
@@ -267,16 +268,13 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context & context,
             FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
-        ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(context);
-        ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(context, sample);
-        FormatSettings format_settings = settings;
-        format_settings.template_settings.row_between_delimiter = context.getSettingsRef().format_custom_row_between_delimiter;
+        ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);
+        ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(settings.custom, sample);
 
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, format_settings, resultset_format, row_format);
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format);
     });
 }
 }

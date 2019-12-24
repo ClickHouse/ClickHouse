@@ -16,7 +16,7 @@ class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                           const FormatSettings & settings_, bool ignore_spaces_,
+                           FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_);
 
     String getName() const override { return "TemplateRowInputFormat"; }

@@ -20,10 +20,10 @@ extern const int SYNTAX_ERROR;
 
 
 TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                                               const FormatSettings & settings_, bool ignore_spaces_,
+                                               FormatSettings settings_, bool ignore_spaces_,
                                                ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_)
     : RowInputFormatWithDiagnosticInfo(header_, buf, params_), buf(in_), data_types(header_.getDataTypes()),
-      settings(settings_), ignore_spaces(ignore_spaces_),
+      settings(std::move(settings_)), ignore_spaces(ignore_spaces_),
       format(std::move(format_)), row_format(std::move(row_format_)),
       default_csv_delimiter(settings.csv.delimiter)
 {
@@ -509,7 +509,6 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
         factory.registerInputFormatProcessor(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
                 ReadBuffer & buf,
                 const Block & sample,
-                const Context & context,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
         {
@@ -526,7 +525,8 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
             {
                 /// Read format string from file
                 resultset_format = ParsedTemplateFormatString(
-                        FormatSchemaInfo(context, settings.template_settings.resultset_format, "Template", false),
+                        FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
+                                         settings.schema.is_server, settings.schema.format_schema_path),
                         [&](const String & partName) -> std::optional<size_t>
                         {
                             if (partName == "data")
@@ -537,7 +537,8 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
             }
 
             ParsedTemplateFormatString row_format = ParsedTemplateFormatString(
-                    FormatSchemaInfo(context, settings.template_settings.row_format, "Template", false),
+                    FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
+                                     settings.schema.is_server, settings.schema.format_schema_path),
                     [&](const String & colName) -> std::optional<size_t>
                     {
                         return sample.getPositionByName(colName);
@@ -552,16 +553,13 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
         factory.registerInputFormatProcessor(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", [=](
                 ReadBuffer & buf,
                 const Block & sample,
-                const Context & context,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
         {
-            ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(context);
-            ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(context, sample);
-            FormatSettings format_settings = settings;
-            format_settings.template_settings.row_between_delimiter = context.getSettingsRef().format_custom_row_between_delimiter;
+            ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);
+            ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(settings.custom, sample);
 
-            return std::make_shared<TemplateRowInputFormat>(sample, buf, params, format_settings, ignore_spaces, resultset_format, row_format);
+            return std::make_shared<TemplateRowInputFormat>(sample, buf, params, settings, ignore_spaces, resultset_format, row_format);
         });
     }
 }
