@@ -385,10 +385,13 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         throw std::runtime_error("Too many updates");
 
 //    waitForCurrentUpdateFinish();
-    while (!update_unit_ptr->is_done) {
+    while (!update_unit_ptr->is_done && !update_unit_ptr->current_exception) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::this_thread::yield();
     }
+
+    if (update_unit_ptr->current_exception)
+        std::rethrow_exception(update_unit_ptr->current_exception);
 }
 
 
@@ -670,21 +673,20 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
 void CacheDictionary::updateThreadFunction()
 {
-    try
+    while (!finished)
     {
-        while (!finished)
+        UpdateUnitPtr unit_ptr;
+        update_queue.pop(unit_ptr);
+        try
         {
-            UpdateUnitPtr unit_ptr;
-            update_queue.pop(unit_ptr);
-
             update(unit_ptr->requested_ids, unit_ptr->on_cell_updated, unit_ptr->on_id_not_found);
             unit_ptr->is_done = true;
             last_update.fetch_add(1);
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        catch (...)
+        {
+            unit_ptr->current_exception = std::current_exception();
+        }
     }
 }
 
