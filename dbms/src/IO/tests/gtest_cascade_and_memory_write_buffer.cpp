@@ -134,8 +134,14 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
                 [res_buf] (const WriteBufferPtr & prev_buf)
                 {
                     auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
-                    auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
-                    copyData(*rdbuf , *res_buf);
+                    if (prev_memory_buffer != nullptr)
+                    {
+                        auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
+                        if (rdbuf != nullptr)
+                        {
+                            copyData(*rdbuf, *res_buf);
+                        }
+                    }
                     return res_buf;
                 }
             });
@@ -219,6 +225,7 @@ try
         ASSERT_EQ(tmp_template, tmp_filename.substr(0, tmp_template.size()));
 
         auto reread_buf = buf->tryGetReadBuffer();
+        ASSERT_TRUE(reread_buf != nullptr);
         std::string decoded_data;
         {
             WriteBufferFromString wbuf_decode(decoded_data);

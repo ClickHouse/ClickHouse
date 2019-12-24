@@ -109,11 +109,6 @@ public:
         return "simpleLinearRegression";
     }
 
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
-
     void add(
         AggregateDataPtr place,
         const IColumn ** columns,

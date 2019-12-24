@@ -1,4 +1,5 @@
 #include "FunctionsStringSearch.h"
+#include "registerFunctions.h"
 
 #include <algorithm>
 #include <memory>

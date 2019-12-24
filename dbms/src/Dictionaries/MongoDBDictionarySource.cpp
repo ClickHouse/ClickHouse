@@ -1,6 +1,7 @@
 #include "MongoDBDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 namespace DB
 {
@@ -15,7 +16,8 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */) -> DictionarySourcePtr {
+                                 const Context & /* context */,
+                                 bool /* check_config */) -> DictionarySourcePtr {
 #if USE_POCO_MONGODB
         return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
 #else

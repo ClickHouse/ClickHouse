@@ -23,8 +23,8 @@ add_library (common
     src/getThreadNumber.cpp
     src/sleep.cpp
     src/argsToConfig.cpp
-    src/Pipe.cpp
     src/phdr_cache.cpp
+    src/coverage.cpp
 
     include/common/SimpleCache.h
     include/common/Types.h
@@ -46,13 +46,14 @@ add_library (common
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
-    include/common/Pipe.h
     include/common/getThreadNumber.h
     include/common/sleep.h
     include/common/SimpleCache.h
     include/common/phdr_cache.h
+    include/common/coverage.h
 
     include/ext/bit_cast.h
+    include/ext/chrono_io.h
     include/ext/collection_cast.h
     include/ext/enumerate.h
     include/ext/function_traits.h
