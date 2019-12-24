@@ -454,6 +454,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
     /// Specify CPU core for thread if can.
     /// It may reduce the number of context swithches.
     cpu_set_t cpu_set;
@@ -461,6 +462,8 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     CPU_SET(thread_num, &cpu_set);
     if (sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set) == -1)
         LOG_TRACE(log, "Cannot set affinity for thread " << num_threads);
+
+#endif
 
     UInt64 total_time_ns = 0;
     UInt64 execution_time_ns = 0;
