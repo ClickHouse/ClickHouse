@@ -310,6 +310,7 @@ private:
             on_id_not_found(std::move(on_id_not_found_)) {}
 
         std::atomic<bool> is_done{false};
+        std::exception_ptr current_exception{nullptr};
         std::vector<Key> requested_ids;
         std::function<void(const Key, const size_t)> on_cell_updated;
         std::function<void(const Key, const size_t)> on_id_not_found;

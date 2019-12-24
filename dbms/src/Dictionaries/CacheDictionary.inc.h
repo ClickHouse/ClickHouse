@@ -114,10 +114,13 @@ void CacheDictionary::getItemsNumberImpl(
         throw std::runtime_error("Too many updates");
 
 //    waitForCurrentUpdateFinish();
-    while (!update_unit_ptr->is_done) {
+    while (!update_unit_ptr->is_done && !update_unit_ptr->current_exception) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::this_thread::yield();
     }
+
+    if (update_unit_ptr->current_exception)
+        std::rethrow_exception(update_unit_ptr->current_exception);
 }
 
 template <typename DefaultGetter>
@@ -271,10 +274,13 @@ void CacheDictionary::getItemsString(
                 throw std::runtime_error("Too many updates");
 
 //            waitForCurrentUpdateFinish();
-            while (!update_unit_ptr->is_done) {
+            while (!update_unit_ptr->is_done && !update_unit_ptr->current_exception) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 std::this_thread::yield();
             }
+
+            if (update_unit_ptr->current_exception)
+                std::rethrow_exception(update_unit_ptr->current_exception);
         }
     }
 
@@ -304,10 +310,13 @@ void CacheDictionary::getItemsString(
             throw std::runtime_error("Too many updates");
 
 //        waitForCurrentUpdateFinish();begin
-        while (!update_unit_ptr->is_done) {
+        while (!update_unit_ptr->is_done && !update_unit_ptr->current_exception) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             std::this_thread::yield();
         }
+
+        if (update_unit_ptr->current_exception)
+            std::rethrow_exception(update_unit_ptr->current_exception);
     }
 
     out->getChars().reserve(total_length);
