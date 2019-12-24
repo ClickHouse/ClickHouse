@@ -2339,8 +2339,8 @@ public:
     using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     static constexpr auto name = "CAST";
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<CastOverloadResolver>(); }
-    static FunctionOverloadResolverImplPtr create() { return std::make_unique<CastOverloadResolver>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return createImpl(); }
+    static FunctionOverloadResolverImplPtr createImpl() { return std::make_unique<CastOverloadResolver>(); }
 
     CastOverloadResolver() {}
 
