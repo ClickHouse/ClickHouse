@@ -225,7 +225,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
             column.default_desc.kind = default_kind;
             column.default_desc.expression = default_expression;
         }
-        column.comment = *comment;
+        if (comment)
+            column.comment = *comment;
+
         column.codec = codec;
         column.ttl = ttl;
 
