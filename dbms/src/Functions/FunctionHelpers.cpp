@@ -139,7 +139,7 @@ void validateArgumentsImpl(const IFunction & func,
         const auto validator = decriptors[i];
         if (!validator.isValid(arg.type, arg.column))
             throw Exception("Illegal type of argument #" + std::to_string(i)
-                            + (validator.argument_name ? " '" + std::string(validator.argument_name) + "'": std::string{})
+                            + (validator.argument_name ? " '" + std::string(validator.argument_name) + "'" : std::string{})
                             + " of function " + func.getName()
                             + ", expected " + validator.expected_type_description
                             + (arg.type ? ", got " + arg.type->getName() : std::string{}),
