@@ -21,10 +21,7 @@ void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
 #endif
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
-#endif
-
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 #if USE_MYSQL

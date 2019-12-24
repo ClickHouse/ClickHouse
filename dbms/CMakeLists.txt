@@ -77,9 +77,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Add compiler options only to c++ compiler
     function(add_cxx_compile_options option)
-        add_compile_options(
-                "$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>"
-        )
+        add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
     endfunction()
     # Warn about boolean expression compared with an integer value different from true/false
     add_cxx_compile_options(-Wbool-compare)
@@ -106,15 +104,15 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Warn when the indentation of the code does not reflect the block structure
     add_cxx_compile_options(-Wmisleading-indentation)
     # Warn if a global function is defined without a previous declaration
-    add_cxx_compile_options(-Wmissing-declarations)
+    # add_cxx_compile_options(-Wmissing-declarations)
     # Warn if a user-supplied include directory does not exist
     # add_cxx_compile_options(-Wmissing-include-dirs)
     # Obvious
     add_cxx_compile_options(-Wnon-virtual-dtor)
     # Obvious
     add_cxx_compile_options(-Wno-return-local-addr)
-    # Obvious
-    add_cxx_compile_options(-Wnull-dereference)
+    # This warning is disabled due to false positives if compiled with libc++: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90037
+    #add_cxx_compile_options(-Wnull-dereference)
     # Obvious
     add_cxx_compile_options(-Wodr)
     # Obvious

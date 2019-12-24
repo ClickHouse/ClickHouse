@@ -141,6 +141,9 @@ BlockIO InterpreterSystemQuery::execute()
     if (!query.target_table.empty() && query.target_database.empty())
          query.target_database = context.getCurrentDatabase();
 
+    if (!query.target_dictionary.empty() && !query.target_database.empty())
+        query.target_dictionary = query.target_database + "." + query.target_dictionary;
+
     switch (query.type)
     {
         case Type::SHUTDOWN:
@@ -168,11 +171,11 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionariesLoader().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
+            system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
-                    [&] () { system_context.getExternalDictionariesLoader().reload(); },
+                    [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
             break;
