@@ -4,10 +4,10 @@ use test_01037;
 drop table if exists polygons;
 
 create table polygons (key Array(Array(Array(Array(Float64)))), name String, u64 UInt64) Engine = Memory;
-insert into polygons values (
-                             [
-                                 [
-                                     [
+insert into polygons values (--
+                             [--
+                                 [--
+                                     [--
                                          [1, 3],
                                          [1, 1],
                                          [3, 1],
@@ -20,21 +20,22 @@ insert into polygons values (
                                          [-3, 1],
                                          [-1, 1],
                                          [-1, 3]
-                                     ]
+                                     ]--
                                  ],
-                                 [
-                                     [
+                                 [--
+                                     [--
                                          [5, 5],
                                          [5, 1],
                                          [7, 1],
                                          [7, 7],
                                          [1, 7],
                                          [1, 5]
-                                     ]
-                                 ]
+                                     ]--
+                                 ]--
                              ],
                              'Click',
                              42);
+/*
 insert into polygons values (
                              [
                                  [
@@ -62,7 +63,7 @@ insert into polygons values (
                              ],
                              'House',
                              314159);
-
+*/
 select 'dictGet', 'polygons' as dict_name, (0.0, 0.0) as key,
        dictGet(dict_name, 'name', key),
        dictGet(dict_name, 'u64', key);
