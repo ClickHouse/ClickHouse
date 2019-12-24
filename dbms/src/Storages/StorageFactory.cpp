@@ -42,7 +42,7 @@ StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
     const String & table_name,
-    const String & database_name,   // TODO remove
+    const String & database_name,
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
@@ -152,7 +152,7 @@ StoragePtr StorageFactory::get(
         .query = query,
         .relative_data_path = relative_data_path,
         .table_name = table_name,
-        .database_name = database_name,     //TODO remove
+        .database_name = database_name,
         .local_context = local_context,
         .context = context,
         .columns = columns,
