@@ -37,7 +37,7 @@ public:
         /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
         const String & relative_data_path;
         const String & table_name;
-        const String & database_name;   //TODO remove
+        const String & database_name;
         Context & local_context;
         Context & context;
         const ColumnsDescription & columns;

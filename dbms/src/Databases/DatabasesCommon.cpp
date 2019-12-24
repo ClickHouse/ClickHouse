@@ -1,23 +1,13 @@
 #include <Databases/DatabasesCommon.h>
-
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDictionary.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
-#include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Dictionaries/DictionaryFactory.h>
-
-#include <sstream>
 
 
 namespace DB
@@ -34,7 +24,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 
 StoragePtr getDictionaryStorage(const Context & context, const String & table_name, const String & db_name)
 {
