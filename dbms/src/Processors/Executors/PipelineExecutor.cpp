@@ -11,7 +11,9 @@
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
 
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <sched.h>
+#endif
 
 namespace DB
 {
