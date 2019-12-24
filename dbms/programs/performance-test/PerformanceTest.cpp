@@ -118,11 +118,14 @@ bool PerformanceTest::checkPreconditions() const
 
             size_t exist = 0;
 
-            connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            for (auto & connection : connections)
+            {
+                connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                                      &test_info.settings, nullptr, false);
 
                 while (true)
                 {
-                    Connection::Packet packet = connection->receivePacket();
+                    Packet packet = connection->receivePacket();
 
                     if (packet.type == Protocol::Server::Data)
                     {
@@ -137,15 +140,16 @@ bool PerformanceTest::checkPreconditions() const
                         }
                     }
 
-                if (packet.type == Protocol::Server::Exception
-                    || packet.type == Protocol::Server::EndOfStream)
-                    break;
-            }
+                    if (packet.type == Protocol::Server::Exception
+                        || packet.type == Protocol::Server::EndOfStream)
+                        break;
+                }
 
-            if (!exist)
-            {
-                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist on " << connection.getDescription());
-                return false;
+                if (!exist)
+                {
+                    LOG_WARNING(log, "Table " << table_to_check << " doesn't exist on " << connection->getDescription());
+                    return false;
+                }
             }
         }
 
