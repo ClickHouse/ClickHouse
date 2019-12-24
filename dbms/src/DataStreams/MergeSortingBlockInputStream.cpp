@@ -1,4 +1,3 @@
-#include <Poco/Version.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -152,15 +151,9 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     blocks.swap(nonempty_blocks);
 
     if (!has_collation)
-    {
-        for (size_t i = 0; i < cursors.size(); ++i)
-            queue_without_collation.push(SortCursor(&cursors[i]));
-    }
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-    {
-        for (size_t i = 0; i < cursors.size(); ++i)
-            queue_with_collation.push(SortCursorWithCollation(&cursors[i]));
-    }
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
 }
 
 
@@ -177,52 +170,50 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     }
 
     return !has_collation
-        ? mergeImpl<SortCursor>(queue_without_collation)
-        : mergeImpl<SortCursorWithCollation>(queue_with_collation);
+        ? mergeImpl(queue_without_collation)
+        : mergeImpl(queue_with_collation);
 }
 
 
-template <typename TSortCursor>
-Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCursor> & queue)
+template <typename TSortingHeap>
+Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 {
-    size_t num_columns = blocks[0].columns();
+    size_t num_columns = header.columns();
 
-    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
+    MutableColumns merged_columns = header.cloneEmptyColumns();
     /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        TSortCursor current = queue.top();
-        queue.pop();
+        auto current = queue.current();
 
+        /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
             merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-        if (!current->isLast())
-        {
-            current->next();
-            queue.push(current);
-        }
-
         ++total_merged_rows;
+        ++merged_rows;
+
+        /// We don't need more rows because of limit has reached.
         if (limit && total_merged_rows == limit)
         {
-            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return res;
+            break;
         }
 
-        ++merged_rows;
+        queue.next();
+
+        /// It's enough for current output block but we will continue.
         if (merged_rows == max_merged_block_size)
-            return blocks[0].cloneWithColumns(std::move(merged_columns));
+            break;
     }
 
     if (merged_rows == 0)
         return {};
 
-    return blocks[0].cloneWithColumns(std::move(merged_columns));
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 

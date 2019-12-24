@@ -39,7 +39,7 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
     if (filter_by_name)
     {
         /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
-        context.getExternalDictionariesLoader().load(filter_by_name, load_results);
+        load_results = context.getExternalDictionariesLoader().tryLoad<ExternalLoader::LoadResults>(filter_by_name);
     }
     else
     {
@@ -47,12 +47,12 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
         load_results = context.getExternalDictionariesLoader().getCurrentLoadResults();
     }
 
-    for (const auto & [object_name, info]: load_results)
+    for (const auto & load_result: load_results)
     {
         /// Load tables only from XML dictionaries, don't touch other
-        if (info.object != nullptr && info.repository_name.empty())
+        if (load_result.object && load_result.repository_name.empty())
         {
-            auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(info.object);
+            auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(load_result.object);
             auto dict_name = dict_ptr->getName();
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
