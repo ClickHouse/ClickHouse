@@ -61,9 +61,9 @@ protected:
 private:
     struct ColumnData
     {
-        String data_file;
+        String data_file_path;
     };
-    using Files = std::map<String, ColumnData>;
+    using Files = std::map<String, ColumnData>; /// file name -> column data
 
     DiskPtr disk;
     String database_name;

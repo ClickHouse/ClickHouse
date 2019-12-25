@@ -113,7 +113,7 @@ public:
     explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
-        marks_stream(fullPath(storage.disk, storage.marks_file), 4096, O_APPEND | O_CREAT | O_WRONLY)
+        marks_stream(fullPath(storage.disk, storage.marks_file_path), 4096, O_APPEND | O_CREAT | O_WRONLY)
     {
     }
 
@@ -248,7 +248,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
             if (!stream_for_prefix && mark_number)
                 offset = file_it->second.marks[mark_number].offset;
 
-            auto & data_file_path = file_it->second.data_file;
+            auto & data_file_path = file_it->second.data_file_path;
             auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
             return &it->second.compressed;
         };
@@ -311,8 +311,8 @@ void LogBlockOutputStream::writeSuffix()
 
     Strings column_files;
     for (const auto & name_stream : streams)
-        column_files.push_back(storage.files[name_stream.first].data_file);
-    column_files.push_back(storage.marks_file);
+        column_files.push_back(storage.files[name_stream.first].data_file_path);
+    column_files.push_back(storage.marks_file_path);
 
     storage.file_checker.update(column_files.begin(), column_files.end());
 
@@ -353,7 +353,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         streams.try_emplace(
             stream_name,
             storage.disk,
-            storage.files[stream_name].data_file,
+            storage.files[stream_name].data_file_path,
             columns.getCodecOrDefault(name),
             storage.max_compress_block_size);
     }, settings.path);
@@ -433,7 +433,7 @@ StorageLog::StorageLog(
     for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
-    marks_file = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
 
 
@@ -451,7 +451,7 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         {
             ColumnData & column_data = files[stream_name];
             column_data.column_index = file_count;
-            column_data.data_file = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
+            column_data.data_file_path = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
 
             column_names_by_idx.push_back(stream_name);
             ++file_count;
@@ -476,9 +476,9 @@ void StorageLog::loadMarks()
     for (Files::iterator it = files.begin(); it != files.end(); ++it)
         files_by_index[it->second.column_index] = it;
 
-    if (disk->exists(marks_file))
+    if (disk->exists(marks_file_path))
     {
-        size_t file_size = disk->getFileSize(marks_file);
+        size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (file_count * sizeof(Mark)) != 0)
             throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
 
@@ -487,7 +487,7 @@ void StorageLog::loadMarks()
         for (auto & file : files_by_index)
             file->second.marks.reserve(marks_count);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->read(marks_file, 32768);
+        std::unique_ptr<ReadBuffer> marks_rb = disk->read(marks_file_path, 32768);
         while (!marks_rb->eof())
         {
             for (size_t i = 0; i < files_by_index.size(); ++i)
@@ -518,9 +518,9 @@ void StorageLog::rename(const String & /*new_path_to_db*/, const String & new_da
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file = table_path + Poco::Path(file.second.data_file).getFileName();
+        file.second.data_file_path = table_path + Poco::Path(file.second.data_file_path).getFileName();
 
-    marks_file = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
@@ -537,7 +537,7 @@ void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
         addFiles(column.name, *column.type);
 
     file_checker = FileChecker{disk, table_path + "sizes.json"};
-    marks_file = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
 
 

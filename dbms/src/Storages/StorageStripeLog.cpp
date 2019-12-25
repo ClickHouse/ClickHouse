@@ -117,10 +117,10 @@ private:
         {
             started = true;
 
-            String data_file = storage.table_path + "data.bin";
-            size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file));
+            String data_file_path = storage.table_path + "data.bin";
+            size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file_path));
 
-            data_in.emplace(fullPath(storage.disk, data_file), 0, 0, buffer_size);
+            data_in.emplace(fullPath(storage.disk, data_file_path), 0, 0, buffer_size);
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -202,8 +202,8 @@ StorageStripeLog::StorageStripeLog(
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : disk(disk_), database_name(database_name_), table_name(table_name_),
-      table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
+    : disk(std::move(disk_)), database_name(database_name_), table_name(table_name_),
+    table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
     max_compress_block_size(max_compress_block_size_),
     file_checker(disk, table_path + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))

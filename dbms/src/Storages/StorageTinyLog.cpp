@@ -217,7 +217,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
         String stream_name = IDataType::getFileNameForStream(name, path);
 
         if (!streams.count(stream_name))
-            streams[stream_name] = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file, max_read_buffer_size);
+            streams[stream_name] = std::make_unique<Stream>(storage.disk, storage.files[stream_name].data_file_path, max_read_buffer_size);
 
         return &streams[stream_name]->compressed;
     };
@@ -242,7 +242,7 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
         const auto & columns = storage.getColumns();
         if (!streams.count(stream_name))
             streams[stream_name] = std::make_unique<Stream>(storage.disk,
-                                                            storage.files[stream_name].data_file,
+                                                            storage.files[stream_name].data_file_path,
                                                             columns.getCodecOrDefault(name),
                                                             storage.max_compress_block_size);
 
@@ -291,7 +291,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 
     Strings column_files;
     for (auto & pair : streams)
-        column_files.push_back(storage.files[pair.first].data_file);
+        column_files.push_back(storage.files[pair.first].data_file_path);
 
     storage.file_checker.update(column_files.begin(), column_files.end());
 
@@ -322,7 +322,7 @@ StorageTinyLog::StorageTinyLog(
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : disk(disk_), database_name(database_name_), table_name(table_name_),
+    : disk(std::move(disk_)), database_name(database_name_), table_name(table_name_),
     table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
     max_compress_block_size(max_compress_block_size_),
     file_checker(disk, table_path + "sizes.json"),
@@ -355,7 +355,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
         {
             ColumnData column_data;
             files.insert(std::make_pair(stream_name, column_data));
-            files[stream_name].data_file = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
+            files[stream_name].data_file_path = table_path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION;
         }
     };
 
@@ -378,7 +378,7 @@ void StorageTinyLog::rename(const String & /*new_path_to_db*/, const String & ne
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file = table_path + Poco::Path(file.second.data_file).getFileName();
+        file.second.data_file_path = table_path + Poco::Path(file.second.data_file_path).getFileName();
 }
 
 
