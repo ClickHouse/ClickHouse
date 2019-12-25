@@ -14,8 +14,8 @@ INSERT INTO test_01037.polygons VALUES ([[[[5, 5], [5, -5], [-5, -5], [-5, 5]], 
 CREATE DICTIONARY test_01037.dict
 (
   key Array(Array(Array(Array(Float64)))),
-  name String DEFAULT '',
-  value UInt64 DEFAULT 42
+  name String DEFAULT 'Default',
+  value UInt64 DEFAULT 101
 )
 PRIMARY KEY key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons' PASSWORD '' DB 'test_01037'))
