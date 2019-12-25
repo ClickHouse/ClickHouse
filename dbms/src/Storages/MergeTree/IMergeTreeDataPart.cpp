@@ -182,9 +182,10 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
 {
-    if (!sample_block.has(column_name))
+    auto it = column_name_to_position.find(column_name);
+    if (it == column_name_to_position.end())
         return {};
-    return sample_block.getPositionByName(column_name);
+    return it->second;
 }
 
 DayNum IMergeTreeDataPart::getMinDate() const
@@ -221,12 +222,14 @@ time_t IMergeTreeDataPart::getMaxTime() const
         return 0;
 }
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & columns_)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {
-    columns = columns_;
-    sample_block.clear();
+    columns = new_columns;
+    column_name_to_position.clear();
+    column_name_to_position.reserve(new_columns.size());
+    size_t pos = 0;
     for (const auto & column : columns)
-        sample_block.insert({column.type, column.name});
+        column_name_to_position.emplace(column.name, pos++);
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart() = default;
@@ -591,8 +594,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
     }
 
     index_granularity_info = MergeTreeIndexGranularityInfo{storage, getType(), columns.size()};
-    for (const auto & it : columns)
-        sample_block.insert({it.type, it.name});
+    size_t pos = 0;
+    for (const auto & column : columns)
+        column_name_to_position.emplace(column.name, pos++);
 }
 
 void IMergeTreeDataPart::loadColumnSizes()

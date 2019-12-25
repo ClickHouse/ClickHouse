@@ -253,6 +253,13 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
     return rename_map;
 }
 
+void MergeTreeDataPartCompact::setColumns(const NamesAndTypesList & new_columns)
+{
+    if (new_columns.size() != columns.size())
+        index_granularity_info = MergeTreeIndexGranularityInfo{storage, Type::COMPACT, new_columns.size()};
+    IMergeTreeDataPart::setColumns(new_columns);
+}
+
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
 {
     UNUSED(require_part_metadata);

@@ -88,6 +88,8 @@ public:
         AlterAnalysisResult & analysis_result,
         const NamesAndTypesList & old_columns) const override;
 
+    void setColumns(const NamesAndTypesList & new_columns) override;
+
     ~MergeTreeDataPartCompact() override;
 
 private:
