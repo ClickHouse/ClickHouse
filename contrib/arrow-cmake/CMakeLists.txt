@@ -323,7 +323,7 @@ endif ()
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
 
 # Arrow dependencies
-add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY})
+add_dependencies(${ARROW_LIBRARY} ${FLATBUFFERS_LIBRARY} metadata_fbs)
 
 target_link_libraries(${ARROW_LIBRARY} PRIVATE boost_system_internal boost_filesystem_internal boost_regex_internal)
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${FLATBUFFERS_LIBRARY})
