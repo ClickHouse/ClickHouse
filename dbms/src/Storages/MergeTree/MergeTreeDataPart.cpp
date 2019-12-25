@@ -345,6 +345,10 @@ MergeTreeDataPart::~MergeTreeDataPart()
                 }
             }
 
+            /// "Atomically" remove directory, leaving no inconsistent state.
+            Poco::Path source_path(path);
+            Poco::Path destination_path(path, "../stale_" + source_path.getBaseName());
+            dir.renameTo(destination_path.toString());
             dir.remove(true);
 
             if (state == State::DeleteOnDestroy)
