@@ -1040,7 +1040,7 @@ Possible values:
 - 1 — Enabled.
 - 0 — Disabled.
 
-Defaule value: 0.
+Default value: 0.
 
 ## os_thread_priority {#setting-os_thread_priority}
 
