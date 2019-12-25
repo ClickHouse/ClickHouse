@@ -26,6 +26,21 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL;
+}
+/*
+ * cache_not_found_ids  |0|0|1|1|
+ * cache_expired_ids    |0|1|0|1|
+ *
+ * 0 - if set is empty, 1 - otherwise
+ *
+ * Only if there are no cache_not_found_ids and some cache_expired_ids
+ * (with allow_read_expired_keys_from_cache_dictionary setting) we can perform async update.
+ * Otherwise we have no concatenate ids and update them sync.
+ * */
 class CacheDictionary final : public IDictionary
 {
 public:
@@ -34,7 +49,10 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        const size_t size_);
+        const size_t size_,
+        const bool allow_read_expired_keys_,
+        const size_t max_update_queue_size_,
+        const size_t update_queue_push_timeout_milliseconds_);
 
     ~CacheDictionary() override;
 
@@ -59,7 +77,9 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<CacheDictionary>(
+                name, dict_struct, source_ptr->clone(), dict_lifetime, size,
+                allow_read_expired_keys, max_update_queue_size, update_queue_push_timeout_milliseconds);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -265,6 +285,10 @@ private:
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+    const bool allow_read_expired_keys;
+    const size_t max_update_queue_size;
+    const size_t update_queue_push_timeout_milliseconds;
+
     Logger * const log;
 
     mutable std::shared_mutex rw_lock;
@@ -296,8 +320,7 @@ private:
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 
-    mutable std::atomic<size_t> update_number{1};
-    mutable std::atomic<size_t> last_update{0};
+    /// Field and methods correlated with update expired and not found keys
 
     struct UpdateUnit
     {
@@ -319,23 +342,17 @@ private:
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
     using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
 
-    // TODO: make setting called max_updates_number
-    mutable UpdateQueue update_queue{100};
+    mutable UpdateQueue update_queue;
 
     ThreadFromGlobalPool update_thread;
     void updateThreadFunction();
-    std::atomic<bool> finished{false};
+    void tryPushToUpdateQueueOrThrow(UpdateUnitPtr update_unit_ptr) const;
+    void waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) const;
 
-    static bool getAllowReadExpiredKeysSetting()
-    {
-        Context * context = current_thread->getThreadGroup()->global_context;
-        return context->getSettingsRef().allow_read_expired_keys_from_cache_dictionary;
-    }
-
-    const size_t update_queue_push_timeout_milliseconds = 100;
-
-    void waitForCurrentUpdateFinish() const;
     mutable std::mutex update_mutex;
+    mutable std::condition_variable is_update_finished;
+
+    std::atomic<bool> finished{false};
 };
 
 }

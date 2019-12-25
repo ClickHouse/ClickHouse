@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 #include <ext/size.h>
+#include <Common/setThreadName.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -61,16 +62,23 @@ CacheDictionary::CacheDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    const size_t size_)
+    const size_t size_,
+    const bool allow_read_expired_keys_,
+    const size_t max_update_queue_size_,
+    const size_t update_queue_push_timeout_milliseconds_)
     : name{name_}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
+    , allow_read_expired_keys(allow_read_expired_keys_)
+    , max_update_queue_size(max_update_queue_size_)
+    , update_queue_push_timeout_milliseconds(update_queue_push_timeout_milliseconds_)
     , log(&Logger::get("ExternalDictionaries"))
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
     , rnd_engine(randomSeed())
+    , update_queue(max_update_queue_size_)
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
@@ -289,9 +297,7 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
     std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
     std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
 
-    size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
-
-    const bool allow_read_expired_keys_from_cache_dictionary = getAllowReadExpiredKeysSetting();
+    size_t cache_hit = 0;
 
     const auto rows = ext::size(ids);
     {
@@ -304,76 +310,92 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             const auto id = ids[row];
             const auto find_result = findCellIdx(id, now);
             const auto & cell_idx = find_result.cell_idx;
+
+            auto insert_to_answer_routine = [&] ()
+            {
+                const auto & cell = cells[cell_idx];
+                out[row] = !cell.isDefault();
+            };
+
             if (!find_result.valid)
             {
                 if (find_result.outdated)
                 {
                     cache_expired_ids[id].push_back(row);
-                    ++cache_expired;
 
-                    if (allow_read_expired_keys_from_cache_dictionary)
-                    {
-                        const auto & cell = cells[cell_idx];
-                        out[row] = !cell.isDefault();
-                    }
+                    if (allow_read_expired_keys)
+                        insert_to_answer_routine();
                 }
                 else
                 {
                     cache_not_found_ids[id].push_back(row);
-                    ++cache_not_found;
                 }
             }
             else
             {
                 ++cache_hit;
-                const auto & cell = cells[cell_idx];
-                out[row] = !cell.isDefault();
+                insert_to_answer_routine();
             }
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired);
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysExpired, cache_expired_ids.size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysNotFound, cache_not_found_ids.size());
     ProfileEvents::increment(ProfileEvents::DictCacheKeysHit, cache_hit);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    const size_t outdated_ids_count = cache_expired + cache_not_found;
-    hit_count.fetch_add(rows - outdated_ids_count, std::memory_order_release);
+    hit_count.fetch_add(rows - cache_expired_ids.size() - cache_not_found_ids.size(), std::memory_order_release);
 
-    /// We have no keys to update.
-    if (outdated_ids_count == 0)
-        return;
-
-    /// Schedule an update job for expired keys. (At this point we have only expired keys.)
-    /// No need to wait for expired keys being updated.
-    if (allow_read_expired_keys_from_cache_dictionary && cache_not_found == 0)
+    if (cache_not_found_ids.empty())
     {
-        std::vector<Key> required_expired_ids(cache_expired_ids.size());
-        std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::begin(required_expired_ids), [](auto & pair) { return pair.first; });
-        /// Callbacks are empty because we don't want to receive them after an unknown period of time.
-        auto update_unit_ptr = std::make_shared<UpdateUnit>(required_expired_ids, [&](const auto, const auto){}, [&](const auto, const auto){} );
-        if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
-            throw std::runtime_error("Can't schedule an update job.");
-        return;
+        /// Nothing to update - return;
+        if (cache_expired_ids.empty())
+            return;
+
+        if (allow_read_expired_keys)
+        {
+            std::vector<Key> required_expired_ids;
+            required_expired_ids.reserve(cache_expired_ids.size());
+            std::transform(
+                    std::begin(cache_expired_ids), std::end(cache_expired_ids),
+                    std::back_inserter(required_expired_ids), [](auto & pair) { return pair.first; });
+
+            /// Callbacks are empty because we don't want to receive them after an unknown period of time.
+            auto update_unit_ptr = std::make_shared<UpdateUnit>(
+                    required_expired_ids,
+                    [&](const auto, const auto) {},
+                    [&](const auto, const auto) {} );
+
+            tryPushToUpdateQueueOrThrow(update_unit_ptr);
+            /// Update is async - no need to wait.
+            return;
+        }
     }
 
-    /// At this point we have two situations. There may be both types of keys: expired and not found.
+    /// At this point we have two situations.
+    /// There may be both types of keys: cache_expired_ids and cache_not_found_ids.
     /// We will update them all synchronously.
 
     std::vector<Key> required_ids;
-    required_ids.reserve(outdated_ids_count);
-    std::transform(std::begin(cache_not_found_ids), std::end(cache_not_found_ids), std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
-    std::transform(std::begin(cache_expired_ids), std::end(cache_expired_ids), std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+    required_ids.reserve(cache_not_found_ids.size() + cache_expired_ids.size());
+    std::transform(
+            std::begin(cache_not_found_ids), std::end(cache_not_found_ids),
+            std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
+    std::transform(
+            std::begin(cache_expired_ids), std::end(cache_expired_ids),
+            std::back_inserter(required_ids), [](auto & pair) { return pair.first; });
 
     auto update_unit_ptr = std::make_shared<UpdateUnit>(
             std::move(required_ids),
-            [&](const Key id, const size_t) {
+            [&](const Key id, const size_t)
+            {
                 for (const auto row : cache_not_found_ids[id])
                     out[row] = true;
                 for (const auto row : cache_expired_ids[id])
                     out[row] = true;
             },
-            [&](const Key id, const size_t) {
+            [&](const Key id, const size_t)
+            {
                 for (const auto row : cache_not_found_ids[id])
                     out[row] = false;
                 for (const auto row : cache_expired_ids[id])
@@ -381,17 +403,8 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
             }
     );
 
-    if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
-        throw std::runtime_error("Too many updates");
-
-//    waitForCurrentUpdateFinish();
-    while (!update_unit_ptr->is_done && !update_unit_ptr->current_exception) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        std::this_thread::yield();
-    }
-
-    if (update_unit_ptr->current_exception)
-        std::rethrow_exception(update_unit_ptr->current_exception);
+    tryPushToUpdateQueueOrThrow(update_unit_ptr);
+    waitForCurrentUpdateFinish(update_unit_ptr);
 }
 
 
@@ -648,7 +661,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception{"'key' is not supported for dictionary of layout 'cache'",
+                            ErrorCodes::UNSUPPORTED_METHOD};
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
@@ -656,9 +670,11 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
         const auto & layout_prefix = config_prefix + ".layout";
-        const auto size = config.getInt(layout_prefix + ".cache.size_in_cells");
+
+        const auto size = config.getUInt64(layout_prefix + ".cache.size_in_cells");
         if (size == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells",
+                            ErrorCodes::TOO_SMALL_BUFFER_SIZE};
 
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         if (require_nonempty)
@@ -666,13 +682,32 @@ void registerDictionaryCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+
+        const auto max_update_queue_size =
+                config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
+        if (max_update_queue_size == 0)
+            throw Exception{name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
+                            ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+        const bool allow_read_expired_keys =
+                config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
+
+        const auto update_queue_push_timeout_milliseconds =
+                config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
+        if (update_queue_push_timeout_milliseconds < 10)
+            throw Exception{name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
+                            ErrorCodes::BAD_ARGUMENTS};
+
+        return std::make_unique<CacheDictionary>(
+                name, dict_struct, std::move(source_ptr), dict_lifetime, size,
+                max_update_queue_size, allow_read_expired_keys, update_queue_push_timeout_milliseconds);
     };
     factory.registerLayout("cache", create_layout, false);
 }
 
 void CacheDictionary::updateThreadFunction()
 {
+    setThreadName("AsyncUpdater");
     while (!finished)
     {
         UpdateUnitPtr unit_ptr;
@@ -680,21 +715,34 @@ void CacheDictionary::updateThreadFunction()
         try
         {
             update(unit_ptr->requested_ids, unit_ptr->on_cell_updated, unit_ptr->on_id_not_found);
+            std::unique_lock<std::mutex> lock(update_mutex);
             unit_ptr->is_done = true;
-            last_update.fetch_add(1);
+            is_update_finished.notify_all();
         }
         catch (...)
         {
+            std::unique_lock<std::mutex> lock(update_mutex);
             unit_ptr->current_exception = std::current_exception();
+            is_update_finished.notify_all();
         }
     }
 }
 
-void CacheDictionary::waitForCurrentUpdateFinish() const
+void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) const
 {
-    size_t current_update_number = update_number.fetch_add(1);
-    while (last_update != current_update_number)
-        std::this_thread::yield();
+    std::unique_lock<std::mutex> lock(update_mutex);
+    is_update_finished.wait(lock,
+            [&] () {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
+
+    if (update_unit_ptr->current_exception)
+        std::rethrow_exception(update_unit_ptr->current_exception);
+}
+
+void CacheDictionary::tryPushToUpdateQueueOrThrow(UpdateUnitPtr update_unit_ptr) const
+{
+    if (!update_queue.tryPush(update_unit_ptr, update_queue_push_timeout_milliseconds))
+        throw DB::Exception("Cannot push to internal update queue. Current queue size is " +
+        std::to_string(update_queue.size()), ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL);
 }
 
 }
