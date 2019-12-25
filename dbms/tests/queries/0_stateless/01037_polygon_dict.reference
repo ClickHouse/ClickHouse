@@ -1,0 +1,15 @@
+dictGet	test_01037.dict	(0,0)	Click	42
+dictGet	test_01037.dict	(3,3)	House	314159
+dictGet	test_01037.dict	(5,6)	Click	42
+dictGet	test_01037.dict	(-100,-42)	qqq	101
+dictGet	test_01037.dict	(5,5)	Click	42
+dictGetOrDefault	test_01037.dict	(0,0)	Click	42
+dictGetOrDefault	test_01037.dict	(3,3)	House	314159
+dictGetOrDefault	test_01037.dict	(5,6)	Click	42
+dictGetOrDefault	test_01037.dict	(-100,-42)	www	1234
+dictGetOrDefault	test_01037.dict	(5,5)	Click	42
+dictGetOrDefault	test_01037.dict	(0,0)	Click	42
+dictGetOrDefault	test_01037.dict	(3,3)	House	314159
+dictGetOrDefault	test_01037.dict	(5,6)	Click	42
+dictGetOrDefault	test_01037.dict	(-100,-42)	dd	44
+dictGetOrDefault	test_01037.dict	(5,5)	Click	42
