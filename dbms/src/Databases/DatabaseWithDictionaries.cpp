@@ -110,10 +110,9 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     String temp_repository_name = String(IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX) + " creating " + full_name + " "
                                   + std::to_string(++counter);
     external_loader.addConfigRepository(
-            temp_repository_name,
-            std::make_unique<ExternalLoaderPresetConfigRepository>(
-                    std::vector{std::pair{dictionary_metadata_tmp_path,
-                                          getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), getDatabaseName())}}));
+        temp_repository_name,
+        std::make_unique<ExternalLoaderPresetConfigRepository>(
+            std::vector{std::pair{dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())}}));
     SCOPE_EXIT({ external_loader.removeConfigRepository(temp_repository_name); });
 
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);

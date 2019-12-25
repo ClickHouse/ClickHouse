@@ -41,6 +41,6 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
 
 void ExternalModelsLoader::addConfigRepository(const String & name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
 {
-    ExternalLoader::addConfigRepository(name, std::move(config_repository), {"models", "name"});
+    ExternalLoader::addConfigRepository(name, std::move(config_repository), {"models", "name", {}});
 }
 }

@@ -293,6 +293,12 @@ private:
                     continue;
                 }
 
+                String database;
+                if (!settings.external_database.empty())
+                    database = file_contents->getString(key + "." + settings.external_database, "");
+                if (!database.empty())
+                    object_name = database + "." + object_name;
+
                 object_configs_from_file.emplace_back(object_name, ObjectConfig{file_contents, key, {}, {}});
             }
 
@@ -613,7 +619,7 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getName() + "' was modified");
+                tryLogCurrentException(log, "Could not check if " + type_name + " '" + object->getLoadableName() + "' was modified");
                 /// Cannot check isModified, so update
                 should_update_flag = true;
             }
