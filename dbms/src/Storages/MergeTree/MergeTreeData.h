@@ -187,7 +187,9 @@ public:
     MutableDataPartPtr createPart(const String & name,
         const MergeTreePartInfo & part_info,const DiskPtr & disk,
         const NamesAndTypesList & columns,
-        size_t bytes_on_disk, size_t rows_num, const String & relative_path) const;
+        size_t bytes_on_disk, size_t rows_num,
+        const String & relative_path,
+        const MergeTreeIndexGranularityInfo * index_granularity_info = nullptr) const;
 
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,

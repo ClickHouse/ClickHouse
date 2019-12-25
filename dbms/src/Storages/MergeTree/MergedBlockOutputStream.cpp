@@ -162,7 +162,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    // new_part->setColumns(*total_column_list);
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
