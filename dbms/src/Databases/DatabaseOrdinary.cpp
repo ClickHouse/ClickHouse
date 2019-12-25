@@ -344,16 +344,8 @@ void DatabaseOrdinary::alterTable(
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-
-    if (ast_create_query.columns_list->indices)
-        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
-    else
-        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
-
-    if (ast_create_query.columns_list->constraints)
-        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
-    else
-        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
