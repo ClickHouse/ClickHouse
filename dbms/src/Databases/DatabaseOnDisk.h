@@ -11,8 +11,6 @@
 namespace DB
 {
 
-ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * log);
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -20,7 +18,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     Context & context,
     bool has_force_restore_data_flag);
 
-/** Get the row with the table definition based on the CREATE query.
+/** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
   * See the implementation.
   */
@@ -75,7 +73,7 @@ protected:
         bool throw_on_error) const override;
 
     String getDatabaseMetadataPath(const String & base_path) const;
-    ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true) const;
+    ASTPtr parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
 
 

@@ -37,32 +37,6 @@ namespace ErrorCodes
 }
 
 
-ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * log)
-{
-    String definition;
-    {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(filepath, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-        readStringUntilEOF(definition, in);
-    }
-
-    /** Empty files with metadata are generated after a rough restart of the server.
-      * Remove these files to slightly reduce the work of the admins on startup.
-      */
-    if (definition.empty())
-    {
-        LOG_ERROR(log, "File " << filepath << " is empty. Removing.");
-        Poco::File(filepath).remove();
-        return nullptr;
-    }
-
-    ParserCreateQuery parser_create;
-    ASTPtr result = parseQuery(parser_create, definition, "in file " + filepath, 0);
-    return result;
-}
-
-
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -81,7 +55,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         return {ast_create_query.table, storage};
     }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
-    /// - the database has not been created yet;
+    /// - the database has not been loaded yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
     if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -237,6 +211,11 @@ void DatabaseOnDisk::renameTable(
     if (!table)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
+    ASTPtr ast = parseQueryFromMetadata(getObjectMetadataPath(table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
+    ast->as<ASTCreateQuery &>().table = to_table_name;
+
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
@@ -253,11 +232,6 @@ void DatabaseOnDisk::renameTable(
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPoco, e};
     }
-
-    ASTPtr ast = getQueryFromMetadata(getObjectMetadataPath(table_name));
-    if (!ast)
-        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
-    ast->as<ASTCreateQuery &>().table = to_table_name;
 
     /// NOTE Non-atomic.
     to_database.createTable(context, to_table_name, table, ast);
@@ -294,8 +268,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & /*context*/) const
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
-        //FIXME WTF
-        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Lazy";
+        /// If database.sql doesn't exist, then engine is Ordinary
+        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
     }
@@ -385,13 +359,13 @@ String DatabaseOnDisk::getDatabaseMetadataPath(const String & base_path) const
     return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
 }
 
-ASTPtr DatabaseOnDisk::getQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
 {
     String query;
 
     try
     {
-        ReadBufferFromFile in(database_metadata_path, 4096);
+        ReadBufferFromFile in(metadata_file_path, METADATA_FILE_BUFFER_SIZE);
         readStringUntilEOF(query, in);
     }
     catch (const Exception & e)
@@ -402,6 +376,16 @@ ASTPtr DatabaseOnDisk::getQueryFromMetadata(const String & database_metadata_pat
             throw;
     }
 
+    /** Empty files with metadata are generated after a rough restart of the server.
+      * Remove these files to slightly reduce the work of the admins on startup.
+      */
+    if (remove_empty && query.empty())
+    {
+        LOG_ERROR(log, "File " << metadata_file_path << " is empty. Removing.");
+        Poco::File(metadata_file_path).remove();
+        return nullptr;
+    }
+
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -410,13 +394,15 @@ ASTPtr DatabaseOnDisk::getQueryFromMetadata(const String & database_metadata_pat
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+    else if (!ast)
+        return nullptr;
 
     return ast;
 }
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = getQueryFromMetadata(database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(database_metadata_path, throw_on_error);
 
     if (ast)
     {
