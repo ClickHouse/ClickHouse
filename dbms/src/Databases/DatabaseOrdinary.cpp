@@ -1,7 +1,6 @@
 #include <iomanip>
 
 #include <Core/Settings.h>
-#include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -15,18 +14,14 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDictionary.h>
 #include <Storages/StorageFactory.h>
-#include <Dictionaries/DictionaryFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
-#include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -67,7 +62,7 @@ namespace
             String table_name;
             StoragePtr table;
             std::tie(table_name, table)
-                = createTableFromAST(query, database_name, database.getDataPath(), context, has_force_restore_data_flag);
+                = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
         catch (const Exception & e)
@@ -81,7 +76,6 @@ namespace
     }
 
 
-    //TODO
     void tryAttachDictionary(
         Context & context,
         const ASTCreateQuery & query,
@@ -115,7 +109,7 @@ namespace
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_,"DatabaseOrdinary (" + name_ + ")")
+    : DatabaseWithDictionaries(name_, metadata_path_, "DatabaseOrdinary (" + name_ + ")")
 {
     Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
@@ -136,7 +130,7 @@ void DatabaseOrdinary::loadStoredObjects(
     size_t total_dictionaries = 0;
     iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
     {
-        String full_path = metadata_path + "/" + file_name;
+        String full_path = getMetadataPath() + file_name;
         try
         {
             auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
@@ -243,10 +237,8 @@ void DatabaseOrdinary::alterTable(
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
-
-    String table_name_escaped = escapeForFileName(table_name);
-    String table_metadata_tmp_path = getMetadataPath() + "/" + table_name_escaped + ".sql.tmp";
-    String table_metadata_path = getMetadataPath() + "/" + table_name_escaped + ".sql";
+    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
     {
