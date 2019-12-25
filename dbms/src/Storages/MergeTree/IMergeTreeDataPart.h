@@ -49,6 +49,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using NameToPosition = std::unordered_map<std::string, size_t>;
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
@@ -84,12 +85,11 @@ public:
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
+    virtual void setColumns(const NamesAndTypesList & columns_);
+
     virtual NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & /* analysis_result */,
-        const NamesAndTypesList & /* old_columns */) const
-    {
-        return {};
-    }
+        const NamesAndTypesList & /* old_columns */) const { return {}; }
 
     virtual ~IMergeTreeDataPart();
 
@@ -110,7 +110,6 @@ public:
 
     static String typeToString(Type type);
     String getTypeName() { return typeToString(getType()); }
-
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -151,8 +150,6 @@ public:
     /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
     time_t getMinTime() const;
     time_t getMaxTime() const;
-
-    void setColumns(const NamesAndTypesList & columns_);
 
     bool isEmpty() const { return rows_count == 0; }
 
@@ -331,7 +328,8 @@ protected:
     virtual void checkConsistency(bool require_part_metadata) const;
 
 private:
-    Block sample_block;
+    /// In compact parts order of columns is necessary
+    NameToPosition column_name_to_position;
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
