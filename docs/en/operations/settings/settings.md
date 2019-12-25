@@ -132,11 +132,11 @@ Default value: 0.
 
 ## max_http_get_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to the both types of tables: created by [CREATE TABLE](../../query_language/create/#create-table-query) query and by [url](../../query_language/table_functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
 
 Possible values:
 
-- Positive integer number of hops.
+- Any positive integer number of hops.
 - 0 — Unlimited number of hops.
 
 Default value: 0.
