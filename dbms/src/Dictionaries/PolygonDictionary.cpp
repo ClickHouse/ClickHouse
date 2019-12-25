@@ -230,12 +230,12 @@ void IPolygonDictionary::getString(
     const auto ind = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
-    const auto & null_value = StringRef{getNullValue<String>(dict_struct.attributes[ind].null_value)};
+    const auto & null_value = getNullValue<String>(dict_struct.attributes[ind].null_value);
 
-    getItemsImpl<String, StringRef>(
+    getItemsImpl<String, String>(
             ind,
             key_columns,
-            [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+            [&](const size_t, const String value) { out->insertData(value.data(), value.size()); },
             [&](const size_t) { return null_value; });
 }
 
