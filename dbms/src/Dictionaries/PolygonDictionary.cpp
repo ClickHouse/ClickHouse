@@ -464,3 +464,4 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
 }
 
 }
+
