@@ -27,7 +27,7 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 void ExternalDictionariesLoader::addConfigRepository(
     const std::string & repository_name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
 {
-    ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name"});
+    ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name", "database"});
 }
 
 }
