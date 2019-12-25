@@ -454,7 +454,6 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
         auto check = [version, this]() { return isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
-
     }
 }
 
