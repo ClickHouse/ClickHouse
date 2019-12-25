@@ -31,7 +31,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     \
     /** Data storing format settigns. */ \
     M(SettingUInt64, min_bytes_for_wide_part, 0, "", 0) \
-    M(SettingUInt64, min_rows_for_wide_part, 0, "", 0) \
+    M(SettingUInt64, min_rows_for_wide_part, 10000000000, "", 0) \
     \
     /** Merge settings. */ \
     M(SettingUInt64, merge_max_block_size, DEFAULT_MERGE_BLOCK_SIZE, "How many rows in blocks should be formed for merge operations.", 0) \
