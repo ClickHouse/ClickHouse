@@ -148,12 +148,6 @@ public:
     addBatchArray(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
         const = 0;
 
-    /** This is used for runtime code generation to determine, which header files to include in generated source.
-      * Always implement it as
-      * const char * getHeaderFilePath() const override { return __FILE__; }
-      */
-    virtual const char * getHeaderFilePath() const = 0;
-
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 
