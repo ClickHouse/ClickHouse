@@ -177,7 +177,8 @@ void validateFunctionArgumentTypes(const IFunction & func,
                 {
                     if (a.argument_name)
                         result += "'" + std::string(a.argument_name) + "' : ";
-                    result += a.expected_type_description;
+                    if (a.expected_type_description)
+                        result += a.expected_type_description;
                 }
                 else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
                     result += a.type->getName();
