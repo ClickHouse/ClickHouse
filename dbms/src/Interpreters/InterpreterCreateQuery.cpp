@@ -583,7 +583,6 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
 {
     std::unique_ptr<DDLGuard> guard;
 
-    String data_path;
     DatabasePtr database;
 
     const String & table_name = create.table;
@@ -591,7 +590,6 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     if (need_add_to_database)
     {
         database = context.getDatabase(create.database);
-        data_path = database->getDataPath();
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
@@ -632,7 +630,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     else
     {
         res = StorageFactory::instance().get(create,
-            data_path + escapeForFileName(table_name) + "/",
+            database ? database->getTableDataPath(create) : "",
             table_name,
             create.database,
             context,

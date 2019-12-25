@@ -240,7 +240,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         if (ast)
         {
             auto & ast_create = ast->as<const ASTCreateQuery &>();
-            String table_data_path_relative = getDataPath() + escapeForFileName(ast_create.table) + '/';
+            String table_data_path_relative = getTableDataPath(ast_create);
             table = createTableFromAST(ast_create, database_name, table_data_path_relative, context_copy, false).second;
         }
 

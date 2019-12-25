@@ -214,12 +214,13 @@ void DatabaseOnDisk::renameTable(
     ASTPtr ast = parseQueryFromMetadata(getObjectMetadataPath(table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
-    ast->as<ASTCreateQuery &>().table = to_table_name;
+    auto create = ast->as<ASTCreateQuery &>();
+    create.table = to_table_name;
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename("/data/" + escapeForFileName(to_database.getDatabaseName()) + "/" + escapeForFileName(to_table_name) + '/',
+        table->rename(to_database.getTableDataPath(create),
                       to_database.getDatabaseName(),
                       to_table_name, lock);
     }
@@ -263,7 +264,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     ASTPtr ast;
 
-    auto database_metadata_path = getDatabaseMetadataPath(getMetadataPath());
+    auto metadata_dir_path = getMetadataPath();
+    auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
     ast = getCreateQueryFromMetadata(database_metadata_path, true);
     if (!ast)
     {
@@ -285,9 +287,7 @@ void DatabaseOnDisk::drop(const Context & context)
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
 {
-    String base_path = getMetadataPath();
-    //FIXME
-    return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
 }
 
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
@@ -351,12 +351,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
-}
-
-String DatabaseOnDisk::getDatabaseMetadataPath(const String & base_path) const
-{
-    //FIXME
-    return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
 }
 
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const

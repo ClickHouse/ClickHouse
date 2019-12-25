@@ -20,6 +20,7 @@ struct ConstraintsDescription;
 class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
+class ASTCreateQuery;
 using Dictionaries = std::set<String>;
 
 namespace ErrorCodes
@@ -269,6 +270,10 @@ public:
     String getDatabaseName() const { return database_name; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
+    /// Returns path for persistent data storage for table if the database supports it, empty string otherwise. Table must exist
+    virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
+    /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
+    virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
