@@ -46,21 +46,21 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    // bool useDefaultImplementationForConstants() const override { return true; }
+    //bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (!(executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)))
+        if (!(executeType<UInt8>(block, arguments, result, input_rows_count)
+            || executeType<UInt16>(block, arguments, result, input_rows_count)
+            || executeType<UInt32>(block, arguments, result, input_rows_count)
+            || executeType<UInt64>(block, arguments, result, input_rows_count)
+            || executeType<Int8>(block, arguments, result, input_rows_count)
+            || executeType<Int16>(block, arguments, result, input_rows_count)
+            || executeType<Int32>(block, arguments, result, input_rows_count)
+            || executeType<Int64>(block, arguments, result, input_rows_count)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -68,7 +68,7 @@ public:
 
 private:
     template <typename T>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
 
         std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
@@ -77,8 +77,11 @@ private:
 
         const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
 
+        bool is_const=false;
+
         if (!col_from){
             col_from = checkAndGetColumnConstData<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
+            is_const=true;
         }
                 
         if (col_from){
@@ -89,8 +92,8 @@ private:
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t num_of_rows = vec_from.size();
-            data_to.resize(num_of_rows * 2);
-            offsets_to.resize(num_of_rows);
+          //  data_to.resize(num_of_rows * 2);
+            offsets_to.resize(input_rows_count);
 
             std::cout<<"!!!!!!Size of vector from: "<<num_of_rows<<std::endl;
 
@@ -103,10 +106,16 @@ private:
             char character;
             size_t str_length;
 
-            for (size_t i = 0; i < num_of_rows; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                str_length = static_cast<size_t>(vec_from[i]);
-
+                if (is_const){
+                    str_length = static_cast<size_t>(vec_from[0]);
+                }
+                else
+                {
+                    str_length = static_cast<size_t>(vec_from[i]);
+                }
+                
                 std::cout<<"!!!!!! Argument of a function: "<< str_length << std::endl;
 
                 generator.seed( rd() );
