@@ -208,7 +208,8 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
+    
 - 'F.A.Q.':
   - 'General Questions': 'faq/general.md'
 
