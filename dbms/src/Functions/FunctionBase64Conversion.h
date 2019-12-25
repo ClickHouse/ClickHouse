@@ -7,7 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
-#include <libbase64.h>
+#include <turbob64.h>
 
 
 namespace DB
@@ -107,40 +107,48 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        auto source = reinterpret_cast<const char *>(input->getChars().data());
-        auto dst = reinterpret_cast<char *>(dst_data.data());
+        auto source = input->getChars().data();
+        auto dst = dst_data.data();
         auto dst_pos = dst;
 
         size_t src_offset_prev = 0;
 
-        int codec = getCodec();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t srclen = src_offsets[row] - src_offset_prev - 1;
             size_t outlen = 0;
 
+            if (srclen >= (3U << 30))
+                throw Exception("Base64 encoding/decoding doesn't support strings larger than 4 GiB", ErrorCodes::INCORRECT_DATA);
+
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                base64_encode(source, srclen, dst_pos, &outlen, codec);
+                outlen = tb64enc(source, srclen, dst_pos);
             }
             else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
-                if (!base64_decode(source, srclen, dst_pos, &outlen, codec))
+                if (srclen > 0)
                 {
-                    throw Exception("Failed to " + getName() + " input '" + String(source, srclen) + "'", ErrorCodes::INCORRECT_DATA);
+                    outlen = tb64dec(source, srclen, dst_pos);
+                    if (!outlen)
+                        throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }
             }
             else
             {
-                // during decoding character array can be partially polluted
-                // if fail, revert back and clean
-                auto savepoint = dst_pos;
-                if (!base64_decode(source, srclen, dst_pos, &outlen, codec))
+                if (srclen > 0)
                 {
-                    outlen = 0;
-                    dst_pos = savepoint;
-                    // clean the symbol
-                    dst_pos[0] = 0;
+                    // during decoding character array can be partially polluted
+                    // if fail, revert back and clean
+                    auto savepoint = dst_pos;
+                    outlen = tb64dec(source, srclen, dst_pos);
+                    if (!outlen)
+                    {
+                        outlen = 0;
+                        dst_pos = savepoint;
+                        // clean the symbol
+                        dst_pos[0] = 0;
+                    }
                 }
             }
 
@@ -154,15 +162,6 @@ public:
         dst_data.resize(dst_pos - dst);
 
         block.getByPosition(result).column = std::move(dst_column);
-    }
-
-private:
-    static int getCodec()
-    {
-        /// You can provide different value if you want to test specific codecs.
-        /// Due to poor implementation of "base64" library (it will write to a global variable),
-        ///  it doesn't scale for multiple threads. Never use non-zero values in production.
-        return 0;
     }
 };
 }
