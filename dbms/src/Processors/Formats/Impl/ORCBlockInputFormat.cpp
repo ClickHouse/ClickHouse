@@ -12,8 +12,8 @@
 
 namespace DB
 {
-    ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_)
-            : IInputFormat(std::move(header_), in_) {
+    ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_) : IInputFormat(std::move(header_), in_)
+    {
     }
 
     Chunk ORCBlockInputFormat::generate()
