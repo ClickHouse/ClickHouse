@@ -36,7 +36,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
@@ -708,6 +708,20 @@ private:
     }
 
     template <bool first>
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        for (size_t i = 0, size = column->size(); i < size; ++i)
+        {
+            StringRef bytes = column->getDataAt(i);
+            const ToType h = Impl::apply(bytes.data, bytes.size);
+            if (first)
+                vec_to[i] = h;
+            else
+                vec_to[i] = Impl::combineHashes(vec_to[i], h);
+        }
+    }
+
+    template <bool first>
     void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
@@ -843,8 +857,7 @@ private:
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else
-            throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)

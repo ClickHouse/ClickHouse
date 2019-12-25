@@ -137,7 +137,7 @@ Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/u
 Possible values:
 
 - Any positive integer number of hops.
-- 0 — Unlimited number of hops.
+- 0 — No hops allowed.
 
 Default value: 0.
 
@@ -223,7 +223,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
  - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
   
- This feature is experimental, disabled by default.
+Enabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
 This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
@@ -1007,6 +1007,41 @@ Error count of each replica is capped at this value, preventing a single replica
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
 - [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
+
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+
+Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 100 milliseconds.
+
+
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+
+Maximum interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 30000 milliseconds (30 seconds).
+
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+
+Enables/disables sending of inserted data in batches.
+
+When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Defaule value: 0.
+
 ## os_thread_priority {#setting-os_thread_priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
@@ -1019,6 +1054,64 @@ Possible values:
 - You can set values in the range `[-20, 19]`.
 
 Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
+
+Default value: 0.
+
+
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
+
+Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
+
+Possible values:
+
+- Positive integer number, in nanoseconds.
+
+    Recommended values:
+        
+        - 10000000 (100 times a second) nanoseconds and less for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds (once a second).
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
+
+Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
+
+Possible values:
+
+- Positive integer number of nanoseconds.
+
+    Recommended values:
+        
+        - 10000000 (100 times a second) nanosecods and more for for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds.
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## allow_introspection_functions {#settings-allow_introspection_functions}
+
+Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+
+Possible values:
+
+- 1 — Introspection functions enabled.
+- 0 — Introspection functions disabled.
 
 Default value: 0.
 

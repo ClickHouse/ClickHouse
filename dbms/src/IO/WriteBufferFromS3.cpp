@@ -1,21 +1,21 @@
-#include <IO/WriteBufferFromS3.h>
+#include <Common/config.h>
 
-#include <IO/S3Common.h>
+#if USE_AWS_S3
+
+#include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
-#include <Poco/DOM/AutoPtr.h>
-#include <Poco/DOM/DOMParser.h>
-#include <Poco/DOM/Document.h>
-#include <Poco/DOM/NodeList.h>
-#include <Poco/SAX/InputSource.h>
-
 #include <common/logger_useful.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+
+#include <utility>
 
 
 namespace DB
 {
-
-const int DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT = 2;
 
 // S3 protocol does not allow to have multipart upload with more than 10000 parts.
 // In case server does not return an error on exceeding that number, we print a warning
@@ -25,28 +25,26 @@ const int S3_WARN_MAX_PARTS = 10000;
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
+    extern const int S3_ERROR;
 }
 
 
 WriteBufferFromS3::WriteBufferFromS3(
-    const Poco::URI & uri_,
-    const String & access_key_id_,
-    const String & secret_access_key_,
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    const String & bucket_,
+    const String & key_,
     size_t minimum_upload_part_size_,
-    const ConnectionTimeouts & timeouts_)
-    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
-    , uri {uri_}
-    , access_key_id {access_key_id_}
-    , secret_access_key {secret_access_key_}
+    size_t buffer_size_
+)
+    : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
+    , bucket(bucket_)
+    , key(key_)
+    , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size {minimum_upload_part_size_}
-    , timeouts {timeouts_}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
     , last_part_size {0}
 {
     initiate();
-
-    /// FIXME: Implement rest of S3 authorization.
 }
 
 
@@ -96,184 +94,76 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::initiate()
 {
-    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
-    Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
-    HTTPSessionPtr session;
-    std::istream * istr = nullptr; /// owned by session
-    Poco::URI initiate_uri = uri;
-    initiate_uri.setRawQuery("uploads");
-    for (auto & param: uri.getQueryParameters())
+    Aws::S3::Model::CreateMultipartUploadRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+
+    auto outcome = client_ptr->CreateMultipartUpload(req);
+
+    if (outcome.IsSuccess())
     {
-        initiate_uri.addQueryParameter(param.first, param.second);
+        upload_id = outcome.GetResult().GetUploadId();
+        LOG_DEBUG(log, "Multipart upload initiated. Upload id = " + upload_id);
     }
-
-    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
-    {
-        session = makeHTTPSession(initiate_uri, timeouts);
-        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request_ptr->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
-
-        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
-
-        request_ptr->setContentLength(0);
-
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << initiate_uri.toString());
-
-        session->sendRequest(*request_ptr);
-
-        istr = &session->receiveResponse(response);
-
-        // Handle 307 Temporary Redirect in order to allow request redirection
-        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
-            break;
-
-        auto location_iterator = response.find("Location");
-        if (location_iterator == response.end())
-            break;
-
-        initiate_uri = location_iterator->second;
-    }
-    assertResponseIsOk(*request_ptr, response, *istr);
-
-    Poco::XML::InputSource src(*istr);
-    Poco::XML::DOMParser parser;
-    Poco::AutoPtr<Poco::XML::Document> document = parser.parse(&src);
-    Poco::AutoPtr<Poco::XML::NodeList> nodes = document->getElementsByTagName("UploadId");
-    if (nodes->length() != 1)
-    {
-        throw Exception("Incorrect XML in response, no upload id", ErrorCodes::INCORRECT_DATA);
-    }
-    upload_id = nodes->item(0)->innerText();
-    if (upload_id.empty())
-    {
-        throw Exception("Incorrect XML in response, empty upload id", ErrorCodes::INCORRECT_DATA);
-    }
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 
 void WriteBufferFromS3::writePart(const String & data)
 {
-    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
-    Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
-    HTTPSessionPtr session;
-    std::istream * istr = nullptr; /// owned by session
-    Poco::URI part_uri = uri;
-    part_uri.addQueryParameter("partNumber", std::to_string(part_tags.size() + 1));
-    part_uri.addQueryParameter("uploadId", upload_id);
-
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
-        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
+        LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
-    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
+    Aws::S3::Model::UploadPartRequest req;
+
+    req.SetBucket(bucket);
+    req.SetKey(key);
+    req.SetPartNumber(part_tags.size() + 1);
+    req.SetUploadId(upload_id);
+    req.SetContentLength(data.size());
+    req.SetBody(std::make_shared<Aws::StringStream>(data));
+
+    auto outcome = client_ptr->UploadPart(req);
+
+    if (outcome.IsSuccess())
     {
-        session = makeHTTPSession(part_uri, timeouts);
-        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request_ptr->setHost(part_uri.getHost()); // use original, not resolved host name in header
-
-        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
-
-        request_ptr->setExpectContinue(true);
-
-        request_ptr->setContentLength(data.size());
-
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << part_uri.toString());
-
-        std::ostream & ostr = session->sendRequest(*request_ptr);
-        if (session->peekResponse(response))
-        {
-            // Received 100-continue.
-            ostr << data;
-        }
-
-        istr = &session->receiveResponse(response);
-
-        // Handle 307 Temporary Redirect in order to allow request redirection
-        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
-            break;
-
-        auto location_iterator = response.find("Location");
-        if (location_iterator == response.end())
-            break;
-
-        part_uri = location_iterator->second;
+        auto etag = outcome.GetResult().GetETag();
+        part_tags.push_back(etag);
+        LOG_DEBUG(log, "Write part " + std::to_string(part_tags.size()) + " finished. Upload id = " + upload_id + ". Etag = " + etag);
     }
-    assertResponseIsOk(*request_ptr, response, *istr);
-
-    auto etag_iterator = response.find("ETag");
-    if (etag_iterator == response.end())
-    {
-        throw Exception("Incorrect response, no ETag", ErrorCodes::INCORRECT_DATA);
-    }
-    part_tags.push_back(etag_iterator->second);
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 
 void WriteBufferFromS3::complete()
 {
-    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
-    Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
-    HTTPSessionPtr session;
-    std::istream * istr = nullptr; /// owned by session
-    Poco::URI complete_uri = uri;
-    complete_uri.addQueryParameter("uploadId", upload_id);
+    Aws::S3::Model::CompleteMultipartUploadRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+    req.SetUploadId(upload_id);
 
-    String data;
-    WriteBufferFromString buffer(data);
-    writeString("<CompleteMultipartUpload>", buffer);
+    Aws::S3::Model::CompletedMultipartUpload multipart_upload;
     for (size_t i = 0; i < part_tags.size(); ++i)
     {
-        writeString("<Part><PartNumber>", buffer);
-        writeIntText(i + 1, buffer);
-        writeString("</PartNumber><ETag>", buffer);
-        writeString(part_tags[i], buffer);
-        writeString("</ETag></Part>", buffer);
+        Aws::S3::Model::CompletedPart part;
+        multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(i + 1));
     }
-    writeString("</CompleteMultipartUpload>", buffer);
-    buffer.finish();
 
-    for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
-    {
-        session = makeHTTPSession(complete_uri, timeouts);
-        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request_ptr->setHost(complete_uri.getHost()); // use original, not resolved host name in header
+    req.SetMultipartUpload(multipart_upload);
 
-        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
+    auto outcome = client_ptr->CompleteMultipartUpload(req);
 
-        request_ptr->setExpectContinue(true);
-
-        request_ptr->setContentLength(data.size());
-
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << complete_uri.toString());
-
-        std::ostream & ostr = session->sendRequest(*request_ptr);
-        if (session->peekResponse(response))
-        {
-            // Received 100-continue.
-            ostr << data;
-        }
-
-        istr = &session->receiveResponse(response);
-
-        // Handle 307 Temporary Redirect in order to allow request redirection
-        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
-        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
-            break;
-
-        auto location_iterator = response.find("Location");
-        if (location_iterator == response.end())
-            break;
-
-        complete_uri = location_iterator->second;
-    }
-    assertResponseIsOk(*request_ptr, response, *istr);
+    if (outcome.IsSuccess())
+        LOG_DEBUG(log, "Multipart upload completed. Upload_id = " + upload_id);
+    else
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 }
+
+#endif

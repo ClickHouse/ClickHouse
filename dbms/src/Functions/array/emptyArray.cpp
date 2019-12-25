@@ -1,13 +1,15 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

@@ -1,5 +1,5 @@
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -103,8 +103,8 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
-                                 size_t argument_index, bool (* validator_func)(const IDataType &),
-                                 const char * expected_type_description)
+                          size_t argument_index, bool (* validator_func)(const IDataType &),
+                          const char * expected_type_description)
 {
     if (arguments.size() <= argument_index)
         throw Exception("Incorrect number of arguments of function " + func.getName(),
@@ -117,6 +117,75 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                         " argument of function " + func.getName() +
                         " expected " + expected_type_description,
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+namespace
+{
+void validateArgumentsImpl(const IFunction & func,
+                           const ColumnsWithTypeAndName & arguments,
+                           size_t argument_offset,
+                           const FunctionArgumentTypeValidators & validators)
+{
+    for (size_t i = 0; i < validators.size(); ++i)
+    {
+        const auto argument_index = i + argument_offset;
+        if (argument_index >= arguments.size())
+        {
+            break;
+        }
+
+        const auto & arg = arguments[i + argument_offset];
+        const auto validator = validators[i];
+        if (!validator.validator_func(*arg.type))
+            throw Exception("Illegal type " + arg.type->getName() +
+                            " of " + std::to_string(i) +
+                            " argument of function " + func.getName() +
+                            " expected " + validator.expected_type_description,
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+}
+
+}
+
+void validateFunctionArgumentTypes(const IFunction & func,
+                                   const ColumnsWithTypeAndName & arguments,
+                                   const FunctionArgumentTypeValidators & mandatory_args,
+                                   const FunctionArgumentTypeValidators & optional_args)
+{
+    if (arguments.size() < mandatory_args.size())
+    {
+        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
+        {
+            String result;
+            for (const auto & a : args)
+            {
+                using A = std::decay_t<decltype(a)>;
+                if constexpr (std::is_same_v<A, FunctionArgumentTypeValidator>)
+                    result += a.expected_type_description;
+                else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
+                    result += a.type->getName();
+
+                result += sep;
+            }
+
+            if (args.size() != 0)
+                result.erase(result.end() - sep.length(), result.end());
+
+            return result;
+        };
+
+        throw Exception("Incorrect number of arguments of function " + func.getName()
+                        + " provided " + std::to_string(arguments.size()) + " (" + joinArgumentTypes(arguments) + ")"
+                        + " expected " + std::to_string(mandatory_args.size()) + (optional_args.size() ? " or " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
+                        + " (" + joinArgumentTypes(mandatory_args) + (optional_args.size() ? ", [" + joinArgumentTypes(mandatory_args) + "]" : "") + ")",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    validateArgumentsImpl(func, arguments, 0, mandatory_args);
+    if (optional_args.size())
+    {
+        validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
+    }
 }
 
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>

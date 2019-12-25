@@ -103,8 +103,6 @@ public:
         for (auto it = result_vec.begin(); it != result_vec.end(); ++it, ++i)
             data_to[old_size + i] = it->key;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -230,8 +228,6 @@ public:
                 data_to.deserializeAndInsertFromArena(elem.key.data);
         }
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

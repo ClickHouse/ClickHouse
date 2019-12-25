@@ -3,8 +3,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/typeid_cast.h>
-#include <common/DateLUT.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <ext/chrono_io.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
@@ -334,7 +334,7 @@ void CacheDictionary::update(
             backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
             tryLogException(last_exception, log, "Could not update cache dictionary '" + getName() +
-                            "', next update is scheduled at " + DateLUT::instance().timeToString(std::chrono::system_clock::to_time_t(backoff_end_time)));
+                            "', next update is scheduled at " + ext::to_string(backoff_end_time));
         }
     }
 

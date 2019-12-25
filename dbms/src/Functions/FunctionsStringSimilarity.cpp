@@ -1,4 +1,5 @@
 #include <Functions/FunctionsStringSimilarity.h>
+#include "registerFunctions.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>

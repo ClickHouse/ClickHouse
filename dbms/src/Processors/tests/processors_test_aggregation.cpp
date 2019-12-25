@@ -141,7 +141,7 @@ private:
                 values[column_num] = chunk.getColumns()[column_num]->getUInt(row_num);
             }
 
-            if (3 * values[0] != values[1])
+            if (values.size() >= 2 && 3 * values[0] != values[1])
                 throw Exception("Check Failed. Got (" + toString(values[0]) + ", " + toString(values[1]) + ") in result,"
                                + "but "  + toString(values[0]) + " * 3 !=  " + toString(values[1]),
                                ErrorCodes::LOGICAL_ERROR);

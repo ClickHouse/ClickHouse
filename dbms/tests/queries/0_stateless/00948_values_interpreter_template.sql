@@ -7,7 +7,6 @@ CREATE TABLE values_template_nullable (d Date, s Nullable(String), u Nullable(UI
 CREATE TABLE values_template_fallback (n UInt8) ENGINE = Memory;
 
 SET input_format_values_interpret_expressions = 0;
-SET input_format_values_deduce_templates_of_expressions = 1;
 
 --(1, lower(replaceAll(_STR_1, 'o', 'a')), _NUM_1 + _NUM_2 + _NUM_3, round(_NUM_4 / _NUM_5), _NUM_6 * CAST(_STR_7, 'Int8'), _ARR_8);
 -- _NUM_1: UInt64 -> Int64 -> UInt64
