@@ -139,7 +139,7 @@ bool isStorageTouchedByMutations(
             return true;
     }
 
-    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_copy.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_copy.getSettingsRef().max_threads = 1;
 
     ASTPtr select_query = prepareQueryAffectedAST(commands);

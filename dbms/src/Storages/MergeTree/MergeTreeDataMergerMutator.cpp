@@ -947,6 +947,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
+    context_for_reading.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_for_reading.getSettingsRef().max_threads = 1;
 
     MutationCommands commands_for_part;

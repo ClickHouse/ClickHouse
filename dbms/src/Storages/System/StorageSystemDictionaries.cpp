@@ -48,19 +48,19 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
-    for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
+    for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
     {
         if (startsWith(load_result.repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX))
             continue;
 
         size_t i = 0;
         String database;
-        String short_name = dict_name;
+        String short_name = load_result.name;
 
-        if (!load_result.repository_name.empty() && startsWith(dict_name, load_result.repository_name + "."))
+        if (!load_result.repository_name.empty() && startsWith(load_result.name, load_result.repository_name + "."))
         {
             database = load_result.repository_name;
-            short_name = dict_name.substr(load_result.repository_name.length() + 1);
+            short_name = load_result.name.substr(load_result.repository_name.length() + 1);
         }
 
         res_columns[i++]->insert(database);

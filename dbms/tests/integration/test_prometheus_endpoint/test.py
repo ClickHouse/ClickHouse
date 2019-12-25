@@ -56,12 +56,12 @@ def get_and_check_metrics():
 def test_prometheus_endpoint(start_cluster):
 
     metrics_dict = get_and_check_metrics()
-    assert metrics_dict['ClickHouseProfileEventsQuery'] >= 0
-    prev_query_count = metrics_dict['ClickHouseProfileEventsQuery']
+    assert metrics_dict['ClickHouseProfileEvents_Query'] >= 0
+    prev_query_count = metrics_dict['ClickHouseProfileEvents_Query']
 
     resp = node.query("SELECT 1")
     resp = node.query("SELECT 2")
     resp = node.query("SELECT 3")
 
     metrics_dict = get_and_check_metrics()
-    assert metrics_dict['ClickHouseProfileEventsQuery'] >= prev_query_count + 3
+    assert metrics_dict['ClickHouseProfileEvents_Query'] >= prev_query_count + 3
