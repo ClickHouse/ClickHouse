@@ -243,7 +243,7 @@ class OstreamOutputStream : public arrow::io::OutputStream
 {
 public:
     explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
-    virtual ~OstreamOutputStream() {}
+    ~OstreamOutputStream() override {}
 
     // FileInterface
     ::arrow::Status Close() override
@@ -251,12 +251,14 @@ public:
         is_open = false;
         return ::arrow::Status::OK();
     }
+
     ::arrow::Status Tell(int64_t* position) const override
     {
         *position = total_length;
         return ::arrow::Status::OK();
-    };
-    bool closed() const override { return !is_open; };
+    }
+
+    bool closed() const override { return !is_open; }
 
     // Writable
     ::arrow::Status Write(const void* data, int64_t length) override
