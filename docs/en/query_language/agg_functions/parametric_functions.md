@@ -219,43 +219,70 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 - [sequenceMatch](#function-sequencematch)
 
 
-## windowFunnel(window, [mode])(timestamp, cond1, cond2, cond3, ...)
+## windowFunnel {#windowfunnel}
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
-```
-windowFunnel(window, [mode])(timestamp, cond1, cond2, cond3, ...)
-```
-
-**Parameters:**
-
-- `window` — Length of the sliding window in seconds.
-- `mode` - It is an optional argument.
-  * `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
-- `timestamp` — Name of the column containing the timestamp. Data types supported: `Date`, `DateTime`, and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
-- `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
-
-**Algorithm**
+The function works according to the algorithm:
 
 - The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
+
 - If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn't incremented.
+
 - If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
+
+**Syntax** 
+
+```sql
+windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
+```
+
+**Parameters**
+
+- `window` — Length of the sliding window in seconds.[UInt](../../data_types/int_uint.md).
+- `mode` - It is an optional argument. 
+  - `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime)  and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
+- `cond` — Conditions or data describing the chain of events. [UInt8](../../data_types/int_uint.md).
 
 **Returned value**
 
-- Integer. The maximum number of consecutive triggered conditions from the chain within the sliding time window. All the chains in the selection are analyzed.
+The maximum number of consecutive triggered conditions from the chain within the sliding time window.
+All the chains in the selection are analyzed.
+
+Type: `Integer`.
 
 **Example**
 
-Determine if one hour is enough for the user to select a phone and purchase it in the online store.
+Determine if a set period of time is enough for the user to select a phone and purchase it twice in the online store.
 
 Set the following chain of events:
 
-1. The user logged in to their account on the store (`eventID=1001`).
-2. The user searches for a phone (`eventID = 1003, product = 'phone'`).
+1. The user logged in to their account on the store (`eventID = 1003`).
+2. The user searches for a phone (`eventID = 1007, product = 'phone'`).
 3. The user placed an order (`eventID = 1009`).
+4. The user made the order again (`eventID = 1010`).
 
-To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
+Input table:
+
+```text
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-28 │       1 │ 2019-01-29 10:00:00 │    1003 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-31 │       1 │ 2019-01-31 09:00:00 │    1007 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-30 │       1 │ 2019-01-30 08:00:00 │    1009 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-02-01 │       1 │ 2019-02-01 08:00:00 │    1010 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+```
+
+Find out how far the user `user_id` could get through the chain in a period in January-February of 2019.
+
+Query:
 
 ```sql
 SELECT
@@ -265,16 +292,22 @@ FROM
 (
     SELECT
         user_id,
-        windowFunnel(3600)(timestamp, eventID = 1001, eventID = 1003 AND product = 'phone', eventID = 1009) AS level
-    FROM trend_event
-    WHERE (event_date >= '2017-01-01') AND (event_date <= '2017-01-31')
+        windowFunnel(6048000000000000)(timestamp, eventID = 1003, eventID = 1009, eventID = 1007, eventID = 1010) AS level
+    FROM trend
+    WHERE (event_date >= '2019-01-01') AND (event_date <= '2019-02-02')
     GROUP BY user_id
 )
 GROUP BY level
-ORDER BY level
+ORDER BY level ASC
 ```
 
-Simply, the level value could only be 0, 1, 2, 3, it means the maxium event action stage that one user could reach.
+Result:
+
+```text
+┌─level─┬─c─┐
+│     4 │ 1 │
+└───────┴───┘
+```
 
 ## retention(cond1, cond2, ...)
 
