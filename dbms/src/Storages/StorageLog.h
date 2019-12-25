@@ -62,13 +62,6 @@ protected:
         size_t max_compress_block_size_);
 
 private:
-    DiskPtr disk;
-    String database_name;
-    String table_name;
-    String table_path;
-
-    mutable std::shared_mutex rwlock;
-
     /** Offsets to some row number in a file for column in table.
       * They are needed so that you can read the data in several threads.
       */
@@ -86,16 +79,23 @@ private:
         /// Does not necessarily match the column number among the columns of the table: columns with lengths of arrays are also numbered here.
         size_t column_index;
 
-        String data_file;
+        String data_file_path;
         Marks marks;
     };
-    using Files = std::map<String, ColumnData>;
+    using Files = std::map<String, ColumnData>; /// file name -> column data
 
-    Files files; /// name -> data
+    DiskPtr disk;
+    String database_name;
+    String table_name;
+    String table_path;
+
+    mutable std::shared_mutex rwlock;
+
+    Files files;
 
     Names column_names_by_idx; /// column_index -> name
 
-    String marks_file;
+    String marks_file_path;
 
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFiles(const String & column_name, const IDataType & type);
