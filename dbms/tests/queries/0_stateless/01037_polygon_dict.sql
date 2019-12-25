@@ -14,7 +14,7 @@ INSERT INTO test_01037.polygons VALUES ([[[[5, 5], [5, -5], [-5, -5], [-5, 5]], 
 CREATE DICTIONARY test_01037.dict
 (
   key Array(Array(Array(Array(Float64)))),
-  name String DEFAULT 'Default',
+  name String DEFAULT 'qqq',
   value UInt64 DEFAULT 101
 )
 PRIMARY KEY key
