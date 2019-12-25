@@ -29,6 +29,8 @@ public:
     bool canReadIncompleteGranules() const override { return false; }
 
 private:
+    bool isContinuousReading(size_t mark, size_t column_position);
+
     ReadBuffer * data_buffer;
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
@@ -38,12 +40,12 @@ private:
     std::vector<std::optional<size_t>> column_positions;
 
     size_t next_mark = 0;
+    std::optional<std::pair<size_t, size_t>> last_read_granule;
 
     void initMarksLoader();
-    void seekToStart();
     void seekToMark(size_t row_index, size_t column_index);
 
-    void readData(const String & name, const IDataType & type, IColumn & column,
+    void readData(IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read);
 
     /// Columns that are read.
