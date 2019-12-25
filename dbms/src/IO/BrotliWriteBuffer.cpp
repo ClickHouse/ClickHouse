@@ -46,7 +46,14 @@ BrotliWriteBuffer::BrotliWriteBuffer(WriteBuffer & out_, int compression_level, 
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    finish();
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void BrotliWriteBuffer::nextImpl()
