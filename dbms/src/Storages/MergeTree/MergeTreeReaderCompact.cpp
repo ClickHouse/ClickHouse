@@ -83,7 +83,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             try
             {
                 size_t column_size_before_reading = column->size();
-                readData(name, *type, *column, from_mark, *column_positions[pos], rows_to_read);
+                readData(*column, *type, from_mark, *column_positions[pos], rows_to_read);
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
 
                 if (read_rows_in_column < rows_to_read)
@@ -120,11 +120,11 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
 
 void MergeTreeReaderCompact::readData(
-    const String & /* name */, const IDataType & type, IColumn & column,
+    IColumn & column, const IDataType & type,
     size_t from_mark, size_t column_position, size_t rows_to_read)
 {
-    /// FIXME seek only if needed
-    seekToMark(from_mark, column_position);
+    if (!isContinuousReading(from_mark, column_position))
+        seekToMark(from_mark, column_position);
 
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return data_buffer; };
@@ -134,6 +134,8 @@ void MergeTreeReaderCompact::readData(
     IDataType::DeserializeBinaryBulkStatePtr state;
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
+
+    last_read_granule.emplace(from_mark, column_position);
 }
 
 
@@ -203,12 +205,13 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 }
 
 
-void MergeTreeReaderCompact::seekToStart()
+bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_position)
 {
-    if (cached_buffer)
-        cached_buffer->seek(0, 0);
-    if (non_cached_buffer)
-        non_cached_buffer->seek(0, 0);
+    if (!last_read_granule)
+        return false;
+    const auto & [last_mark, last_column] = *last_read_granule;
+    return (mark == last_mark && column_position == last_column + 1)
+        || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->columns.size() - 1);
 }
 
 }
