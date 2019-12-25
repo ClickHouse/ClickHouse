@@ -17,7 +17,8 @@ class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
 public:
     TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
-                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_);
+                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
+                           std::string row_between_delimiter);
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
@@ -61,6 +62,8 @@ private:
     bool end_of_stream = false;
     std::vector<size_t> always_default_columns;
     char default_csv_delimiter;
+
+    std::string row_between_delimiter;
 };
 
 }

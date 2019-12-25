@@ -14,8 +14,10 @@ namespace ErrorCodes
 }
 
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
-                                                     ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_)
-        : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_)), row_format(std::move(row_format_))
+                                                     ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
+                                                     std::string row_between_delimiter_)
+    : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
+    , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -152,7 +154,7 @@ void TemplateBlockOutputFormat::consume(Chunk chunk)
     for (size_t i = 0; i < rows; ++i)
     {
         if (row_count)
-            writeString(settings.template_settings.row_between_delimiter, out);
+            writeString(row_between_delimiter, out);
 
         writeRow(chunk, i);
         ++row_count;
@@ -262,7 +264,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
                     return sample.getPositionByName(colName);
                 });
 
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format);
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
     factory.registerOutputFormatProcessor("CustomSeparated", [](
@@ -274,7 +276,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
         ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);
         ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(settings.custom, sample);
 
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format);
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.custom.row_between_delimiter);
     });
 }
 }

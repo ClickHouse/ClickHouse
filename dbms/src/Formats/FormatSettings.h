@@ -104,6 +104,7 @@ struct FormatSettings
         std::string result_after_delimiter;
         std::string row_before_delimiter;
         std::string row_after_delimiter;
+        std::string row_between_delimiter;
         std::string field_delimiter;
         std::string escaping_rule;
     };
