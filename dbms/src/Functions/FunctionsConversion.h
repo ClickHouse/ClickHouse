@@ -501,7 +501,26 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-[[noreturn]] void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
+[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result)
+{
+    const IDataType & to_type = *block.getByPosition(result).type;
+
+    WriteBufferFromOwnString message_buf;
+    message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
+                << " as " << to_type.getName()
+                << ": syntax error";
+
+    if (read_buffer.offset())
+        message_buf << " at position " << read_buffer.offset()
+                    << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
+    else
+        message_buf << " at begin of string";
+
+    if (isNativeNumber(to_type))
+        message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
+
+    throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
+}
 
 
 enum class ConvertFromStringExceptionMode
