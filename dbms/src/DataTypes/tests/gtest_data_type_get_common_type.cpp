@@ -14,7 +14,7 @@ static bool operator==(const IDataType & left, const IDataType & right)
     return left.equals(right);
 }
 
-static std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
+std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
 {
     return ostr << dt.getName();
 }
