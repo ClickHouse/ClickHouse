@@ -231,12 +231,12 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/ipc/dictionary.cc
         ${LIBRARY_DIR}/ipc/feather.cc
-        ${LIBRARY_DIR}/ipc/file_to_stream.cc
+#        ${LIBRARY_DIR}/ipc/file_to_stream.cc
         ${LIBRARY_DIR}/ipc/message.cc
         ${LIBRARY_DIR}/ipc/metadata_internal.cc
         ${LIBRARY_DIR}/ipc/options.cc
         ${LIBRARY_DIR}/ipc/reader.cc
-        ${LIBRARY_DIR}/ipc/stream_to_file.cc
+#        ${LIBRARY_DIR}/ipc/stream_to_file.cc
         ${LIBRARY_DIR}/ipc/writer.cc
 
         ${LIBRARY_DIR}/io/buffered.cc
