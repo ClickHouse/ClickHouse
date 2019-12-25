@@ -18,6 +18,11 @@ namespace DB
 
 namespace bg = boost::geometry;
 
+/** An interface for polygon dictionaries.
+ *  Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
+ *  An implementation should inherit from this base class and preprocess the data upon construction if needed.
+ *  It must override the find method of this class which retrieves the polygon containing a single point.
+ */
 class IPolygonDictionary : public IDictionaryBase
 {
 public:
@@ -147,12 +152,15 @@ public:
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
 protected:
+    /** A simple two-dimensional point in Euclidean coordinates. */
     using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
+    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
+    /** A multi_polygon in boost is a collection of polygons. */
     using MultiPolygon = bg::model::multi_polygon<Polygon>;
 
     /** Returns true if the given point can be found in the polygon dictionary.
-     *  If true id is set to the index of the first polygon containing the given point.
+     *  If true id is set to the index of a polygon containing the given point.
      *  Overridden in different implementations of this interface.
      */
     virtual bool find(const Point & point, size_t & id) const = 0;
@@ -211,8 +219,9 @@ private:
     static constexpr size_t DIM = 2;
 };
 
-/** Simple implementation of the polygon dictionary. Doesn't generate anything on construction.
+/** Simple implementation of the polygon dictionary. Doesn't generate anything during its construction.
  *  Iterates over all stored polygons for each query, checking each of them in linear time.
+ *  Retrieves the first polygon in the dictionary containing a given point.
  */
 class SimplePolygonDictionary : public IPolygonDictionary
 {
