@@ -120,7 +120,7 @@ Also supported for:
 - [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
 - [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), and [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
 
-Queries that use `FINAL` are executed more slowly than similar queries that don't, because:
+Queries that use `FINAL` are executed not as fast as similar queries that don't, because:
 
 - Query is executed in a single thread and data is merged during query execution.
 - Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
