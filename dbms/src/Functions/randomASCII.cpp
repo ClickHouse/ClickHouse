@@ -46,8 +46,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    //bool useDefaultImplementationForConstants() const override { return true; }
-
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
@@ -70,18 +68,12 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-
-        std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"<<std::endl;
-//        std::cout<<"!!!!!!Number of input rows: "<<input_rows_count<<std::endl;
-
-
+        bool is_const_column = false;
         const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
-
-        bool is_const=false;
 
         if (!col_from){
             col_from = checkAndGetColumnConstData<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
-            is_const=true;
+            is_const_column = true;
         }
                 
         if (col_from){
@@ -91,41 +83,33 @@ private:
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t num_of_rows = vec_from.size();
-          //  data_to.resize(num_of_rows * 2);
             offsets_to.resize(input_rows_count);
-
-            std::cout<<"!!!!!!Size of vector from: "<<num_of_rows<<std::endl;
 
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
-
             std::default_random_engine generator;
-            std::uniform_int_distribution<int> distribution(32, 127);
+            std::uniform_int_distribution<int> distribution(32, 127); //Printable ASCII symbols
             std::random_device rd;
             char character;
-            size_t str_length;
+            size_t str_length = 0;
+
+            if (is_const_column){
+                str_length = static_cast<size_t>(vec_from[0]);                    
+            }
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if (is_const){
-                    str_length = static_cast<size_t>(vec_from[0]);
-                }
-                else
-                {
+                if (!is_const_column){
                     str_length = static_cast<size_t>(vec_from[i]);
                 }
                 
-                std::cout<<"!!!!!! Argument of a function: "<< str_length << std::endl;
-
                 generator.seed( rd() );
-
+                
                 if (str_length > 0){
                     for (size_t j = 0; j < str_length; ++j)
                     {
                         character = distribution(generator);
                         writeChar(character, buf_to);
-    //                    std::cout<<"==================="<<character<<std::endl;
                     }
                 }
 

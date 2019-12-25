@@ -830,4 +830,39 @@ SELECT identity(42)
 ```
 Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
+## randomASCII {#randomascii}
+
+Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+**Syntax**
+
+```sql
+randomASKII(length)
+```
+
+**Parameters**
+
+- `length` — Resulting string length. Positive integer.
+
+    If you pass `length < 0`, behavior of the function is undefined.
+
+**Returned value**
+
+ - String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../data_types/string.md)
+
+**Example**
+
+```sql
+SELECT number, randomASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+```text
+┌─number─┬─str────────────────────────────┬─length(randomASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                      30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                      30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                      30 │
+└────────┴────────────────────────────────┴─────────────────────────┘
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
