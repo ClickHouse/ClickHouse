@@ -898,7 +898,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "ANY TYPE"}};
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
 
         if constexpr (to_decimal || to_datetime64)
@@ -907,8 +907,14 @@ public:
         }
         // toString(DateTime or DateTime64, [timezone: String])
         if ((std::is_same_v<Name, NameToString> && arguments.size() > 0 && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
-            // toDateTime(value, [timezone: String]) or toDateTime64(value, scale : Integer, [timezone: string])
-            || std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeDateTime64>)
+            // toUnixTimestamp(value[, timezone : String])
+            || std::is_same_v<Name, NameToUnixTimestamp>
+            // toDate(value[, timezone : String])
+            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this arument is ignored below.
+            // toDateTime(value[, timezone: String])
+            || std::is_same_v<ToDataType, DataTypeDateTime>
+            // toDateTime64(value, scale : Integer[, timezone: String])
+            || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
         }
