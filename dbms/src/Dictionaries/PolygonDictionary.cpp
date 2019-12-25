@@ -147,7 +147,6 @@ void IPolygonDictionary::calculateBytesAllocated()
     // TODO:: Account for key.
     for (const auto & column : attributes)
         bytes_allocated += column->allocatedBytes();
-
 }
 
 std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns &key_columns)
@@ -175,6 +174,8 @@ void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, Padd
         out[row] = find(pt, trash);
         ++row;
     }
+
+    query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
 size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const
