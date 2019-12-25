@@ -129,7 +129,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     String database_name_escaped = escapeForFileName(database_name);
     String path = context.getPath();
     String metadata_path = path + "metadata/" + database_name_escaped + "/";
-
     DatabasePtr database = DatabaseFactory::get(database_name, metadata_path, create.storage, context);
 
     /// Will write file with database metadata, if needed.
@@ -464,7 +463,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
 
     validateTableStructure(create, properties);
-
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
     return properties;
@@ -591,10 +589,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Actually creates table
     bool created = doCreateTable(create, properties);
-    if (!created)
+    if (!created)   /// Table already exists
         return {};
 
-    return fillTableIfNeeded(create, database_name);
+    return fillTableIfNeeded(create);
 }
 
 bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
@@ -628,7 +626,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         if (!create.attach && create.uuid.empty() && database->getEngineName() == "Atomic")
             create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
 
-        data_path = database->getDataPath(create);
+        data_path = database->getTableDataPath(create);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
@@ -672,7 +670,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     else
     {
         res = StorageFactory::instance().get(create,
-            data_path,
+            database ? database->getTableDataPath(create) : "",
             context,
             context.getGlobalContext(),
             properties.columns,
@@ -698,7 +696,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
     return true;
 }
 
-BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & database_name)
+BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
@@ -707,7 +705,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         auto insert = std::make_shared<ASTInsertQuery>();
 
         if (!create.temporary)
-            insert->database = database_name;
+            insert->database = create.database;
 
         insert->table = create.table;
         insert->select = create.select->clone();
@@ -725,6 +723,9 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
+    if (!create.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
+
     String dictionary_name = create.table;
 
     String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();

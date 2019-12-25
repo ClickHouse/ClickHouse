@@ -1,4 +1,5 @@
 #include "FunctionsStringRegex.h"
+#include "registerFunctions.h"
 
 #include "FunctionsStringSearch.h"
 #include <Columns/ColumnFixedString.h>

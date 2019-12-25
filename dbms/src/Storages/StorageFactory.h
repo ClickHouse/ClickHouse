@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/registerStorages.h>
 #include <unordered_map>
 
 

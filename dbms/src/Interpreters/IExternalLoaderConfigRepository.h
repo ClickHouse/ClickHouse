@@ -36,6 +36,8 @@ public:
     virtual LoadablesConfigurationPtr load(const std::string & loadable_definition_name) const = 0;
 
     virtual ~IExternalLoaderConfigRepository() = default;
+
+    static const char * INTERNAL_REPOSITORY_NAME_PREFIX;
 };
 
 using ExternalLoaderConfigRepositoryPtr = std::unique_ptr<IExternalLoaderConfigRepository>;

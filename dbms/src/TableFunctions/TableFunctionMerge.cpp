@@ -1,16 +1,14 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
-
 #include <Storages/StorageMerge.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Databases/IDatabase.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

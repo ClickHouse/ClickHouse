@@ -1,14 +1,14 @@
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/KeeperException.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
-#include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Common/escapeForFileName.h>
+#include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
@@ -54,6 +54,7 @@
 #include <thread>
 #include <future>
 
+#include <boost/algorithm/string/join.hpp>
 
 namespace ProfileEvents
 {
@@ -325,6 +326,78 @@ bool StorageReplicatedMergeTree::checkFixedGranualrityInZookeeper()
     return metadata_from_zk.index_granularity_bytes == 0;
 }
 
+
+void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
+    const Strings & replicas, const String & mutation_id) const
+{
+    if (replicas.empty())
+        return;
+
+    zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
+
+
+    std::set<String> inactive_replicas;
+    for (const String & replica : replicas)
+    {
+
+        LOG_DEBUG(log, "Waiting for " << replica << " to apply mutation " + mutation_id);
+
+        while (!partial_shutdown_called)
+        {
+            /// Mutation maybe killed or whole replica was deleted.
+            /// Wait event will unblock at this moment.
+            Coordination::Stat exists_stat;
+            if (!getZooKeeper()->exists(zookeeper_path + "/mutations/" + mutation_id, &exists_stat, wait_event))
+            {
+                LOG_WARNING(log, "Mutation " << mutation_id << " was killed or manually removed. Nothing to wait.");
+                return;
+            }
+
+            auto zookeeper = getZooKeeper();
+            /// Replica could be inactive.
+            if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+            {
+                LOG_WARNING(log, "Replica " << replica << " is not active during mutation. "
+                    "Mutation will be done asynchronously when replica becomes active.");
+
+                inactive_replicas.emplace(replica);
+                break;
+            }
+
+            String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
+            std::string mutation_pointer_value;
+            Coordination::Stat get_stat;
+            /// Replica could be removed
+            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
+            {
+                LOG_WARNING(log, replica << " was removed");
+                break;
+            }
+            else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
+                break;                                      /// (numbers like 0000000000 and 0000000001)
+
+            /// We wait without timeout.
+            wait_event->wait();
+        }
+
+        if (partial_shutdown_called)
+            throw Exception("Mutation is not finished because table shutdown was called. It will be done after table restart.",
+                ErrorCodes::UNFINISHED);
+    }
+
+    if (!inactive_replicas.empty())
+    {
+        std::stringstream exception_message;
+        exception_message << "Mutation is not finished because";
+
+        if (!inactive_replicas.empty())
+            exception_message << " some replicas are inactive right now: " << boost::algorithm::join(inactive_replicas, ", ");
+
+        exception_message << ". Mutation will be done asynchronously";
+
+        throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
+    }
+}
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
@@ -1024,8 +1097,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Start to make the main work
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
-    /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_merge);
+    /// Can throw an exception while reserving space.
+    MergeTreeDataPart::TTLInfos ttl_infos;
+    for (auto & part_ptr : parts)
+    {
+        ttl_infos.update(part_ptr->ttl_infos);
+    }
+    ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
+            ttl_infos, time(nullptr));
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1055,7 +1134,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space.get(), entry.deduplicate, entry.force_ttl);
+            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         removeEmptyColumnsFromPart(part);
@@ -1159,14 +1238,9 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         entry.new_part_name, format_version);
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
-    /// Can throw an exception.
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
-    DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
-    if (!reserved_space)
-    {
-        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(estimated_space_for_result) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+    /// Can throw an exception.
+    ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->disk);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1194,7 +1268,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get(), table_lock);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -3219,6 +3293,7 @@ void StorageReplicatedMergeTree::alter(
         int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
     };
 
+    /// /columns and /metadata nodes
     std::vector<ChangedNode> changed_nodes;
 
     {
@@ -3313,6 +3388,10 @@ void StorageReplicatedMergeTree::alter(
 
     time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
 
+    /// This code is quite similar with waitMutationToFinishOnReplicas
+    /// but contains more complicated details (versions manipulations, multiple nodes, etc.).
+    /// It will be removed soon in favor of alter-modify implementation on top of mutations.
+    /// TODO (alesap)
     for (const String & replica : replicas)
     {
         LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
@@ -3415,8 +3494,16 @@ void StorageReplicatedMergeTree::alter(
             if (replica_nodes_changed_concurrently)
                 continue;
 
-            /// Now wait for replica nodes to change.
-
+            /// alter_query_event subscribed with zookeeper watch callback to /repliacs/{replica}/metadata
+            /// and /replicas/{replica}/columns nodes for current relica + shared nodes /columns and /metadata,
+            /// which is common for all replicas. If changes happen with this nodes (delete, set and create)
+            /// than event will be notified and wait will be interrupted.
+            ///
+            /// ReplicatedMergeTreeAlterThread responsible for local /replicas/{replica}/metadata and
+            /// /replicas/{replica}/columns changes. Shared /columns and /metadata nodes can be changed by *newer*
+            /// concurrent alter from other replica. First of all it will update shared nodes and we will have no
+            /// ability to identify, that our *current* alter finshed. So we cannot do anything better than just
+            /// return from *current* alter with success result.
             if (!replication_alter_columns_timeout)
             {
                 alter_query_event->wait();
@@ -4420,7 +4507,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
+void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -4523,6 +4610,19 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         else
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
+
+    /// we have to wait
+    if (query_context.getSettingsRef().mutations_sync != 0)
+    {
+        Strings replicas;
+        if (query_context.getSettingsRef().mutations_sync == 2) /// wait for all replicas
+            replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+        else if (query_context.getSettingsRef().mutations_sync == 1) /// just wait for ourself
+            replicas.push_back(replica_path);
+
+        waitMutationToFinishOnReplicas(replicas, entry.znode_name);
+    }
+
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const

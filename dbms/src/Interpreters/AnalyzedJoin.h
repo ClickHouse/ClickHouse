@@ -119,12 +119,12 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
+    /// StorageJoin overrides key names (cause of different names qualification)
+    void setRightKeys(const Names & keys) { key_names_right = keys; }
+
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
     friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
-
-struct ASTTableExpression;
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 bool isMergeJoin(const JoinPtr &);
 

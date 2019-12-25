@@ -530,6 +530,10 @@ private:
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
 
+    /// Wait for timeout seconds mutation is finished on replicas
+    void waitMutationToFinishOnReplicas(
+        const Strings & replicas, const String & mutation_id) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */

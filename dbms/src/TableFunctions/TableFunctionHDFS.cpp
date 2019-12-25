@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "registerTableFunctions.h"
 
 #if USE_HDFS
 #include <Storages/StorageHDFS.h>
@@ -20,9 +21,11 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method);
 }
 
+#if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHDFS>();
 }
+#endif
 }
 #endif

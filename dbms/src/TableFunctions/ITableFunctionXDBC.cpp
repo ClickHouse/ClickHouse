@@ -17,7 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Poco/NumberFormatter.h>
-
+#include "registerTableFunctions.h"
 
 namespace DB
 {

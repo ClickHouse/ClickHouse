@@ -66,32 +66,17 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 
     add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # TODO: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64")
+    if (ARCH_AMD64 OR ARCH_AARCH64)
        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
        target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
     endif ()
-
-    #set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
-    #if (TARGET example64)
-    #    set_target_properties(example64 PROPERTIES EXCLUDE_FROM_ALL 1)
-    #endif ()
-
-    #set_target_properties(minigzip PROPERTIES EXCLUDE_FROM_ALL 1)
-    #if (TARGET minigzip64)
-    #    set_target_properties(minigzip64 PROPERTIES EXCLUDE_FROM_ALL 1)
-    #endif ()
 endif ()
 
 if (USE_INTERNAL_CCTZ_LIBRARY)
     add_subdirectory (cctz-cmake)
-endif ()
-
-if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
-    add_subdirectory (libtcmalloc)
 endif ()
 
 if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
@@ -107,20 +92,10 @@ if (USE_INTERNAL_H3_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_SSL_LIBRARY)
-    if (NOT MAKE_STATIC_LIBRARIES)
-        set (BUILD_SHARED 1)
-    endif ()
+    add_subdirectory (openssl-cmake)
 
-    # By default, ${CMAKE_INSTALL_PREFIX}/etc/ssl is selected - that is not what we need.
-    # We need to use system wide ssl directory.
-    set (OPENSSLDIR "/etc/ssl")
-
-    set (LIBRESSL_SKIP_INSTALL 1 CACHE INTERNAL "")
-    add_subdirectory (ssl)
-    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
-    target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    # This is for Poco library
     set (POCO_SKIP_OPENSSL_FIND 1)
-
     add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
@@ -165,6 +140,10 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
+if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
+    add_subdirectory (icu-cmake)
+endif ()
+
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
@@ -181,10 +160,7 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
     set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
     set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
-    #set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
     set (Boost_FOUND 1 CACHE INTERNAL "")
-    #set (ZLIB_HOME ${ZLIB_INCLUDE_DIR})
-    #set (ZLIB_FOUND 1)
     if (MAKE_STATIC_LIBRARIES)
         set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
@@ -224,6 +200,11 @@ else()
     endif()
 
     add_subdirectory(arrow-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
+    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
+    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 endif()
 
@@ -260,28 +241,14 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-if (USE_INTERNAL_LLVM_LIBRARY)
-    file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
-    add_library(LLVM0 ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp) # silly cmake bug fix
-    add_library(LLVMOFF ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp)
+if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
-    set (LLVM_INCLUDE_TESTS 0 CACHE INTERNAL "")
-    set (LLVM_INCLUDE_EXAMPLES 0 CACHE INTERNAL "")
-    set (LLVM_INCLUDE_TOOLS 0 CACHE INTERNAL "")
-    set (LLVM_INSTALL_TOOLCHAIN_ONLY 0 CACHE INTERNAL "")
-    set (CLANG_BUILT_STANDALONE 0 CACHE INTERNAL "")
-    set (LLDB_BUILT_STANDALONE 0 CACHE INTERNAL "")
-    set (CLANG_ENABLE_STATIC_ANALYZER 0 CACHE INTERNAL "")
-    set (CLANG_ENABLE_ARCMT 0 CACHE INTERNAL "")
-    set (CLANG_BUILD_TOOLS 0 CACHE INTERNAL "")
-    set (BENCHMARK_ENABLE_GTEST_TESTS 0 CACHE INTERNAL "")
-    set (BENCHMARK_ENABLE_ASSEMBLY_TESTS 0 CACHE INTERNAL "")
-    set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE INTERNAL "")
+    set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
     add_subdirectory (llvm/llvm)
 endif ()
 
@@ -313,12 +280,39 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
+if (USE_INTERNAL_AWS_S3_LIBRARY)
+    set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
+    set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
+    set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
+    set (save_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+    set (save_CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
+    add_subdirectory(curl-cmake)
+    set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
+    set (CMAKE_REQUIRED_LIBRARIES ${save_CMAKE_REQUIRED_LIBRARIES})
+    set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
+    set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
+    set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
+    add_subdirectory(aws-s3-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (aws_s3 PRIVATE -g0)
+    target_compile_options (aws_s3_checksums PRIVATE -g0)
+    target_compile_options (libcurl PRIVATE -g0)
+endif ()
+
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
+
+    # The library is large - avoid bloat.
+    if (USE_STATIC_LIBRARIES)
+        target_compile_options (hs PRIVATE -g0)
+    else ()
+        target_compile_options (hs_shared PRIVATE -g0)
+    endif ()
 endif()
 
 if (USE_SIMDJSON)
@@ -332,7 +326,3 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
-
-#if (USE_INTERNAL_ORC_LIBRARY)
-#    add_subdirectory(orc-cmake)
-#endif ()

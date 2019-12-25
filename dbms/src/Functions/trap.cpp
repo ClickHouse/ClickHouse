@@ -1,3 +1,4 @@
+#include "registerFunctions.h"
 #if 0
 
 #include <Functions/IFunction.h>
@@ -81,6 +82,10 @@ public:
             else if (mode == "abort")
             {
                 abort();
+            }
+            else if (mode == "std::terminate")
+            {
+                std::terminate();
             }
             else if (mode == "use after free")
             {

@@ -1,12 +1,12 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
 
 
 namespace DB
@@ -75,7 +75,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 
         auto it = tables.find(table_name);
         if (it == tables.end())
-            throw Exception("Table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second;
         tables.erase(it);
     }

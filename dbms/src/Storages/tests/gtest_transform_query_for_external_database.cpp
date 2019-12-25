@@ -37,14 +37,14 @@ struct State
     }
 };
 
-State & state()
+static State & state()
 {
     static State res;
     return res;
 }
 
 
-void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
+static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000);

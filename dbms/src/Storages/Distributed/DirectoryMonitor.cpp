@@ -81,7 +81,10 @@ namespace
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_)
-    : storage(storage_), pool{pool_}, path{storage.path + name_ + '/'}
+    : storage(storage_)
+    , pool{pool_}
+    , name{name_}
+    , path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
@@ -640,6 +643,13 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
     return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
+}
+
+void StorageDistributedDirectoryMonitor::updatePath()
+{
+    std::lock_guard lock{mutex};
+    path = storage.path + name + '/';
+    current_batch_file_path = path + "current_batch.txt";
 }
 
 }

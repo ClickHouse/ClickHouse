@@ -1,18 +1,25 @@
 #!/bin/bash
 
 kill_clickhouse () {
-    while kill -0 `pgrep -u clickhouse`;
+    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
+    kill `pgrep -u clickhouse` 2>/dev/null
+
+    for i in {1..10}
     do
-        kill `pgrep -u clickhouse` 2>/dev/null
-        echo "Process" `pgrep -u clickhouse` "still alive"
-        sleep 10
+        if ! kill -0 `pgrep -u clickhouse`; then
+            echo "No clickhouse process" | ts '%Y-%m-%d %H:%M:%S'
+            break
+        else
+            echo "Process" `pgrep -u clickhouse` "still alive" | ts '%Y-%m-%d %H:%M:%S'
+            sleep 10
+        fi
     done
 }
 
 wait_llvm_profdata () {
     while kill -0 `pgrep llvm-profdata-9`;
     do
-        echo "Waiting for profdata " `pgrep llvm-profdata-9` "still alive"
+        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive" | ts '%Y-%m-%d %H:%M:%S'
         sleep 3
     done
 }
