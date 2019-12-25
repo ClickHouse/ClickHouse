@@ -3,120 +3,212 @@
 #include <DataTypes/getMostSubtype.h>
 
 #include <sstream>
-
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
+namespace DB
+{
+
+static bool operator==(const IDataType & left, const IDataType & right)
+{
+    return left.equals(right);
+}
+
+static std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
+{
+    return ostr << dt.getName();
+}
+
+}
 
 using namespace DB;
 
-
-TEST(data_type, data_type_get_common_type_Test)
+static auto typeFromString(const std::string & str)
 {
     auto & data_type_factory = DataTypeFactory::instance();
-    auto typeFromString = [& data_type_factory](const std::string & str)
-    {
-        return data_type_factory.get(str);
-    };
+    return data_type_factory.get(str);
+};
 
-    auto typesFromString = [& typeFromString](const std::string & str)
-    {
-        std::istringstream data_types_stream(str);
-        DataTypes data_types;
-        std::string data_type;
-        while (data_types_stream >> data_type)
-            data_types.push_back(typeFromString(data_type));
+static auto typesFromString(const std::string & str)
+{
+    std::istringstream data_types_stream(str);
+    DataTypes data_types;
+    std::string data_type;
+    while (data_types_stream >> data_type)
+        data_types.push_back(typeFromString(data_type));
 
-        return data_types;
-    };
+    return data_types;
+};
 
-    ASSERT_TRUE(getLeastSupertype(typesFromString(""))->equals(*typeFromString("Nothing")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Nothing"))->equals(*typeFromString("Nothing")));
+struct TypesTestCase
+{
+    const char * from_types;
+    const char * expected_type = nullptr;
+};
 
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8 UInt8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Int8 Int8"))->equals(*typeFromString("Int8")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8 Int8"))->equals(*typeFromString("Int16")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8 Int16"))->equals(*typeFromString("Int16")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8 UInt32 UInt64"))->equals(*typeFromString("UInt64")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Int8 Int32 Int64"))->equals(*typeFromString("Int64")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("UInt8 UInt32 Int64"))->equals(*typeFromString("Int64")));
+std::ostream & operator<<(std::ostream & ostr, const TypesTestCase & test_case)
+{
+    ostr << "TypesTestCase{\"" << test_case.from_types << "\", ";
+    if (test_case.expected_type)
+        ostr << "\"" << test_case.expected_type << "\"";
+    else
+        ostr << "nullptr";
 
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Float32 Float64"))->equals(*typeFromString("Float64")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Float32 UInt16 Int16"))->equals(*typeFromString("Float32")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Float32 UInt16 Int32"))->equals(*typeFromString("Float64")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Float32 Int16 UInt32"))->equals(*typeFromString("Float64")));
-
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Date Date"))->equals(*typeFromString("Date")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Date DateTime"))->equals(*typeFromString("DateTime")));
-
-    ASSERT_TRUE(getLeastSupertype(typesFromString("String FixedString(32) FixedString(8)"))->equals(*typeFromString("String")));
-
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(UInt8) Array(UInt8)"))->equals(*typeFromString("Array(UInt8)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(UInt8) Array(Int8)"))->equals(*typeFromString("Array(Int16)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(Float32) Array(Int16) Array(UInt32)"))->equals(*typeFromString("Array(Float64)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(Array(UInt8)) Array(Array(UInt8))"))->equals(*typeFromString("Array(Array(UInt8))")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(Array(UInt8)) Array(Array(Int8))"))->equals(*typeFromString("Array(Array(Int16))")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(Date) Array(DateTime)"))->equals(*typeFromString("Array(DateTime)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Array(String) Array(FixedString(32))"))->equals(*typeFromString("Array(String)")));
-
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Nullable(Nothing) Nothing"))->equals(*typeFromString("Nullable(Nothing)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Nullable(UInt8) Int8"))->equals(*typeFromString("Nullable(Int16)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Nullable(Nothing) UInt8 Int8"))->equals(*typeFromString("Nullable(Int16)")));
-
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Tuple(Int8,UInt8) Tuple(UInt8,Int8)"))->equals(*typeFromString("Tuple(Int16,Int16)")));
-    ASSERT_TRUE(getLeastSupertype(typesFromString("Tuple(Nullable(Nothing)) Tuple(Nullable(UInt8))"))->equals(*typeFromString("Tuple(Nullable(UInt8))")));
-
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Int8 String")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Int64 UInt64")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Float32 UInt64")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Float64 Int64")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Tuple(Int64) Tuple(UInt64)")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Tuple(Int64, Int8) Tuple(UInt64)")));
-    EXPECT_ANY_THROW(getLeastSupertype(typesFromString("Array(Int64) Array(String)")));
-
-
-    ASSERT_TRUE(getMostSubtype(typesFromString(""))->equals(*typeFromString("Nothing")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nothing"))->equals(*typeFromString("Nothing")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("UInt8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("UInt8 UInt8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Int8 Int8"))->equals(*typeFromString("Int8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("UInt8 Int8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Int8 UInt16"))->equals(*typeFromString("Int8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("UInt8 UInt32 UInt64"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Int8 Int32 Int64"))->equals(*typeFromString("Int8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("UInt8 Int64 UInt64"))->equals(*typeFromString("UInt8")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("Float32 Float64"))->equals(*typeFromString("Float32")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Float32 UInt16 Int16"))->equals(*typeFromString("UInt16")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Float32 UInt16 Int32"))->equals(*typeFromString("UInt16")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Float32 Int16 UInt32"))->equals(*typeFromString("Int16")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("DateTime DateTime"))->equals(*typeFromString("DateTime")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Date DateTime"))->equals(*typeFromString("Date")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("String FixedString(8)"))->equals(*typeFromString("FixedString(8)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("FixedString(16) FixedString(8)"))->equals(*typeFromString("Nothing")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(UInt8) Array(UInt8)"))->equals(*typeFromString("Array(UInt8)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(UInt8) Array(Int8)"))->equals(*typeFromString("Array(UInt8)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(Float32) Array(Int16) Array(UInt32)"))->equals(*typeFromString("Array(Int16)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(Array(UInt8)) Array(Array(UInt8))"))->equals(*typeFromString("Array(Array(UInt8))")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(Array(UInt8)) Array(Array(Int8))"))->equals(*typeFromString("Array(Array(UInt8))")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(Date) Array(DateTime)"))->equals(*typeFromString("Array(Date)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(String) Array(FixedString(32))"))->equals(*typeFromString("Array(FixedString(32))")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Array(String) Array(FixedString(32))"))->equals(*typeFromString("Array(FixedString(32))")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nullable(Nothing) Nothing"))->equals(*typeFromString("Nothing")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nullable(UInt8) Int8"))->equals(*typeFromString("UInt8")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nullable(Nothing) UInt8 Int8"))->equals(*typeFromString("Nothing")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nullable(UInt8) Nullable(Int8)"))->equals(*typeFromString("Nullable(UInt8)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Nullable(Nothing) Nullable(Int8)"))->equals(*typeFromString("Nullable(Nothing)")));
-
-    ASSERT_TRUE(getMostSubtype(typesFromString("Tuple(Int8,UInt8) Tuple(UInt8,Int8)"))->equals(*typeFromString("Tuple(UInt8,UInt8)")));
-    ASSERT_TRUE(getMostSubtype(typesFromString("Tuple(Nullable(Nothing)) Tuple(Nullable(UInt8))"))->equals(*typeFromString("Tuple(Nullable(Nothing))")));
-
-    EXPECT_ANY_THROW(getMostSubtype(typesFromString("Int8 String"), true));
-    EXPECT_ANY_THROW(getMostSubtype(typesFromString("Nothing"), true));
-    EXPECT_ANY_THROW(getMostSubtype(typesFromString("FixedString(16) FixedString(8) String"), true));
+    return ostr << "}";
 }
+
+class TypeTest : public ::testing::TestWithParam<TypesTestCase>
+{
+public:
+    void SetUp()
+    {
+        const auto & p = GetParam();
+        from_types = typesFromString(p.from_types);
+
+        if (p.expected_type)
+            expected_type = typeFromString(p.expected_type);
+        else
+            expected_type.reset();
+    }
+
+public:
+    DataTypes from_types;
+    DataTypePtr expected_type;
+};
+
+class LeastSuperTypeTest : public TypeTest {};
+
+TEST_P(LeastSuperTypeTest, getLeastSupertype)
+{
+    if (this->expected_type)
+    {
+        ASSERT_EQ(*this->expected_type, *getLeastSupertype(this->from_types));
+    }
+    else
+    {
+        EXPECT_ANY_THROW(getLeastSupertype(this->from_types));
+    }
+}
+
+class MostSubtypeTest : public TypeTest {};
+
+TEST_P(MostSubtypeTest, getLeastSupertype)
+{
+    if (this->expected_type)
+    {
+        ASSERT_EQ(*this->expected_type, *getMostSubtype(this->from_types));
+    }
+    else
+    {
+        EXPECT_ANY_THROW(getMostSubtype(this->from_types, true));
+    }
+}
+
+INSTANTIATE_TEST_CASE_P(data_type,
+    LeastSuperTypeTest,
+    ::testing::ValuesIn(
+        std::initializer_list<TypesTestCase>{
+            {"", "Nothing"},
+            {"Nothing", "Nothing"},
+
+            {"UInt8", "UInt8"},
+            {"UInt8 UInt8", "UInt8"},
+            {"Int8 Int8", "Int8"},
+            {"UInt8 Int8", "Int16"},
+            {"UInt8 Int16", "Int16"},
+            {"UInt8 UInt32 UInt64", "UInt64"},
+            {"Int8 Int32 Int64", "Int64"},
+            {"UInt8 UInt32 Int64", "Int64"},
+
+            {"Float32 Float64", "Float64"},
+            {"Float32 UInt16 Int16", "Float32"},
+            {"Float32 UInt16 Int32", "Float64"},
+            {"Float32 Int16 UInt32", "Float64"},
+
+            {"Date Date", "Date"},
+            {"Date DateTime", "DateTime"},
+            {"Date DateTime64(3)", "DateTime64(3)"},
+            {"DateTime DateTime64(3)", "DateTime64(3)"},
+            {"DateTime DateTime64(0)", "DateTime64(0)"},
+            {"DateTime64(9) DateTime64(3)", "DateTime64(3)"},
+            {"DateTime DateTime64(12)", "DateTime64(8)"},
+            {"Date DateTime64(15)", "DateTime64(13)"},
+
+            {"String FixedString(32) FixedString(8)", "String"},
+
+            {"Array(UInt8) Array(UInt8)", "Array(UInt8)"},
+            {"Array(UInt8) Array(Int8)", "Array(Int16)"},
+            {"Array(Float32) Array(Int16) Array(UInt32)", "Array(Float64)"},
+            {"Array(Array(UInt8)) Array(Array(UInt8))", "Array(Array(UInt8))"},
+            {"Array(Array(UInt8)) Array(Array(Int8))", "Array(Array(Int16))"},
+            {"Array(Date) Array(DateTime)", "Array(DateTime)"},
+            {"Array(String) Array(FixedString(32))", "Array(String)"},
+
+            {"Nullable(Nothing) Nothing", "Nullable(Nothing)"},
+            {"Nullable(UInt8) Int8", "Nullable(Int16)"},
+            {"Nullable(Nothing) UInt8 Int8", "Nullable(Int16)"},
+
+            {"Tuple(Int8,UInt8) Tuple(UInt8,Int8)", "Tuple(Int16,Int16)"},
+            {"Tuple(Nullable(Nothing)) Tuple(Nullable(UInt8))", "Tuple(Nullable(UInt8))"},
+
+            {"Int8 String", nullptr},
+            {"Int64 UInt64", nullptr},
+            {"Float32 UInt64", nullptr},
+            {"Float64 Int64", nullptr},
+            {"Tuple(Int64) Tuple(UInt64)", nullptr},
+            {"Tuple(Int64,Int8) Tuple(UInt64)", nullptr},
+            {"Array(Int64) Array(String)", nullptr},
+        }
+    ),
+);
+
+INSTANTIATE_TEST_CASE_P(data_type,
+    MostSubtypeTest,
+    ::testing::ValuesIn(
+        std::initializer_list<TypesTestCase>{
+            {"", "Nothing"},
+            {"Nothing", "Nothing"},
+
+            {"UInt8", "UInt8"},
+            {"UInt8 UInt8", "UInt8"},
+            {"Int8 Int8", "Int8"},
+            {"UInt8 Int8", "UInt8"},
+            {"Int8 UInt16", "Int8"},
+            {"UInt8 UInt32 UInt64", "UInt8"},
+            {"Int8 Int32 Int64", "Int8"},
+            {"UInt8 Int64 UInt64", "UInt8"},
+
+            {"Float32 Float64", "Float32"},
+            {"Float32 UInt16 Int16", "UInt16"},
+            {"Float32 UInt16 Int32", "UInt16"},
+            {"Float32 Int16 UInt32", "Int16"},
+
+            {"DateTime DateTime", "DateTime"},
+            {"Date DateTime", "Date"},
+
+            {"String FixedString(8)", "FixedString(8)"},
+            {"FixedString(16) FixedString(8)", "Nothing"},
+
+            {"Array(UInt8) Array(UInt8)", "Array(UInt8)"},
+            {"Array(UInt8) Array(Int8)", "Array(UInt8)"},
+            {"Array(Float32) Array(Int16) Array(UInt32)", "Array(Int16)"},
+            {"Array(Array(UInt8)) Array(Array(UInt8))", "Array(Array(UInt8))"},
+            {"Array(Array(UInt8)) Array(Array(Int8))", "Array(Array(UInt8))"},
+            {"Array(Date) Array(DateTime)", "Array(Date)"},
+            {"Array(String) Array(FixedString(32))", "Array(FixedString(32))"},
+            {"Array(String) Array(FixedString(32))", "Array(FixedString(32))"},
+
+            {"Nullable(Nothing) Nothing", "Nothing"},
+            {"Nullable(UInt8) Int8", "UInt8"},
+            {"Nullable(Nothing) UInt8 Int8", "Nothing"},
+            {"Nullable(UInt8) Nullable(Int8)", "Nullable(UInt8)"},
+            {"Nullable(Nothing) Nullable(Int8)", "Nullable(Nothing)"},
+
+            {"Tuple(Int8,UInt8) Tuple(UInt8,Int8)", "Tuple(UInt8,UInt8)"},
+            {"Tuple(Nullable(Nothing)) Tuple(Nullable(UInt8))", "Tuple(Nullable(Nothing))"},
+
+            {"Int8 String", nullptr},
+            {"Nothing", nullptr},
+            {"FixedString(16) FixedString(8) String", nullptr},
+        }),
+);

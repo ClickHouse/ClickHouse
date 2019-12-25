@@ -24,8 +24,8 @@ public:
     void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path = {}) override;
     StoragePtr detachTable(const String & name) override;
 
-    String getDataPath(const String & table_name) const override;
-    String getDataPath(const ASTCreateQuery & query) const override;
+    String getTableDataPath(const String & table_name) const override;
+    String getTableDataPath(const ASTCreateQuery & query) const override;
 
     void drop(const Context & /*context*/) override;
 

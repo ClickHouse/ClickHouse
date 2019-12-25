@@ -10,6 +10,7 @@
 | double-conversion | [BSD 3-Clause License](https://github.com/google/double-conversion/blob/cf2f0f3d547dc73b4612028a155b80536902ba02/LICENSE) |
 | FastMemcpy | [MIT](https://github.com/yandex/ClickHouse/blob/master/libs/libmemcpy/impl/LICENSE) |
 | googletest  | [BSD 3-Clause License](https://github.com/google/googletest/blob/master/LICENSE) |
+| h3 | [Apache License 2.0](https://github.com/uber/h3/blob/master/LICENSE)
 | hyperscan | [BSD 3-Clause License](https://github.com/intel/hyperscan/blob/master/LICENSE) |
 | libbtrie | [BSD 2-Clause License](https://github.com/yandex/ClickHouse/blob/master/contrib/libbtrie/LICENSE) |
 | libcxxabi | [BSD + MIT](https://github.com/yandex/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT) |

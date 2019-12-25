@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Join.h>
 #include <Storages/StorageJoin.h>
+#include "registerFunctions.h"
 
 
 namespace DB
@@ -59,7 +60,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
     return std::make_pair(storage_join, attr_name);
 }
 
-FunctionBasePtr FunctionBuilderJoinGet::buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+FunctionBaseImplPtr JoinGetOverloadResolver::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
@@ -70,11 +71,10 @@ FunctionBasePtr FunctionBuilderJoinGet::buildImpl(const ColumnsWithTypeAndName &
         data_types[i] = arguments[i].type;
 
     auto return_type = join->joinGetReturnType(attr_name);
-    return std::make_shared<DefaultFunction>(
-        std::make_shared<FunctionJoinGet>(table_lock, storage_join, join, attr_name, return_type), data_types, return_type);
+    return std::make_unique<FunctionJoinGet>(table_lock, storage_join, join, attr_name, data_types, return_type);
 }
 
-DataTypePtr FunctionBuilderJoinGet::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr JoinGetOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
@@ -82,7 +82,7 @@ DataTypePtr FunctionBuilderJoinGet::getReturnTypeImpl(const ColumnsWithTypeAndNa
 }
 
 
-void FunctionJoinGet::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+void ExecutableFunctionJoinGet::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     auto ctn = block.getByPosition(arguments[2]);
     if (isColumnConst(*ctn.column))
@@ -96,9 +96,14 @@ void FunctionJoinGet::executeImpl(Block & block, const ColumnNumbers & arguments
     block.getByPosition(result) = result_ctn;
 }
 
+ExecutableFunctionImplPtr FunctionJoinGet::prepare(const Block &, const ColumnNumbers &, size_t) const
+{
+    return std::make_unique<ExecutableFunctionJoinGet>(join, attr_name);
+}
+
 void registerFunctionJoinGet(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderJoinGet>();
+    factory.registerFunction<JoinGetOverloadResolver>();
 }
 
 }

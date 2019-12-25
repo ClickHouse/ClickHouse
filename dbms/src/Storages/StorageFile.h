@@ -44,10 +44,10 @@ public:
     {
         const StorageID & table_id;
         const std::string & format_name;
+        const std::string & compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
-        const std::string & compression_method;
     };
 
 protected:
@@ -65,13 +65,12 @@ protected:
 
 private:
     explicit StorageFile(CommonArguments args);
-
     std::string format_name;
-    const Context & context_global;
 
     int table_fd = -1;
     String compression_method;
 
+    std::string base_path;
     std::vector<std::string> paths;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file

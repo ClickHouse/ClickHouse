@@ -81,6 +81,7 @@ protected:
 private:
     // Configuration and state
     Context global_context;
+    Context kafka_context;
     Names topics;
     const String brokers;
     const String group;

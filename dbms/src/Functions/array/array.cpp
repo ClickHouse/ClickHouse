@@ -1,9 +1,10 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/castColumn.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB

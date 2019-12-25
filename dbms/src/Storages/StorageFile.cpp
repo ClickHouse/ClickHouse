@@ -112,9 +112,7 @@ static void checkCreationIsAllowed(const Context & context_global, const std::st
         throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
-    if (!table_path_poco_file.exists())
-        throw Exception("File " + table_path + " is not exist", ErrorCodes::FILE_DOESNT_EXIST);
-    else if (table_path_poco_file.isDirectory())
+    if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
@@ -122,7 +120,7 @@ static void checkCreationIsAllowed(const Context & context_global, const std::st
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
+    if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     is_db_table = false;
@@ -138,15 +136,20 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    std::string user_files_path_abs = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
     Poco::Path poco_path = Poco::Path(table_path_);
     if (poco_path.isRelative())
-        poco_path = Poco::Path(user_files_path_abs, poco_path);
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
 
     const std::string path = poco_path.absolute().toString();
-    paths = listFilesWithRegexpMatching("/", path);
+    if (path.find_first_of("*?{") == std::string::npos)
+    {
+        paths.push_back(path);
+    }
+    else
+        paths = listFilesWithRegexpMatching("/", path);
     for (const auto & cur_path : paths)
-        checkCreationIsAllowed(context_global, user_files_path_abs, cur_path);
+        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
 }
 
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
@@ -155,7 +158,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (relative_table_dir_path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String table_dir_path = context_global.getPath() + relative_table_dir_path + "/";
+    String table_dir_path = base_path + relative_table_dir_path + "/";
     Poco::File(table_dir_path).createDirectories();
     paths = {getTablePath(table_dir_path, format_name)};
 }
@@ -163,8 +166,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 StorageFile::StorageFile(CommonArguments args)
     : IStorage(args.table_id)
     , format_name(args.format_name)
-    , context_global(args.context)
     , compression_method(args.compression_method)
+    , base_path(args.context.getPath())
 {
     setColumns(args.columns);
     setConstraints(args.constraints);
@@ -254,6 +257,11 @@ BlockInputStreams StorageFile::read(
     BlockInputStreams blocks_input;
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
+    else
+    {
+        if (paths.size() == 1 && !Poco::File(paths[0]).exists())
+            throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+    }
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
@@ -269,7 +277,8 @@ class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit StorageFileBlockOutputStream(StorageFile & storage_,
-        const CompressionMethod compression_method)
+        const CompressionMethod compression_method,
+        const Context & context)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
@@ -289,7 +298,7 @@ public:
             write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
-        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
     }
 
     Block getHeader() const override { return storage.getSampleBlock(); }
@@ -323,10 +332,10 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Context & /*context*/)
+    const Context & context)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this,
-        IStorage::chooseCompressionMethod(paths[0], compression_method));
+        IStorage::chooseCompressionMethod(paths[0], compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -346,7 +355,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(context_global.getPath() + new_path_to_table_data, format_name);
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 
@@ -370,8 +379,8 @@ void registerStorageFile(StorageFactory & factory)
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
-        StorageFile::CommonArguments common_args{args.table_id, format_name,
-                                                 args.columns, args.constraints, args.context, compression_method};
+        StorageFile::CommonArguments common_args{args.table_id, format_name, compression_method,
+                                                 args.columns, args.constraints, args.context};
 
         if (engine_args.size() == 1)    /// Table in database
             return StorageFile::create(args.relative_data_path, common_args);

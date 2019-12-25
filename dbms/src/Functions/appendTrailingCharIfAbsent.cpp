@@ -3,8 +3,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <ext/range.h>
+#include "registerFunctions.h"
 
 
 namespace DB

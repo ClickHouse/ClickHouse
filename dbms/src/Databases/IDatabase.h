@@ -20,6 +20,7 @@ struct ConstraintsDescription;
 class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
+class ASTCreateQuery;
 using Dictionaries = std::set<String>;
 class ASTCreateQuery;
 
@@ -191,8 +192,8 @@ public:
     }
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
-    /// load is false when we starting up and lazy_load is true, so we don't want to load dictionaries synchronously.
-    virtual void attachDictionary(const String & /*name*/, const Context & /*context*/, [[maybe_unused]] bool reload = true)
+    /// If dictionaries_lazy_load is false it also starts loading the dictionary asynchronously.
+    virtual void attachDictionary(const String & /*name*/, const Context & /*context*/)
     {
         throw Exception("There is no ATTACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -203,8 +204,8 @@ public:
         throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Forget about the dictionary without deleting it, and return it. The database may not support this method.
-    virtual void detachDictionary(const String & /*name*/, const Context & /*context*/, [[maybe_unused]] bool reload = true)
+    /// Forget about the dictionary without deleting it. The database may not support this method.
+    virtual void detachDictionary(const String & /*name*/, const Context & /*context*/)
     {
         throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -269,10 +270,11 @@ public:
     String getDatabaseName() const { return database_name; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
-    /// Returns path for persistent data storage for table if the database supports it, empty string otherwise
-    virtual String getDataPath(const String & /*table_name*/) const { return {}; }
+
+    /// Returns path for persistent data storage for table if the database supports it, empty string otherwise. Table must exist
+    virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
     /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
-    virtual String getDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
+    virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise

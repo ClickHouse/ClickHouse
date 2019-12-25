@@ -326,4 +326,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** Element of TTL expression - same as expression element, but in addition,
+ *   TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
+  */
+class ParserTTLElement : public IParserBase
+{
+protected:
+    const char * getName() const { return "element of TTL expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 }

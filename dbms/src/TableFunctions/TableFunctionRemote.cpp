@@ -14,6 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

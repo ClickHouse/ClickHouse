@@ -130,17 +130,16 @@ BlockIO InterpreterDropQuery::executeToTable(
                 throw;
             }
 
-            String table_data_path = database_and_table.first->getDataPath(table_name);
+            String table_data_path_relative = database_and_table.first->getTableDataPath(table_name);
 
             /// Delete table metadata and table itself from memory
             database_and_table.first->removeTable(context, table_id.table_name);
             database_and_table.second->is_dropped = true;
 
             /// If it is not virtual database like Dictionary then drop remaining data dir
-            if (!table_data_path.empty())
+            if (!table_data_path_relative.empty())
             {
-                table_data_path = context.getPath() + table_data_path;
-
+                String table_data_path = context.getPath() + table_data_path_relative;
                 if (Poco::File(table_data_path).exists())
                     Poco::File(table_data_path).remove(true);
             }
@@ -166,7 +165,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
 
-    DatabasePtr database = tryGetDatabase(database_name, false);
+    DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
     if (!database || !database->isDictionaryExist(context, dictionary_name))
     {

@@ -7,9 +7,9 @@ namespace DB
 class DatabaseWithDictionaries : public DatabaseOnDisk
 {
 public:
-    void attachDictionary(const String & name, const Context & context, bool reload = true) override;
+    void attachDictionary(const String & name, const Context & context) override;
 
-    void detachDictionary(const String & name, const Context & context, bool reload = true) override;
+    void detachDictionary(const String & name, const Context & context) override;
 
     void createDictionary(const Context & context,
                           const String & dictionary_name,

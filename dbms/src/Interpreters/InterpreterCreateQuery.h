@@ -69,7 +69,7 @@ private:
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(/*const*/ ASTCreateQuery & create, const TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, const String & database_name);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
     ASTPtr query_ptr;
     Context & context;

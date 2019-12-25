@@ -71,6 +71,9 @@ extern const char EmptyPODArray[EmptyPODArraySize];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
@@ -621,6 +624,6 @@ void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, 
 {
     lhs.swap(rhs);
 }
-
+#pragma GCC diagnostic pop
 
 }

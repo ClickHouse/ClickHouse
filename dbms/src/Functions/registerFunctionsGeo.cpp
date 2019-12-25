@@ -1,21 +1,7 @@
-#include "config_functions.h"
+#include "registerFunctions.h"
 
 namespace DB
 {
-
-class FunctionFactory;
-
-void registerFunctionGeoDistance(FunctionFactory & factory);
-void registerFunctionPointInEllipses(FunctionFactory & factory);
-void registerFunctionPointInPolygon(FunctionFactory & factory);
-void registerFunctionGeohashEncode(FunctionFactory & factory);
-void registerFunctionGeohashDecode(FunctionFactory & factory);
-void registerFunctionGeohashesInBox(FunctionFactory & factory);
-
-#if USE_H3
-void registerFunctionGeoToH3(FunctionFactory &);
-#endif
-
 void registerFunctionsGeo(FunctionFactory & factory)
 {
     registerFunctionGeoDistance(factory);
@@ -27,8 +13,12 @@ void registerFunctionsGeo(FunctionFactory & factory)
 
 #if USE_H3
     registerFunctionGeoToH3(factory);
+    registerFunctionH3EdgeAngle(factory);
+    registerFunctionH3EdgeLengthM(factory);
+    registerFunctionH3GetResolution(factory);
+    registerFunctionH3IsValid(factory);
+    registerFunctionH3KRing(factory);
 #endif
 }
 
 }
-

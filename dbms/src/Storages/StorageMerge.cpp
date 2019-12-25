@@ -206,6 +206,24 @@ BlockInputStreams StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
+    InputSortingInfoPtr input_sorting_info;
+    if (query_info.order_by_optimizer)
+    {
+        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+        {
+            auto current_info = query_info.order_by_optimizer->getInputOrder(it->first);
+            if (it == selected_tables.begin())
+                input_sorting_info = current_info;
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+                input_sorting_info.reset();
+
+            if (!input_sorting_info)
+                break;
+        }
+
+        query_info.input_sorting_info = input_sorting_info;
+    }
+
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);

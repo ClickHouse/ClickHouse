@@ -6,15 +6,16 @@ namespace DB
 {
 
 template <typename ToType, typename Name>
-class PreparedFunctionRandomConstant : public PreparedFunctionImpl
+class ExecutableFunctionRandomConstant : public IExecutableFunctionImpl
 {
 public:
-    explicit PreparedFunctionRandomConstant(ToType value_) : value(value_) {}
+    explicit ExecutableFunctionRandomConstant(ToType value_) : value(value_) {}
 
     String getName() const override { return Name::name; }
 
-protected:
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+bool useDefaultImplementationForNulls() const override { return false; }
+
+    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
@@ -24,13 +25,13 @@ private:
 };
 
 template <typename ToType, typename Name>
-class FunctionBaseRandomConstant : public IFunctionBase
+class FunctionBaseRandomConstant : public IFunctionBaseImpl
 {
 public:
-    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_)
+    explicit FunctionBaseRandomConstant(ToType value_, DataTypes argument_types_, DataTypePtr return_type_)
         : value(value_)
         , argument_types(std::move(argument_types_))
-        , return_type(std::make_shared<DataTypeNumber<ToType>>()) {}
+        , return_type(std::move(return_type_)) {}
 
     String getName() const override { return Name::name; }
 
@@ -44,9 +45,9 @@ public:
         return return_type;
     }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_shared<PreparedFunctionRandomConstant<ToType, Name>>(value);
+        return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -59,18 +60,19 @@ private:
 };
 
 template <typename ToType, typename Name>
-class FunctionBuilderRandomConstant : public FunctionBuilderImpl
+class RandomConstantOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = Name::name;
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    void checkNumberOfArguments(size_t number_of_arguments) const override
+    void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
     {
         if (number_of_arguments > 1)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -78,15 +80,14 @@ public:
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    static FunctionBuilderPtr create(const Context &)
+    static FunctionOverloadResolverImplPtr create(const Context &)
     {
-        return std::make_shared<FunctionBuilderRandomConstant<ToType, Name>>();
+        return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
-protected:
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
 
@@ -97,13 +98,13 @@ protected:
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
-        return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types);
+        return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
     }
 };
 
 
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
-using FunctionBuilderRandConstant = FunctionBuilderRandomConstant<UInt32, NameRandConstant>;
+using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameRandConstant>;
 
 void registerFunctionRandConstant(FunctionFactory & factory)
 {

@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
@@ -178,7 +177,7 @@ void DatabaseOnDisk::createTable(
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(table_name, table, getDataPath(query->as<ASTCreateQuery &>()));
+        attachTable(table_name, table, getTableDataPath(query->as<ASTCreateQuery &>()));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -193,10 +192,8 @@ void DatabaseOnDisk::createTable(
 
 void DatabaseOnDisk::removeTable(const Context & /* context */, const String & table_name)
 {
-    String table_data = getDataPath(table_name);
-
+    String table_data = getTableDataPath(table_name);
     StoragePtr res = detachTable(table_name);
-
     String table_metadata_path = getObjectMetadataPath(table_name);
 
     try
@@ -255,7 +252,7 @@ void DatabaseOnDisk::renameTable(
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(to_database.getDataPath(create),
+        table->rename(to_database.getTableDataPath(create),
                       to_database.getDatabaseName(),
                       to_table_name, table_lock);
     }
@@ -299,7 +296,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto database_metadata_path = getDatabaseMetadataPath(getMetadataPath());
+    auto metadata_dir_path = getMetadataPath();
+    auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
     ast = getCreateQueryFromMetadata(database_metadata_path, true);
     if (!ast)
     {
@@ -321,9 +319,7 @@ void DatabaseOnDisk::drop(const Context & context)
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
 {
-    String base_path = getMetadataPath();
-    //FIXME
-    return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
+    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
 }
 
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
@@ -355,12 +351,13 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const Ite
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             //const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-
-            //FIXME
-            //if (Poco::File(context.getPath() + getDataPath(object_name)).exists())
+            //if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
             //{
-            //    Poco::File(dir_it->path()).renameTo(object_name + ".sql");
-            //    LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously");
+            //    /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
+            //      //TODO check all paths
+            //    Poco::File(dir_it->path()).renameTo(context.getPath() + getMetadataPath() + object_name + ".sql");
+            //    LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+            //    iterating_function(object_name + ".sql");
             //}
             //else
             //{
@@ -389,13 +386,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const Ite
     }
 }
 
-String DatabaseOnDisk::getDatabaseMetadataPath(const String & base_path) const
-{
-    //FIXME
-    return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
-}
-
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error, bool remove_empty) const
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
 {
     String query;
 
@@ -426,7 +417,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + metadata_path, /* allow_multi_statements = */ false, 0);
+                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -458,16 +449,6 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     }
 
     return ast;
-}
-
-String DatabaseOnDisk::getDataPath(const String & table_name) const
-{
-    return data_path + escapeForFileName(table_name) + "/";
-}
-
-String DatabaseOnDisk::getDataPath(const ASTCreateQuery & query) const
-{
-    return getDataPath(query.table);
 }
 
 }

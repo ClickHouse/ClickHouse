@@ -20,7 +20,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, const Contex
     log = &Logger::get("DatabaseAtomic (" + name_ + ")");
 }
 
-String DatabaseAtomic::getDataPath(const String & table_name) const
+String DatabaseAtomic::getTableDataPath(const String & table_name) const
 {
     std::lock_guard lock(mutex);
     auto it = table_name_to_path.find(table_name);
@@ -29,7 +29,7 @@ String DatabaseAtomic::getDataPath(const String & table_name) const
     return data_path + it->second;
 }
 
-String DatabaseAtomic::getDataPath(const ASTCreateQuery & query) const
+String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
     stringToUUID(query.uuid);   /// Check UUID is valid
     const size_t uuid_prefix_len = 3;
@@ -78,7 +78,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     table->renameInMemory(to_database.getDatabaseName(), to_table_name);
 
     /// NOTE Non-atomic.
-    to_database.attachTable(to_table_name, table, getDataPath(table_name));
+    to_database.attachTable(to_table_name, table, getTableDataPath(table_name));
     detachTable(table_name);
     Poco::File(getObjectMetadataPath(table_name)).renameTo(to_database.getObjectMetadataPath(to_table_name));
 }

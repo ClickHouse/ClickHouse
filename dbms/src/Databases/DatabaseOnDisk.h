@@ -57,8 +57,8 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
-    String getDataPath(const String & table_name) const override;
-    String getDataPath(const ASTCreateQuery & query) const override;
+    String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
     String getMetadataPath() const override { return metadata_path; }
 
 protected:
@@ -70,7 +70,6 @@ protected:
         const String & table_name,
         bool throw_on_error) const override;
 
-    String getDatabaseMetadataPath(const String & base_path) const;
     ASTPtr parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
 

@@ -2,25 +2,29 @@
 
 ## floor(x\[, N\])
 
-Returns the largest round number that is less than or equal to x. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn't exact.
+Returns the largest round number that is less than or equal to `x`. A round number is a multiple of 1/10N, or the nearest number of the appropriate data type if 1 / 10N isn't exact.
 'N' is an integer constant, optional parameter. By default it is zero, which means to round to an integer.
 'N' may be negative.
 
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
 `x` is any numeric type. The result is a number of the same type.
-For integer arguments, it makes sense to round with a negative 'N' value (for non-negative 'N', the function doesn't do anything).
+For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function doesn't do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
 ## ceil(x\[, N\]), ceiling(x\[, N\])
 
-Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above).
+Returns the smallest round number that is greater than or equal to `x`. In every other way, it is the same as the `floor` function (see above).
 
-## round(x[, N]) {#rounding_functions-round}
+## trunc(x\[, N\]), truncate(x\[, N\])
+
+Returns the round number with largest absolute value that has an absolute value less than or equal to `x`'s. In every other way, it is the same as the 'floor' function (see above).
+
+## round(x\[, N\]) {#rounding_functions-round}
 
 Rounds a value to a specified number of decimal places.
 
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker's rounding for float number types and rounds away from zero for the other number types.
 
 ```sql
 round(expression [, decimal_places])
@@ -91,3 +95,9 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
+
+## roundBankers(x\[, N\])
+
+Rounds a value to a specified number of decimal places.
+
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function always return the number having the nearest even digit (banker's rounding).
