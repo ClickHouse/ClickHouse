@@ -2,13 +2,14 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionsConversion.h>
 
 
 namespace DB
 {
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context & context)
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
     if (arg.type->equals(*type))
         return arg.column;
@@ -28,13 +29,18 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
         }
     };
 
-    FunctionBuilderPtr func_builder_cast = FunctionFactory::instance().get("CAST", context);
+    FunctionBuilderPtr func_builder_cast = FunctionBuilderCast::createImpl();
 
     ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
     auto func_cast = func_builder_cast->build(arguments);
 
     func_cast->execute(temporary_block, {0, 1}, 2, arg.column->size());
     return temporary_block.getByPosition(2).column;
+}
+
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context &)
+{
+    return castColumn(arg, type);
 }
 
 }

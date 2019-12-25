@@ -356,7 +356,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -369,7 +368,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -382,7 +380,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
