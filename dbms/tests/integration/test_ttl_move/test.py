@@ -1,8 +1,11 @@
+from __future__ import print_function
+
 import json
 import pytest
 import random
 import re
 import string
+import sys
 import threading
 import time
 from multiprocessing.dummy import Pool
@@ -552,6 +555,8 @@ limitations under the License."""
         assert node1.query("SELECT count() FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines() == ["1"]
 
         time.sleep(6)
+
+        print(node1.exec_in_container("bash -c 'cat /jbod*/data/default/{name}/*/ttl.txt'".format(name=name)), file=sys.stderr)
 
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) in (({"external"},) if positive else ({"jbod1"}, {"jbod2"}))
