@@ -32,7 +32,7 @@ select 'dictGet', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGet(dict_name, 'value', key) from test_01037.points;
 select 'dictGetOrDefault', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGetOrDefault(dict_name, 'name', key, 'www'),
-       dictGetOrDefault(dict_name, 'value', key, 1234) from test_01037.points;
+       dictGetOrDefault(dict_name, 'value', key, toUInt64(1234)) from test_01037.points;
 select 'dictGetOrDefault', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGetOrDefault(dict_name, 'name', key, def_s),
        dictGetOrDefault(dict_name, 'value', key, def_i) from test_01037.points;
