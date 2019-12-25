@@ -71,12 +71,12 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory)
     factory.registerInputFormatProcessor("Protobuf", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
         IRowInputFormat::Params params,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
         return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
-                                                        FormatSchemaInfo(context, context.getSettingsRef().format_schema, "Protobuf", true));
+            FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                             settings.schema.is_server, settings.schema.format_schema_path));
     });
 }
 

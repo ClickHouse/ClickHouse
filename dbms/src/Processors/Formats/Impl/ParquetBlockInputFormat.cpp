@@ -15,8 +15,9 @@
 namespace DB
 {
 
-    ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer &in_, Block header_, const Context &context_)
-            : IInputFormat(std::move(header_), in_), context{context_} {
+    ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
+            : IInputFormat(std::move(header_), in_)
+    {
     }
 
     Chunk ParquetBlockInputFormat::generate()
@@ -59,7 +60,7 @@ namespace DB
         std::shared_ptr<arrow::Table> table;
         arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, &table);
 
-        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context, "Parquet");
+        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, "Parquet");
         return res;
     }
 
@@ -69,11 +70,10 @@ namespace DB
                 "Parquet",
                 [](ReadBuffer &buf,
                    const Block &sample,
-                   const Context &context,
                    const RowInputFormatParams &,
                    const FormatSettings & /* settings */)
                 {
-                    return std::make_shared<ParquetBlockInputFormat>(buf, sample, context);
+                    return std::make_shared<ParquetBlockInputFormat>(buf, sample);
                 });
     }
 

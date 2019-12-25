@@ -413,7 +413,6 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
         factory.registerInputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {

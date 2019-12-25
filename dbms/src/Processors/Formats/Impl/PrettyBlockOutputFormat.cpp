@@ -261,7 +261,6 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -271,7 +270,6 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {

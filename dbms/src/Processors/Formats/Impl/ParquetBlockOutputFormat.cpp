@@ -426,7 +426,6 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const Context & /*context*/,
            FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {

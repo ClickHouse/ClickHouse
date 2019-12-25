@@ -12,8 +12,8 @@
 
 namespace DB
 {
-    ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_, const Context &context_)
-            : IInputFormat(std::move(header_), in_), context{context_} {
+    ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_) : IInputFormat(std::move(header_), in_)
+    {
     }
 
     Chunk ORCBlockInputFormat::generate()
@@ -57,7 +57,7 @@ namespace DB
 
         arrow::Status read_status = file_reader->Read(&table);
 
-        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, context, "ORC");
+        ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, "ORC");
 
         return res;
     }
@@ -68,11 +68,10 @@ namespace DB
                 "ORC",
                 [](ReadBuffer &buf,
                    const Block &sample,
-                   const Context &context,
                    const RowInputFormatParams &,
                    const FormatSettings & /* settings */)
                    {
-                    return std::make_shared<ORCBlockInputFormat>(buf, sample, context);
+                    return std::make_shared<ORCBlockInputFormat>(buf, sample);
                 });
     }
 

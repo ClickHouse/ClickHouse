@@ -49,7 +49,6 @@ private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
         UInt64 max_block_size,
         ReadCallback callback,
         const FormatSettings & settings)>;
@@ -57,21 +56,18 @@ private:
     using OutputCreator = std::function<BlockOutputStreamPtr(
         WriteBuffer & buf,
         const Block & sample,
-        const Context & context,
         WriteCallback callback,
         const FormatSettings & settings)>;
 
     using InputProcessorCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
-            const Context & context,
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
     using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const Context & context,
             WriteCallback callback,
             const FormatSettings & settings)>;
 

@@ -262,7 +262,6 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
     factory.registerInputFormatProcessor("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {

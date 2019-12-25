@@ -147,7 +147,6 @@ void registerInputFormatProcessorNative(FormatFactory & factory)
     factory.registerInputFormatProcessor("Native", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         const RowInputFormatParams &,
         const FormatSettings &)
     {
@@ -160,7 +159,6 @@ void registerOutputFormatProcessorNative(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings &)
     {
