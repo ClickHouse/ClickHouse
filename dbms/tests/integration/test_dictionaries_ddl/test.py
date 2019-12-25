@@ -182,3 +182,35 @@ def test_conflicting_name(started_cluster):
 
     # old version still works
     node3.query("select dictGetUInt8('test.conflicting_dictionary', 'SomeValue1', toUInt64(17))") == '17\n'
+
+def test_http_dictionary_restrictions(started_cluster):
+    try:
+        node3.query("""
+        CREATE DICTIONARY test.restricted_http_dictionary (
+            id UInt64,
+            value String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(HTTP(URL 'http://somehost.net' FORMAT TabSeparated))
+        LIFETIME(1)
+        """)
+        node3.query("SELECT dictGetString('test.restricted_http_dictionary', 'value', toUInt64(1))")
+    except QueryRuntimeException as ex:
+        assert 'is not allowed in config.xml' in str(ex)
+
+def test_file_dictionary_restrictions(started_cluster):
+    try:
+        node3.query("""
+        CREATE DICTIONARY test.restricted_file_dictionary (
+            id UInt64,
+            value String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(FILE(PATH '/usr/bin/cat' FORMAT TabSeparated))
+        LIFETIME(1)
+        """)
+        node3.query("SELECT dictGetString('test.restricted_file_dictionary', 'value', toUInt64(1))")
+    except QueryRuntimeException as ex:
+        assert 'is not inside' in str(ex)

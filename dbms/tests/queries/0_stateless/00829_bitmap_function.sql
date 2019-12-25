@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS bitmap_test;
 CREATE TABLE bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
 INSERT INTO bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
 INSERT INTO bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
+INSERT INTO bitmap_test SELECT '2019-01-03', 2, number FROM numbers(1,10);
 
 
 SELECT groupBitmap( uid ) AS user_num FROM bitmap_test;
@@ -64,6 +65,9 @@ SELECT count(*) FROM bitmap_test WHERE 0 = bitmapHasAny((SELECT groupBitmapState
 SELECT count(*) FROM bitmap_test WHERE bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
 
 SELECT count(*) FROM bitmap_test WHERE 0 = bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
+
+-- PR#8082
+SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3], 'Array(UInt32)')))) FROM bitmap_test GROUP BY city_id;
 
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;

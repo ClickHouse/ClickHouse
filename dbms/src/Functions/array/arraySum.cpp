@@ -1,7 +1,10 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -31,25 +34,43 @@ struct ArraySumImpl
         if (which.isFloat())
             return std::make_shared<DataTypeFloat64>();
 
+        if (which.isDecimal())
+        {
+            UInt32 scale = getDecimalScale(*expression_return);
+            return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::maxPrecision<Decimal128>(), scale);
+        }
+
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
         if (!column)
         {
-            const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
+            const ColumnConst * column_const = checkAndGetColumnConst<ColVecType>(&*mapped);
 
             if (!column_const)
                 return false;
 
             const Element x = column_const->template getValue<Element>();
 
-            auto res_column = ColumnVector<Result>::create(offsets.size());
-            typename ColumnVector<Result>::Container & res = res_column->getData();
+            typename ColVecResult::MutablePtr res_column;
+            if constexpr (IsDecimalNumber<Element>)
+            {
+                const typename ColVecType::Container & data =
+                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
+                res_column = ColVecResult::create(offsets.size(), data.getScale());
+            }
+            else
+                res_column = ColVecResult::create(offsets.size());
+
+            typename ColVecResult::Container & res = res_column->getData();
 
             size_t pos = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
@@ -62,9 +83,15 @@ struct ArraySumImpl
             return true;
         }
 
-        const typename ColumnVector<Element>::Container & data = column->getData();
-        auto res_column = ColumnVector<Result>::create(offsets.size());
-        typename ColumnVector<Result>::Container & res = res_column->getData();
+        const typename ColVecType::Container & data = column->getData();
+
+        typename ColVecResult::MutablePtr res_column;
+        if constexpr (IsDecimalNumber<Element>)
+            res_column = ColVecResult::create(offsets.size(), data.getScale());
+        else
+            res_column = ColVecResult::create(offsets.size());
+
+        typename ColVecResult::Container & res = res_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -95,7 +122,10 @@ struct ArraySumImpl
             executeType<  Int32,  Int64>(mapped, offsets, res) ||
             executeType<  Int64,  Int64>(mapped, offsets, res) ||
             executeType<Float32,Float64>(mapped, offsets, res) ||
-            executeType<Float64,Float64>(mapped, offsets, res))
+            executeType<Float64,Float64>(mapped, offsets, res) ||
+            executeType<Decimal32, Decimal128>(mapped, offsets, res) ||
+            executeType<Decimal64, Decimal128>(mapped, offsets, res) ||
+            executeType<Decimal128, Decimal128>(mapped, offsets, res))
             return res;
         else
             throw Exception("Unexpected column for arraySum: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);

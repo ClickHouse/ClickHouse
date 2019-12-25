@@ -1,11 +1,9 @@
 #include "MySQLDictionarySource.h"
-
 #include <Poco/Util/AbstractConfiguration.h>
-#include "config_core.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-
-
+#include "config_core.h"
+#include "registerDictionaries.h"
 
 namespace DB
 {
@@ -20,7 +18,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */) -> DictionarySourcePtr {
+                                 const Context & /* context */,
+                                 bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 #else

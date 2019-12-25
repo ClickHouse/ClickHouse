@@ -1942,6 +1942,9 @@ public:
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     try

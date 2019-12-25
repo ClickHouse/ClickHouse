@@ -39,7 +39,7 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     service clickhouse-server start && sleep 5 \
     && /s3downloader --dataset-names $DATASETS \
     && chmod 777 -R /var/lib/clickhouse \
-    && clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets" \
+    && clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary" \
     && clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test" \
     && service clickhouse-server restart && sleep 5 \
     && clickhouse-client --query "SHOW TABLES FROM datasets" \

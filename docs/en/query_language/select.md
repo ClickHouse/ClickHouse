@@ -112,8 +112,20 @@ In contrast to standard SQL, a synonym does not need to be specified after a sub
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
-The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
+#### FINAL Modifier {#select-from-final}
+
+Appliable when selecting data from tables of the [MergeTree](../operations/table_engines/mergetree.md)-engine family, except `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges data before returning the result and thus performs all data transformations that are supposed to happen during merges for given table engine.
+
+Also supported for:
+- [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, if they created over `MergeTree`-engine tables.
+
+The queries that use `FINAL` are executed slower than similar queries that don't, because:
+
+- Query is executed in a single thread, and data is merged during query execution.
+- Queries with `FINAL` read primary key columns additionally to the columns specified in the query.
+
+In the most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 

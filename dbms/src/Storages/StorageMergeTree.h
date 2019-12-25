@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -58,7 +58,10 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+
+    /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
+
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop(TableStructureWriteLockHolder &) override;
@@ -75,6 +78,10 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
+
+    /// Mutex and condvar for synchronous mutations wait
+    std::mutex mutation_wait_mutex;
+    std::condition_variable mutation_wait_event;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -135,6 +142,8 @@ private:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
+    /// Just checks versions of each active data part
+    bool isMutationDone(Int64 mutation_version) const;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

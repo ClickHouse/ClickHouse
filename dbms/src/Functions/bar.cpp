@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -7,6 +7,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
+#include "registerFunctions.h"
 
 
 namespace DB

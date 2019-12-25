@@ -65,14 +65,23 @@ FilterTransform::FilterTransform(
 IProcessor::Status FilterTransform::prepare()
 {
     if (constant_filter_description.always_false
-        || expression->checkColumnIsAlwaysFalse(filter_column_name))
+        /// Optimization for `WHERE column in (empty set)`.
+        /// The result will not change after set was created, so we can skip this check.
+        /// It is implemented in prepare() stop pipeline before reading from input port.
+        || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name)))
     {
         input.close();
         output.finish();
         return Status::Finished;
     }
 
-    return ISimpleTransform::prepare();
+    auto status = ISimpleTransform::prepare();
+
+    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
+    if (status != IProcessor::Status::PortFull)
+        are_prepared_sets_initialized = true;
+
+    return status;
 }
 
 
