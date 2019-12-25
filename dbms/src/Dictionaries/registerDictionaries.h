@@ -24,6 +24,7 @@ void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
+void registerDictionaryPolygon(DictionaryFactory & factory);
 
 void registerDictionaries();
 }
