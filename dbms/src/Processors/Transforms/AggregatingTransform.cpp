@@ -176,7 +176,12 @@ public:
 
         /// Check can output.
         if (output.isFinished())
+        {
+            for (auto & input : inputs)
+                input.close();
+
             return Status::Finished;
+        }
 
         if (!output.canPush())
             return Status::PortFull;
