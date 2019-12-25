@@ -125,9 +125,9 @@ namespace
 void validateArgumentsImpl(const IFunction & func,
                            const ColumnsWithTypeAndName & arguments,
                            size_t argument_offset,
-                           const FunctionArgumentDescriptors & decriptors)
+                           const FunctionArgumentDescriptors & descriptors)
 {
-    for (size_t i = 0; i < decriptors.size(); ++i)
+    for (size_t i = 0; i < descriptors.size(); ++i)
     {
         const auto argument_index = i + argument_offset;
         if (argument_index >= arguments.size())
@@ -136,28 +136,28 @@ void validateArgumentsImpl(const IFunction & func,
         }
 
         const auto & arg = arguments[i + argument_offset];
-        const auto validator = decriptors[i];
-        if (!validator.isValid(arg.type, arg.column))
+        const auto descriptor = descriptors[i];
+        if (int errorCode = descriptor.isValid(arg.type, arg.column); errorCode != 0)
             throw Exception("Illegal type of argument #" + std::to_string(i)
-                            + (validator.argument_name ? " '" + std::string(validator.argument_name) + "'": std::string{})
+                            + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'": String{})
                             + " of function " + func.getName()
-                            + ", expected " + validator.expected_type_description
+                            + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
                             + (arg.type ? ", got " + arg.type->getName() : std::string{}),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                            errorCode);
     }
 }
 
 }
 
-bool FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
+int FunctionArgumentDescriptor::isValid(const DataTypePtr & data_type, const ColumnPtr & column) const
 {
-    if (type_validator_func && !(data_type && type_validator_func(*data_type)))
-        return false;
+    if (type_validator_func && (data_type == nullptr || type_validator_func(*data_type) == false))
+        return ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
 
-    if (column_validator_func && !(column && column_validator_func(*column)))
-        return false;
+    if (column_validator_func && (column == nullptr || column_validator_func(*column) == false))
+        return ErrorCodes::ILLEGAL_COLUMN;
 
-    return true;
+    return 0;
 }
 
 void validateFunctionArgumentTypes(const IFunction & func,

@@ -90,7 +90,15 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
         size_t argument_index, bool (* validator_func)(const IDataType &),
         const char * expected_type_description);
 
-// Simple validator that is used in conjunction with validateFunctionArgumentTypes() to check if function arguments are as expected.
+/** Simple validator that is used in conjunction with validateFunctionArgumentTypes() to check if function arguments are as expected
+ *
+ * Also it is used to generate function description when arguments do not match expected ones.
+ * Any field can be null:
+ *  `argument_name` - if not null, reported via type check errors.
+ *  `expected_type_description` - if not null, reported via type check errors.
+ *  `type_validator_func` - if not null, used to validate data type of function argument.
+ *  `column_validator_func` - if not null, used to validate column of function argument.
+ */
 struct FunctionArgumentDescriptor
 {
     const char * argument_name;
@@ -100,17 +108,28 @@ struct FunctionArgumentDescriptor
 
     const char * expected_type_description;
 
-    bool isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
+    /** Validate argument type and column.
+     *
+     * Returns non-zero error code if:
+     *     Validator != nullptr && (Value == nullptr || Validator(*Value) == false)
+     * For:
+     *     Validator is either `type_validator_func` or `column_validator_func`
+     *     Value is either `data_type` or `column` respectively.
+     * ILLEGAL_TYPE_OF_ARGUMENT if type validation fails
+     *
+     */
+    int isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
 };
 
 using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
 
 /** Validate that function arguments match specification.
  *
- * Designed to simplify argument validation
- * for functions with variable arguments (e.g. depending on result type or other trait).
- * first, checks that mandatory args present and have valid type.
- * second, checks optional arguents types, skipping ones that are missing.
+ * Designed to simplify argument validation for functions with variable arguments
+ * (e.g. depending on result type or other trait).
+ * First, checks that number of arguments is as expected (including optional arguments).
+ * Second, checks that mandatory args present and have valid type.
+ * Third, checks optional arguents types, skipping ones that are missing.
  *
  * Please note that if you have several optional arguments, like f([a, b, c]),
  * only these calls are considered valid:
@@ -119,7 +138,7 @@ using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
  *  f(a, b, c)
  *
  * But NOT these: f(a, c), f(b, c)
- * In other words you can't skip
+ * In other words you can't omit middle optional arguments (just like in regular C++).
  *
  * If any mandatory arg is missing, throw an exception, with explicit description of expected arguments.
  */
