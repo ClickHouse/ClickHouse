@@ -5,11 +5,13 @@ nav:
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Производительность': 'introduction/performance.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
+  - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':
-  - 'Установка и запуск': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - 'Установка': 'getting_started/install.md'
+  - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'
@@ -172,6 +174,7 @@ nav:
       - 'Expression': 'data_types/special_data_types/expression.md'
       - 'Set': 'data_types/special_data_types/set.md'
       - 'Nothing': 'data_types/special_data_types/nothing.md'
+      - 'Interval': 'data_types/special_data_types/interval.md'
     - 'Domains':
       - 'Overview': 'data_types/domains/overview.md'
       - 'IPv4': 'data_types/domains/ipv4.md'
@@ -214,7 +217,7 @@ nav:
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
-  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross.md'
+  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
   - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'

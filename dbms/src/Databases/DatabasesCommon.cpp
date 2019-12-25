@@ -153,7 +153,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 
         auto it = tables.find(table_name);
         if (it == tables.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + backQuote(name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second;
         tables.erase(it);
     }
@@ -161,19 +161,21 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
-void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name, const Context & context, bool reload)
+void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name, const Context & context)
 {
+    String full_name = getDatabaseName() + "." + dictionary_name;
     {
         std::lock_guard lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
-            throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         dictionaries.erase(it);
     }
 
-    if (reload)
-        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name);
-
+    /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been removed
+    /// and therefore it will unload the dictionary.
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    external_loader.reloadConfig(getDatabaseName(), full_name);
 }
 
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
@@ -184,22 +186,19 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 }
 
 
-void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name, const Context & context, bool load)
+void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name, const Context & context)
 {
-    const auto & external_loader = context.getExternalDictionariesLoader();
-
     String full_name = getDatabaseName() + "." + dictionary_name;
     {
         std::lock_guard lock(mutex);
-        auto status = external_loader.getCurrentStatus(full_name);
-        if (status != ExternalLoader::Status::NOT_EXIST || !dictionaries.emplace(dictionary_name).second)
-            throw Exception(
-                      "Dictionary " + full_name + " already exists.",
-                      ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        if (!dictionaries.emplace(dictionary_name).second)
+            throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    if (load)
-        external_loader.reload(full_name, true);
+    /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been added
+    /// and in case `dictionaries_lazy_load == false` it will load the dictionary.
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    external_loader.reloadConfig(getDatabaseName(), full_name);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

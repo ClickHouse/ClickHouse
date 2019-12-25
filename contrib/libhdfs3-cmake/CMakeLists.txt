@@ -182,6 +182,9 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/common/FileWrapper.h
     )
 
+# old kernels (< 3.17) doens't have SYS_getrandom. Always use POSIX implementation to have better compatibility
+set_source_files_properties(${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp PROPERTIES COMPILE_FLAGS "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1")
+
 # target
 add_library(hdfs3 ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
 

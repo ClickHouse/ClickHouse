@@ -1,46 +1,42 @@
 #pragma once
 
 #include <type_traits>
-#include <utility>
-#include <iterator>
-#include <boost/iterator/counting_iterator.hpp>
+#include <boost/range/counting_range.hpp>
+#include <boost/range/adaptor/transformed.hpp>
 
 
-/** Numeric range iterator, used to represent a half-closed interval [begin, end).
-  * In conjunction with std::reverse_iterator allows for forward and backward iteration
-  * over corresponding interval.
-  */
 namespace ext
 {
-    template <typename T>
-    using range_iterator = boost::counting_iterator<T>;
-
-    /** Range-based for loop adapter for (reverse_)range_iterator.
-      * By and large should be in conjunction with ext::range and ext::reverse_range.
-      */
-    template <typename T>
-    struct range_wrapper
+    /// For loop adaptor which is used to iterate through a half-closed interval [begin, end).
+    template <typename BeginType, typename EndType>
+    inline auto range(BeginType begin, EndType end)
     {
-        using value_type = typename std::remove_reference<T>::type;
-        using iterator = range_iterator<value_type>;
+        using CommonType = typename std::common_type<BeginType, EndType>::type;
+        return boost::counting_range<CommonType>(begin, end);
+    }
 
-        value_type begin_;
-        value_type end_;
-
-        iterator begin() const { return iterator(begin_); }
-        iterator end() const { return iterator(end_); }
-    };
-
-    /** Constructs range_wrapper for forward-iteration over [begin, end) in range-based for loop.
-      *  Usage example:
-      *      for (const auto i : ext::range(0, 4)) print(i);
-      *  Output:
-      *      0 1 2 3
-      */
-    template <typename T1, typename T2>
-    inline range_wrapper<typename std::common_type<T1, T2>::type> range(T1 begin, T2 end)
+    template <typename Type>
+    inline auto range(Type end)
     {
-        using common_type = typename std::common_type<T1, T2>::type;
-        return { static_cast<common_type>(begin), static_cast<common_type>(end) };
+        return range<Type, Type>(static_cast<Type>(0), end);
+    }
+
+    /// The same as range(), but every value is casted statically to a specified `ValueType`.
+    /// This is useful to iterate through all constants of a enum.
+    template <typename ValueType, typename BeginType, typename EndType>
+    inline auto range_with_static_cast(BeginType begin, EndType end)
+    {
+        using CommonType = typename std::common_type<BeginType, EndType>::type;
+        if constexpr (std::is_same_v<ValueType, CommonType>)
+            return boost::counting_range<CommonType>(begin, end);
+        else
+            return boost::counting_range<CommonType>(begin, end)
+                | boost::adaptors::transformed([](CommonType x) -> ValueType { return static_cast<ValueType>(x); });
+    }
+
+    template <typename ValueType, typename EndType>
+    inline auto range_with_static_cast(EndType end)
+    {
+        return range_with_static_cast<ValueType, EndType, EndType>(static_cast<EndType>(0), end);
     }
 }

@@ -294,7 +294,7 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
     return input_files;
 }
 
-std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
+static std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
@@ -318,6 +318,9 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
     }
     return result;
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try

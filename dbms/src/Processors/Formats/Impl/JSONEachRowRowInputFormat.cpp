@@ -256,6 +256,15 @@ void JSONEachRowRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+void JSONEachRowRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    nested_prefix_length = 0;
+    read_columns.clear();
+    seen_columns.clear();
+    prev_positions.clear();
+}
+
 
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
@@ -270,7 +279,7 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
     });
 }
 
-bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     skipWhitespaceIfAny(in);
 

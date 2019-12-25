@@ -128,6 +128,8 @@ Yu](https://github.com/yuzhichang))
 * Introduce CustomSeparated data format that supports custom escaping and
   delimiter rules.  [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
 ([tavplubix](https://github.com/tavplubix))
+* Support Redis as source of external dictionary. [#4361](https://github.com/ClickHouse/ClickHouse/pull/4361) [#6962](https://github.com/ClickHouse/ClickHouse/pull/6962) ([comunodi](https://github.com/comunodi), [Anton
+Popov](https://github.com/CurtizJ))
 
 ### Bug Fix
 * Fix wrong query result if it has `WHERE IN (SELECT ...)` section and `optimize_read_in_order` is
@@ -677,7 +679,7 @@ fix comments to make obvious that it may throw.
 
 ### Backward Incompatible Change
 * Removed rarely used table function `catBoostPool` and storage `CatBoostPool`. If you have used this table function, please write email to `clickhouse-feedback@yandex-team.com`. Note that CatBoost integration remains and will be supported. [#6279](https://github.com/ClickHouse/ClickHouse/pull/6279) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Disable `ANY RIGHT JOIN` and `ANY FULL JOIN` by default. Set `any_join_get_any_from_right_table` setting to enable them. [#5126](https://github.com/ClickHouse/ClickHouse/issues/5126) [#6351](https://github.com/ClickHouse/ClickHouse/pull/6351) ([Artem Zuikov](https://github.com/4ertus2))
+* Disable `ANY RIGHT JOIN` and `ANY FULL JOIN` by default. Set `any_join_distinct_right_table_keys` setting to enable them. [#5126](https://github.com/ClickHouse/ClickHouse/issues/5126) [#6351](https://github.com/ClickHouse/ClickHouse/pull/6351) ([Artem Zuikov](https://github.com/4ertus2))
 
 ## ClickHouse release 19.13.6.51, 2019-10-02
 
