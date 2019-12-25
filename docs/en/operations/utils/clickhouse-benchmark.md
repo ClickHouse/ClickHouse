@@ -35,7 +35,7 @@ clickhouse-benchmark [keys] < queries_file
 - `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
 - `-s`, `--secure` — Using TLS connection.
 - `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
-- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test). It's used to assume whether the two distributions aren't different with the selected level of confidence.
+- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) test to determine whether the two distributions aren't different with the selected level of confidence.
 - `--cumulative` — Printing cumulative data instead of data per interval.
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
 - `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` outputs a report to the specified JSON-file.
@@ -81,11 +81,11 @@ In the report you can find:
 
     - Endpoint of ClickHouse server.
     - Number of processed queries.
-    - QPS: Metric "how many queries server performed per second" that measured in a period (`--delay`) of reporting.
-    - RPS: Metric "how many rows server read per second" that measured in a period (`--delay`) of reporting.
-    - MiB/s: Metric "how many mebibytes server read per second" that measured in a period (`--delay`) of reporting.
-    - result RPS: Metric "how many rows placed by server to the result of a query per second" that measured in a period (`--delay`) of reporting.
-    - result MiB/s. Metric "how many mebibytes placed by server to the result of a query per second" that measured for a period (`--delay`) of reporting.
+    - QPS: QPS: How many queries server performed per second during a period specified in the `--delay` argument.
+    - RPS: How many rows server read per second during a period specified in the `--delay` argument.
+    - MiB/s: How many mebibytes server read per second during a period specified in the `--delay` argument.
+    - result RPS: How many rows placed by server to the result of a query per second during a period specified in the `--delay` argument.
+    - result MiB/s. How many mebibytes placed by server to the result of a query per second during a period specified in the `--delay` argument.
 
 - Percentiles of queries execution time.
 
@@ -94,7 +94,7 @@ In the report you can find:
 
 `clickhouse-benchmark` can compare performances for two running ClickHouse servers. 
 
-To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
+To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
 
 ## Example {#clickhouse-benchmark-example}
 
