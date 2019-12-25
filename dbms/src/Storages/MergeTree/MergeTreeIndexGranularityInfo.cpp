@@ -33,14 +33,6 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
     const MergeTreeData & storage, MergeTreeDataPartType part_type, size_t columns_num)
 {
-    initialize(storage, part_type, columns_num);
-}
-
-void MergeTreeIndexGranularityInfo::initialize(const MergeTreeData & storage, MergeTreeDataPartType part_type, size_t columns_num)
-{
-    if (initialized)
-        return;
-
     const auto storage_settings = storage.getSettings();
     fixed_index_granularity = storage_settings->index_granularity;
 
@@ -53,12 +45,12 @@ void MergeTreeIndexGranularityInfo::initialize(const MergeTreeData & storage, Me
     }
     else
         setAdaptive(storage_settings->index_granularity_bytes, part_type, columns_num);
-}
 
+    initialized = true;
+}
 
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const std::string & path_to_part)
 {
-    /// FIXME check when we cant create compact part
     auto mrk_ext = getMrkExtensionFromFS(path_to_part);
     if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
         setNonAdaptive();

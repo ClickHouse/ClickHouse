@@ -227,7 +227,6 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & columns_)
     sample_block.clear();
     for (const auto & column : columns)
         sample_block.insert({column.type, column.name});
-    index_granularity_info.initialize(storage, getType(), columns.size());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart() = default;
@@ -591,7 +590,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         columns.readText(file);
     }
 
-    index_granularity_info.initialize(storage, getType(), columns.size());
+    index_granularity_info = MergeTreeIndexGranularityInfo{storage, getType(), columns.size()};
     for (const auto & it : columns)
         sample_block.insert({it.type, it.name});
 }
