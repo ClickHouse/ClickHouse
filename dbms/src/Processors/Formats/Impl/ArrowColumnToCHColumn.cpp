@@ -270,7 +270,7 @@ namespace DB
         ++row_group_current;
 
         NameToColumnPtr name_to_column_ptr;
-        for (const auto column_name : table->ColumnNames())
+        for (const auto& column_name : table->ColumnNames())
         {
             std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
             name_to_column_ptr[column_name] = arrow_column;
