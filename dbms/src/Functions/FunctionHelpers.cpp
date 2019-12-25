@@ -139,10 +139,10 @@ void validateArgumentsImpl(const IFunction & func,
         const auto descriptor = descriptors[i];
         if (int errorCode = descriptor.isValid(arg.type, arg.column); errorCode != 0)
             throw Exception("Illegal type of argument #" + std::to_string(i)
-                            + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'": String{})
+                            + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
-                            + (arg.type ? ", got " + arg.type->getName() : std::string{}),
+                            + (arg.type ? ", got " + arg.type->getName() : String{}),
                             errorCode);
     }
 }
