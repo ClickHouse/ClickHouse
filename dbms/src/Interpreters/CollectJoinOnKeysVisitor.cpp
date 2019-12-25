@@ -170,11 +170,22 @@ size_t CollectJoinOnKeysMatcher::getTableForIdentifiers(std::vector<const ASTIde
         if (!membership)
         {
             const String & name = identifier->name;
-            bool in_left_table = data.source_columns.count(name);
-            bool in_right_table = data.joined_columns.count(name);
+            bool in_left_table = data.left_table.hasColumn(name);
+            bool in_right_table = data.right_table.hasColumn(name);
 
             if (in_left_table && in_right_table)
-                throw Exception("Column '" + name + "' is ambiguous", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            {
+                /// Relax ambiguous check for multiple JOINs
+                if (auto original_name = IdentifierSemantic::uncover(*identifier))
+                {
+                    auto match = IdentifierSemantic::canReferColumnToTable(*original_name, data.right_table.table);
+                    if (match == IdentifierSemantic::ColumnMatch::NoMatch)
+                        in_right_table = false;
+                    in_left_table = !in_right_table;
+                }
+                else
+                    throw Exception("Column '" + name + "' is ambiguous", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            }
 
             if (in_left_table)
                 membership = 1;

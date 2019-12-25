@@ -154,11 +154,6 @@ public:
     {
         assert_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
     }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
 };
 
 }

@@ -27,10 +27,6 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
-    if(MAKE_STATIC_LIBRARIES)
-        list(APPEND glibc_compatibility_sources libcxxabi/cxa_thread_atexit.cpp)
-    endif()
-
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 

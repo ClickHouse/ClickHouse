@@ -72,11 +72,6 @@ public:
         return nested_function->getName() + "Resample";
     }
 
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
-
     bool isState() const override
     {
         return nested_function->isState();

@@ -96,7 +96,6 @@ public:
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
-    NameSet getOriginalColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_columns) const;
 
