@@ -175,7 +175,7 @@ void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, Padd
         ++row;
     }
 
-    query_count.fetch_add(rows, std::memory_order_relaxed);
+    query_count.fetch_add(row, std::memory_order_relaxed);
 }
 
 size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name) const
