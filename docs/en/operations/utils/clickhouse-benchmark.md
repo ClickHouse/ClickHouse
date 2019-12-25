@@ -25,17 +25,17 @@ Then pass this file to a standard input of `clickhouse-benchmark`.
 clickhouse-benchmark [keys] < queries_file
 ```
 
-## Keys
+## Keys {#clickhouse-benchmark-keys}
 
-- `-c  N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
+- `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 - `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
-- `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`.
-- `-p N`, `--port=N` — Server port. Default value: 9000.
+- `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
+- `-p N`, `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
 - `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 - `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
 - `-s`, `--secure` — Using TLS connection.
 - `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
-- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5.
+- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test). It's used to assume whether the two distributions aren't different with the selected level of confidence.
 - `--cumulative` — Printing cumulative data instead of data per interval.
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
 - `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` outputs a report to the specified JSON-file.
@@ -47,8 +47,7 @@ clickhouse-benchmark [keys] < queries_file
 
 If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
-## Output
-
+## Output {#clickhouse-benchmark-output}
 
 By default, `clickhouse-benchmark` reports for each `--delay` interval.
 
@@ -82,64 +81,66 @@ In the report you can find:
 
     - Endpoint of ClickHouse server.
     - Number of processed queries.
-    - QPS. Queries Per Second server metric for the period (`--delay`) of reporting.
-    - RPS. Rows Per Second server metric for the period (`--delay`) of reporting.
-    - MiB/s. Megabytes Per Second server metric for the period (`--delay`) of reporting.
-    - result RPS. Rows Per Second server metric for the whole period.
-    - result MiB/s. Megabytes Per Second server metric for the whole period.
+    - QPS: Metric "how many queries server performed per second" that measured in a period (`--delay`) of reporting.
+    - RPS: Metric "how many rows server read per second" that measured in a period (`--delay`) of reporting.
+    - MiB/s: Metric "how many mebibytes server read per second" that measured in a period (`--delay`) of reporting.
+    - result RPS: Metric "how many rows placed by server to the result of a query per second" that measured in a period (`--delay`) of reporting.
+    - result MiB/s. Metric "how many mebibytes placed by server to the result of a query per second" that measured for a period (`--delay`) of reporting.
 
 - Percentiles of queries execution time.
 
 
-## Comparison mode
+## Comparison mode {#clickhouse-benchmark-comparison-mode}
 
-`clickhouse-benchmark` can compare performances for two running ClickHouse servers. To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. `clickhouse-benchmark` establishes connections to both servers, then sends queries selecting destination server for each query randomly. The results are shown for each server separately.
+`clickhouse-benchmark` can compare performances for two running ClickHouse servers. 
 
-## Example
+To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
+
+## Example {#clickhouse-benchmark-example}
 
 ```bash
-$ echo "SELECT * FROM system.numbers LIMIT 10000000" | clickhouse-benchmark -i 10
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark -i 10
 ```
 ```text
 Loaded 1 queries.
 
-Queries executed: 4.
+Queries executed: 6.
 
-localhost:9000, queries 4, QPS: 4.381, RPS: 43930096.411, MiB/s: 335.160, result RPS: 43811769.584, result MiB/s: 334.257.
+localhost:9000, queries 6, QPS: 6.153, RPS: 123398340.957, MiB/s: 941.455, result RPS: 61532982.200, result MiB/s: 469.459.
 
-0.000%		0.221 sec.	
-10.000%		0.222 sec.	
-20.000%		0.224 sec.	
-30.000%		0.225 sec.	
-40.000%		0.226 sec.	
-50.000%		0.228 sec.	
-60.000%		0.229 sec.	
-70.000%		0.231 sec.	
-80.000%		0.233 sec.	
-90.000%		0.235 sec.	
-95.000%		0.236 sec.	
-99.000%		0.236 sec.	
-99.900%		0.236 sec.	
-99.990%		0.236 sec.	
+0.000%		0.159 sec.	
+10.000%		0.159 sec.	
+20.000%		0.159 sec.	
+30.000%		0.160 sec.	
+40.000%		0.160 sec.	
+50.000%		0.162 sec.	
+60.000%		0.164 sec.	
+70.000%		0.165 sec.	
+80.000%		0.166 sec.	
+90.000%		0.166 sec.	
+95.000%		0.167 sec.	
+99.000%		0.167 sec.	
+99.900%		0.167 sec.	
+99.990%		0.167 sec.	
 
 
 
 Queries executed: 10.
 
-localhost:9000, queries 10, QPS: 4.943, RPS: 49568312.594, MiB/s: 378.176, result RPS: 49434799.089, result MiB/s: 377.158.
+localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, result RPS: 60815551.642, result MiB/s: 463.986.
 
-0.000%		0.153 sec.	
-10.000%		0.155 sec.	
-20.000%		0.155 sec.	
-30.000%		0.182 sec.	
-40.000%		0.210 sec.	
-50.000%		0.221 sec.	
-60.000%		0.223 sec.	
-70.000%		0.227 sec.	
-80.000%		0.231 sec.	
-90.000%		0.233 sec.	
-95.000%		0.235 sec.	
-99.000%		0.236 sec.	
-99.900%		0.236 sec.	
-99.990%		0.236 sec.	
+0.000%		0.159 sec.	
+10.000%		0.159 sec.	
+20.000%		0.160 sec.	
+30.000%		0.163 sec.	
+40.000%		0.164 sec.	
+50.000%		0.165 sec.	
+60.000%		0.166 sec.	
+70.000%		0.166 sec.	
+80.000%		0.167 sec.	
+90.000%		0.167 sec.	
+95.000%		0.170 sec.	
+99.000%		0.172 sec.	
+99.900%		0.172 sec.	
+99.990%		0.172 sec.	
 ```
