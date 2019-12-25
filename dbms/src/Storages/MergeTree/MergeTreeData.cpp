@@ -1342,11 +1342,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     /// Set of columns that shouldn't be altered.
-    NameSet columns_alter_forbidden;
+    NameSet columns_alter_type_forbidden;
 
     /// Primary key columns can be ALTERed only if they are used in the key as-is
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
-    NameSet columns_alter_metadata_only;
+    NameSet columns_alter_type_metadata_only;
 
     if (partition_key_expr)
     {
@@ -1354,13 +1354,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
         for (const String & col : partition_key_expr->getRequiredColumns())
-            columns_alter_forbidden.insert(col);
+            columns_alter_type_forbidden.insert(col);
     }
 
     for (const auto & index : skip_indices)
     {
         for (const String & col : index->expr->getRequiredColumns())
-            columns_alter_forbidden.insert(col);
+            columns_alter_type_forbidden.insert(col);
     }
 
     if (sorting_key_expr)
@@ -1368,17 +1368,16 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
-            columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
+            columns_alter_type_forbidden.insert(action_columns.begin(), action_columns.end());
         }
         for (const String & col : sorting_key_expr->getRequiredColumns())
-            columns_alter_metadata_only.insert(col);
+            columns_alter_type_metadata_only.insert(col);
 
         /// We don't process sample_by_ast separately because it must be among the primary key columns
         /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
     }
-
     if (!merging_params.sign_column.empty())
-        columns_alter_forbidden.insert(merging_params.sign_column);
+        columns_alter_type_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : getColumns().getAllPhysical())
@@ -1386,34 +1385,26 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     for (const AlterCommand & command : commands)
     {
-        if (!command.isMutable())
+        if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
-            continue;
-        }
-
-        if (columns_alter_forbidden.count(command.column_name))
-            throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
-
-        if (columns_alter_metadata_only.count(command.column_name))
-        {
-            if (command.type == AlterCommand::MODIFY_COLUMN)
-            {
-                auto it = old_types.find(command.column_name);
-                if (it != old_types.end() && isMetadataOnlyConversion(it->second, command.data_type.get()))
-                    continue;
-            }
-
             throw Exception(
-                    "ALTER of key column " + command.column_name + " must be metadata-only",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
         }
-
-        if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        else if (command.isModifyingData())
         {
-            if (!is_custom_partitioned)
-                throw Exception(
-                    "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
-                    ErrorCodes::BAD_ARGUMENTS);
+            if (columns_alter_type_forbidden.count(command.column_name))
+                throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+
+            if (columns_alter_type_metadata_only.count(command.column_name))
+            {
+                if (command.type == AlterCommand::MODIFY_COLUMN)
+                {
+                    auto it = old_types.find(command.column_name);
+                    if (it == old_types.end() || !isMetadataOnlyConversion(it->second, command.data_type.get()))
+                        throw Exception("ALTER of key column " + command.column_name + " must be metadata-only", ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
         }
     }
 
@@ -1425,17 +1416,20 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     for (const auto & setting : new_changes)
         checkSettingCanBeChanged(setting.name);
 
-    /// Check that type conversions are possible.
-    ExpressionActionsPtr unused_expression;
-    NameToNameMap unused_map;
-    bool unused_bool;
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+    if (commands.isModifyingData())
+    {
+        /// Check that type conversions are possible.
+        ExpressionActionsPtr unused_expression;
+        NameToNameMap unused_map;
+        bool unused_bool;
+        createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
+                getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+    }
 }
 
-void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
-    NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
+void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns,
+    const NamesAndTypesList & new_columns, const IndicesASTs & old_indices, const IndicesASTs & new_indices,
+    ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     const auto settings = getSettings();
     out_expression = nullptr;
@@ -1457,7 +1451,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 
     /// Remove old indices
-    std::set<String> new_indices_set;
+    std::unordered_set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
         new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
     for (const auto & index_decl : old_indices)
@@ -1465,8 +1459,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         const auto & index = index_decl->as<ASTIndexDeclaration &>();
         if (!new_indices_set.count(index.name))
         {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = "";
+            out_rename_map["skp_idx_" + index.name + ".idx"] = ""; /// drop this file
+            out_rename_map["skp_idx_" + index.name + part_mrk_file_extension] = ""; /// and this one
         }
     }
 
@@ -1494,8 +1488,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     /// Delete files if they are no longer shared with another column.
                     if (--stream_counts[file_name] == 0)
                     {
-                        out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + part_mrk_file_extension] = "";
+                        out_rename_map[file_name + ".bin"] = ""; /// drop this file
+                        out_rename_map[file_name + part_mrk_file_extension] = ""; /// and this one
                     }
                 }, {});
             }
@@ -1847,7 +1841,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.checksums = new_checksums;
         mutable_part.columns = new_columns;
 
-        /// 3) Delete the old files.
+        /// 3) Delete the old files and drop required columns (DROP COLUMN)
         for (const auto & from_to : rename_map)
         {
             String name = from_to.second.empty() ? from_to.first : from_to.second;
