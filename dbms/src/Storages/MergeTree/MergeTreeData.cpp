@@ -803,11 +803,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
                 {
-                    /// Skip temporary directories.
-                    if (startsWith(it.name(), "tmp"))
-                        continue;
-
-                    throw Exception("Part " + backQuote(it.name()) + " was found on a disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
+                    MergeTreePartInfo part_info;
+                    if (MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
+                        throw Exception("Part " + backQuote(it.name()) + " was found on a disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
                 }
             }
         }
