@@ -351,8 +351,30 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 ## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
 
-Converts a Number type argument to a Interval type (duration).
-The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
+Converts a Number type argument to an [Interval](../../data_types/special_data_types/interval.md) data type.
+
+**Syntax**
+
+```sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
+```
+
+**Parameters**
+
+- `number` — Duration of interval. Positive integer number.
+
+**Returned values**
+
+- The value in `Interval` data type.
+
+**Example**
 
 ```sql
 WITH

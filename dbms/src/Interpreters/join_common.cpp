@@ -48,18 +48,42 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
     }
 }
 
-ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized)
+ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 {
     ColumnRawPtrs ptrs;
     ptrs.reserve(names.size());
+
+    for (auto & column_name : names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        ptrs.push_back(column.get());
+    }
+
+    return ptrs;
+}
+
+Columns materializeColumns(const Block & block, const Names & names)
+{
+    Columns materialized;
     materialized.reserve(names.size());
 
     for (auto & column_name : names)
     {
         const auto & src_column = block.getByName(column_name).column;
         materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
-        ptrs.push_back(materialized.back().get());
     }
+
+    return materialized;
+}
+
+ColumnRawPtrs getRawPointers(const Columns & columns)
+{
+    ColumnRawPtrs ptrs;
+    ptrs.reserve(columns.size());
+
+    for (auto & column : columns)
+        ptrs.push_back(column.get());
 
     return ptrs;
 }

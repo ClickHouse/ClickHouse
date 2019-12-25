@@ -123,13 +123,12 @@ DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
 
 void DatabaseLazy::attachDictionary(
     const String & /*dictionary_name*/,
-    const Context & /*context*/,
-    bool /*load*/)
+    const Context & /*context*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
+void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }

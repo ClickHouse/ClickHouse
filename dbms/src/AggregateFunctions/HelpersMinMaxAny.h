@@ -32,6 +32,14 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
         return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDate::FieldType>>, false>(argument_type);
     if (which.idx == TypeIndex::DateTime)
         return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDateTime::FieldType>>, false>(argument_type);
+    if (which.idx == TypeIndex::DateTime64)
+        return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DateTime64>>, false>(argument_type);
+    if (which.idx == TypeIndex::Decimal32)
+        return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Decimal32>>, false>(argument_type);
+    if (which.idx == TypeIndex::Decimal64)
+        return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Decimal64>>, false>(argument_type);
+    if (which.idx == TypeIndex::Decimal128)
+        return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Decimal128>>, false>(argument_type);
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<Data<SingleValueDataString>, true>(argument_type);
 
@@ -54,6 +62,14 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, false>(res_type, val_type);
     if (which.idx == TypeIndex::DateTime)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>, false>(res_type, val_type);
+    if (which.idx == TypeIndex::DateTime64)
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DateTime64>>>, false>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal32)
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal32>>>, false>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal64)
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal64>>>, false>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal128)
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, false>(res_type, val_type);
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>, true>(res_type, val_type);
 
@@ -80,6 +96,14 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<DataTypeDate::FieldType>>(res_type, val_type);
     if (which.idx == TypeIndex::DateTime)
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<DataTypeDateTime::FieldType>>(res_type, val_type);
+    if (which.idx == TypeIndex::DateTime64)
+        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<DateTime64>>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal32)
+        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Decimal32>>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal64)
+        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Decimal64>>(res_type, val_type);
+    if (which.idx == TypeIndex::Decimal128)
+        return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Decimal128>>(res_type, val_type);
     if (which.idx == TypeIndex::String)
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataString>(res_type, val_type);
 

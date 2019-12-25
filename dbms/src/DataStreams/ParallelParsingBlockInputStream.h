@@ -227,7 +227,7 @@ private:
         finished = true;
 
         {
-            std::unique_lock lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }
@@ -255,4 +255,4 @@ private:
     void onBackgroundException();
 };
 
-};
+}

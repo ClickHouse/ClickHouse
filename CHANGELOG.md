@@ -128,6 +128,8 @@ Yu](https://github.com/yuzhichang))
 * Introduce CustomSeparated data format that supports custom escaping and
   delimiter rules.  [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
 ([tavplubix](https://github.com/tavplubix))
+* Support Redis as source of external dictionary. [#4361](https://github.com/ClickHouse/ClickHouse/pull/4361) [#6962](https://github.com/ClickHouse/ClickHouse/pull/6962) ([comunodi](https://github.com/comunodi), [Anton
+Popov](https://github.com/CurtizJ))
 
 ### Bug Fix
 * Fix wrong query result if it has `WHERE IN (SELECT ...)` section and `optimize_read_in_order` is

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <queue>
-
 #include <common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
@@ -56,19 +54,18 @@ private:
     UInt64 limit;
     size_t total_merged_rows = 0;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
     bool has_collation = false;
 
-    std::priority_queue<SortCursor> queue_without_collation;
-    std::priority_queue<SortCursorWithCollation> queue_with_collation;
+    SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.
      *  Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
      */
-    template <typename TSortCursor>
-    Block mergeImpl(std::priority_queue<TSortCursor> & queue);
+    template <typename TSortingHeap>
+    Block mergeImpl(TSortingHeap & queue);
 };
 
 

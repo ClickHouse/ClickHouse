@@ -3,7 +3,7 @@
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
-If you make a GET / request without parameters, it returns the string "Ok" (with a line feed at the end). You can use this in health-check scripts.
+If you make a GET / request without parameters, it returns the string "Ok." (with a line feed at the end). You can use this in health-check scripts.
 
 ```bash
 $ curl 'http://localhost:8123/'
@@ -28,8 +28,12 @@ $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
+Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
-Date: Fri, 16 Nov 2012 19:21:50 GMT
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
+X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
 ```
