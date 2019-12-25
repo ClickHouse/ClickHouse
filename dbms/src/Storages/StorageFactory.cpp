@@ -39,7 +39,7 @@ void StorageFactory::registerStorage(const std::string & name, Creator creator)
 
 
 StoragePtr StorageFactory::get(
-    ASTCreateQuery & query,
+    const ASTCreateQuery & query,
     const String & data_path,
     const String & table_name,
     const String & database_name,
