@@ -235,7 +235,7 @@ void IPolygonDictionary::getString(
     getItemsImpl<String, String>(
             ind,
             key_columns,
-            [&](const size_t, const String value) { out->insertData(value.data(), value.size()); },
+            [&](const size_t, const String & value) { out->insertData(value.data(), value.size()); },
             [&](const size_t) { return null_value; });
 }
 
@@ -282,7 +282,7 @@ void IPolygonDictionary::getString(
     const auto ind = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
-    getItemsImpl<StringRef, StringRef>(
+    getItemsImpl<String, StringRef>(
             ind,
             key_columns,
             [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -329,7 +329,7 @@ void IPolygonDictionary::getString(
     const auto ind = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
-    getItemsImpl<StringRef, StringRef>(
+    getItemsImpl<String, StringRef>(
             ind,
             key_columns,
             [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
