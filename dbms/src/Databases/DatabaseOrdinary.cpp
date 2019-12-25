@@ -139,7 +139,7 @@ void DatabaseOrdinary::loadStoredObjects(
         String full_path = metadata_path + "/" + file_name;
         try
         {
-            auto ast = parseCreateQueryFromMetadataFile(full_path, log);
+            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
