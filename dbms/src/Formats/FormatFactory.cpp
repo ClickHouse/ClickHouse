@@ -67,7 +67,6 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
-    format_settings.template_settings.row_between_delimiter = settings.format_custom_row_between_delimiter;
 
     return format_settings;
 }
@@ -98,7 +97,6 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
-    format_settings.template_settings.row_between_delimiter = settings.format_custom_row_between_delimiter;
 
     return format_settings;
 }

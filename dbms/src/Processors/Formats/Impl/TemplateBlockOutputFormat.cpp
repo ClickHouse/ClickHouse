@@ -246,7 +246,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
         {
             /// Read format string from file
             resultset_format = ParsedTemplateFormatString(
-                    FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
+                    FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
                             settings.schema.is_server, settings.schema.format_schema_path),
                     [&](const String & partName)
                     {
