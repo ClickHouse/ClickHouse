@@ -7,7 +7,7 @@ CREATE DATABASE test_01037 Engine = Ordinary;
 DROP DICTIONARY IF EXISTS test_01037.dict;
 DROP TABLE IF EXISTS test_01037.polygons;
 
-CREATE TABLE test_01037.polygons (key Array(Array(Array(Array(Float64)))), name String, value UInt64) Engine = Memory;
+CREATE TABLE test_01037.polygons (key Array(Array(Array(Array(Float64)))), name String, value UInt64) ORDER BY name ENGINE = Memory;
 INSERT INTO test_01037.polygons VALUES ([[[[1, 3], [1, 1], [3, 1], [3, -1], [1, -1], [1, -3], [-1, -3], [-1, -1], [-3, -1], [-3, 1], [-1, 1], [-1, 3]]], [[[5, 5], [5, 1], [7, 1], [7, 7], [1, 7], [1, 5]]]], 'Click', 42);
 INSERT INTO test_01037.polygons VALUES ([[[[5, 5], [5, -5], [-5, -5], [-5, 5]], [[1, 3], [1, 1], [3, 1], [3, -1], [1, -1], [1, -3], [-1, -3], [-1, -1], [-3, -1], [-3, 1], [-1, 1], [-1, 3]]]], 'House', 314159);
 
