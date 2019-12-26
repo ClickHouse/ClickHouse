@@ -1,13 +1,14 @@
 #pragma once
 
 #include "config_core.h"
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
 
 namespace DB
 {
 
-class ASTSystemQuery : public IAST
+class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
 
@@ -55,12 +56,17 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_dictionary;
-    String target_database;
-    String target_table;
+    String database;
+    String table;
 
     String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
+    }
 
 protected:
 
