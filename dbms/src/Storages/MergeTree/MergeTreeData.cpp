@@ -635,11 +635,22 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             else
             {
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+
+                new_ttl_entry.entry_ast = ttl_element_ptr;
+                new_ttl_entry.destination_type = ttl_element.destination_type;
+                new_ttl_entry.destination_name = ttl_element.destination_name;
+                if (!new_ttl_entry.getDestination(getStoragePolicy()))
+                {
+                    String message;
+                    if (new_ttl_entry.destination_type == PartDestinationType::DISK)
+                        message = "No such disk " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
+                    else
+                        message = "No such volume " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
+                    throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
+                }
+
                 if (!only_check)
                 {
-                    new_ttl_entry.entry_ast = ttl_element_ptr;
-                    new_ttl_entry.destination_type = ttl_element.destination_type;
-                    new_ttl_entry.destination_name = ttl_element.destination_name;
                     move_ttl_entries.emplace_back(std::move(new_ttl_entry));
                 }
             }
