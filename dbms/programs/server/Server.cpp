@@ -293,7 +293,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         global_context->shutdown();
 
-        LOG_DEBUG(log, "Shutted down storages.");
+        LOG_DEBUG(log, "Shut down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
