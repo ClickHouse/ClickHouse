@@ -20,6 +20,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -315,10 +316,7 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & context) const
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
-    const ColumnsDescription & columns,
-    const IndicesDescription & indices,
-    const ConstraintsDescription & constraints,
-    const ASTModifier & storage_modifier)
+    const StorageInMemoryMetadata & metadata)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
@@ -338,18 +336,26 @@ void DatabaseOrdinary::alterTable(
 
     const auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
-    if (storage_modifier)
-        storage_modifier(*ast_create_query.storage);
+    ASTStorage & storage_ast = *ast_create_query.storage;
+    if (metadata.order_by_expression && metadata.order_by_expression.get() != storage_ast.order_by)
+        storage_ast.set(storage_ast.order_by, metadata.order_by_expression);
 
-    statement = getObjectDefinitionFromCreateQuery(ast);
+    if (metadata.primary_key_expression && metadata.primary_key_expression.get() != storage_ast.primary_key)
+        storage_ast.set(storage_ast.primary_key, metadata.primary_key_expression);
+
+    if (metadata.ttl_for_table_expression && metadata.ttl_for_table_expression.get() != storage_ast.ttl_table)
+        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_expression);
+
+    if (metadata.settings_changes != storage_ast.settings->changes)
+        storage_ast.settings->changes = metadata.settings_changes;
 
     {
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);

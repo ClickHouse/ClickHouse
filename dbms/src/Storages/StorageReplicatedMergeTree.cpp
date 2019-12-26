@@ -33,6 +33,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -496,11 +497,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_order_by_ast = order_by_ast;
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    ASTPtr new_ttl_table_ast = ttl_table_ast;
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
@@ -510,59 +507,41 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
             if (new_sorting_key_expr_list->children.size() == 1)
-                new_order_by_ast = new_sorting_key_expr_list->children[0];
+                metadata.order_by_expression = new_sorting_key_expr_list->children[0];
             else
             {
                 auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
-                new_order_by_ast = tuple;
+                metadata.order_by_expression = tuple;
             }
 
             if (!primary_key_ast)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                new_primary_key_ast = order_by_ast->clone();
+                metadata.primary_key_expression = order_by_ast->clone();
             }
         }
 
         if (metadata_diff.skip_indices_changed)
-            new_indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
+            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
 
         if (metadata_diff.constraints_changed)
-            new_constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
+            metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
 
         if (metadata_diff.ttl_table_changed)
         {
             ParserExpression parser;
-            new_ttl_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
+            metadata.ttl_for_table_expression = parseQuery(parser, metadata_diff.new_ttl_table, 0);
         }
-
-        storage_modifier = [&](IAST & ast)
-        {
-            auto & storage_ast = ast.as<ASTStorage &>();
-
-            if (!storage_ast.order_by)
-                throw Exception(
-                    "ALTER MODIFY ORDER BY of default-partitioned tables is not supported",
-                    ErrorCodes::LOGICAL_ERROR);
-
-            if (new_primary_key_ast.get() != primary_key_ast.get())
-                storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
-
-            if (new_ttl_table_ast.get() != ttl_table_ast.get())
-                storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
-
-            storage_ast.set(storage_ast.order_by, new_order_by_ast);
-        };
     }
 
-    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, new_constraints, storage_modifier);
+    global_context.getDatabase(database_name)->alterTable(global_context, table_name, metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
-    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
+    setProperties(metadata.order_by_expression, metadata.primary_key_expression, metadata.columns, metadata.indices, metadata.constraints);
+    setTTLExpressions(new_columns.getColumnTTLs(), metadata.ttl_for_table_expression);
 }
 
 
@@ -1550,18 +1529,12 @@ void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogE
         alter_command.index_name = entry.index_name;
     }
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    ASTPtr ignored_order_by_ast;
-    ASTPtr ignored_primary_key_ast;
-    ASTPtr ignored_ttl_table_ast;
-    SettingsChanges ignored_changes;
-    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignored_changes);
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    alter_command.apply(metadata);
 
     size_t modified_parts = 0;
     auto parts = getDataParts();
-    auto columns_for_parts = new_columns.getAllPhysical();
+    auto columns_for_parts = metadata.columns.getAllPhysical();
 
     /// Check there are no merges in range again
     /// TODO: Currently, there are no guarantees that a merge covering entry_part_info will happen during the execution.
@@ -1581,7 +1554,7 @@ void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogE
             LOG_DEBUG(log, "Clearing index " << alter_command.index_name << " in part " << part->name);
 
         MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
-        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        alterDataPart(columns_for_parts, metadata.indices.indices, false, transaction);
         if (!transaction->isValid())
             continue;
 
@@ -3241,14 +3214,12 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
-        SettingsChanges new_changes;
-        params.applyForSettingsOnly(new_changes);
+        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        params.apply(metadata);
 
-        changeSettings(new_changes, table_lock_holder);
+        changeSettings(metadata.settings_changes, table_lock_holder);
 
-        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        global_context.getDatabase(current_database_name)->alterTable(
-            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+        global_context.getDatabase(current_database_name)->alterTable(query_context, current_table_name, metadata);
         return;
     }
 
@@ -3288,33 +3259,25 @@ void StorageReplicatedMergeTree::alter(
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        checkAlter(params, query_context);
+        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        params.apply(metadata);
 
-        ColumnsDescription new_columns = getColumns();
-        IndicesDescription new_indices = getIndices();
-        ConstraintsDescription new_constraints = getConstraints();
-        ASTPtr new_order_by_ast = order_by_ast;
-        ASTPtr new_primary_key_ast = primary_key_ast;
-        ASTPtr new_ttl_table_ast = ttl_table_ast;
-        SettingsChanges new_changes;
-        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-
-        String new_columns_str = new_columns.toString();
+        String new_columns_str = metadata.columns.toString();
         if (new_columns_str != getColumns().toString())
             changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
-        if (new_order_by_ast.get() != order_by_ast.get())
-            new_metadata.sorting_key = serializeAST(*extractKeyExpressionList(new_order_by_ast));
+        if (metadata.order_by_expression.get() != order_by_ast.get())
+            new_metadata.sorting_key = serializeAST(*extractKeyExpressionList(metadata.order_by_expression));
 
-        if (new_ttl_table_ast.get() != ttl_table_ast.get())
-            new_metadata.ttl_table = serializeAST(*new_ttl_table_ast);
+        if (metadata.ttl_for_table_expression.get() != ttl_table_ast.get())
+            new_metadata.ttl_table = serializeAST(*metadata.ttl_for_table_expression);
 
-        String new_indices_str = new_indices.toString();
+        String new_indices_str = metadata.indices.toString();
         if (new_indices_str != getIndices().toString())
             new_metadata.skip_indices = new_indices_str;
 
-        String new_constraints_str = new_constraints.toString();
+        String new_constraints_str = metadata.constraints.toString();
         if (new_constraints_str != getConstraints().toString())
             new_metadata.constraints = new_constraints_str;
 
@@ -3322,17 +3285,12 @@ void StorageReplicatedMergeTree::alter(
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
 
+
         /// Perform settings update locally
-        if (!new_changes.empty())
-        {
-            IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        changeSettings(metadata.settings_changes, table_lock_holder);
 
-            changeSettings(new_changes, table_lock_holder);
+        global_context.getDatabase(current_database_name)->alterTable(query_context, current_table_name, metadata);
 
-            global_context.getDatabase(current_database_name)->alterTable(
-                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
-
-        }
 
         /// Modify shared metadata nodes in ZooKeeper.
         Coordination::Requests ops;

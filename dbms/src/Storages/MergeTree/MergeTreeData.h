@@ -348,6 +348,8 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+
+    StorageInMemoryMetadata getInMemoryMetadata() const override;
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
@@ -545,7 +547,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlter(const AlterCommands & commands, const Context & context);
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
@@ -561,9 +563,6 @@ public:
     void changeSettings(
            const SettingsChanges & new_changes,
            TableStructureWriteLockHolder & table_lock_holder);
-
-    /// All MergeTreeData children have settings.
-    void checkSettingCanBeChanged(const String & setting_name) const override;
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
