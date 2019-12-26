@@ -59,7 +59,6 @@ namespace
         Context & context,
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
-        const String database_data_path,
         const String & database_name,
         bool has_force_restore_data_flag)
     {
@@ -69,7 +68,7 @@ namespace
             String table_name;
             StoragePtr table;
             std::tie(table_name, table)
-                = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
+                = createTableFromAST(query, database_name, database.getDataPath(), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
         catch (const Exception & e)
@@ -115,13 +114,13 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context)
+DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
     : DatabaseWithOwnTablesBase(std::move(name_))
     , metadata_path(metadata_path_)
-    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , data_path("data/" + escapeForFileName(name) + "/")
     , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
-    Poco::File(getDataPath()).createDirectories();
+    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
 
@@ -138,7 +137,7 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    DatabaseOnDisk::iterateMetadataFiles(*this, log, [&file_names, &total_dictionaries, this](const String & file_name)
+    DatabaseOnDisk::iterateMetadataFiles(*this, log, context, [&file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = metadata_path + "/" + file_name;
         try
@@ -176,7 +175,7 @@ void DatabaseOrdinary::loadStoredObjects(
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(context, create_query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -344,16 +343,8 @@ void DatabaseOrdinary::alterTable(
     ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-
-    if (ast_create_query.columns_list->indices)
-        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
-    else
-        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
-
-    if (ast_create_query.columns_list->constraints)
-        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
-    else
-        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
@@ -382,9 +373,9 @@ void DatabaseOrdinary::alterTable(
 }
 
 
-void DatabaseOrdinary::drop()
+void DatabaseOrdinary::drop(const Context & context)
 {
-    DatabaseOnDisk::drop(*this);
+    DatabaseOnDisk::drop(*this, context);
 }
 
 

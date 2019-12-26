@@ -316,20 +316,23 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 StorageTinyLog::StorageTinyLog(
     DiskPtr disk_,
+    const String & relative_path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : disk(std::move(disk_)), database_name(database_name_), table_name(table_name_),
-    table_path("data/" + escapeForFileName(database_name_) + '/' + escapeForFileName(table_name_) + '/'),
+    : disk(std::move(disk_)), table_path(relative_path_), database_name(database_name_), table_name(table_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(disk, table_path + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
+
+    if (relative_path_.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     if (!attach)
     {
@@ -364,17 +367,15 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageTinyLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    String new_table_path = "data/" + escapeForFileName(new_database_name) + '/' + escapeForFileName(new_table_name) + '/';
+    disk->moveDirectory(table_path, new_path_to_table_data);
 
-    disk->moveDirectory(table_path, new_table_path);
-
+    table_path = new_path_to_table_data;
     database_name = new_database_name;
     table_name = new_table_name;
-    table_path = new_table_path;
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
@@ -438,7 +439,7 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.context.getDefaultDisk(), args.database_name, args.table_name, args.columns, args.constraints,
+            args.context.getDefaultDisk(), args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

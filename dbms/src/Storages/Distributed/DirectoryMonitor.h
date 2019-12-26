@@ -20,7 +20,7 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_);
+        StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_);
 
     ~StorageDistributedDirectoryMonitor();
 
@@ -44,22 +44,22 @@ private:
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
-    ConnectionPoolPtr pool;
-    std::string name;
+    const ConnectionPoolPtr pool;
+    const std::string name;
     std::string path;
 
-    bool should_batch_inserts = false;
-    size_t min_batched_block_size_rows = 0;
-    size_t min_batched_block_size_bytes = 0;
+    const bool should_batch_inserts = false;
+    const size_t min_batched_block_size_rows = 0;
+    const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
 
     struct BatchHeader;
     struct Batch;
 
     size_t error_count{};
-    std::chrono::milliseconds default_sleep_time;
+    const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
-    std::chrono::milliseconds max_sleep_time;
+    const std::chrono::milliseconds max_sleep_time;
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;

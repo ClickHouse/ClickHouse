@@ -79,6 +79,10 @@ public:
 
 private:
 
+    /// Mutex and condvar for synchronous mutations wait
+    std::mutex mutation_wait_mutex;
+    std::condition_variable mutation_wait_event;
+
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
@@ -138,6 +142,8 @@ private:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
+    /// Just checks versions of each active data part
+    bool isMutationDone(Int64 mutation_version) const;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
@@ -154,6 +160,7 @@ protected:
     StorageMergeTree(
         const String & database_name_,
         const String & table_name_,
+        const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         const ConstraintsDescription & constraints_,

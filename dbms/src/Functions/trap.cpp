@@ -83,6 +83,10 @@ public:
             {
                 abort();
             }
+            else if (mode == "std::terminate")
+            {
+                std::terminate();
+            }
             else if (mode == "use after free")
             {
                 int * x_ptr;

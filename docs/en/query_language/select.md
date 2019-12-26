@@ -114,18 +114,18 @@ If a query does not list any columns (for example, `SELECT count() FROM t`), som
 
 #### FINAL Modifier {#select-from-final}
 
-Appliable when selecting data from tables of the [MergeTree](../operations/table_engines/mergetree.md)-engine family, except `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges data before returning the result and thus performs all data transformations that are supposed to happen during merges for given table engine.
+Applicable when selecting data from tables from the [MergeTree](../operations/table_engines/mergetree.md)-engine family other than `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
 
 Also supported for:
 - [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
-- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, if they created over `MergeTree`-engine tables.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), and [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
 
-The queries that use `FINAL` are executed slower than similar queries that don't, because:
+Queries that use `FINAL` are executed not as fast as similar queries that don't, because:
 
-- Query is executed in a single thread, and data is merged during query execution.
-- Queries with `FINAL` read primary key columns additionally to the columns specified in the query.
+- Query is executed in a single thread and data is merged during query execution.
+- Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
 
-In the most cases, avoid using `FINAL`.
+In most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
