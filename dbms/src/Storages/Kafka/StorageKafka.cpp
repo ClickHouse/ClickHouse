@@ -312,7 +312,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(StorageID(db_tab.database_name, db_tab.table_name)))
+        if (!checkDependencies(db_tab))
             return false;
     }
 
@@ -360,7 +360,6 @@ bool StorageKafka::streamToViews()
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    //FIXME use uid if not empty
     insert->database = table_id.database_name;
     insert->table = table_id.table_name;
 
