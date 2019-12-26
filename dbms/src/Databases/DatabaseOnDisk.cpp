@@ -129,7 +129,7 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
-    const String & database_data_path,
+    const String & database_data_path_relative,
     Context & context,
     bool has_force_restore_data_flag)
 {
@@ -152,12 +152,13 @@ std::pair<String, StoragePtr> createTableFromAST(
     ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
     ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
+    String table_data_path_relative = database_data_path_relative + escapeForFileName(ast_create_query.table) + '/';
     return
     {
         ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
-            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
+            table_data_path_relative, ast_create_query.table, database_name, context, context.getGlobalContext(),
             columns, constraints,
             true, has_force_restore_data_flag)
     };
@@ -495,9 +496,9 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const IDatabase & database, const 
     return ast;
 }
 
-void DatabaseOnDisk::drop(const IDatabase & database)
+void DatabaseOnDisk::drop(const IDatabase & database, const Context & context)
 {
-    Poco::File(database.getDataPath()).remove(false);
+    Poco::File(context.getPath() + database.getDataPath()).remove(false);
     Poco::File(database.getMetadataPath()).remove(false);
 }
 
@@ -519,7 +520,7 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(
         return static_cast<time_t>(0);
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)
+void DatabaseOnDisk::iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const Context & context, const IteratingFunction & iterating_function)
 {
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(database.getMetadataPath()); dir_it != dir_end; ++dir_it)
@@ -537,7 +538,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IDatabase & database, Poco::Logg
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(database.getDataPath() + '/' + object_name).exists())
+            if (Poco::File(context.getPath() + database.getDataPath() + '/' + object_name).exists())
             {
                 /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
                 Poco::File(dir_it->path()).renameTo(database.getMetadataPath() + object_name + ".sql");
