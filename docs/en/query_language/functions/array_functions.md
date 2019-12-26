@@ -798,10 +798,7 @@ Converts an array of arrays to a flat array.
 
 Function:
 
-- Applies to any depth of nested arrays, but all the elements must be on the same level.
-
-    For example, array `[[[1]], [[2], [3]]]` can be flattened, but array `[[1], [[2], [3]]]` can't.
-
+- Applies to any depth of nested arrays.
 - Does not change arrays that are already flat.
 
 The flattened array contains all the elements from all source arrays.
