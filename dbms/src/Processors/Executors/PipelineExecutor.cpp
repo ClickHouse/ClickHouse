@@ -644,8 +644,6 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            state = nullptr;
-
             // Stopwatch processing_time_watch;
 
             /// Try to execute neighbour processor.
@@ -658,6 +656,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 /// Execute again if can.
                 prepare_processor(state->processors_id, queue);
+                state = nullptr;
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 /// prepare_all_processors(queue, children, children, parents);
