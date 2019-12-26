@@ -226,7 +226,7 @@ If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of t
 
 ## Code Style
 
-Code style rules are described [here](https://clickhouse.yandex/docs/en/development/style/).
+Code style rules are described [here](style.md).
 
 To check for some common style violations, you can use `utils/check-style` script.
 

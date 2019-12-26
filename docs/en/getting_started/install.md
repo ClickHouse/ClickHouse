@@ -147,7 +147,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.yandex/tutorial.html).
+To continue experimenting, you can download one of test data sets or go through [tutorial](tutorial.md).
 
 
 [Original article](https://clickhouse.yandex/docs/en/getting_started/install/) <!--hide-->
