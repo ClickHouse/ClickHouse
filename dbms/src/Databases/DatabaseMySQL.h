@@ -60,7 +60,7 @@ public:
 
     void shutdown() override;
 
-    void drop() override;
+    void drop(const Context & /*context*/) override;
 
     String getMetadataPath() const override;
 
