@@ -152,7 +152,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsinged int has granted 2-compliment overflow handling,
+    // Since only unsinged int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
     // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
