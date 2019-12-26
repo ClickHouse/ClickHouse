@@ -133,10 +133,10 @@ public:
     explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
         : storage(storage_), lock(storage.rwlock),
         data_out_file(storage.table_path + "data.bin"),
-        data_out_compressed(storage.disk->append(data_out_file)),
+        data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
         data_out(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
         index_out_file(storage.table_path + "index.mrk"),
-        index_out_compressed(storage.disk->append(index_out_file)),
+        index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append)),
         index_out(*index_out_compressed),
         block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, storage.disk->getFileSize(data_out_file))
     {

@@ -134,19 +134,15 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::read(const String & path, size_t buf_size) const
+std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
 {
     return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::write(const String & path, size_t buf_size)
+std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size);
-}
-
-std::unique_ptr<WriteBuffer> DiskLocal::append(const String & path, size_t buf_size)
-{
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, O_APPEND | O_CREAT | O_WRONLY);
+    int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
 

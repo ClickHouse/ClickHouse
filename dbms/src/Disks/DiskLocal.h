@@ -65,11 +65,9 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> read(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
 
-    std::unique_ptr<WriteBuffer> write(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) override;
-
-    std::unique_ptr<WriteBuffer> append(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) override;
+    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
 
 private:
     bool tryReserve(UInt64 bytes);

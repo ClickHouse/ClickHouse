@@ -27,6 +27,15 @@ class ReadBuffer;
 class WriteBuffer;
 
 /**
+ * Mode of opening a file for write.
+ */
+enum class WriteMode
+{
+    Rewrite,
+    Append
+};
+
+/**
  * Provide interface for reservation.
  */
 class Space : public std::enable_shared_from_this<Space>
@@ -106,13 +115,10 @@ public:
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
     /// Open the file for read and return ReadBuffer object.
-    virtual std::unique_ptr<ReadBuffer> read(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
 
     /// Open the file for write and return WriteBuffer object.
-    virtual std::unique_ptr<WriteBuffer> write(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) = 0;
-
-    /// Open the file for write in append mode and return WriteBuffer object.
-    virtual std::unique_ptr<WriteBuffer> append(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) = 0;
+    virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
