@@ -278,6 +278,12 @@ void QueryPipeline::resize(size_t num_streams, bool force)
     processors.emplace_back(std::move(resize));
 }
 
+void QueryPipeline::enableQuotaForCurrentStreams()
+{
+    for (auto & stream : streams)
+        stream->getProcessor().enableQuota();
+}
+
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
 {
     checkInitialized();
