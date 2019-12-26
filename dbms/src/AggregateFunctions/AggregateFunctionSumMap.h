@@ -261,8 +261,6 @@ public:
         }
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
 };
 

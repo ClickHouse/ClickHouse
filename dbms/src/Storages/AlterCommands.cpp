@@ -109,7 +109,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment = ast_comment.value.get<String>();
+            command.comment.emplace(ast_comment.value.get<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -225,7 +225,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
             column.default_desc.kind = default_kind;
             column.default_desc.expression = default_expression;
         }
-        column.comment = comment;
+        if (comment)
+            column.comment = *comment;
+
         column.codec = codec;
         column.ttl = ttl;
 
@@ -251,19 +253,22 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 column.codec = codec;
             }
 
-            if (!isMutable())
-            {
-                column.comment = comment;
-                return;
-            }
+            if (comment)
+                column.comment = *comment;
 
             if (ttl)
                 column.ttl = ttl;
 
-            column.type = data_type;
+            if (data_type)
+                column.type = data_type;
 
-            column.default_desc.kind = default_kind;
-            column.default_desc.expression = default_expression;
+            /// User specified default expression or changed
+            /// datatype. We have to replace default.
+            if (default_expression || data_type)
+            {
+                column.default_desc.kind = default_kind;
+                column.default_desc.expression = default_expression;
+            }
         });
     }
     else if (type == MODIFY_ORDER_BY)
@@ -279,7 +284,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == COMMENT_COLUMN)
     {
-        columns_description.modify(column_name, [&](ColumnDescription & column) { column.comment = comment; });
+        columns_description.modify(column_name, [&](ColumnDescription & column) { column.comment = *comment; });
     }
     else if (type == ADD_INDEX)
     {
@@ -390,13 +395,15 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isMutable() const
+bool AlterCommand::isModifyingData() const
 {
-    if (type == COMMENT_COLUMN || type == MODIFY_SETTING)
-        return false;
+    /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type.get() || default_expression;
-    return true;
+        return data_type != nullptr;
+
+    return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
+        || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
+        || type == DROP_INDEX; /// We need to remove file from filesystem for MergeTree
 }
 
 bool AlterCommand::isSettingsAlter() const
@@ -666,11 +673,11 @@ void AlterCommands::applyForSettingsOnly(SettingsChanges & changes) const
     changes = std::move(out_changes);
 }
 
-bool AlterCommands::isMutable() const
+bool AlterCommands::isModifyingData() const
 {
     for (const auto & param : *this)
     {
-        if (param.isMutable())
+        if (param.isModifyingData())
             return true;
     }
 

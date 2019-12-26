@@ -532,8 +532,8 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query, const NameSet & source_columns,
-                          const Aliases & aliases)
+void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query,
+                          const std::vector<TableWithColumnNames> & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
     if (!node)
@@ -551,7 +551,7 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     {
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, source_columns, analyzed_join.getOriginalColumnsSet(), aliases, is_asof};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
@@ -820,6 +820,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     if (storage)
         collectSourceColumns(storage->getColumns(), result.source_columns, (select_query != nullptr));
     NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
+    std::vector<TableWithColumnNames> tables_with_columns;
 
     if (select_query)
     {
@@ -837,7 +838,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         }
 
         std::vector<const ASTTableExpression *> table_expressions = getTableExpressions(*select_query);
-        auto tables_with_columns = getTablesWithColumns(table_expressions, context);
+        tables_with_columns = getTablesWithColumns(table_expressions, context);
 
         if (tables_with_columns.empty())
         {
@@ -935,7 +936,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);
-        collectJoinedColumns(*result.analyzed_join, *select_query, source_columns_set, result.aliases);
+        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
     }
 
     result.aggregates = getAggregates(query);

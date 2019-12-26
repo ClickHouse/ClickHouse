@@ -127,8 +127,8 @@ public:
         uint64_t line = 0;
     };
 
-    /**
-      * Find the file and line number information corresponding to address.
+    /** Find the file and line number information corresponding to address.
+      * The address must be physical - offset in object file without offset in virtual memory where the object is loaded.
       */
     bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode) const;
 
