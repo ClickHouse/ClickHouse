@@ -94,13 +94,74 @@ BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_
     throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
 }
 
+template <typename T>
+void IPolygonDictionary::appendNullValueImpl(const Field & null_value)
+{
+    null_values.emplace_back(T(null_value.get<NearestFieldType<T>>()));
+}
+
+void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Field & null_value) 
+{
+    switch (type)
+    {
+        case AttributeUnderlyingType::utUInt8:
+            appendNullValueImpl<UInt8>(null_value);
+            break;
+        case AttributeUnderlyingType::utUInt16:
+            appendNullValueImpl<UInt16>(null_value);
+            break;
+        case AttributeUnderlyingType::utUInt32:
+            appendNullValueImpl<UInt32>(null_value);
+            break;
+        case AttributeUnderlyingType::utUInt64:
+            appendNullValueImpl<UInt64>(null_value);
+            break;
+        case AttributeUnderlyingType::utUInt128:
+            appendNullValueImpl<UInt128>(null_value);
+            break;
+        case AttributeUnderlyingType::utInt8:
+            appendNullValueImpl<Int8>(null_value);
+            break;
+        case AttributeUnderlyingType::utInt16:
+            appendNullValueImpl<Int16>(null_value);
+            break;
+        case AttributeUnderlyingType::utInt32:
+            appendNullValueImpl<Int32>(null_value);
+            break;
+        case AttributeUnderlyingType::utInt64:
+            appendNullValueImpl<Int64>(null_value);
+            break;
+        case AttributeUnderlyingType::utFloat32:
+            appendNullValueImpl<Float32>(null_value);
+            break;
+        case AttributeUnderlyingType::utFloat64:
+            appendNullValueImpl<Float64>(null_value);
+            break;
+        case AttributeUnderlyingType::utDecimal32:
+            appendNullValueImpl<Decimal32>(null_value);
+            break;
+        case AttributeUnderlyingType::utDecimal64:
+            appendNullValueImpl<Decimal64>(null_value);
+            break;
+        case AttributeUnderlyingType::utDecimal128:
+            appendNullValueImpl<Decimal128>(null_value);
+            break;
+        case AttributeUnderlyingType::utString:
+            appendNullValueImpl<String>(null_value);
+            break;
+    }    
+}
+
 void IPolygonDictionary::createAttributes() {
     attributes.resize(dict_struct.attributes.size());
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
     {
-        attribute_index_by_name.emplace(dict_struct.attributes[i].name, i);
+        const auto & attr = dict_struct.attributes[i];
+        attribute_index_by_name.emplace(attr.name, i);
 
-        if (dict_struct.attributes[i].hierarchical)
+        appendNullValue(attr.underlying_type, attr.null_value);
+
+        if (attr.hierarchical)
             throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
                             ErrorCodes::TYPE_MISMATCH};
     }
@@ -186,12 +247,6 @@ size_t IPolygonDictionary::getAttributeIndex(const std::string & attribute_name)
     return it->second;
 }
 
-template <typename T>
-T IPolygonDictionary::getNullValue(const DB::Field &field)
-{
-    return field.get<NearestFieldType<T>>();
-}
-
 #define DECLARE(TYPE) \
     void IPolygonDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes &, ResultArrayType<TYPE> & out) const \
@@ -199,7 +254,7 @@ T IPolygonDictionary::getNullValue(const DB::Field &field)
         const auto ind = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::ut##TYPE); \
 \
-        const auto null_value = getNullValue<TYPE>(dict_struct.attributes[ind].null_value); \
+        const auto null_value = std::get<TYPE>(null_values[ind]); \
 \
         getItemsImpl<TYPE, TYPE>( \
             ind, \
@@ -229,7 +284,7 @@ void IPolygonDictionary::getString(
     const auto ind = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[ind].underlying_type, AttributeUnderlyingType::utString);
 
-    const auto & null_value = getNullValue<String>(dict_struct.attributes[ind].null_value);
+    const auto & null_value = StringRef{std::get<String>(null_values[ind])};
 
     getItemsImpl<String, StringRef>(
             ind,
@@ -352,8 +407,7 @@ void IPolygonDictionary::getItemsImpl(
         const auto found = find(points[i], id);
         if (!found)
         {
-            const auto def = get_default(i);
-            set_value(i, static_cast<OutputType>(def));
+            set_value(i, static_cast<OutputType>(get_default(i)));
             continue;
         }
         if constexpr (std::is_same<AttributeType, String>::value)
