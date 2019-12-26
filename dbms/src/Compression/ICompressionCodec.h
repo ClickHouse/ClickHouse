@@ -33,10 +33,10 @@ public:
     virtual String getCodecDesc() const = 0;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory
-    virtual UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
+    UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size); }
