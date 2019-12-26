@@ -21,6 +21,14 @@ mv ./dbms/unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
+# Different files for performance test.
+if [ "performance" == "$COMBINED_OUTPUT" ]
+then
+    cp -r ../dbms/tests/performance /output
+    rm /output/unit_tests_dbms ||:
+    rm /output/clickhouse-odbc-bridge ||:
+fi
+
 # May be set for split build or for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then

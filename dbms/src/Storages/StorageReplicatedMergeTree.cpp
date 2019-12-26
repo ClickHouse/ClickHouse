@@ -3251,6 +3251,10 @@ void StorageReplicatedMergeTree::alter(
 
     auto table_id = getStorageID();
 
+    /// We cannot check this alter commands with method isModifyingData()
+    /// because ReplicatedMergeTree stores both columns and metadata for
+    /// each replica. So we have to wait AlterThread even with lightweight
+    /// metadata alter.
     if (params.isSettingsAlter())
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.

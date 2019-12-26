@@ -102,8 +102,7 @@ void DatabaseLazy::alterTable(
     const ConstraintsDescription & /* constraints */,
     const ASTModifier & /* storage_modifier */)
 {
-    //FIXME WTF
-    SCOPE_EXIT({ clearExpiredTables(); });
+    clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 

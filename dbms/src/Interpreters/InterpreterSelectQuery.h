@@ -14,6 +14,7 @@
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/StorageID.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/StorageID.h>
 
 #include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>

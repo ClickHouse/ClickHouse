@@ -17,7 +17,6 @@ class DatabaseLazyIterator;
   */
 class DatabaseLazy : public DatabaseOnDisk
 {
-    //TODO rewrite it all
 public:
     DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
 
@@ -102,6 +101,7 @@ private:
 
     const time_t expiration_time;
 
+    /// TODO use DatabaseWithOwnTablesBase::tables
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
 

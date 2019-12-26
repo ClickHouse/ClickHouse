@@ -383,11 +383,11 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    renameInMemory(new_database_name, new_table_name);
     file_checker.setPath(path + "sizes.json");
 
     for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
         it->second.data_file = Poco::File(path + Poco::Path(it->second.data_file.path()).getFileName());
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
