@@ -979,7 +979,6 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * excepti
                 return res;
         }
 
-        //FIXME what if table was moved to another database?
         db = resolveDatabase(table_id.database_name, current_database);
         checkDatabaseAccessRightsImpl(db);
 
