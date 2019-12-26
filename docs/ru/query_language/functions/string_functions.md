@@ -141,19 +141,52 @@ SELECT format('{} {}', 'Hello', 'World')
 ```sql
 concat(s1, s2, ...)
 ```
-Алиас: `CONCAT`.
 
 **Параметры**
 
-- `si` – строка или ключ. Значение ключа может быть любого [типа](https://clickhouse.yandex/docs/en/data_types/).
+- `si` – строка или ключ. 
 
 **Возвращаемые значения**
 
 Возвращает строку, полученную в результате объединения аргументов. 
 
-Если любой из аргументов имеет значение null `concat` возвращает значение null.
+Если любой из аргументов имеет значение `NULL`, `concat` возвращает значение `NULL`.
 
-Тип: `String`.
+**Пример**
+
+Запрос:
+
+```sql
+SELECT concat('Hello, ', 'World!')
+```
+
+Ответ:
+
+```text
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Аналогична [concat](#concat). Разница заключается в том, что вам нужно убедиться, что `concat(s1, s2, ...) → sn` является инъективным, он будет использоваться для оптимизации GROUP BY.
+
+**Синтаксис** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Параметры**
+
+- `si` – строка или ключ.
+
+**Возвращаемые значения**
+
+Возвращает строку, полученную в результате объединения аргументов. 
+
+Если любой из аргументов имеет значение `NULL`, `concatAssumeInjective` возвращает значение `NULL`.
 
 **Пример**
 
@@ -177,48 +210,7 @@ SELECT * from key_val
 Запрос:
 
 ```sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concat(key1, key2)
-```
-
-Ответ:
-
-```text
-┌─concat(key1, key2)─┬─sum(value)─┐
-│ Hello, World!      │          5 │
-│ Hello, World       │          3 │
-└────────────────────┴────────────┘
-```
-
-## concatAssumeInjective {#concatassumeinjective}
-
-Аналогична [concat](#concat). Разница заключается в том, что вам нужно убедиться, что concat(s1, s2, ...) → sn является инъективным, он будет использоваться для оптимизации GROUP BY.
-
-**Синтаксис** 
-
-```sql
-concatAssumeInjective(s1, s2, ...)
-```
-
-**Параметры**
-
-- `si` – строка или ключ. Значение ключа может быть любого [типа](https://clickhouse.yandex/docs/en/data_types/).
-
-**Возвращаемые значения**
-
-Возвращает строку, полученную в результате объединения аргументов. 
-
-Если любой из аргументов имеет значение null `concatAssumeInjective` возвращает значение null.
-
-Тип: `String`.
-
-**Пример**
-
-Вводная таблица аналогичная [concat](./string_functions.md#concat).
-
-Запрос:
-
-```sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 ```
 
 Ответ:
