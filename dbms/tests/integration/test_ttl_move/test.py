@@ -50,62 +50,63 @@ def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
 
 
-@pytest.mark.parametrize("name,engine", [
-    ("mt_test_rule_with_invalid_destination","MergeTree()"),
-    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')"),
+@pytest.mark.parametrize("name,engine,alter", [
+    ("mt_test_rule_with_invalid_destination","MergeTree()",0),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",0),
+    ("mt_test_rule_with_invalid_destination","MergeTree()",1),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",1),
 ])
-def test_rule_with_invalid_destination(started_cluster, name, engine):
-    with pytest.raises(QueryRuntimeException):
-        node1.query("""
-            CREATE TABLE {name} (
-                s1 String,
-                d1 DateTime
-            ) ENGINE = {engine}
-            ORDER BY tuple()
-            TTL d1 TO DISK 'unknown'
-            SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine))
-
-    node1.query("DROP TABLE IF EXISTS {}".format(name))
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("""
-            CREATE TABLE {name} (
-                s1 String,
-                d1 DateTime
-            ) ENGINE = {engine}
-            ORDER BY tuple()
-            TTL d1 TO VOLUME 'unknown'
-            SETTINGS storage_policy='small_jbod_with_external'
-        """.format(name=name, engine=engine))
-
-    node1.query("DROP TABLE IF EXISTS {}".format(name))
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("""
-            CREATE TABLE {name} (
-                s1 String,
-                d1 DateTime
-            ) ENGINE = {engine}
-            ORDER BY tuple()
-            TTL d1 TO DISK 'jbod1'
-            SETTINGS storage_policy='only_jbod2'
-        """.format(name=name, engine=engine))
-
-    node1.query("DROP TABLE IF EXISTS {}".format(name))
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("""
-            CREATE TABLE {name} (
-                s1 String,
-                d1 DateTime
-            ) ENGINE = {engine}
-            ORDER BY tuple()
-            TTL d1 TO VOLUME 'external'
-            SETTINGS storage_policy='only_jbod2'
-        """.format(name=name, engine=engine))
-
-    node1.query("DROP TABLE IF EXISTS {}".format(name))
+def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
+    try:
+        def get_command(x, policy):
+            x = x or ""
+            if alter and x:
+                return """
+                    ALTER TABLE {name} MODIFY TTL {expression}
+                """.format(expression=x, name=name)
+            else:
+                return """
+                    CREATE TABLE {name} (
+                        s1 String,
+                        d1 DateTime
+                    ) ENGINE = {engine}
+                    ORDER BY tuple()
+                    {expression}
+                    SETTINGS storage_policy='{policy}'
+                """.format(expression=x, name=name, engine=engine, policy=policy)
+    
+        if alter:
+            node1.query(get_command(None, "small_jbod_with_external"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO DISK 'unknown'", "small_jbod_with_external"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "small_jbod_with_external"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO VOLUME 'unknown'", "small_jbod_with_external"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "only_jbod2"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO DISK 'jbod1'", "only_jbod2"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "only_jbod2"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO VOLUME 'external'", "only_jbod2"))
+    
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
 @pytest.mark.parametrize("name,engine,positive", [
