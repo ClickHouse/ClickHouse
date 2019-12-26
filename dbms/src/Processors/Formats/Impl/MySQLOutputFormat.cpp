@@ -47,6 +47,9 @@ void MySQLOutputFormat::initialize()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
+
+    initialize();
+
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
         ProtocolText::ResultsetRow row_packet(data_types, chunk.getColumns(), i);
