@@ -143,12 +143,14 @@ public:
                 + toString(compressed_hashing_buf.count()) + " (compressed), "
                 + toString(uncompressed_hashing_buf.count()) + " (uncompressed)", ErrorCodes::CORRUPTED_DATA);
 
+        /// Maybe we have final mark.
         if (index_granularity.hasFinalMark())
         {
             auto final_mark_rows = readMarkFromFile().second;
             if (final_mark_rows != 0)
                 throw Exception("Incorrect final mark at the end of " + mrk_file_path + " expected 0 rows, got " + toString(final_mark_rows), ErrorCodes::CORRUPTED_DATA);
         }
+
         if (!mrk_hashing_buf.eof())
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "
@@ -379,7 +381,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             size_t read_size = tmp_column->size();
             column_size += read_size;
 
-            if (read_size < rows_after_mark || mark_num == adaptive_index_granularity.getMarksCount())
+            /// We already checked all marks except final (it will be checked in assertEnd()).
+            if (mark_num == adaptive_index_granularity.getMarksCountWithoutFinal())
                 break;
             else if (marks_eof)
                 throw Exception("Unexpected end of mrk file while reading column " + name_type.name, ErrorCodes::CORRUPTED_DATA);

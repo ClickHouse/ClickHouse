@@ -1,17 +1,21 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_AWS_S3
+
 #include <memory>
 #include <vector>
 #include <Core/Types.h>
-#include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/URI.h>
 
+namespace Aws::S3
+{
+    class S3Client;
+}
 
 namespace DB
 {
@@ -20,10 +24,10 @@ namespace DB
 class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
-    Poco::URI uri;
+    String bucket;
+    String key;
+    std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t minimum_upload_part_size;
-    ConnectionTimeouts timeouts;
-    Poco::Net::HTTPRequest auth_request;
     String buffer_string;
     std::unique_ptr<WriteBufferFromString> temporary_buffer;
     size_t last_part_size;
@@ -33,12 +37,14 @@ private:
     String upload_id;
     std::vector<String> part_tags;
 
+    Logger * log = &Logger::get("WriteBufferFromS3");
+
 public:
-    explicit WriteBufferFromS3(const Poco::URI & uri,
-        size_t minimum_upload_part_size_,
-        const ConnectionTimeouts & timeouts = {},
-        const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferFromS3(std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+            const String & bucket_,
+            const String & key_,
+            size_t minimum_upload_part_size_,
+            size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
 
@@ -54,3 +60,5 @@ private:
 };
 
 }
+
+#endif
