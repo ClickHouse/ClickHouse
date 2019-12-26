@@ -222,7 +222,7 @@ void PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     }
 }
 
-void PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, size_t thread_number)
+void PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number)
 {
     /// In this method we have ownership on edge, but node can be concurrently accessed.
 
@@ -243,11 +243,11 @@ void PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, size_t threa
     if (status == ExecStatus::Idle)
     {
         node.status = ExecStatus::Preparing;
-        prepareProcessor(edge.to, thread_number, std::move(lock));
+        prepareProcessor(edge.to, thread_number, queue, std::move(lock));
     }
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, std::unique_lock<std::mutex> node_lock)
+void PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
     auto & node = graph[pid];
@@ -288,7 +288,8 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, std::u
             case IProcessor::Status::Ready:
             {
                 node.status = ExecStatus::Executing;
-                return true;
+                queue.push(node.execution_state.get());
+                break;
             }
             case IProcessor::Status::Async:
             {
@@ -333,10 +334,10 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, std::u
     if (need_traverse)
     {
         for (auto & edge : updated_direct_edges)
-            tryAddProcessorToStackIfUpdated(*edge, thread_number);
+            tryAddProcessorToStackIfUpdated(*edge, queue, thread_number);
 
         for (auto & edge : updated_back_edges)
-            tryAddProcessorToStackIfUpdated(*edge, thread_number);
+            tryAddProcessorToStackIfUpdated(*edge, queue, thread_number);
     }
 
     if (need_expand_pipeline)
@@ -365,12 +366,10 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, std::u
         while (!stack.empty())
         {
             auto item = stack.top();
-            prepareProcessor(item, thread_number, std::unique_lock<std::mutex>(graph[item].status_mutex));
+            prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(graph[item].status_mutex));
             stack.pop();
         }
     }
-
-    return false;
 }
 
 void PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task, bool processing)
@@ -479,34 +478,31 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
 
-    auto prepare_processor = [&](UInt64 pid)
+    auto prepare_processor = [&](UInt64 pid, Queue & queue)
     {
         try
         {
-            return prepareProcessor(pid, thread_num, std::unique_lock<std::mutex>(graph[pid].status_mutex));
+            prepareProcessor(pid, thread_num, queue, std::unique_lock<std::mutex>(graph[pid].status_mutex));
         }
         catch (...)
         {
             graph[pid].execution_state->exception = std::current_exception();
             finish();
         }
-
-        return false;
     };
 
-    using Queue = std::queue<ExecutionState *>;
 
-    auto prepare_all_processors = [&](Queue & queue)
-    {
-        while (!stack.empty() && !finished)
-        {
-            auto current_processor = stack.top();
-            stack.pop();
-
-            if (prepare_processor(current_processor))
-                queue.push(graph[current_processor].execution_state.get());
-        }
-    };
+//    auto prepare_all_processors = [&](Queue & queue)
+//    {
+//        while (!stack.empty() && !finished)
+//        {
+//            auto current_processor = stack.top();
+//            stack.pop();
+//
+//            if (prepare_processor(current_processor))
+//                queue.push(graph[current_processor].execution_state.get());
+//        }
+//    };
 
     auto wake_up_executor = [&](size_t executor)
     {
@@ -648,12 +644,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
+            state = nullptr;
+
             // Stopwatch processing_time_watch;
 
             /// Try to execute neighbour processor.
             {
-                Stack children;
-                Stack parents;
                 Queue queue;
 
                 ++num_processing_executors;
@@ -661,11 +657,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     doExpandPipeline(task, true);
 
                 /// Execute again if can.
-                if (!prepare_processor(state->processors_id, children, parents))
-                    state = nullptr;
+                prepare_processor(state->processors_id, queue);
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
-                prepare_all_processors(queue, children, children, parents);
+                /// prepare_all_processors(queue, children, children, parents);
                 //process_pinned_tasks(queue);
 
                 /// Take local task from queue if has one.
@@ -675,7 +670,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     queue.pop();
                 }
 
-                prepare_all_processors(queue, parents, parents, parents);
+                /// prepare_all_processors(queue, parents, parents, parents);
                 //process_pinned_tasks(queue);
 
                 /// Take pinned task if has one.
@@ -767,15 +762,19 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     {
         std::lock_guard lock(task_queue_mutex);
 
+        Queue queue;
+
         while (!stack.empty())
         {
             UInt64 proc = stack.top();
             stack.pop();
 
-            if (prepareProcessor(proc, stack, stack, 0, false))
+            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(graph[proc].status_mutex));
+
+            while (!queue.empty())
             {
-                auto cur_state = graph[proc].execution_state.get();
-                task_queue.push(cur_state);
+                task_queue.push(queue.front());
+                queue.pop();
             }
         }
     }
