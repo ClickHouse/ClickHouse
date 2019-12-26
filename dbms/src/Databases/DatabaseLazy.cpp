@@ -3,7 +3,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -105,8 +104,7 @@ void DatabaseLazy::alterTable(
     const ConstraintsDescription & /* constraints */,
     const ASTModifier & /* storage_modifier */)
 {
-    //FIXME WTF
-    SCOPE_EXIT({ clearExpiredTables(); });
+    clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 

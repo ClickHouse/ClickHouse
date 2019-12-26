@@ -214,7 +214,7 @@ void DatabaseOnDisk::renameTable(
     ASTPtr ast = parseQueryFromMetadata(getObjectMetadataPath(table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
-    auto create = ast->as<ASTCreateQuery &>();
+    auto & create = ast->as<ASTCreateQuery &>();
     create.table = to_table_name;
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.

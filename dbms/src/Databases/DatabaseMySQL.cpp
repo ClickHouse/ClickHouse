@@ -341,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(const Context & /*context*/)
 {
-    Poco::File(getMetadataPath()).remove(true); //WTF
+    Poco::File(getMetadataPath()).remove(true);
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
