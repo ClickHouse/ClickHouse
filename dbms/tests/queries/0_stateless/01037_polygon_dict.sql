@@ -29,17 +29,17 @@ INSERT INTO test_01037.points VALUES (0.0, 0.0, 11, 'aa'), (3.0, 3.0, 22, 'bb'),
 
 select 'dictGet', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGet(dict_name, 'name', key),
-       dictGet(dict_name, 'value', key) from test_01037.points;
+       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
 select 'dictGetOrDefault', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGetOrDefault(dict_name, 'name', key, 'www'),
-       dictGetOrDefault(dict_name, 'value', key, toUInt64(1234)) from test_01037.points;
+       dictGetOrDefault(dict_name, 'value', key, toUInt64(1234)) from test_01037.points order by x, y;
 select 'dictGetOrDefault', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGetOrDefault(dict_name, 'name', key, def_s),
-       dictGetOrDefault(dict_name, 'value', key, def_i) from test_01037.points;
+       dictGetOrDefault(dict_name, 'value', key, def_i) from test_01037.points order by x, y;
 
 INSERT INTO test_01037.points VALUES (5.0, 5.0, 0, ''), (5.0, 1.0, 0, ''), (1.0, 3.0, 0, '');
 select 'dictHas', 'test_01037.dict' as dict_name, tuple(x, y) as key,
-       dictHas(dict_name, key) from test_01037.points;
+       dictHas(dict_name, key) from test_01037.points order by x, y;
 
 DROP DICTIONARY test_01037.dict;
 DROP TABLE test_01037.polygons;
