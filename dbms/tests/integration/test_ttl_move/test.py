@@ -440,3 +440,42 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
+@pytest.mark.parametrize("name,engine,positive", [
+    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0),
+    ("mt_test_moves_after_merges_work","MergeTree()",1),
+    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1),
+])
+def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO DISK 'external'
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        if positive:
+            node1.query("""
+                ALTER TABLE {name}
+                    MODIFY TTL
+                    d1 + INTERVAL 15 MINUTE
+            """.format(name=name)) # That shall disable TTL.
+
+        data = [] # 10MB in total
+        for i in range(10):
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1" if positive else "external"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
