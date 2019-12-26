@@ -210,7 +210,6 @@ void registerInputFormatProcessorTSKV(FormatFactory & factory)
     factory.registerInputFormatProcessor("TSKV", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {

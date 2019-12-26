@@ -189,7 +189,7 @@ $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings][../operations/settings/index.md] section.
+For more information, see the [Settings](../operations/settings/index.md) section.
 
 ```bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-

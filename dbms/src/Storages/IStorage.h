@@ -304,7 +304,7 @@ public:
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
       */
-    virtual void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/,
+    virtual void rename(const String & /*new_path_to_table_data*/, const String & /*new_database_name*/, const String & /*new_table_name*/,
                         TableStructureWriteLockHolder &)
     {
         throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
