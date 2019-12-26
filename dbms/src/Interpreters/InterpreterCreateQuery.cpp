@@ -632,7 +632,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     else
     {
         res = StorageFactory::instance().get(create,
-            data_path,
+            data_path + escapeForFileName(table_name) + "/",
             table_name,
             create.database,
             context,

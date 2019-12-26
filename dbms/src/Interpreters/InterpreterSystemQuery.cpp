@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -294,7 +295,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
-            data_path,
+            data_path + escapeForFileName(table_name) + "/",
             table_name,
             database_name,
             system_context,
