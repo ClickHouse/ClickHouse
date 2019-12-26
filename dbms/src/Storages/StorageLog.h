@@ -37,7 +37,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(
-        const String & new_path_to_db,
+        const String & new_path_to_table_data,
         const String & new_database_name,
         const String & new_table_name,
         TableStructureWriteLockHolder &) override;
@@ -55,6 +55,7 @@ protected:
       */
     StorageLog(
         DiskPtr disk_,
+        const String & relative_path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
@@ -85,9 +86,9 @@ private:
     using Files = std::map<String, ColumnData>; /// file name -> column data
 
     DiskPtr disk;
+    String table_path;
     String database_name;
     String table_name;
-    String table_path;
 
     mutable std::shared_mutex rwlock;
 

@@ -55,6 +55,7 @@ namespace ActionLocks
 StorageMergeTree::StorageMergeTree(
     const String & database_name_,
     const String & table_name_,
+    const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     const ConstraintsDescription & constraints_,
@@ -69,7 +70,7 @@ StorageMergeTree::StorageMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_,
+        : MergeTreeData(database_name_, table_name_, relative_data_path_,
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
@@ -249,34 +250,10 @@ void StorageMergeTree::alter(
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 
-    if (!params.isMutable())
-    {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-        auto new_columns = getColumns();
-        auto new_indices = getIndices();
-        auto new_constraints = getConstraints();
-        ASTPtr new_order_by_ast = order_by_ast;
-        ASTPtr new_primary_key_ast = primary_key_ast;
-        ASTPtr new_ttl_table_ast = ttl_table_ast;
-        SettingsChanges new_changes;
-
-        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-
-        changeSettings(new_changes, table_lock_holder);
-
-        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
-        setColumns(std::move(new_columns));
-        return;
-    }
-
-    /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    /// Also block moves, because they can replace part with old state
-    auto merge_blocker = merger_mutator.merges_blocker.cancel();
-    auto moves_blocked = parts_mover.moves_blocker.cancel();
-
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
     checkAlter(params, context);
+
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
@@ -284,13 +261,11 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     SettingsChanges new_changes;
+
     params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
-    auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
-
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
-    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
+    /// Modifier for storage AST in /metadata/storage_db/storage.sql
+    IDatabase::ASTModifier storage_modifier = [&](IAST & ast)
     {
         auto & storage_ast = ast.as<ASTStorage &>();
 
@@ -310,24 +285,51 @@ void StorageMergeTree::alter(
         }
     };
 
-    changeSettings(new_changes, table_lock_holder);
-
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
-
-
-    /// Reinitialize primary key because primary key column types might have changed.
-    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
-
-    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
-
-    for (auto & transaction : transactions)
+    /// Update metdata in memory
+    auto update_metadata = [&]()
     {
-        transaction->commit();
-        transaction.reset();
-    }
+        changeSettings(new_changes, table_lock_holder);
+        /// Reinitialize primary key because primary key column types might have changed.
+        setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
 
-    /// Columns sizes could be changed
-    recalculateColumnSizes();
+        setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
+    };
+
+    /// This alter can be performed at metadata level only
+    if (!params.isModifyingData())
+    {
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+
+        update_metadata();
+    }
+    else
+    {
+
+        /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
+        /// Also block moves, because they can replace part with old state
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto moves_blocked = parts_mover.moves_blocker.cancel();
+
+
+        auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
+
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+
+        update_metadata();
+
+        for (auto & transaction : transactions)
+        {
+            transaction->commit();
+            transaction.reset();
+        }
+
+        /// Columns sizes could be changed
+        recalculateColumnSizes();
+    }
 }
 
 
@@ -425,17 +427,18 @@ public:
 };
 
 
-void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
+void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = storage_policy->getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
+    Int64 version;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        Int64 version = increment.get();
+        version = increment.get();
         entry.commit(version);
         file_name = entry.file_name;
         auto insertion = current_mutations_by_id.emplace(file_name, std::move(entry));
@@ -444,6 +447,15 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
 
     LOG_INFO(log, "Added mutation: " << file_name);
     merging_mutating_task_handle->wake();
+
+    /// We have to wait mutation end
+    if (query_context.getSettingsRef().mutations_sync > 0)
+    {
+        LOG_INFO(log, "Waiting mutation: " << file_name);
+        auto check = [version, this]() { return isMutationDone(version); };
+        std::unique_lock lock(mutation_wait_mutex);
+        mutation_wait_event.wait(lock, check);
+    }
 }
 
 namespace
@@ -460,6 +472,21 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
     return f.version < s.version;
 }
 
+}
+
+bool StorageMergeTree::isMutationDone(Int64 mutation_version) const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// Killed
+    if (!current_mutations_by_version.count(mutation_version))
+        return true;
+
+    auto data_parts = getDataPartsVector();
+    for (const auto & data_part : data_parts)
+        if (data_part->info.getDataVersion() < mutation_version)
+            return false;
+    return true;
 }
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
@@ -535,6 +562,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    mutation_wait_event.notify_all();
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
     merging_mutating_task_handle->wake();
@@ -771,6 +799,9 @@ bool StorageMergeTree::tryMutatePart()
         renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});
+
+        /// Notify all, who wait for this or previous mutations
+        mutation_wait_event.notify_all();
     }
     catch (...)
     {
