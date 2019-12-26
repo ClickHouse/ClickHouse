@@ -22,6 +22,7 @@ if (ENABLE_READLINE)
 
         add_library(replxx ${SRCS})
         target_include_directories(replxx PUBLIC ${LIBRARY_DIR}/include)
+        target_compile_options(replxx PUBLIC -Wno-documentation)
     else ()
         find_library(LIBRARY_REPLXX NAMES replxx replxx-static)
         find_path(INCLUDE_REPLXX replxx.hxx)
