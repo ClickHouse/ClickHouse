@@ -1970,6 +1970,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2083,6 +2085,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
         pipeline.addPipe(std::move(pipe));
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2316,6 +2320,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
             pipeline.addPipe({ std::move(transform) });
         }
 
+        pipeline.enableQuotaForCurrentStreams();
+
         if (need_finish_sorting)
         {
             pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
@@ -2355,6 +2361,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2416,6 +2424,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
             settings.max_block_size, limit);
 
         pipeline.addPipe({ std::move(transform) });
+
+        pipeline.enableQuotaForCurrentStreams();
     }
 }
 
