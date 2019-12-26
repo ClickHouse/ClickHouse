@@ -100,7 +100,7 @@ static const WriteSpec WRITE_SPEC_LUT[32] = {
 template <typename T>
 WriteSpec getDeltaWriteSpec(const T & value)
 {
-    // TODO: to speed up things a bit by counting number of leading zeroes instead of doing lost of comparisons
+    // TODO: to speed up things a bit by counting number of leading zeroes instead of doing lots of comparisons
     if (value > -63 && value < 64)
     {
         return WriteSpec{2, 0b10, 7};
