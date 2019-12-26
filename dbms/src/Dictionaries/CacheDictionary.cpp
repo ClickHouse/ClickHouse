@@ -671,7 +671,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
         const auto & layout_prefix = config_prefix + ".layout";
 
-        const auto size = config.getUInt64(layout_prefix + ".cache.size_in_cells");
+        const size_t size = config.getUInt64(layout_prefix + ".cache.size_in_cells");
         if (size == 0)
             throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells",
                             ErrorCodes::TOO_SMALL_BUFFER_SIZE};
@@ -683,7 +683,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-        const auto max_update_queue_size =
+        const size_t max_update_queue_size =
                 config.getUInt64(layout_prefix + ".cache.max_update_queue_size", 100000);
         if (max_update_queue_size == 0)
             throw Exception{name + ": dictionary of layout 'cache' cannot have empty update queue of size 0",
@@ -692,7 +692,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const bool allow_read_expired_keys =
                 config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
 
-        const auto update_queue_push_timeout_milliseconds =
+        const size_t update_queue_push_timeout_milliseconds =
                 config.getUInt64(layout_prefix + ".cache.update_queue_push_timeout_milliseconds", 10);
         if (update_queue_push_timeout_milliseconds < 10)
             throw Exception{name + ": dictionary of layout 'cache' have too little update_queue_push_timeout",
@@ -700,7 +700,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
         return std::make_unique<CacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, size,
-                max_update_queue_size, allow_read_expired_keys, update_queue_push_timeout_milliseconds);
+                allow_read_expired_keys, max_update_queue_size, update_queue_push_timeout_milliseconds);
     };
     factory.registerLayout("cache", create_layout, false);
 }
