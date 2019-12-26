@@ -82,7 +82,7 @@ public:
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
@@ -168,7 +168,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & data_path_,
+        const String & relative_data_path_,
         bool attach_);
 
     StorageDistributed(
@@ -180,7 +180,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & data_path_,
+        const String & relative_data_path_,
         bool attach);
 
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);

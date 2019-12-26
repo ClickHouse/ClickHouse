@@ -331,6 +331,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
+                  const String & relative_data_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   const ConstraintsDescription & constraints_,
@@ -536,7 +537,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_db, const String & new_database_name,
+    void rename(const String & new_path_to_table_data, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// Check if the ALTER can be performed:
@@ -791,6 +792,7 @@ protected:
 
     String database_name;
     String table_name;
+    String relative_data_path;
 
 
     /// Current column sizes in compressed and uncompressed form.
