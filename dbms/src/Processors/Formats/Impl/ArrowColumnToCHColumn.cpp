@@ -248,7 +248,7 @@ namespace DB
 
     void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
                                                     arrow::Status &read_status, const Block &header,
-                                                    int &row_group_current, const Context &context, std::string format_name)
+                                                    int &row_group_current, std::string format_name)
     {
         Columns columns_list;
         UInt64 num_rows = 0;
@@ -389,7 +389,7 @@ namespace DB
             else
                 column.column = std::move(read_column);
 
-            column.column = castColumn(column, column_type, context);
+            column.column = castColumn(column, column_type);
             column.type = column_type;
             num_rows = column.column->size();
             columns_list.push_back(std::move(column.column));

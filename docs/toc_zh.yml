@@ -207,7 +207,8 @@ nav:
     - '介绍': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
+    
 - '常见问题':
   - '一般的问题': 'faq/general.md'
 
