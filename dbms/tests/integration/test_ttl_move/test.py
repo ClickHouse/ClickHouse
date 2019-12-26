@@ -501,13 +501,17 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
-@pytest.mark.parametrize("name,engine,positive", [
-    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0),
-    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0),
-    ("mt_test_moves_after_merges_work","MergeTree()",1),
-    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1),
+@pytest.mark.parametrize("name,engine,positive,bar", [
+    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0,"DELETE"),
+    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0,"DELETE"),
+    ("mt_test_moves_after_merges_work","MergeTree()",1,"DELETE"),
+    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1,"DELETE"),
+    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0,"TO DISK 'external'"),
+    ("mt_test_moves_after_merges_work","MergeTree()",1,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1,"TO DISK 'external'"),
 ])
-def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
+def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, bar):
     try:
         node1.query("""
             CREATE TABLE {name} (
@@ -523,8 +527,8 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
             node1.query("""
                 ALTER TABLE {name}
                     MODIFY TTL
-                    d1 + INTERVAL 15 MINUTE
-            """.format(name=name)) # That shall disable TTL.
+                    d1 + INTERVAL 15 MINUTE {bar}
+            """.format(name=name, bar=bar)) # That shall disable TTL.
 
         data = [] # 10MB in total
         for i in range(10):
