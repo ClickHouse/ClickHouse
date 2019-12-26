@@ -24,7 +24,7 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
-    const String & database_data_path,
+    const String & database_data_path_relative,
     Context & context,
     bool has_force_restore_data_flag);
 
@@ -98,7 +98,7 @@ public:
         const IDatabase & database,
         const Context & context);
 
-    static void drop(const IDatabase & database);
+    static void drop(const IDatabase & database, const Context & context);
 
     static String getObjectMetadataPath(
         const IDatabase & database,
@@ -110,7 +110,7 @@ public:
 
 
     using IteratingFunction = std::function<void(const String &)>;
-    static void iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function);
+    static void iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const Context & context, const IteratingFunction & iterating_function);
 
 private:
     static ASTPtr getCreateTableQueryImpl(
@@ -156,7 +156,7 @@ void DatabaseOnDisk::renameTable(
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/",
+        table->rename("/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/" + escapeForFileName(to_table_name) + '/',
             to_database_concrete->getDatabaseName(),
             to_table_name, lock);
     }

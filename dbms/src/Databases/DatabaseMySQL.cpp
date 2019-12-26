@@ -332,7 +332,7 @@ void DatabaseMySQL::shutdown()
     local_tables_cache.clear();
 }
 
-void DatabaseMySQL::drop()
+void DatabaseMySQL::drop(const Context & /*context*/)
 {
     Poco::File(getMetadataPath()).remove(true);
 }
