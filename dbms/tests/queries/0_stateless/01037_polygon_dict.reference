@@ -1,27 +1,27 @@
+dictGet	test_01037.dict	(-100,-42)	qqq	101
 dictGet	test_01037.dict	(0,0)	Click	42
+dictGet	test_01037.dict	(0.99,3)	Click	42
 dictGet	test_01037.dict	(3,3)	House	314159
 dictGet	test_01037.dict	(5,6)	Click	42
-dictGet	test_01037.dict	(-100,-42)	qqq	101
 dictGet	test_01037.dict	(7.01,7.01)	qqq	101
-dictGet	test_01037.dict	(0.99,3)	Click	42
-dictGetOrDefault	test_01037.dict	(0,0)	Click	42
-dictGetOrDefault	test_01037.dict	(3,3)	House	314159
-dictGetOrDefault	test_01037.dict	(5,6)	Click	42
 dictGetOrDefault	test_01037.dict	(-100,-42)	www	1234
-dictGetOrDefault	test_01037.dict	(7.01,7.01)	www	1234
-dictGetOrDefault	test_01037.dict	(0.99,3)	Click	42
 dictGetOrDefault	test_01037.dict	(0,0)	Click	42
+dictGetOrDefault	test_01037.dict	(0.99,3)	Click	42
 dictGetOrDefault	test_01037.dict	(3,3)	House	314159
 dictGetOrDefault	test_01037.dict	(5,6)	Click	42
+dictGetOrDefault	test_01037.dict	(7.01,7.01)	www	1234
 dictGetOrDefault	test_01037.dict	(-100,-42)	dd	44
-dictGetOrDefault	test_01037.dict	(7.01,7.01)	ee	55
+dictGetOrDefault	test_01037.dict	(0,0)	Click	42
 dictGetOrDefault	test_01037.dict	(0.99,3)	Click	42
-dictHas	test_01037.dict	(0,0)	1
-dictHas	test_01037.dict	(3,3)	1
-dictHas	test_01037.dict	(5,6)	1
+dictGetOrDefault	test_01037.dict	(3,3)	House	314159
+dictGetOrDefault	test_01037.dict	(5,6)	Click	42
+dictGetOrDefault	test_01037.dict	(7.01,7.01)	ee	55
 dictHas	test_01037.dict	(-100,-42)	0
-dictHas	test_01037.dict	(7.01,7.01)	0
+dictHas	test_01037.dict	(0,0)	1
 dictHas	test_01037.dict	(0.99,3)	1
-dictHas	test_01037.dict	(5,5)	1
-dictHas	test_01037.dict	(5,1)	1
 dictHas	test_01037.dict	(1,3)	1
+dictHas	test_01037.dict	(3,3)	1
+dictHas	test_01037.dict	(5,1)	1
+dictHas	test_01037.dict	(5,5)	1
+dictHas	test_01037.dict	(5,6)	1
+dictHas	test_01037.dict	(7.01,7.01)	0
