@@ -701,14 +701,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty())
+                    if (!threads_queue.empty() && task_quota > threads_queue.size())
                     {
                         auto thread_to_wake = threads_queue.pop_any();
-                        bool wake_up = task_quota > threads_queue.size();
                         lock.unlock();
 
-                        if (wake_up)
-                            wake_up_executor(thread_to_wake);
+                        wake_up_executor(thread_to_wake);
                     }
                 }
 
