@@ -102,10 +102,16 @@ add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 set(ARROW_IPC_SRC_DIR ${ARROW_SRC_DIR}/arrow/ipc)
 set(ARROW_FORMAT_SRC_DIR ${ARROW_SRC_DIR}/../../format)
 
-set(FLATBUFFERS_COMPILED_OUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/arrow/ipc)
+set(ARROW_GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/arrow_gen_headers)
+set(FLATBUFFERS_COMPILED_OUT_DIR ${ARROW_GENERATED_INCLUDE_DIR}/arrow/ipc)
 
-set(FBS_OUTPUT_FILES "${FLATBUFFERS_COMPILED_OUT_DIR}/File_generated.h" "${FLATBUFFERS_COMPILED_OUT_DIR}/Message_generated.h"
-        "${FLATBUFFERS_COMPILED_OUT_DIR}/feather_generated.h")
+set(FBS_OUTPUT_FILES
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/File_generated.h"
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/Message_generated.h"
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/feather_generated.h"
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/Schema_generated.h"
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/SparseTensor_generated.h"
+        "${FLATBUFFERS_COMPILED_OUT_DIR}/Tensor_generated.h")
 
 set(FBS_SRC
         ${ARROW_FORMAT_SRC_DIR}/Message.fbs
@@ -137,7 +143,7 @@ add_custom_command(OUTPUT ${FBS_OUTPUT_FILES}
 add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
 add_dependencies(metadata_fbs flatc)
 
-# arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features. 
+# arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard. 
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
 # In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
@@ -231,12 +237,10 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/ipc/dictionary.cc
         ${LIBRARY_DIR}/ipc/feather.cc
-#        ${LIBRARY_DIR}/ipc/file_to_stream.cc
         ${LIBRARY_DIR}/ipc/message.cc
         ${LIBRARY_DIR}/ipc/metadata_internal.cc
         ${LIBRARY_DIR}/ipc/options.cc
         ${LIBRARY_DIR}/ipc/reader.cc
-#        ${LIBRARY_DIR}/ipc/stream_to_file.cc
         ${LIBRARY_DIR}/ipc/writer.cc
 
         ${LIBRARY_DIR}/io/buffered.cc
@@ -249,8 +253,6 @@ set(ARROW_SRCS
 
         ${LIBRARY_DIR}/util/basic_decimal.cc
         ${LIBRARY_DIR}/util/bit_util.cc
-        #  ${LIBRARY_DIR}/util/compression_brotli.cc
-#        ${LIBRARY_DIR}/util/compression_bz2.cc
         ${LIBRARY_DIR}/util/compression.cc
         ${LIBRARY_DIR}/util/compression_lz4.cc
         ${LIBRARY_DIR}/util/compression_snappy.cc
@@ -268,7 +270,6 @@ set(ARROW_SRCS
         ${LIBRARY_DIR}/util/task_group.cc
         ${LIBRARY_DIR}/util/thread_pool.cc
         ${LIBRARY_DIR}/util/trie.cc
-        #  ${LIBRARY_DIR}/util/uri.cc
         ${LIBRARY_DIR}/util/utf8.cc
 
         ${LIBRARY_DIR}/vendored/base64.cpp
@@ -356,6 +357,8 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_D
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_GENERATED_INCLUDE_DIR})
+
 # === parquet
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
