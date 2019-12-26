@@ -50,6 +50,64 @@ def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
 
 
+@pytest.mark.parametrize("name,engine", [
+    ("mt_test_rule_with_invalid_destination","MergeTree()"),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')"),
+])
+def test_rule_with_invalid_destination(started_cluster, name, engine):
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO DISK 'unknown'
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+    node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO VOLUME 'unknown'
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+    node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO DISK 'jbod1'
+            SETTINGS storage_policy='only_jbod2'
+        """.format(name=name, engine=engine))
+
+    node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO VOLUME 'external'
+            SETTINGS storage_policy='only_jbod2'
+        """.format(name=name, engine=engine))
+
+    node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_inserts_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_inserts_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_do_not_work', '1')",0),
