@@ -194,7 +194,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
 
         throw Exception("Incorrect number of arguments for function " + func.getName()
                         + " provided " + std::to_string(arguments.size())
-                        + (arguments.size() ? " (" + joinArgumentTypes(arguments) + ")" : String{} )
+                        + (arguments.size() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
                         + ", expected " + std::to_string(mandatory_args.size())
                         + (optional_args.size() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
                         + " (" + joinArgumentTypes(mandatory_args)
