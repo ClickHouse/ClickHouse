@@ -4,6 +4,8 @@ set -o pipefail
 trap "exit" INT TERM
 trap "kill 0" EXIT
 
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 mkdir left ||:
 mkdir right ||:
 mkdir db0 ||:
@@ -82,11 +84,14 @@ function restart
 
 restart
 
-for test in ch/dbms/tests/performance/*.xml
+# Just check that the script runs at all
+"$script_dir/perf.py" --help > /dev/null
+
+for test in left/performance/*.xml
 do
     test_name=$(basename $test ".xml")
-    ./perf.py "$test" > "$test_name-raw.tsv" || continue
-    right/clickhouse local --file "$test_name-raw.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat eqmed.sql)" > "$test_name-report.tsv"
+    "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" || continue
+    right/clickhouse local --file "$test_name-raw.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
 done
 
 #while killall clickhouse ; do echo . ; sleep 1 ; done
