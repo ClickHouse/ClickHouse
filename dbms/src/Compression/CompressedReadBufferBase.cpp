@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
+    extern const int CORRUPTED_DATA;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -123,6 +124,10 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
                         + toString(size_compressed_without_checksum)
                         + ". Most likely corrupted data.",
                         ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+
+    if (size_compressed_without_checksum < header_size)
+        throw Exception("Can't decompress data: the compressed data size (" + toString(size_compressed_without_checksum)
+            + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
 
