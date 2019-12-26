@@ -228,8 +228,8 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Strin
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    renameInMemory(new_database_name, new_table_name);
     file_checker.setPath(path + "sizes.json");
+    renameInMemory(new_database_name, new_table_name);
 }
 
 

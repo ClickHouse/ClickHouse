@@ -132,7 +132,8 @@ namespace
 }
 
 
-StorageS3::StorageS3(const S3::URI & uri_,
+StorageS3::StorageS3(
+    const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
     const StorageID & table_id_,

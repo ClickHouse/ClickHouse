@@ -26,7 +26,7 @@ namespace
 }
 
 
-FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & format_schema, const String & format, bool require_message)
+FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path)
 {
     if (format_schema.empty())
         throw Exception(
@@ -54,14 +54,10 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & forma
     else
         path.assign(format_schema).makeFile().getFileName();
 
-    auto default_schema_directory = [&context]()
+    auto default_schema_directory = [&format_schema_path]()
     {
-        static const String str = Poco::Path(context.getFormatSchemaPath()).makeAbsolute().makeDirectory().toString();
+        static const String str = Poco::Path(format_schema_path).makeAbsolute().makeDirectory().toString();
         return str;
-    };
-    auto is_server = [&context]()
-    {
-        return context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
     };
 
     if (path.getExtension().empty() && !default_file_extension.empty())
@@ -69,14 +65,14 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & forma
 
     if (path.isAbsolute())
     {
-        if (is_server())
+        if (is_server)
             throw Exception("Absolute path in the 'format_schema' setting is prohibited: " + path.toString(), ErrorCodes::BAD_ARGUMENTS);
         schema_path = path.getFileName();
         schema_directory = path.makeParent().toString();
     }
     else if (path.depth() >= 1 && path.directory(0) == "..")
     {
-        if (is_server())
+        if (is_server)
             throw Exception(
                 "Path in the 'format_schema' setting shouldn't go outside the 'format_schema_path' directory: " + path.toString(),
                 ErrorCodes::BAD_ARGUMENTS);

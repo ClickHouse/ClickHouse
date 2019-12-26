@@ -81,6 +81,7 @@ class AccessControlManager;
 class SettingsConstraints;
 struct StorageID;
 class RemoteHostFilter;
+struct StorageID;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;

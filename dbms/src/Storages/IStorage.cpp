@@ -402,7 +402,7 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    if (params.isMutable())
+    if (params.isModifyingData())
         throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
     auto table_id = getStorageID();

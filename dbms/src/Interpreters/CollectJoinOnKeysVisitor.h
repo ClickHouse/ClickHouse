@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
 
 
@@ -25,8 +26,8 @@ public:
     struct Data
     {
         AnalyzedJoin & analyzed_join;
-        const NameSet & source_columns;
-        const NameSet & joined_columns;
+        const TableWithColumnNames & left_table;
+        const TableWithColumnNames & right_table;
         const Aliases & aliases;
         const bool is_asof{false};
         ASTPtr asof_left_key{};

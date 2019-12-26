@@ -234,7 +234,7 @@ public:
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_) {}
         const DataPartPtr & getDataPart() const { return data_part; }
         bool isValid() const;
 
@@ -244,9 +244,7 @@ public:
 
         bool valid = true;
 
-        //don't interchange order of data_part & alter_lock
         DataPartPtr data_part;
-        DataPartsLock alter_lock;
 
         DataPart::Checksums new_checksums;
         NamesAndTypesList new_columns;
