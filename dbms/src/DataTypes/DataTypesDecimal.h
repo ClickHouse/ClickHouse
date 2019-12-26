@@ -61,7 +61,9 @@ public:
     static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
 
 private:
+    /// The name of data type how the user specified it. A single data type may be referenced by various synonims.
     const String type_name;
+    /// If the user specified it only with scale parameter but without precision.
     bool only_scale = false;
 };
 
