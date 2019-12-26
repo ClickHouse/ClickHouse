@@ -173,7 +173,7 @@ private:
         std::mutex mutex;
         bool wake_flag = false;
 
-        std::queue<ExecutionState *> pinned_tasks;
+        /// std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
@@ -190,14 +190,14 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
+    void tryAddProcessorToStackIfUpdated(Edge & edge, size_t thread_number);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
+    bool prepareProcessor(UInt64 pid, size_t thread_number, std::unique_lock<std::mutex> node_lock);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);

@@ -222,18 +222,18 @@ void PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     }
 }
 
-bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack)
+void PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, size_t thread_number)
 {
     /// In this method we have ownership on edge, but node can be concurrently accessed.
 
     auto & node = graph[edge.to];
 
-    std::lock_guard guard(node.status_mutex);
+    std::unique_lock lock(node.status_mutex);
 
     ExecStatus status = node.status;
 
     if (status == ExecStatus::Finished)
-        return false;
+        return;
 
     if (edge.backward)
         node.updated_output_ports.push_back(edge.output_port_number);
@@ -243,14 +243,11 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stac
     if (status == ExecStatus::Idle)
     {
         node.status = ExecStatus::Preparing;
-        stack.push(edge.to);
-        return true;
+        prepareProcessor(edge.to, thread_number, std::move(lock));
     }
-
-    return false;
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
     auto & node = graph[pid];
@@ -264,7 +261,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
     {
         /// Stopwatch watch;
 
-        std::lock_guard guard(node.status_mutex);
+        std::unique_lock<std::mutex> lock(std::move(node_lock));
 
         auto status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
         node.updated_input_ports.clear();
@@ -303,9 +300,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
             }
             case IProcessor::Status::Wait:
             {
-                if (!async)
-                    throw Exception("Processor returned status Wait before Async.", ErrorCodes::LOGICAL_ERROR);
-                break;
+                throw Exception("Wait is temporary not supported.", ErrorCodes::LOGICAL_ERROR);
             }
             case IProcessor::Status::ExpandPipeline:
             {
@@ -337,18 +332,20 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
 
     if (need_traverse)
     {
-        for (auto & edge : updated_back_edges)
-            tryAddProcessorToStackIfUpdated(*edge, parents);
-
         for (auto & edge : updated_direct_edges)
-            tryAddProcessorToStackIfUpdated(*edge, children);
+            tryAddProcessorToStackIfUpdated(*edge, thread_number);
+
+        for (auto & edge : updated_back_edges)
+            tryAddProcessorToStackIfUpdated(*edge, thread_number);
     }
 
     if (need_expand_pipeline)
     {
+        Stack stack;
+
         executor_contexts[thread_number]->task_list.emplace_back(
                 node.execution_state.get(),
-                &parents
+                &stack
         );
 
         ExpandPipelineTask * desired = &executor_contexts[thread_number]->task_list.back();
@@ -363,7 +360,14 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
         doExpandPipeline(desired, true);
 
         /// Add itself back to be prepared again.
-        children.push(pid);
+        stack.push(pid);
+
+        while (!stack.empty())
+        {
+            auto item = stack.top();
+            prepareProcessor(item, thread_number, std::unique_lock<std::mutex>(graph[item].status_mutex));
+            stack.pop();
+        }
     }
 
     return false;
@@ -475,11 +479,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
 
-    auto prepare_processor = [&](UInt64 pid, Stack & children, Stack & parents)
+    auto prepare_processor = [&](UInt64 pid)
     {
         try
         {
-            return prepareProcessor(pid, children, parents, thread_num, false);
+            return prepareProcessor(pid, thread_num, std::unique_lock<std::mutex>(graph[pid].status_mutex));
         }
         catch (...)
         {
@@ -492,14 +496,14 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     using Queue = std::queue<ExecutionState *>;
 
-    auto prepare_all_processors = [&](Queue & queue, Stack & stack, Stack & children, Stack & parents)
+    auto prepare_all_processors = [&](Queue & queue)
     {
         while (!stack.empty() && !finished)
         {
             auto current_processor = stack.top();
             stack.pop();
 
-            if (prepare_processor(current_processor, children, parents))
+            if (prepare_processor(current_processor))
                 queue.push(graph[current_processor].execution_state.get());
         }
     };
@@ -511,62 +515,62 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         executor_contexts[executor]->condvar.notify_one();
     };
 
-    auto process_pinned_tasks = [&](Queue & queue)
-    {
-        Queue tmp_queue;
-
-        struct PinnedTask
-        {
-            ExecutionState * task;
-            size_t thread_num;
-        };
-
-        std::stack<PinnedTask> pinned_tasks;
-
-        while (!queue.empty())
-        {
-            auto task = queue.front();
-            queue.pop();
-
-            auto stream = task->processor->getStream();
-            if (stream != IProcessor::NO_STREAM)
-                pinned_tasks.push({.task = task, .thread_num = stream % num_threads});
-            else
-                tmp_queue.push(task);
-        }
-
-        if (!pinned_tasks.empty())
-        {
-            std::stack<size_t> threads_to_wake;
-
-            {
-                std::lock_guard lock(task_queue_mutex);
-
-                while (!pinned_tasks.empty())
-                {
-                    auto & pinned_task = pinned_tasks.top();
-                    auto thread = pinned_task.thread_num;
-
-                    executor_contexts[thread]->pinned_tasks.push(pinned_task.task);
-                    pinned_tasks.pop();
-
-                    if (threads_queue.has(thread))
-                    {
-                        threads_queue.pop(thread);
-                        threads_to_wake.push(thread);
-                    }
-                }
-            }
-
-            while (!threads_to_wake.empty())
-            {
-                wake_up_executor(threads_to_wake.top());
-                threads_to_wake.pop();
-            }
-        }
-
-        queue.swap(tmp_queue);
-    };
+//    auto process_pinned_tasks = [&](Queue & queue)
+//    {
+//        Queue tmp_queue;
+//
+//        struct PinnedTask
+//        {
+//            ExecutionState * task;
+//            size_t thread_num;
+//        };
+//
+//        std::stack<PinnedTask> pinned_tasks;
+//
+//        while (!queue.empty())
+//        {
+//            auto task = queue.front();
+//            queue.pop();
+//
+//            auto stream = task->processor->getStream();
+//            if (stream != IProcessor::NO_STREAM)
+//                pinned_tasks.push({.task = task, .thread_num = stream % num_threads});
+//            else
+//                tmp_queue.push(task);
+//        }
+//
+//        if (!pinned_tasks.empty())
+//        {
+//            std::stack<size_t> threads_to_wake;
+//
+//            {
+//                std::lock_guard lock(task_queue_mutex);
+//
+//                while (!pinned_tasks.empty())
+//                {
+//                    auto & pinned_task = pinned_tasks.top();
+//                    auto thread = pinned_task.thread_num;
+//
+//                    executor_contexts[thread]->pinned_tasks.push(pinned_task.task);
+//                    pinned_tasks.pop();
+//
+//                    if (threads_queue.has(thread))
+//                    {
+//                        threads_queue.pop(thread);
+//                        threads_to_wake.push(thread);
+//                    }
+//                }
+//            }
+//
+//            while (!threads_to_wake.empty())
+//            {
+//                wake_up_executor(threads_to_wake.top());
+//                threads_to_wake.pop();
+//            }
+//        }
+//
+//        queue.swap(tmp_queue);
+//    };
 
     while (!finished)
     {
@@ -577,13 +581,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             {
                 std::unique_lock lock(task_queue_mutex);
 
-                if (!executor_contexts[thread_num]->pinned_tasks.empty())
-                {
-                    state = executor_contexts[thread_num]->pinned_tasks.front();
-                    executor_contexts[thread_num]->pinned_tasks.pop();
-
-                    break;
-                }
+//                if (!executor_contexts[thread_num]->pinned_tasks.empty())
+//                {
+//                    state = executor_contexts[thread_num]->pinned_tasks.front();
+//                    executor_contexts[thread_num]->pinned_tasks.pop();
+//
+//                    break;
+//                }
 
                 if (!task_queue.empty())
                 {
@@ -662,7 +666,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
-                process_pinned_tasks(queue);
+                //process_pinned_tasks(queue);
 
                 /// Take local task from queue if has one.
                 if (!state && !queue.empty())
@@ -672,20 +676,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 }
 
                 prepare_all_processors(queue, parents, parents, parents);
-                process_pinned_tasks(queue);
+                //process_pinned_tasks(queue);
 
                 /// Take pinned task if has one.
-                {
-                    std::lock_guard guard(task_queue_mutex);
-                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
-                    {
-                        if (state)
-                        queue.push(state);
-
-                        state = executor_contexts[thread_num]->pinned_tasks.front();
-                        executor_contexts[thread_num]->pinned_tasks.pop();
-                    }
-                }
+//                {
+//                    std::lock_guard guard(task_queue_mutex);
+//                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
+//                    {
+//                        if (state)
+//                        queue.push(state);
+//
+//                        state = executor_contexts[thread_num]->pinned_tasks.front();
+//                        executor_contexts[thread_num]->pinned_tasks.pop();
+//                    }
+//                }
 
                 /// Push other tasks to global queue.
                 if (!queue.empty())
