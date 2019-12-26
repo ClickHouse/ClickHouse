@@ -231,10 +231,10 @@ void IPolygonDictionary::getString(
 
     const auto & null_value = getNullValue<String>(dict_struct.attributes[ind].null_value);
 
-    getItemsImpl<String, String>(
+    getItemsImpl<String, StringRef>(
             ind,
             key_columns,
-            [&](const size_t, const String & value) { out->insertData(value.data(), value.size()); },
+            [&](const size_t, const StringRef & value) { out->insertData(value.data, value.size); },
             [&](const size_t) { return null_value; });
 }
 
@@ -341,15 +341,31 @@ void IPolygonDictionary::getItemsImpl(
 {
     const auto points = extractPoints(key_columns);
 
+    using ColVecType = std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<AttributeType>, ColumnVector<AttributeType>>;
+    using ColType = std::conditional_t<std::is_same<AttributeType, String>::value, ColumnString, ColVecType>;
+    const auto column = typeid_cast<const ColType *>(attributes[attribute_ind].get());
+    if (!column)
+        throw Exception{"An attribute should be a column of its type", ErrorCodes::LOGICAL_ERROR};
     for (const auto i : ext::range(0, points.size()))
     {
         size_t id = 0;
-        auto found = find(points[i], id);
-        set_value(i, found ? static_cast<OutputType>((*attributes[attribute_ind])[id].get<AttributeType>()) : get_default(i));
+        const auto found = find(points[i], id);
+        if (!found)
+        {
+            const auto def = get_default(i);
+            set_value(i, static_cast<OutputType>(def));
+            continue;
+        }
+        if constexpr (std::is_same<AttributeType, String>::value)
+            set_value(i, static_cast<OutputType>(column->getDataAt(id)));
+        else
+            set_value(i, static_cast<OutputType>(column->getElement(id)));
     }
 
     query_count.fetch_add(points.size(), std::memory_order_relaxed);
 }
+
+
 
 IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
 {
