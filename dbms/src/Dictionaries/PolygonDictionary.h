@@ -186,9 +186,9 @@ private:
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
-    /** Return the default type T value of field. */
     template <typename T>
-    static T getNullValue(const Field & field);
+    void appendNullValueImpl(const Field & null_value);
+    void appendNullValue(AttributeUnderlyingType type, const Field & value);
 
     /** Helper function for retrieving the value of an attribute by key. */
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
@@ -196,6 +196,22 @@ private:
 
     std::map<std::string, size_t> attribute_index_by_name;
     Columns attributes;
+    std::vector<std::variant<
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+        UInt128,
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+        Decimal32,
+        Decimal64,
+        Decimal128,
+        Float32,
+        Float64,
+        String>> null_values;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
