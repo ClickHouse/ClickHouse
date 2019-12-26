@@ -587,13 +587,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (!task_queue.empty())
                 {
-                    state = task_queue.front();
-                    task_queue.pop();
+                    state = task_queue.pop(thread_num);
 
-                    if (state->has_quota)
-                        --task_quota;
-
-                    if (!task_queue.empty() && !threads_queue.empty() && task_quota > threads_queue.size())
+                    if (!task_queue.empty() && !threads_queue.empty() && task_queue.quota() > threads_queue.size())
                     {
                         auto thread_to_wake = threads_queue.pop_any();
                         lock.unlock();
@@ -666,7 +662,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 //process_pinned_tasks(queue);
 
                 /// Take local task from queue if has one.
-                if (!state && !queue.empty())
+                if (!queue.empty())
                 {
                     state = queue.front();
                     queue.pop();
@@ -695,13 +691,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     while (!queue.empty() && !finished)
                     {
-                        task_queue.push(queue.front());
-                        if (queue.front()->has_quota)
-                            ++task_quota;
+                        task_queue.push(queue.front(), thread_num);
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() && task_quota > threads_queue.size())
+                    if (!threads_queue.empty() && task_queue.quota() > threads_queue.size())
                     {
                         auto thread_to_wake = threads_queue.pop_any();
                         lock.unlock();
@@ -734,6 +728,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     Stack stack;
 
     threads_queue.init(num_threads);
+    task_queue.init(num_threads);
 
     {
         std::lock_guard guard(executor_contexts_mutex);
@@ -768,6 +763,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         std::lock_guard lock(task_queue_mutex);
 
         Queue queue;
+        size_t next_thread = 0;
 
         while (!stack.empty())
         {
@@ -778,10 +774,12 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
             while (!queue.empty())
             {
-                task_queue.push(queue.front());
-                if (queue.front()->has_quota)
-                    ++task_quota;
+                task_queue.push(queue.front(), next_thread);
                 queue.pop();
+
+                ++next_thread;
+                if (next_thread >= num_threads)
+                    next_thread = 0;
             }
         }
     }

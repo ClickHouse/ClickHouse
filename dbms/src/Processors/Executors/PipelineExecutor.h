@@ -134,12 +134,63 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    using TaskQueue = std::queue<ExecutionState *>;
+    class TaskQueue
+    {
+    public:
+        void init(size_t num_threads) { queues.resize(num_threads); }
+
+        void push(ExecutionState * state, size_t thread_num)
+        {
+            queues[thread_num].push(state);
+
+            ++size_;
+
+            if (state->has_quota)
+                ++quota_;
+        }
+
+        ExecutionState * pop(size_t thread_num)
+        {
+            if (size_ == 0)
+                throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+
+            for (size_t i = 0; i < queues.size(); ++i)
+            {
+                if (!queues[thread_num].empty())
+                {
+                    ExecutionState * state = queues[thread_num].front();
+                    queues[thread_num].pop();
+
+                    --size_;
+
+                    if (state->has_quota)
+                        ++quota_;
+
+                    return state;
+                }
+
+                ++thread_num;
+                if (thread_num >= queues.size())
+                    thread_num = 0;
+            }
+
+            throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+        size_t quota() const { return quota_; }
+
+    private:
+        using Queue = std::queue<ExecutionState *>;
+        std::vector<Queue> queues;
+        size_t size_ = 0;
+        size_t quota_ = 0;
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
-    size_t task_quota = 0;
 
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
