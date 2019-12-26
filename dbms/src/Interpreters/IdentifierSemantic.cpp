@@ -92,6 +92,22 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     return {};
 }
 
+std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & identifier)
+{
+    if (identifier.semantic->covered)
+    {
+        std::vector<String> name_parts = identifier.name_parts;
+        return ASTIdentifier(std::move(name_parts));
+    }
+    return {};
+}
+
+void IdentifierSemantic::coverName(ASTIdentifier & identifier, const String & alias)
+{
+    identifier.setShortName(alias);
+    identifier.semantic->covered = true;
+}
+
 bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)
 {
     return identifier.semantic->can_be_alias;
