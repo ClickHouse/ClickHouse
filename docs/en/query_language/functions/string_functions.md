@@ -160,19 +160,52 @@ Concatenates the strings listed in the arguments, without a separator.
 ```sql
 concat(s1, s2, ...)
 ```
-Alias: `CONCAT`.
 
 **Parameters**
 
-- `si` – string or key. The key value can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
+- `si` – string or key.
 
 **Returned values**
 
 Returns the string that results from concatenating the arguments. 
 
-If either argument is null, `concat` returns null. 
+If any of argument values is `NULL`, `concat` returns `NULL`. 
 
-Type: `String`.
+**Example**
+
+Query:
+
+```sql
+SELECT concat('Hello, ', 'World!')
+```
+
+Result:
+
+```text
+┌─concat('Hello, ', 'World!')─┐
+│ Hello, World!               │
+└─────────────────────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
+
+**Syntax** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Parameters**
+
+- `si` – string or key.
+
+**Returned values**
+
+Returns the string that results from concatenating the arguments after using GROUP BY.
+
+If any of argument values is `NULL`, `concatAssumeInjective` returns `NULL`. 
 
 **Example**
 
@@ -192,47 +225,6 @@ SELECT * from key_val
 │ Hello   │ , World! │     2 │
 └─────────┴──────────┴───────┘
 ```
-
-Query:
-
-```sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concat(key1, key2)
-```
-
-Result:
-
-```text
-┌─concat(key1, key2)─┬─sum(value)─┐
-│ Hello, World!      │          5 │
-│ Hello, World       │          3 │
-└────────────────────┴────────────┘
-```
-
-## concatAssumeInjective {#concatassumeinjective}
-
-Same as [concat](#concat), the difference is that you need to ensure that concat(s1, s2, ...) → sn is injective, it will be used for optimization of GROUP BY.
-
-**Syntax** 
-
-```sql
-concatAssumeInjective(s1, s2, ...)
-```
-
-**Parameters**
-
-- `si` – can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
-
-**Returned values**
-
-Returns the string that results from concatenating the arguments after using GROUP BY.
-
-If either argument is null, `concatAssumeInjective` returns null.
-
-Type: `String`.
-
-**Example**
-
-Input table the same as in [concat](./string_functions.md#concat).
 
 Query:
 
