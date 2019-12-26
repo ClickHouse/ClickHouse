@@ -58,7 +58,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
     if (which.idx == TypeIndex::TYPE && !is_res_type_string) \
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>, false>(res_type, val_type); \
     if (which.idx == TypeIndex::TYPE && is_res_type_string) \
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>, true>(res_type, val_type); 
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>, true>(res_type, val_type);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
@@ -76,7 +76,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, false>(res_type, val_type);
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>, true>(res_type, val_type);
-    
+
     if (which.idx == TypeIndex::Date && is_res_type_string)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, true>(res_type, val_type);
     if (which.idx == TypeIndex::DateTime && is_res_type_string)
