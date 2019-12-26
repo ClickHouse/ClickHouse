@@ -93,7 +93,7 @@ void FileChecker::updateImpl(const String & file_path)
 void FileChecker::save() const
 {
     {
-        std::unique_ptr<WriteBuffer> out = disk->write(tmp_files_info_path);
+        std::unique_ptr<WriteBuffer> out = disk->writeFile(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
         writeCString("{\"yandex\":{", *out);
@@ -125,7 +125,7 @@ void FileChecker::load(Map & local_map, const String & path) const
     if (!disk->exists(path))
         return;
 
-    std::unique_ptr<ReadBuffer> in = disk->read(path);
+    std::unique_ptr<ReadBuffer> in = disk->readFile(path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.

@@ -490,7 +490,7 @@ void StorageLog::loadMarks()
         for (auto & file : files_by_index)
             file->second.marks.reserve(marks_count);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->read(marks_file_path, 32768);
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, 32768);
         while (!marks_rb->eof())
         {
             for (size_t i = 0; i < files_by_index.size(); ++i)
