@@ -52,8 +52,10 @@ template <template <typename> class MinMaxData, typename ResData>
 static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTypePtr & res_type, const DataTypePtr & val_type)
 {
     WhichDataType which(val_type);
-    WhichDataType res_which(res_type);
-    bool is_res_type_string = res_which.idx == TypeIndex::String;
+
+    /// If at least one argument is a String, the function can allocate memory in Arena.
+    bool is_res_type_string = WhichDataType(res_type).isString();
+
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE && !is_res_type_string) \
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>, false>(res_type, val_type); \
@@ -62,33 +64,40 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
-    if (which.idx == TypeIndex::Date && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::DateTime && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::DateTime64 && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DateTime64>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal32 && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal32>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal64 && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal64>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal128 && !is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, false>(res_type, val_type);
-    if (which.idx == TypeIndex::String)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>, true>(res_type, val_type);
+    if (!is_res_type_string)
+    {
+        if (which.idx == TypeIndex::Date)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::DateTime)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::DateTime64)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DateTime64>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal32)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal32>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal64)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal64>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal128)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, false>(res_type, val_type);
+        if (which.idx == TypeIndex::String)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>, true>(res_type, val_type);
+    }
+    else
+    {
+        if (which.idx == TypeIndex::Date)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, true>(res_type, val_type);
+        if (which.idx == TypeIndex::DateTime)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>, true>(res_type, val_type);
+        if (which.idx == TypeIndex::DateTime64)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DateTime64>>>, true>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal32)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal32>>>, true>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal64)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal64>>>, true>(res_type, val_type);
+        if (which.idx == TypeIndex::Decimal128)
+            return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, true>(res_type, val_type);
+    }
 
-    if (which.idx == TypeIndex::Date && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>, true>(res_type, val_type);
-    if (which.idx == TypeIndex::DateTime && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>, true>(res_type, val_type);
-    if (which.idx == TypeIndex::DateTime64 && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DateTime64>>>, true>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal32 && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal32>>>, true>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal64 && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal64>>>, true>(res_type, val_type);
-    if (which.idx == TypeIndex::Decimal128 && is_res_type_string)
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Decimal128>>>, true>(res_type, val_type);
+    /// But generic implementation doesn't allocate memory in Arena.
 
     return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric>>, false>(res_type, val_type);
 }
