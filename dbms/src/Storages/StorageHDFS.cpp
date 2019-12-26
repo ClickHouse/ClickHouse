@@ -49,6 +49,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
     , context(context_)
     , compression_method(compression_method_)
 {
+    context.getRemoteHostFilter().checkURL(Poco::URI(uri));
     setColumns(columns_);
     setConstraints(constraints_);
 }

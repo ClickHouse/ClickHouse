@@ -213,7 +213,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
     }
 
     /// Write the simple aggregation result for the previous group.
-    insertSimpleAggregationResult(merged_columns);
+    if (merged_rows > 0)
+        insertSimpleAggregationResult(merged_columns);
 
     finished = true;
 }

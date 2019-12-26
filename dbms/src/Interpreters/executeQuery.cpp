@@ -24,7 +24,7 @@
 
 #include <Storages/StorageInput.h>
 
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
@@ -150,7 +150,7 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
 {
     /// Exception before the query execution.
-    context.getQuota().addError();
+    context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -271,11 +271,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
 
-        QuotaForIntervals & quota = context.getQuota();
-
-        quota.addQuery();    /// NOTE Seems that when new time interval has come, first query is not accounted in number of queries.
-        quota.checkExceeded(current_time);
-
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         ProcessList::EntryPtr process_list_entry;
         if (!internal && !ast->as<ASTShowProcesslistQuery>())
@@ -313,6 +308,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
+        QuotaContextPtr quota;
+        if (!interpreter->ignoreQuota())
+        {
+            quota = context.getQuota();
+            quota->used(Quota::QUERIES, 1);
+            quota->checkExceeded(Quota::ERRORS);
+        }
+
+        IBlockInputStream::LocalLimits limits;
+        if (!interpreter->ignoreLimits())
+        {
+            limits.mode = IBlockInputStream::LIMITS_CURRENT;
+            limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+        }
+
         if (use_processors)
             pipeline = interpreter->executeWithProcessors();
         else
@@ -339,17 +349,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
 
-        IBlockInputStream::LocalLimits limits;
-        limits.mode = IBlockInputStream::LIMITS_CURRENT;
-        limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-
         if (use_processors)
         {
-            pipeline.setProgressCallback(context.getProgressCallback());
-            pipeline.setProcessListElement(context.getProcessListElement());
-
             /// Limits on the result, the quota on the result, and also callback for progress.
             /// Limits apply only to the final result.
+            pipeline.setProgressCallback(context.getProgressCallback());
+            pipeline.setProcessListElement(context.getProcessListElement());
             if (stage == QueryProcessingStage::Complete)
             {
                 pipeline.resize(1);
@@ -363,17 +368,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else
         {
+            /// Limits on the result, the quota on the result, and also callback for progress.
+            /// Limits apply only to the final result.
             if (res.in)
             {
                 res.in->setProgressCallback(context.getProgressCallback());
                 res.in->setProcessListElement(context.getProcessListElement());
-
-                /// Limits on the result, the quota on the result, and also callback for progress.
-                /// Limits apply only to the final result.
                 if (stage == QueryProcessingStage::Complete)
                 {
-                    res.in->setLimits(limits);
-                    res.in->setQuota(quota);
+                    if (!interpreter->ignoreQuota())
+                        res.in->setQuota(quota);
+                    if (!interpreter->ignoreLimits())
+                        res.in->setLimits(limits);
                 }
             }
 
@@ -484,7 +490,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             auto exception_callback = [elem, &context, log_queries] () mutable
             {
-                context.getQuota().addError();
+                context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 

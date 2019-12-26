@@ -113,7 +113,12 @@ bool DataTypeDate::equals(const IDataType & rhs) const
 
 void registerDataTypeDate(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("Date", [] { return DataTypePtr(std::make_shared<DataTypeDate>()); }, DataTypeFactory::CaseInsensitive);
+    const auto & creator = [&](const String & /*type_name*/)
+    {
+        return DataTypePtr(std::make_shared<DataTypeDate>());
+    };
+
+    factory.registerSimpleDataType("Date", creator, DataTypeFactory::CaseInsensitive);
 }
 
 }

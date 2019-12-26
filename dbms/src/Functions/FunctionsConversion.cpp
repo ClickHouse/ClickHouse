@@ -1,31 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include "registerFunctions.h"
 
 namespace DB
 {
-
-void throwExceptionForIncompletelyParsedValue(
-    ReadBuffer & read_buffer, Block & block, size_t result)
-{
-    const IDataType & to_type = *block.getByPosition(result).type;
-
-    WriteBufferFromOwnString message_buf;
-    message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
-        << " as " << to_type.getName()
-        << ": syntax error";
-
-    if (read_buffer.offset())
-        message_buf << " at position " << read_buffer.offset()
-            << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
-    else
-        message_buf << " at begin of string";
-
-    if (isNativeNumber(to_type))
-        message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
-
-    throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
-}
-
 
 void registerFunctionsConversion(FunctionFactory & factory)
 {
@@ -46,12 +24,13 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();
+    factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
     factory.registerFunction<FunctionToFixedString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<FunctionBuilderCast>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<CastOverloadResolver>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -65,6 +44,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
     factory.registerFunction<FunctionToDateTimeOrZero>();
+    factory.registerFunction<FunctionToDateTime64OrZero>();
 
     factory.registerFunction<FunctionToDecimal32OrZero>();
     factory.registerFunction<FunctionToDecimal64OrZero>();
@@ -82,6 +62,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
     factory.registerFunction<FunctionToDateTimeOrNull>();
+    factory.registerFunction<FunctionToDateTime64OrNull>();
 
     factory.registerFunction<FunctionToDecimal32OrNull>();
     factory.registerFunction<FunctionToDecimal64OrNull>();
@@ -90,6 +71,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime64BestEffort>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();

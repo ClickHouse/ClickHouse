@@ -94,8 +94,6 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const { return nested_func; }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

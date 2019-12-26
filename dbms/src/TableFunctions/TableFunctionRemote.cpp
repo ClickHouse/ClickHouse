@@ -14,6 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -155,6 +156,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto maybe_secure_port = context.getTCPPortSecure();
+
+        /// Check host and port on affiliation allowed hosts.
+        for (auto hosts : names)
+        {
+            for (auto host : hosts)
+            {
+                size_t colon = host.find(':');
+                if (colon == String::npos)
+                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                else
+                    context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+            }
+        }
+
         cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
     }
 
