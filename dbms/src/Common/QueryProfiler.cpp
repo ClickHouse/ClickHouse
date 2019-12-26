@@ -1,12 +1,12 @@
 #include "QueryProfiler.h"
 
 #include <random>
-#include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -22,7 +22,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-extern LazyPipe trace_pipe;
+extern LazyPipeFDs trace_pipe;
 
 namespace
 {
