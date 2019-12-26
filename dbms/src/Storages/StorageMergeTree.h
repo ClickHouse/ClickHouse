@@ -67,7 +67,7 @@ public:
     void drop(TableStructureWriteLockHolder &) override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 

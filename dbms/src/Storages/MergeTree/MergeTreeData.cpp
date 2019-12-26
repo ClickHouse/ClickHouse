@@ -243,6 +243,21 @@ MergeTreeData::MergeTreeData(
 }
 
 
+StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
+{
+
+    return
+    {
+        .columns = getColumns(),
+        .indices = getIndices(),
+        .constraints = getConstraints(),
+        .order_by_expression = order_by_ast,
+        .primary_key_expression = primary_key_ast,
+        .ttl_for_table_expression = ttl_table_ast,
+        .settings_changes = getSettings()->changes()
+    };
+}
+
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
 {
     for (const ExpressionAction & action : expr.getActions())
@@ -316,6 +331,7 @@ void MergeTreeData::setProperties(
 
     auto all_columns = new_columns.getAllPhysical();
 
+    /// Order by check AST
     if (order_by_ast && only_check)
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
@@ -1324,19 +1340,13 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
-void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & context)
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    ASTPtr new_order_by_ast = order_by_ast;
-    ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_ttl_table_ast = ttl_table_ast;
-    SettingsChanges new_changes;
-    commands.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-    if (getIndices().empty() && !new_indices.empty() &&
-            !context.getSettingsRef().allow_experimental_data_skipping_indices)
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    commands.apply(metadata);
+    if (getIndices().empty() && !metadata.indices.empty() &&
+            !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -1407,13 +1417,19 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
     }
 
-    setProperties(new_order_by_ast, new_primary_key_ast,
-            new_columns, new_indices, new_constraints, /* only_check = */ true);
+    setProperties(metadata.order_by_expression, metadata.primary_key_expression,
+            metadata.columns, metadata.indices, metadata.constraints, /* only_check = */ true);
 
-    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
+    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_expression, /* only_check = */ true);
 
-    for (const auto & setting : new_changes)
-        checkSettingCanBeChanged(setting.name);
+
+    for (const auto & setting : metadata.settings_changes)
+    {
+        if (MergeTreeSettings::findIndex(setting.name) == MergeTreeSettings::npos)
+            throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
+        if (MergeTreeSettings::isReadonlySetting(setting.name))
+            throw Exception{"Setting '" + setting.name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
+    }
 
     if (commands.isModifyingData())
     {
@@ -1421,8 +1437,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         ExpressionActionsPtr unused_expression;
         NameToNameMap unused_map;
         bool unused_bool;
-        createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-                getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+        createConvertExpression(nullptr, getColumns().getAllPhysical(), metadata.columns.getAllPhysical(),
+                getIndices().indices, metadata.indices.indices, unused_expression, unused_map, unused_bool);
     }
 }
 
@@ -1747,15 +1763,6 @@ void MergeTreeData::changeSettings(
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
     }
-}
-
-void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
-{
-    if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
-        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
-    if (MergeTreeSettings::isReadonlySetting(setting_name))
-        throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
-
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)

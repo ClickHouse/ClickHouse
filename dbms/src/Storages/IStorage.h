@@ -13,6 +13,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -127,6 +128,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
+    virtual StorageInMemoryMetadata getInMemoryMetadata() const;
+
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
     virtual NameAndTypePair getColumn(const String & column_name) const;
@@ -152,9 +155,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
-    /// Check storage has setting and setting can be modified.
-    virtual void checkSettingCanBeChanged(const String & setting_name) const;
-
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
@@ -162,8 +162,6 @@ protected: /// still thread-unsafe part.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
 
-    /// Returns modifier of settings in storage definition
-    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
     ColumnsDescription columns; /// combined real and virtual columns
@@ -315,6 +313,8 @@ public:
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
     virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
+
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
