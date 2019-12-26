@@ -272,12 +272,17 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
+    void enableQuota() { has_quota = true; }
+    bool hasQuota() const { return has_quota; }
+
 private:
     std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
 
     size_t stream_number = NO_STREAM;
+
+    bool has_quota = false;
 };
 
 

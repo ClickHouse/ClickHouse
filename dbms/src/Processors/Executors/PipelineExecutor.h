@@ -84,6 +84,7 @@ private:
 
         IProcessor * processor = nullptr;
         UInt64 processors_id = 0;
+        bool has_quota = false;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -117,6 +118,7 @@ private:
             execution_state = std::make_unique<ExecutionState>();
             execution_state->processor = processor;
             execution_state->processors_id = processor_id;
+            execution_state->has_quota = processor->hasQuota();
         }
 
         Node(Node && other) noexcept
@@ -137,6 +139,7 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
+    size_t task_quota = 0;
 
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;

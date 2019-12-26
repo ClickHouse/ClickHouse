@@ -1789,6 +1789,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 //                    pipes[i].pinSources(i);
 //            }
 
+            for (auto & pipe : pipes)
+                pipe.enableQuota();
+
             pipeline.init(std::move(pipes));
         }
         else
