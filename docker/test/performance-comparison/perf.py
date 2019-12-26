@@ -14,8 +14,8 @@ tree = et.parse(args.file[0])
 root = tree.getroot()
 
 # Check main metric
-main_metric = root.find('main_metric/*').tag
-if main_metric != 'min_time':
+main_metric_element = root.find('main_metric/*')
+if main_metric_element and main_metric_element.tag != 'min_time':
     raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric))
 
 # Open connections
@@ -30,6 +30,12 @@ if tables:
         res = c.execute("select t from values('t text', {}) anti join system.tables on database = currentDatabase() and name = t".format(tables_list))
         if res:
             raise Exception('Some tables are not found: {}'.format(res))
+
+# Apply settings
+settings = root.findall('settings/*')
+for c in connections:
+    for s in settings:
+        c.execute("set {} = '{}'".format(s.tag, s.text))
 
 # Process substitutions
 subst_elems = root.findall('substitutions/substitution')

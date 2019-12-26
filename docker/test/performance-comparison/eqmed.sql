@@ -1,6 +1,6 @@
 -- input is table(query text, run UInt32, version int, time float)
 select
-   abs(diff_percent) > rd_quantiles_percent[3] fail, 
+--   abs(diff_percent) > rd_quantiles_percent[3] fail,
    floor(original_medians_array.time_by_version[1], 4) m1,
    floor(original_medians_array.time_by_version[2], 4) m2,
    floor((m1 - m2) / m1, 3) diff_percent,
