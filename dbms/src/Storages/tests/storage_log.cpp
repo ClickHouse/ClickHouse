@@ -30,7 +30,7 @@ try
     context.setPath("./");
 
     DiskPtr disk = std::make_unique<DiskLocal>("default", "./", 0);
-    StoragePtr table = StorageLog::create(disk, "test", "test", ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576, context);
+    StoragePtr table = StorageLog::create(disk, "./", "test", "test", ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576);
     table->startup();
 
     /// write into it
