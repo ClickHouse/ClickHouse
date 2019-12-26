@@ -254,8 +254,7 @@ private:
     template <typename DefaultGetter>
     void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
-    template <typename PresentIdHandler, typename AbsentIdHandler>
-    void update(const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated, AbsentIdHandler && on_id_not_found) const;
+    void update(const std::vector<Key> & requested_ids, std::unordered_map<Key, UInt8> & found_ids_mask_ptr) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -325,18 +324,13 @@ private:
     struct UpdateUnit
     {
         UpdateUnit(
-                std::vector<Key> requested_ids_,
-                std::function<void(const Key, const size_t)> on_cell_updated_,
-                std::function<void(const Key, const size_t)> on_id_not_found_):
-            requested_ids(std::move(requested_ids_)),
-            on_cell_updated(std::move(on_cell_updated_)),
-            on_id_not_found(std::move(on_id_not_found_)) {}
+                std::vector<Key> requested_ids_):
+            requested_ids(std::move(requested_ids_)) {}
 
+        std::shared_ptr<std::unordered_map<Key, UInt8>> found_ids_mask_ptr{nullptr};
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
         std::vector<Key> requested_ids;
-        std::function<void(const Key, const size_t)> on_cell_updated;
-        std::function<void(const Key, const size_t)> on_id_not_found;
     };
 
     using UpdateUnitPtr = std::shared_ptr<UpdateUnit>;
@@ -353,6 +347,9 @@ private:
     mutable std::condition_variable is_update_finished;
 
     std::atomic<bool> finished{false};
+
+    template <typename PresentIdHandler, typename AbsentIdHandler>
+    void prepareAnswer(UpdateUnitPtr, PresentIdHandler &&, AbsentIdHandler &&) const;
 };
 
 }
