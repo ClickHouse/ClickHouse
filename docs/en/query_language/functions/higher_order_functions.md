@@ -1,6 +1,6 @@
 # Higher-order functions
 
-## `->` operator, lambda(params, expr) function
+## `->` operator, lambda(params, expr) function {#lambda}
 
 Allows describing a lambda function for passing to a higher-order function. The left side of the arrow has a formal parameter, which is any ID, or multiple formal parameters – any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
 
@@ -18,7 +18,7 @@ A lambda function can't be omitted for the following functions:
 - [arrayFilter](#higher_order_functions-array-filter)
 - [arrayFill](#higher_order_functions-array-fill)
 - [arrayReverseFill](#higher_order_functions-array-reverse-fill)
-- [arraySplit](#higher_order_functions-array-split)
+- [arraySplit](#array-split)
 - [arrayReverseSplit](#higher_order_functions-array-reverse-split)
 - [arrayFirst](#higher_order_functions-array-first)
 - [arrayFirstIndex](#higher_order_functions-array-first-index)
@@ -121,7 +121,7 @@ Note that the first argument (lambda function) can't be omitted in the `arrayRev
 
 ### arraySplit {#array-split}
 
-Creates an array of elements split into groups the length of size (return value from `func`function). When `func` returns something other than 0, the array will be split on the left hand side of the element. If array can't be split evenly, the final chunk will be the remaining elements.
+Splits an array into multiple arrays. Splits from the left hand side. If array can't be split evenly, the final chunk will be the remaining elements.
 
 **Syntax**
 
@@ -131,7 +131,7 @@ arraySplit(func, arr1, arr2, ..., arrN)
 
 **Parameters**
 
-- `func` — The lambda function. **Required**.
+- `func` — The [lambda function](#lambda).
 - `arr1`, `arrN` — Any number of [array](../../data_types/array.md) type columns to process.
 
 **Returned value**
@@ -143,21 +143,7 @@ Returns the new multidimensional array of chunks.
 Query:
 
 ```sql
-SELECT arraySplit(x -> ((x % 2) = 1), [1, 2, 3, 4, 5]) AS res
-```
-
-Answer:
-
-```text
-┌─res───────────────┐
-│ [[1,2],[3,4],[5]] │
-└───────────────────┘
-```
-
-Query:
-
-```sql
-SELECT arraySplit(x -> ((x % 3) = 1), [1, 2, 3, 4, 5]) AS res
+SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 Answer:
@@ -170,7 +156,7 @@ Answer:
 
 ### arrayReverseSplit {#array-reverse-split}
 
-Creates an array of elements split into groups the length of size (return value from `func`function). When `func` returns something other than 0, the array will be split on the right hand side of the element.  If array can't be split evenly, the final chunk will be the remaining elements.
+Splits an array into multiple arrays. Splits from the right hand side. If array can't be split evenly, the final chunk will be the remaining elements.
 
 **Syntax**
 
@@ -180,7 +166,7 @@ arrayReverseSplit(func, arr1, arr2, ..., arrN)
 
 **Parameters**
 
-- `func` — The lambda function. **Required**.
+- `func` — The [lambda function](#lambda).
 - `arr1`, `arrN` — Any number of [array](../../data_types/array.md) type columns to process.
 
 **Returned value**
@@ -192,21 +178,7 @@ Returns the new multidimensional array of chunks.
 Query:
 
 ```sql
-SELECT arrayReverseSplit(x -> ((x % 2) = 1), [1, 2, 3, 4, 5]) AS res
-```
-
-Answer:
-
-```text
-┌─res───────────────┐
-│ [[1],[2,3],[4,5]] │
-└───────────────────┘
-```
-
-Query:
-
-```sql
-SELECT arrayReverseSplit(x -> ((x % 3) = 1), [1, 2, 3, 4, 5]) AS res
+SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 ```
 
 Answer:
