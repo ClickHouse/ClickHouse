@@ -87,8 +87,6 @@ public:
         column.getData().push_back(this->data(place).template result<ResultType>());
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 protected:
     UInt32 scale;
 };
