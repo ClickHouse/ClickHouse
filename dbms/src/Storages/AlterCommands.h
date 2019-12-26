@@ -31,11 +31,10 @@ struct AlterCommand
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         MODIFY_TTL,
-        UKNOWN_TYPE,
         MODIFY_SETTING,
     };
 
-    Type type = UKNOWN_TYPE;
+    Type type;
 
     String column_name;
 
