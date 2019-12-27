@@ -215,15 +215,14 @@ bool StoragePolicy::isDefaultPolicy() const
     if (getName() != "default")
         return false;
 
-    const auto & volumes = getVolumes();
-    if (volumes.size != 1)
+    if (volumes.size() != 1)
         return false;
 
     if (volumes[0]->getName() != "default")
         return false;
 
     const auto & disks = volumes[0]->disks;
-    if (disks.size != 1)
+    if (disks.size() != 1)
         return false;
 
     if (disks[0]->getName() != "default")
