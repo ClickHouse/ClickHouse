@@ -89,7 +89,8 @@ bool IPolygonDictionary::isInjective(const std::string &) const
     return false;
 }
 
-BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const {
+BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const
+{
     // TODO: In order for this to work one would first have to support retrieving arrays from dictionaries.
     //  I believe this is a separate task done by some other people.
     throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
@@ -101,7 +102,7 @@ void IPolygonDictionary::appendNullValueImpl(const Field & null_value)
     null_values.emplace_back(T(null_value.get<NearestFieldType<T>>()));
 }
 
-void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Field & null_value) 
+void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Field & null_value)
 {
     switch (type)
     {
@@ -173,7 +174,8 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block)
 {
     const auto rows = block.rows();
     element_count += rows;
-    for (size_t i = 0; i < attributes.size(); ++i) {
+    for (size_t i = 0; i < attributes.size(); ++i)
+    {
         const auto & column = block.safeGetByPosition(i + 1);
         if (attributes[i])
         {
@@ -228,7 +230,8 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, PaddedPODArray<UInt8> &out) const {
+void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, PaddedPODArray<UInt8> &out) const
+{
     size_t row = 0;
     for (const auto & pt : extractPoints(key_columns))
     {
@@ -456,7 +459,8 @@ IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & fie
             throw Exception{"Outer polygon ring is not represented by an array", ErrorCodes::TYPE_MISMATCH};
         for (const auto & point : ring_array[0].get<Array>())
             bg::append(result.outer(), fieldToPoint(point));
-        for (size_t i = 0; i < result.inners().size(); ++i) {
+        for (size_t i = 0; i < result.inners().size(); ++i)
+        {
             if (ring_array[i + 1].getType() != Field::Types::Array)
                 throw Exception{"Inner polygon ring is not represented by an array", ErrorCodes::TYPE_MISMATCH};
             for (const auto & point : ring_array[i + 1].get<Array>())
@@ -507,7 +511,8 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 {
     for (size_t i = 0; i < (this->polygons).size(); ++i)
     {
-        if (bg::covered_by(point, (this->polygons)[i])) {
+        if (bg::covered_by(point, (this->polygons)[i]))
+        {
             id = i;
             return true;
         }
