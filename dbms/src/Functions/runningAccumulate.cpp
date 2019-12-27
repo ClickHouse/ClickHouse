@@ -94,8 +94,6 @@ public:
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
         AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());
-        agg_func.create(place.data());
-        SCOPE_EXIT(agg_func.destroy(place.data()));
 
         /// Will pass empty arena if agg_func does not allocate memory in arena
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
@@ -108,13 +106,30 @@ public:
 
         size_t i = 0;
 
+        SCOPE_EXIT({
+            if (i > 0)
+                agg_func.destroy(place.data());
+        });
+
         for (const auto & state_to_add : states)
         {
-            if (column_with_groups && i > 0 &&
-                column_with_groups->compareAt(i, i - 1, *column_with_groups, 1) != 0)
+            if (i == 0 || (column_with_groups && column_with_groups->compareAt(i, i - 1, *column_with_groups, 1) != 0))
             {
-                agg_func.destroy(place.data());
-                agg_func.create(place.data());
+                if (i > 0) {
+                    agg_func.destroy(place.data());
+                }
+
+                try
+                {
+                    agg_func.create(place.data());
+                }
+                catch (...)
+                {
+                    agg_func.destroy(place.data());
+                    i = 0; // prevent destroy duplication
+
+                    throw;
+                }
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
