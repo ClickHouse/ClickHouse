@@ -316,6 +316,9 @@ public:
       */
     virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
 
+    /** Checks that alter commands can be applied to storage. For example, columns can be modified,
+      * or primary key can be changes, etc.
+      */
     virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings);
 
     /** ALTER tables with regard to its partitions.
