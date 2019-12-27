@@ -17,7 +17,6 @@
 #include <pcg_random.hpp>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
-#include <Interpreters/Context.h>
 #include <ext/bit_cast.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
