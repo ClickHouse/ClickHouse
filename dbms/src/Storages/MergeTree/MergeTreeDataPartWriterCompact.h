@@ -35,7 +35,7 @@ private:
 
     Block header;
 
-    /** Simplified SquashingTransform. The original one isn't suitable in this case 
+    /** Simplified SquashingTransform. The original one isn't suitable in this case
       *  as it can return smaller block from buffer without merging it with larger block if last is enough size.
       * But in compact parts we should guarantee, that written block is larger or equals than index_granularity.
       */
