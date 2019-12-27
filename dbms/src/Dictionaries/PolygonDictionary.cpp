@@ -151,7 +151,7 @@ void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Fie
         case AttributeUnderlyingType::utString:
             appendNullValueImpl<String>(null_value);
             break;
-    }    
+    }
 }
 
 void IPolygonDictionary::createAttributes()
