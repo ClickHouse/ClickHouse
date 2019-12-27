@@ -19,7 +19,6 @@ bool PeekableReadBuffer::peekNext()
 {
     checkStateCorrect();
 
-    size_t bytes_read = 0;
     Position copy_from = pos;
     size_t bytes_to_copy = sub_buf.available();
     if (useSubbufferOnly())
@@ -27,11 +26,9 @@ bool PeekableReadBuffer::peekNext()
         /// Don't have to copy all data from sub-buffer if there is no data in own memory (checkpoint and pos are in sub-buffer)
         if (checkpoint)
             copy_from = checkpoint;
-        bytes_read = copy_from - sub_buf.buffer().begin();
         bytes_to_copy = sub_buf.buffer().end() - copy_from;
         if (!bytes_to_copy)
         {
-            bytes += bytes_read;
             sub_buf.position() = copy_from;
 
             /// Both checkpoint and pos are at the end of sub-buffer. Just load next part of data.
@@ -50,7 +47,6 @@ bool PeekableReadBuffer::peekNext()
 
     if (useSubbufferOnly())
     {
-        bytes += bytes_read;
         sub_buf.position() = copy_from;
     }
 
@@ -198,7 +194,6 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
             /// Move unread data to the beginning of own memory instead of resize own memory
             peeked_size -= offset;
             memmove(memory.data(), memory.data() + offset, peeked_size);
-            bytes += offset;
 
             if (need_update_checkpoint)
                 checkpoint -= offset;

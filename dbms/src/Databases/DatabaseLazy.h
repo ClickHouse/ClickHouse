@@ -18,7 +18,7 @@ class DatabaseLazyIterator;
 class DatabaseLazy : public IDatabase
 {
 public:
-    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context);
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
 
     String getEngineName() const override { return "Lazy"; }
 
@@ -87,7 +87,7 @@ public:
     String getMetadataPath() const override;
     String getObjectMetadataPath(const String & table_name) const override;
 
-    void drop() override;
+    void drop(const Context & context) override;
 
     bool isTableExist(
         const Context & context,
@@ -111,9 +111,9 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void attachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
+    void attachDictionary(const String & dictionary_name, const Context & context) override;
 
-    void detachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
+    void detachDictionary(const String & dictionary_name, const Context & context) override;
 
     void shutdown() override;
 

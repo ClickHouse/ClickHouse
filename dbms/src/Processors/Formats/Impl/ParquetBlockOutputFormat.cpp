@@ -21,9 +21,10 @@
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <arrow/util/decimal.h>
+#include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
 #include <parquet/exception.h>
-#include <parquet/util/memory.h>
+#include <parquet/deprecated_io.h>
 
 
 namespace DB
@@ -238,22 +239,39 @@ static const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 }
 
 
-class OstreamOutputStream : public parquet::OutputStream
+class OstreamOutputStream : public arrow::io::OutputStream
 {
 public:
-    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
-    virtual ~OstreamOutputStream() {}
-    virtual void Close() {}
-    virtual int64_t Tell() { return total_length; }
-    virtual void Write(const uint8_t * data, int64_t length)
+    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
+    ~OstreamOutputStream() override {}
+
+    // FileInterface
+    ::arrow::Status Close() override
+    {
+        is_open = false;
+        return ::arrow::Status::OK();
+    }
+
+    ::arrow::Status Tell(int64_t* position) const override
+    {
+        *position = total_length;
+        return ::arrow::Status::OK();
+    }
+
+    bool closed() const override { return !is_open; }
+
+    // Writable
+    ::arrow::Status Write(const void* data, int64_t length) override
     {
         ostr.write(reinterpret_cast<const char *>(data), length);
         total_length += length;
+        return ::arrow::Status::OK();
     }
 
 private:
     WriteBuffer & ostr;
     int64_t total_length = 0;
+    bool is_open = false;
 
     PARQUET_DISALLOW_COPY_AND_ASSIGN(OstreamOutputStream);
 };
@@ -396,7 +414,6 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             arrow::default_memory_pool(),
             sink,
             props, /*parquet::default_writer_properties(),*/
-            parquet::arrow::default_arrow_writer_properties(),
             &file_writer);
         if (!status.ok())
             throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
@@ -426,7 +443,6 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const Context & /*context*/,
            FormatFactory::WriteCallback,
            const FormatSettings & format_settings)
         {

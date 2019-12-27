@@ -130,6 +130,17 @@ Possible values:
 
 Default value: 0.
 
+## max_http_get_redirects {#setting-max_http_get_redirects}
+
+Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
+
+Possible values:
+
+- Any positive integer number of hops.
+- 0 — No hops allowed.
+
+Default value: 0.
+
 ## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
@@ -212,7 +223,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
  - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
   
- This feature is experimental, disabled by default.
+Enabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
 This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
@@ -424,7 +435,7 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If a number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file from several threads.
 
 Possible values:
 
@@ -445,7 +456,7 @@ Default value: 0.
 
 ## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads range of file that contains both blocks, thus avoiding extra seek.
 
 Possible values:
 
@@ -466,9 +477,9 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks. 
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -479,9 +490,9 @@ Default value: 128 ✕ 8192.
 
 ## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn't use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -512,6 +523,16 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 **Example**:
 
     log_queries=1
+
+## log_query_threads {#settings-log-query-threads}
+
+Setting up query threads logging.
+
+Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+
+**Example**:
+
+    log_query_threads=1
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -594,6 +615,13 @@ Default value: 100,000 (checks for canceling and sends the progress ten times pe
 Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
+
+## cancel_http_readonly_queries_on_client_close
+
+Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+
+Default value: 0
+
 
 ## poll_interval
 
@@ -912,24 +940,31 @@ Default value: `uniqExact`.
 
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
-Enables or disables silent skipping of:
+Enables or disables silently skipping of unavailable shards.
 
-- Node, if its name cannot be resolved through DNS.
+Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
 
-    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+- ClickHouse can't connect to replica for any reason.
 
-    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
 
-- Shard, if there are no available replicas of the shard.
+- Replica can't be resolved through DNS.
 
-    When skipping is disabled, ClickHouse throws an exception.
+    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
 
-    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+
+    - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
 Possible values:
 
 - 1 — skipping enabled.
+
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
+
 - 0 — skipping disabled.
+
+    If a shard is unavailable, ClickHouse throws an exception.
 
 Default value: 0.
 
@@ -972,6 +1007,41 @@ Error count of each replica is capped at this value, preventing a single replica
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
 - [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
+
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+
+Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 100 milliseconds.
+
+
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+
+Maximum interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 30000 milliseconds (30 seconds).
+
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+
+Enables/disables sending of inserted data in batches.
+
+When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Defaule value: 0.
+
 ## os_thread_priority {#setting-os_thread_priority}
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
@@ -986,5 +1056,77 @@ Possible values:
 Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
 
 Default value: 0.
+
+
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
+
+Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
+
+Possible values:
+
+- Positive integer number, in nanoseconds.
+
+    Recommended values:
+        
+        - 10000000 (100 times a second) nanoseconds and less for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds (once a second).
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
+
+Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
+
+Possible values:
+
+- Positive integer number of nanoseconds.
+
+    Recommended values:
+        
+        - 10000000 (100 times a second) nanosecods and more for for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds.
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## allow_introspection_functions {#settings-allow_introspection_functions}
+
+Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+
+Possible values:
+
+- 1 — Introspection functions enabled.
+- 0 — Introspection functions disabled.
+
+Default value: 0.
+
+## input_format_parallel_parsing
+
+- Type: bool
+- Default value: True
+
+Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
+
+## min_chunk_bytes_for_parallel_parsing
+
+- Type: unsigned int
+- Default value: 1 MiB
+
+The minimum chunk size in bytes, which each thread will parse in parallel.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

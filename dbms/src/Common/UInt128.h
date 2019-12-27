@@ -182,18 +182,8 @@ struct UInt256HashCRC32
 struct UInt256HashCRC32 : public UInt256Hash {};
 
 #endif
-}
 
-/// Overload hash for type casting
-namespace std
-{
-template <> struct hash<DB::UInt128>
-{
-    size_t operator()(const DB::UInt128 & u) const
-    {
-        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
-    }
-};
+}
 
 template <> struct is_signed<DB::UInt128>
 {
@@ -215,4 +205,16 @@ template <> struct is_arithmetic<DB::UInt128>
 {
     static constexpr bool value = false;
 };
+
+/// Overload hash for type casting
+namespace std
+{
+template <> struct hash<DB::UInt128>
+{
+    size_t operator()(const DB::UInt128 & u) const
+    {
+        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
+    }
+};
+
 }

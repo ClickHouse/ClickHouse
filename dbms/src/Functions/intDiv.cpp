@@ -28,7 +28,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-        if (unlikely(std::is_signed_v<B> && b == -1))
+        if (unlikely(is_signed_v<B> && b == -1))
         {
             size_t size = a.size();
             for (size_t i = 0; i < size; ++i)

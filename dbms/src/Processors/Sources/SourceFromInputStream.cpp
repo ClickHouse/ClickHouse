@@ -115,8 +115,11 @@ Chunk SourceFromInputStream::generate()
 
         if (auto totals_block = stream->getTotals())
         {
-            totals.setColumns(totals_block.getColumns(), 1);
-            has_totals = true;
+            if (totals_block.rows() == 1) /// Sometimes we can get empty totals. Skip it.
+            {
+                totals.setColumns(totals_block.getColumns(), 1);
+                has_totals = true;
+            }
         }
 
         is_stream_finished = true;

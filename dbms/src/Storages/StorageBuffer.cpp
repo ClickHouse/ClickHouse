@@ -165,6 +165,9 @@ BlockInputStreams StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
+            if (query_info.order_by_optimizer)
+                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
+
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
         }
@@ -265,6 +268,8 @@ static void appendBlock(const Block & from, Block & to)
 
     size_t old_rows = to.rows();
 
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
     try
     {
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
@@ -282,9 +287,6 @@ static void appendBlock(const Block & from, Block & to)
         /// Rollback changes.
         try
         {
-            /// Avoid "memory limit exceeded" exceptions during rollback.
-            auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
@@ -339,7 +341,7 @@ public:
             {
                 LOG_TRACE(storage.log, "Writing block with " << rows << " rows, " << bytes << " bytes directly.");
                 storage.writeBlockToDestination(block, destination);
-             }
+            }
             return;
         }
 
@@ -400,7 +402,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            storage.flushBuffer(buffer, true, true /* locked */);
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
         }
 
         if (!buffer.first_write_time)
@@ -621,6 +623,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << " doesn't exist. Block of data is discarded.");
         return;
     }
+
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
     auto insert = std::make_shared<ASTInsertQuery>();
 

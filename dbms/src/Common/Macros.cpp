@@ -1,6 +1,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -66,7 +67,9 @@ String Macros::expand(const String & s, size_t level, const String & database_na
         else if (macro_name == "table" && !table_name.empty())
             res += table_name;
         else
-            throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
+            throw Exception("No macro '" + macro_name +
+                "' in config while processing substitutions in '" + s + "' at "
+                + toString(begin), ErrorCodes::SYNTAX_ERROR);
 
         pos = end + 1;
     }

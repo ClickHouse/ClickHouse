@@ -214,12 +214,15 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach_)
-    : table_name(table_name_), database_name(database_name_),
+    : IStorage(ColumnsDescription({
+        {"_shard_num", std::make_shared<DataTypeUInt32>()},
+    }, true)),
+    table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
+    path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -249,9 +252,9 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, relative_data_path_, attach)
 {
     remote_table_function_ptr = remote_table_function_ptr_;
 }
@@ -305,7 +308,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 }
 
 BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -324,11 +327,15 @@ BlockInputStreams StorageDistributed::read(
 
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
+    bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
+    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
+        has_virtual_shard_num_column = false;
+
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, scalars, context.getExternalTables())
+            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, context.getExternalTables());
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     if (settings.optimize_skip_unused_shards)
     {
@@ -465,7 +472,7 @@ void StorageDistributed::createDirectoryMonitors()
     if (path.empty())
         return;
 
-    Poco::File{path}.createDirectory();
+    Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
@@ -589,6 +596,22 @@ void StorageDistributed::flushClusterNodesAllData()
         it->second.flushAllData();
 }
 
+void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
+                                TableStructureWriteLockHolder &)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+    if (!path.empty())
+    {
+        auto new_path = global_context.getPath() + new_path_to_table_data;
+        Poco::File(path).renameTo(new_path);
+        path = new_path;
+        std::lock_guard lock(cluster_nodes_mutex);
+        for (auto & node : cluster_nodes_data)
+            node.second.directory_monitor->updatePath();
+    }
+}
+
 
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -642,7 +665,7 @@ void registerStorageDistributed(StorageFactory & factory)
         return StorageDistributed::create(
             args.database_name, args.table_name, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
-            args.context, sharding_key, args.data_path,
+            args.context, sharding_key, args.relative_data_path,
             args.attach);
     });
 }

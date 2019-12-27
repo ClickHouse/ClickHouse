@@ -47,7 +47,7 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
-    String comment;
+    std::optional<String> comment;
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;
@@ -102,8 +102,11 @@ struct AlterCommand
         ConstraintsDescription & constraints_description, ASTPtr & order_by_ast,
         ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
-    /// Checks that not only metadata touched by that command
-    bool isMutable() const;
+    /// Checks that alter query changes data. For MergeTree:
+    ///    * column files (data and marks)
+    ///    * each part meta (columns.txt)
+    /// in each part on disk (it's not lightweight alter).
+    bool isModifyingData() const;
 
     /// checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -124,7 +127,7 @@ public:
     void applyForSettingsOnly(SettingsChanges & changes) const;
 
     void validate(const IStorage & table, const Context & context);
-    bool isMutable() const;
+    bool isModifyingData() const;
     bool isSettingsAlter() const;
 };
 

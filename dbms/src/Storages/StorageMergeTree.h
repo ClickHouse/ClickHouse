@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -45,6 +45,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool supportProcessorsPipeline() const override { return true; }
+
     std::optional<UInt64> totalRows() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
@@ -56,7 +58,10 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+
+    /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
+
     CancellationCode killMutation(const String & mutation_id) override;
 
     void drop(TableStructureWriteLockHolder &) override;
@@ -73,6 +78,10 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
+
+    /// Mutex and condvar for synchronous mutations wait
+    std::mutex mutation_wait_mutex;
+    std::condition_variable mutation_wait_event;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -133,6 +142,8 @@ private:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
+    /// Just checks versions of each active data part
+    bool isMutationDone(Int64 mutation_version) const;
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
@@ -149,6 +160,7 @@ protected:
     StorageMergeTree(
         const String & database_name_,
         const String & table_name_,
+        const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         const ConstraintsDescription & constraints_,

@@ -10,19 +10,23 @@ struct FixedClearableHashTableCell
     using State = ClearableHashSetState;
 
     using value_type = Key;
-    using mapped_type = void;
+    using mapped_type = VoidMapped;
     UInt32 version;
 
     FixedClearableHashTableCell() {}
     FixedClearableHashTableCell(const Key &, const State & state) : version(state.version) {}
 
+    const VoidKey getKey() const { return {}; }
+    VoidMapped getMapped() const { return {}; }
+
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
-    static constexpr bool need_zero_value_storage = false;
 
     struct CellExt
     {
         Key key;
+        const VoidKey getKey() const { return {}; }
+        VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedClearableHashTableCell *) { key = key_; }
     };
@@ -34,8 +38,6 @@ class FixedClearableHashSet : public FixedHashTable<Key, FixedClearableHashTable
 {
 public:
     using Base = FixedHashTable<Key, FixedClearableHashTableCell<Key>, Allocator>;
-    using key_type = Key;
-    using value_type = typename FixedClearableHashSet::cell_type::value_type;
     using LookupResult = typename Base::LookupResult;
 
     void clear()

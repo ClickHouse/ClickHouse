@@ -97,6 +97,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool supportProcessorsPipeline() const override { return true; }
+
     std::optional<UInt64> totalRows() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
@@ -117,7 +119,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -530,6 +532,10 @@ private:
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
 
+    /// Wait for timeout seconds mutation is finished on replicas
+    void waitMutationToFinishOnReplicas(
+        const Strings & replicas, const String & mutation_id) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -538,6 +544,7 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & database_name_, const String & name_,
+        const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         const ConstraintsDescription & constraints_,

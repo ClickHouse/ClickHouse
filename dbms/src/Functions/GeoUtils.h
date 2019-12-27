@@ -261,6 +261,10 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
     for (size_t row = 0; row < grid_size; ++row)
     {
+#pragma GCC diagnostic push
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
         CoordinateType y_min = min_corner.y() + row * cell_height;
         CoordinateType y_max = min_corner.y() + (row + 1) * cell_height;
 
@@ -268,6 +272,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
         {
             CoordinateType x_min = min_corner.x() + col * cell_width;
             CoordinateType x_max = min_corner.x() + (col + 1) * cell_width;
+#pragma GCC diagnostic pop
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
             Polygon cell_bound;
@@ -590,7 +595,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -616,7 +621,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
+    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
 }
 

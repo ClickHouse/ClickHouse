@@ -80,7 +80,7 @@ SELECT '--------------Implicit type conversion------------';
 SELECT * FROM merge(currentDatabase(), 'test_s64_distributed|test_u64_distributed') ORDER BY value;
 SELECT * FROM merge(currentDatabase(), 'test_s64_distributed|test_u64_distributed') WHERE date = '2018-08-01' ORDER BY value;
 SELECT * FROM merge(currentDatabase(), 'test_s64_distributed|test_u64_distributed') WHERE _table = 'test_u64_distributed' ORDER BY value;
-SELECT * FROM merge(currentDatabase(), 'test_s64_distributed|test_u64_distributed') WHERE value = 1; -- { serverError 171 }
+SELECT * FROM merge(currentDatabase(), 'test_s64_distributed|test_u64_distributed') WHERE value = 1;
 
 DROP TABLE IF EXISTS test_u64_local;
 DROP TABLE IF EXISTS test_s64_local;

@@ -114,7 +114,7 @@ namespace MultiRegexps
         std::map<std::pair<std::vector<String>, std::optional<UInt32>>, Regexps> storage;
     };
 
-    template <bool SaveIndices, bool CompileForEditDistance>
+    template <bool save_indices, bool CompileForEditDistance>
     inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::optional<UInt32> edit_distance)
     {
         (void)edit_distance;
@@ -165,7 +165,7 @@ namespace MultiRegexps
         std::unique_ptr<unsigned int[]> ids;
 
         /// We mark the patterns to provide the callback results.
-        if constexpr (SaveIndices)
+        if constexpr (save_indices)
         {
             ids.reset(new unsigned int[patterns.size()]);
             for (size_t i = 0; i < patterns.size(); ++i)
@@ -226,7 +226,7 @@ namespace MultiRegexps
     /// Also, we use templates here because each instantiation of function
     /// template has its own copy of local static variables which must not be the same
     /// for different hyperscan compilations.
-    template <bool SaveIndices, bool CompileForEditDistance>
+    template <bool save_indices, bool CompileForEditDistance>
     inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
@@ -247,7 +247,7 @@ namespace MultiRegexps
             it = known_regexps.storage
                      .emplace(
                          std::pair{str_patterns, edit_distance},
-                         constructRegexps<SaveIndices, CompileForEditDistance>(str_patterns, edit_distance))
+                         constructRegexps<save_indices, CompileForEditDistance>(str_patterns, edit_distance))
                      .first;
         /// If found, unlock and return the database.
         lock.unlock();

@@ -334,7 +334,7 @@ For a time interval starting at 'StartTime' and continuing for 'Duration' second
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
-## formatDateTime(Time, Format\[, Timezone\])
+## formatDateTime(Time, Format\[, Timezone\]) {#formatdatetime}
 
 Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
 

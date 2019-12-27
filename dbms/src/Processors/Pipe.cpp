@@ -44,8 +44,8 @@ static void checkSource(const IProcessor & source)
         throw Exception("Source for pipe should have single output, but it doesn't have any",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (source.getOutputs().size() != 1)
-        throw Exception("Source for pipe should have single output, but " + source.getName() + " has " +
+    if (source.getOutputs().size() > 2)
+        throw Exception("Source for pipe should have single or two outputs, but " + source.getName() + " has " +
                         toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -54,6 +54,10 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
     output_port = &source->getOutputs().front();
+
+    if (source->getOutputs().size() > 1)
+        totals = &source->getOutputs().back();
+
     processors.emplace_back(std::move(source));
 }
 
@@ -82,6 +86,33 @@ void Pipe::addSimpleTransform(ProcessorPtr transform)
     connect(*output_port, transform->getInputs().front());
     output_port = &transform->getOutputs().front();
     processors.emplace_back(std::move(transform));
+}
+
+void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setLimits(limits);
+    }
+}
+
+void Pipe::setQuota(const std::shared_ptr<QuotaContext> & quota)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
+            source_with_progress->setQuota(quota);
+    }
+}
+
+void Pipe::pinSources(size_t executor_number)
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            source->setStream(executor_number);
+    }
 }
 
 }

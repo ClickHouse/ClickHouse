@@ -137,7 +137,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             /// If it is not virtual database like Dictionary then drop remaining data dir
             if (!database_data_path.empty())
             {
-                String table_data_path = database_data_path + "/" + escapeForFileName(database_and_table.second->getTableName());
+                String table_data_path = context.getPath() + database_data_path + "/" + escapeForFileName(table_name);
 
                 if (Poco::File(table_data_path).exists())
                     Poco::File(table_data_path).remove(true);
@@ -164,7 +164,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
 
-    DatabasePtr database = tryGetDatabase(database_name, false);
+    DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
     if (!database || !database->isDictionaryExist(context, dictionary_name))
     {
@@ -269,7 +269,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             database->shutdown();
 
             /// Delete the database.
-            database->drop();
+            database->drop(context);
 
             /// Old ClickHouse versions did not store database.sql files
             Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
