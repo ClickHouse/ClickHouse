@@ -115,9 +115,8 @@ public:
         {
             if (i == 0 || (column_with_groups && column_with_groups->compareAt(i, i - 1, *column_with_groups, 1) != 0))
             {
-                if (i > 0) {
+                if (i > 0)
                     agg_func.destroy(place.data());
-                }
 
                 try
                 {
