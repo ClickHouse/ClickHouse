@@ -348,14 +348,14 @@ void DatabaseOrdinary::alterTable(
 
     ASTStorage & storage_ast = *ast_create_query.storage;
     /// ORDER BY may change, but cannot appear, it's required construction
-    if (metadata.order_by_expression && storage_ast.order_by)
-        storage_ast.set(storage_ast.order_by, metadata.order_by_expression);
+    if (metadata.order_by_ast && storage_ast.order_by)
+        storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
 
-    if (metadata.primary_key_expression)
-        storage_ast.set(storage_ast.primary_key, metadata.primary_key_expression);
+    if (metadata.primary_key_ast)
+        storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
 
-    if (metadata.ttl_for_table_expression)
-        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_expression);
+    if (metadata.ttl_for_table_ast)
+        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
 
     if (metadata.settings_ast)
         storage_ast.set(storage_ast.settings, metadata.settings_ast);

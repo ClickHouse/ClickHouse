@@ -511,19 +511,19 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
             if (new_sorting_key_expr_list->children.size() == 1)
-                metadata.order_by_expression = new_sorting_key_expr_list->children[0];
+                metadata.order_by_ast = new_sorting_key_expr_list->children[0];
             else
             {
                 auto tuple = makeASTFunction("tuple");
                 tuple->arguments->children = new_sorting_key_expr_list->children;
-                metadata.order_by_expression = tuple;
+                metadata.order_by_ast = tuple;
             }
 
             if (!primary_key_ast)
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key_expression = order_by_ast->clone();
+                metadata.primary_key_ast = order_by_ast->clone();
             }
         }
 
@@ -536,7 +536,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.ttl_table_changed)
         {
             ParserExpression parser;
-            metadata.ttl_for_table_expression = parseQuery(parser, metadata_diff.new_ttl_table, 0);
+            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
         }
     }
 
@@ -544,8 +544,8 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(metadata.order_by_expression, metadata.primary_key_expression, metadata.columns, metadata.indices, metadata.constraints);
-    setTTLExpressions(new_columns.getColumnTTLs(), metadata.ttl_for_table_expression);
+    setProperties(metadata.order_by_ast, metadata.primary_key_ast, metadata.columns, metadata.indices, metadata.constraints);
+    setTTLExpressions(new_columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 }
 
 
@@ -3281,11 +3281,11 @@ void StorageReplicatedMergeTree::alter(
             changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
-        if (ast_to_str(metadata.order_by_expression) != ast_to_str(order_by_ast))
-            new_metadata.sorting_key = serializeAST(*extractKeyExpressionList(metadata.order_by_expression));
+        if (ast_to_str(metadata.order_by_ast) != ast_to_str(order_by_ast))
+            new_metadata.sorting_key = serializeAST(*extractKeyExpressionList(metadata.order_by_ast));
 
-        if (ast_to_str(metadata.ttl_for_table_expression) != ast_to_str(ttl_table_ast))
-            new_metadata.ttl_table = serializeAST(*metadata.ttl_for_table_expression);
+        if (ast_to_str(metadata.ttl_for_table_ast) != ast_to_str(ttl_table_ast))
+            new_metadata.ttl_table = serializeAST(*metadata.ttl_for_table_ast);
 
         String new_indices_str = metadata.indices.toString();
         if (new_indices_str != getIndices().toString())
