@@ -186,6 +186,9 @@ private:
     /** Checks whether a given attribute exists and returns its index */
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
+    /** Helper functions to retrieve and instantiate the provided null value of an attribute.
+     *  Since a null value is obligatory for every attribute they are simply appended to null_values defined below.
+     */
     template <typename T>
     void appendNullValueImpl(const Field & null_value);
     void appendNullValue(AttributeUnderlyingType type, const Field & value);
@@ -194,8 +197,11 @@ private:
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(size_t attribute_ind, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
+    /** A mapping from the names of the attributes to their index in the two vectors defined below. */
     std::map<std::string, size_t> attribute_index_by_name;
+    /** A vector of columns storing the values of each attribute. */
     Columns attributes;
+    /** A vector of null values corresponding to each attribute. */
     std::vector<std::variant<
         UInt8,
         UInt16,
