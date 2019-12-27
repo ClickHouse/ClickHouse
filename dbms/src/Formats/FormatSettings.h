@@ -89,6 +89,27 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
     } parquet;
 
+    struct Schema
+    {
+        std::string format_schema;
+        std::string format_schema_path;
+        bool is_server = false;
+    };
+
+    Schema schema;
+
+    struct Custom
+    {
+        std::string result_before_delimiter;
+        std::string result_after_delimiter;
+        std::string row_before_delimiter;
+        std::string row_after_delimiter;
+        std::string row_between_delimiter;
+        std::string field_delimiter;
+        std::string escaping_rule;
+    };
+
+    Custom custom;
 };
 
 }

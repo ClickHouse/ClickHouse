@@ -40,7 +40,7 @@ void StorageFactory::registerStorage(const std::string & name, Creator creator)
 
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
-    const String & data_path,
+    const String & relative_data_path,
     const String & table_name,
     const String & database_name,
     Context & local_context,
@@ -150,7 +150,7 @@ StoragePtr StorageFactory::get(
         .engine_args = args,
         .storage_def = storage_def,
         .query = query,
-        .data_path = data_path,
+        .relative_data_path = relative_data_path,
         .table_name = table_name,
         .database_name = database_name,
         .local_context = local_context,

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-CLICKHOUSE_CLIENT_OPT="--allow_experimental_data_skipping_indices=1"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
@@ -9,7 +8,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS minmax_idx;"
 
 
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE minmax_idx
 (
     u64 UInt64,

@@ -165,4 +165,14 @@ public:
     }
 };
 }
+
+/** We must call it in advance from a single thread
+  *  to avoid thread sanitizer report about data race in "codec_choose" function.
+  */
+inline void initializeBase64()
+{
+    size_t outlen = 0;
+    base64_encode(nullptr, 0, nullptr, &outlen, 0);
+}
+
 #endif

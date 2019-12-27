@@ -88,31 +88,34 @@ BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const
 
 
 StorageSetOrJoinBase::StorageSetOrJoinBase(
-    const String & path_,
+    const String & relative_path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_)
+    const ConstraintsDescription & constraints_,
+    const Context & context_)
     : table_name(table_name_), database_name(database_name_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
 
-    if (path_.empty())
+    if (relative_path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    path = path_ + escapeForFileName(table_name_) + '/';
+    base_path = context_.getPath();
+    path = base_path + relative_path_;
 }
 
 
 
 StorageSet::StorageSet(
-    const String & path_,
+    const String & relative_path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_)
-    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_, constraints_},
+    const ConstraintsDescription & constraints_,
+    const Context & context_)
+    : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_},
     set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();
@@ -199,13 +202,13 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
 
 void StorageSetOrJoinBase::rename(
-    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+    const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     /// Rename directory with data.
-    String new_path = new_path_to_db + escapeForFileName(new_table_name);
+    String new_path = base_path + new_path_to_table_data;
     Poco::File(path).renameTo(new_path);
 
-    path = new_path + "/";
+    path = new_path;
     table_name = new_table_name;
     database_name = new_database_name;
 }
@@ -220,7 +223,7 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(args.data_path, args.database_name, args.table_name, args.columns, args.constraints);
+        return StorageSet::create(args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints, args.context);
     });
 }
 

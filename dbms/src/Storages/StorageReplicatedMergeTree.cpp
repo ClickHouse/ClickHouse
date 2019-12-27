@@ -193,6 +193,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const String & database_name_,
     const String & table_name_,
+    const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     const ConstraintsDescription & constraints_,
@@ -206,7 +207,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_,
+        : MergeTreeData(database_name_, table_name_, relative_data_path_,
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
@@ -3231,6 +3232,10 @@ void StorageReplicatedMergeTree::alter(
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 
+    /// We cannot check this alter commands with method isModifyingData()
+    /// because ReplicatedMergeTree stores both columns and metadata for
+    /// each replica. So we have to wait AlterThread even with lightweight
+    /// metadata alter.
     if (params.isSettingsAlter())
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
@@ -3840,10 +3845,10 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 
 
 void StorageReplicatedMergeTree::rename(
-    const String & new_path_to_db, const String & new_database_name,
+    const String & new_path_to_table_data, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder & lock)
 {
-    MergeTreeData::rename(new_path_to_db, new_database_name, new_table_name, lock);
+    MergeTreeData::rename(new_path_to_table_data, new_database_name, new_table_name, lock);
 
     /// Update table name in zookeeper
     auto zookeeper = getZooKeeper();
