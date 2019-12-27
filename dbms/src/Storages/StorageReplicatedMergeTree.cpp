@@ -574,7 +574,6 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     }
 
     auto table_id = getStorageID();
-    //FIXME
     global_context.getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, new_columns, new_indices, new_constraints, storage_modifier);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it

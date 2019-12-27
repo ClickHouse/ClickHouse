@@ -462,24 +462,15 @@ DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, cons
         throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-StorageID IStorage::getStorageID(std::unique_lock<std::mutex> * id_lock) const
+StorageID IStorage::getStorageID() const
 {
     std::unique_lock<std::mutex> lock;
-    if (!id_lock)
-        lock = std::unique_lock(id_mutex);
-    else if (!*id_lock)
-        *id_lock = std::unique_lock(id_mutex);
     return storage_id;
 }
 
-void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name,
-                              std::unique_lock<std::mutex> * id_lock)
+void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
     std::unique_lock<std::mutex> lock;
-    if (!id_lock)
-        lock = std::unique_lock(id_mutex);
-    else if (!*id_lock)
-        *id_lock = std::unique_lock(id_mutex);
     storage_id.database_name = new_database_name;
     storage_id.table_name = new_table_name;
 }

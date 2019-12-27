@@ -143,7 +143,7 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage({table_id_}, columns_)
+    : IStorage(table_id_, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)

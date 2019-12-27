@@ -660,7 +660,6 @@ bool StorageMergeTree::merge(
     }
 
     auto table_id = getStorageID();
-    //FIXME
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_part);
 
     /// Logging

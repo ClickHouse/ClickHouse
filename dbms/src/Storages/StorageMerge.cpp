@@ -7,19 +7,16 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -27,7 +24,6 @@
 #include <Databases/IDatabase.h>
 #include <ext/range.h>
 #include <algorithm>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 
@@ -37,7 +33,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_PREWHERE;
-    extern const int INCOMPATIBLE_SOURCE_TABLES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
@@ -281,10 +276,8 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    StorageID table_id;
-    if (storage)
-        table_id = storage->getStorageID();
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_id.table_name);
+    String table_name = storage ? storage->getStorageID().table_name : "";
+    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
     if (!storage)
         return BlockInputStreams{
@@ -304,7 +297,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
-        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_id.table_name);
+        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
@@ -335,7 +328,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
         {
             if (has_table_virtual_column)
                 source_stream = std::make_shared<AddingConstColumnBlockInputStream<String>>(
-                    source_stream, std::make_shared<DataTypeString>(), table_id.table_name, "_table");
+                    source_stream, std::make_shared<DataTypeString>(), table_name, "_table");
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
             /// We must return streams with structure equals to structure of Merge table.

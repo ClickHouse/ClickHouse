@@ -422,9 +422,6 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context
 
 void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (getStorageID().table_name.empty()) //FIXME how can it be empty?
-        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
-
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     auto file = Poco::File(path);

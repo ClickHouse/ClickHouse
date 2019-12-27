@@ -793,7 +793,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
         checkDatabaseAccessRightsImpl(db);
     }
 
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
     if (iter == shared->view_dependencies.end())
         return {};
 

@@ -292,9 +292,6 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
 
 void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (getStorageID().table_name.empty())  //FIXME how can it be empty?
-        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
-
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     auto file = Poco::File(path);

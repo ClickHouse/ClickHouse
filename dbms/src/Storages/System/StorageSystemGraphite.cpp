@@ -51,7 +51,6 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
                 auto table_id = table_data->getStorageID();
                 if (!graphite_configs.count(config_name))
                 {
-                    //TODO add uuid
                     Config new_config =
                     {
                         table_data->merging_params.graphite_params,

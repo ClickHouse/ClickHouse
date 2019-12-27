@@ -109,8 +109,6 @@ private:
     /// You can not call with a write locked `rwlock`.
     void loadMarks();
 
-    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
       *  - for elements (file name.bin) - the total number of array elements in the block is specified,
