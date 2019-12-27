@@ -29,6 +29,7 @@ The supported formats are:
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
+| [ORC](#data-format-orc) | ✔ | ✗ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
@@ -954,13 +955,54 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
 ```bash
-cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
-```sql
-clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```
+
+To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
+
+## ORC {#data-format-orc}
+
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports only read operations for this format.
+
+### Data Types Matching
+
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` queries.
+
+| ORC data type (`INSERT`) | ClickHouse data type |
+| -------------------- | ------------------ |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) |
+| `INT8` | [Int8](../data_types/int_uint.md) |
+| `UINT16` | [UInt16](../data_types/int_uint.md) |
+| `INT16` | [Int16](../data_types/int_uint.md) |
+| `UINT32` | [UInt32](../data_types/int_uint.md) |
+| `INT32` | [Int32](../data_types/int_uint.md) |
+| `UINT64` | [UInt64](../data_types/int_uint.md) |
+| `INT64` | [Int64](../data_types/int_uint.md) |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) |
+| `DOUBLE` | [Float64](../data_types/float.md) |
+| `DATE32` | [Date](../data_types/date.md) |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) |
+| `STRING`, `BINARY` | [String](../data_types/string.md) |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) |
+
+ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Data types of a ClickHouse table columns can differ from the corresponding fields of the ORC data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+
+### Inserting and Selecting Data
+
+You can insert Parquet data from a file into ClickHouse table by the following command:
+
+```bash
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT ORC"
 ```
 
 To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
