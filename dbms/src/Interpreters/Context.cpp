@@ -28,6 +28,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/QuotaContext.h>
+#include <Access/RowPolicyContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
@@ -333,6 +334,7 @@ Context Context::createGlobal()
 {
     Context res;
     res.quota = std::make_shared<QuotaContext>();
+    res.row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -625,6 +627,13 @@ void Context::checkQuotaManagementIsAllowed()
             "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
+void Context::checkRowPolicyManagementIsAllowed()
+{
+    if (!is_row_policy_management_allowed)
+        throw Exception(
+            "User " + client_info.current_user + " doesn't have enough privileges to manage row policies", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -637,34 +646,6 @@ ConfigurationPtr Context::getUsersConfig()
 {
     auto lock = getLock();
     return shared->users_config;
-}
-
-bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
-{
-    auto lock = getLock();
-
-    // No user - no properties.
-    if (client_info.current_user.empty())
-        return false;
-
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-
-    auto db = props.find(database);
-    if (db == props.end())
-        return false;
-
-    auto table_props = db->second.find(table);
-    if (table_props == db->second.end())
-        return false;
-
-    return !!table_props->second.count(name);
-}
-
-const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
-{
-    auto lock = getLock();
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(database).at(table).at(name);
 }
 
 void Context::calculateUserSettings()
@@ -691,6 +672,8 @@ void Context::calculateUserSettings()
     quota = getAccessControlManager().createQuotaContext(
         client_info.current_user, client_info.current_address.host(), client_info.quota_key);
     is_quota_management_allowed = user->is_quota_management_allowed;
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
+    is_row_policy_management_allowed = user->is_row_policy_management_allowed;
 }
 
 
