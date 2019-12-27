@@ -997,7 +997,7 @@ Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UU
 
 Data types of a ClickHouse table columns can differ from the corresponding fields of the ORC data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
-### Inserting and Selecting Data
+### Inserting Data
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
