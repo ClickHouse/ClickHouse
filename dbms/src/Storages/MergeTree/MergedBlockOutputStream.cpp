@@ -184,7 +184,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (!rows)
         return;
 
-    std::set<String> skip_indexes_column_names_set;
+    std::unordered_set<String> skip_indexes_column_names_set;
     for (const auto & index : storage.skip_indices)
         std::copy(index->columns.cbegin(), index->columns.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
@@ -199,8 +199,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     writer->next();
 
     rows_count += rows;
-
-    // index_offset = new_index_offset;
 }
 
 }

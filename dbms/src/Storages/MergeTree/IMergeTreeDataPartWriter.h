@@ -14,7 +14,7 @@
 namespace DB
 {
 
-class IMergeTreeDataPartWriter
+class IMergeTreeDataPartWriter : private boost::noncopyable
 {
 public:
     using WrittenOffsetColumns = std::set<std::string>;

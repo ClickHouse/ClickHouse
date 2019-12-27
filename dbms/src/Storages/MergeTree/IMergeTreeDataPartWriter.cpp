@@ -100,7 +100,6 @@ static void fillIndexGranularityImpl(
     bool can_use_adaptive_index_granularity,
     bool need_finish_last_granule = false)
 {
-    /// FIXME correct index granularity for compact
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
     if (!can_use_adaptive_index_granularity)
@@ -131,25 +130,22 @@ static void fillIndexGranularityImpl(
     for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
     {
         size_t rows_left_in_block = rows_in_block - current_row;
-
-        // if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block)
-        // {
-        //     /// If enough rows are left, create a new granule. Otherwise, extend previous granule.
-        //     /// So,real size of granule differs from index_granularity_for_block not more than 50%.
-        //     if (rows_left_in_block * 2 >= index_granularity_for_block)
-        //         index_granularity.appendMark(rows_left_in_block);
-        //     else
-        //         index_granularity.addRowsToLastMark(rows_left_in_block);
-        // }
-        // else
-        // {
-        //     index_granularity.appendMark(index_granularity_for_block);
-        // }
-
-        if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block)
-            index_granularity.appendMark(rows_left_in_block);
+        
+        /// FIXME need comment
+        if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block
+            && (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
+            // So, real size of granule differs from index_granularity_for_block not more than 50%.
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
         else
+        {
             index_granularity.appendMark(index_granularity_for_block);
+        }
     }
 }
 
@@ -164,7 +160,7 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
         index_offset,
         index_granularity,
         settings.can_use_adaptive_granularity,
-        need_finish_last_granule);
+        need_finish_last_granule && index_offset != 0);
 }
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()
@@ -256,7 +252,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
 
     size_t skip_index_current_data_mark = 0;
 
-    /// Filling and writing skip indices like in IMergeTreeDataPartWriter::writeColumn
+    /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
         const auto index = skip_indices[i];

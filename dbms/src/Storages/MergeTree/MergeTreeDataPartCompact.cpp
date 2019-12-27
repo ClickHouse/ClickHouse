@@ -178,11 +178,11 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     ReadBufferFromFile buffer(marks_file_path, marks_file_size);
     while (!buffer.eof())
     {
+        /// Skip offsets for columns
+        buffer.seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
         size_t granularity;
         readIntBinary(granularity, buffer);
         index_granularity.appendMark(granularity);
-        /// Skip offsets for columns
-        buffer.seek(columns.size() * sizeof(MarkInCompressedFile), SEEK_CUR);
     }
 
     if (index_granularity.getMarksCount() * index_granularity_info.mark_size_in_bytes != marks_file_size)
