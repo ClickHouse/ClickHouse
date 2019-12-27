@@ -506,7 +506,6 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     {
         if (metadata_diff.sorting_key_changed)
         {
-            std::cerr << "SORTING KEY CHANGED\n";
             ParserNotEmptyExpressionList parser(false);
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
