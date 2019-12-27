@@ -534,6 +534,7 @@ struct WhichDataType
 
 inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
 inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime(); }
 inline bool isDateTime64(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateTime64(); }
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }

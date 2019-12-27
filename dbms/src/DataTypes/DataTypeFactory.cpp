@@ -74,7 +74,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    return findCreatorByName(family_name)(family_name_param, parameters);
 }
 
 
@@ -107,30 +107,30 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         throw Exception("DataTypeFactory: the data type " + name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
-    registerDataType(name, [name, creator](const ASTPtr & ast)
+    registerDataType(name, [name, creator](const String & type_name, const ASTPtr & ast)
     {
         if (ast)
             throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
-        return creator();
+        return creator(type_name);
     }, case_sensitiveness);
 }
 
 void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    registerDataType(family_name, [creator](const ASTPtr & ast)
+    registerDataType(family_name, [creator](const String & type_name, const ASTPtr & ast)
     {
-        auto res = creator(ast);
+        auto res = creator(type_name, ast);
         res.first->setCustomization(std::move(res.second));
 
         return res.first;
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
+    registerDataTypeCustom(name, [creator](const String & type_name, const ASTPtr & /*ast*/)
     {
-        return creator();
+        return creator(type_name);
     }, case_sensitiveness);
 }
 

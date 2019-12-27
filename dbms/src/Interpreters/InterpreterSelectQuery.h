@@ -245,7 +245,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    String generateFilterActions(ExpressionActionsPtr & actions, const Names & prerequisite_columns = {}) const;
+    String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);
