@@ -1452,8 +1452,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    setProperties(metadata.order_by_ast, metadata.primary_key_ast,
-            metadata.columns, metadata.indices, metadata.constraints, /* only_check = */ true);
+    setProperties(metadata, /* only_check = */ true);
 
     setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast, /* only_check = */ true);
 

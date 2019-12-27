@@ -605,6 +605,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
             {
                 if (!command)
                 {
+#if !__clang__
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+                    /// We completely sure, that we initialize all required fields
                     AlterCommand aux_command{
                         .type = AlterCommand::MODIFY_COLUMN,
                         .column_name = column.name,
@@ -612,6 +617,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
                         .default_kind = column.default_desc.kind,
                         .default_expression = column.default_desc.expression
                     };
+#if !__clang__
+#    pragma GCC diagnostic pop
+#endif
+
                     /// column has no associated alter command, let's create it
                     /// add a new alter command to modify existing column
                     this->emplace_back(aux_command);

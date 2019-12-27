@@ -41,7 +41,7 @@ struct AlterCommand
     String partition_name;
 
     /// For ADD and MODIFY, a new column type.
-    DataTypePtr data_type;
+    DataTypePtr data_type = nullptr;
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
@@ -59,29 +59,29 @@ struct AlterCommand
     bool if_not_exists = false;
 
     /// For MODIFY_ORDER_BY
-    ASTPtr order_by;
+    ASTPtr order_by = nullptr;
 
     /// For ADD INDEX
-    ASTPtr index_decl;
+    ASTPtr index_decl = nullptr;
     String after_index_name;
 
     /// For ADD/DROP INDEX
     String index_name;
 
     // For ADD CONSTRAINT
-    ASTPtr constraint_decl;
+    ASTPtr constraint_decl = nullptr;
 
     // For ADD/DROP CONSTRAINT
     String constraint_name;
 
     /// For MODIFY TTL
-    ASTPtr ttl;
+    ASTPtr ttl = nullptr;
 
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
     /// For ADD and MODIFY
-    CompressionCodecPtr codec;
+    CompressionCodecPtr codec = nullptr;
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;

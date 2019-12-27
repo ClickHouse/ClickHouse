@@ -35,7 +35,4 @@ struct StorageInMemoryMetadata
     ASTPtr settings_ast = nullptr;
 };
 
-ASTPtr metadataToAST(const StorageInMemoryMetadata & metadata);
-
-
 }
