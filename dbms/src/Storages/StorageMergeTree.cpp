@@ -266,9 +266,9 @@ void StorageMergeTree::alter(
         changeSettings(metadata.settings_ast, table_lock_holder);
         /// Reinitialize primary key because primary key column types might have changed.
         setProperties(
-            metadata.order_by_expression, metadata.primary_key_expression, metadata.columns, metadata.indices, metadata.constraints);
+            metadata.order_by_ast, metadata.primary_key_ast, metadata.columns, metadata.indices, metadata.constraints);
 
-        setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_expression);
+        setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
     };
 
     /// This alter can be performed at metadata level only

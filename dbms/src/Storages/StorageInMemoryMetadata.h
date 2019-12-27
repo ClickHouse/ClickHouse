@@ -13,9 +13,9 @@ struct StorageInMemoryMetadata
     ColumnsDescription columns;
     IndicesDescription indices;
     ConstraintsDescription constraints;
-    ASTPtr order_by_expression = nullptr;
-    ASTPtr primary_key_expression = nullptr;
-    ASTPtr ttl_for_table_expression = nullptr;
+    ASTPtr order_by_ast = nullptr;
+    ASTPtr primary_key_ast = nullptr;
+    ASTPtr ttl_for_table_ast = nullptr;
     ASTPtr settings_ast = nullptr;
 };
 

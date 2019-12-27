@@ -272,14 +272,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!metadata.primary_key_expression && metadata.order_by_expression)
+        if (!metadata.primary_key_ast && metadata.order_by_ast)
         {
             /// Primary and sorting key become independent after this ALTER so we have to
             /// save the old ORDER BY expression as the new primary key.
-            metadata.primary_key_expression = metadata.order_by_expression->clone();
+            metadata.primary_key_ast = metadata.order_by_ast->clone();
         }
 
-        metadata.order_by_expression = order_by;
+        metadata.order_by_ast = order_by;
     }
     else if (type == COMMENT_COLUMN)
     {
@@ -384,7 +384,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.ttl_for_table_expression = ttl;
+        metadata.ttl_for_table_ast = ttl;
     }
     else if (type == MODIFY_SETTING)
     {

@@ -254,13 +254,13 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
         .constraints = getConstraints(),
     };
     if (order_by_ast)
-        metadata.order_by_expression = order_by_ast->clone();
+        metadata.order_by_ast = order_by_ast->clone();
 
     if (primary_key_ast)
-        metadata.primary_key_expression = primary_key_ast->clone();
+        metadata.primary_key_ast = primary_key_ast->clone();
 
     if (ttl_table_ast)
-        metadata.ttl_for_table_expression = ttl_table_ast->clone();
+        metadata.ttl_for_table_ast = ttl_table_ast->clone();
 
     if (settings_ast)
         metadata.settings_ast = settings_ast->clone();
@@ -1459,10 +1459,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    setProperties(metadata.order_by_expression, metadata.primary_key_expression,
+    setProperties(metadata.order_by_ast, metadata.primary_key_ast,
             metadata.columns, metadata.indices, metadata.constraints, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_expression, /* only_check = */ true);
+    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast, /* only_check = */ true);
 
     if (settings_ast)
     {
