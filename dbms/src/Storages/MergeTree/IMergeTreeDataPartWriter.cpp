@@ -130,7 +130,7 @@ static void fillIndexGranularityImpl(
     for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
     {
         size_t rows_left_in_block = rows_in_block - current_row;
-        
+
         /// FIXME need comment
         if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block
             && (rows_in_block >= index_granularity_for_block || index_offset != 0))
@@ -160,7 +160,7 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
         index_offset,
         index_granularity,
         settings.can_use_adaptive_granularity,
-        need_finish_last_granule && index_offset != 0);
+        need_finish_last_granule);
 }
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()

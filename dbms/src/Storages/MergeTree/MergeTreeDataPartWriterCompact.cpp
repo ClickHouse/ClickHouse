@@ -75,7 +75,7 @@ void MergeTreeDataPartWriterCompact::write(
     columns_buffer.add(result_block.mutateColumns());
     size_t last_mark_rows = index_granularity.getLastMarkRows();
     size_t rows_in_buffer = columns_buffer.size();
-    
+
     if (rows_in_buffer < last_mark_rows)
     {
         /// FIXME need comment
