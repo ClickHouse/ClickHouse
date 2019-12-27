@@ -643,6 +643,13 @@ class ClickHouseInstance:
 
         return urllib.urlopen(url, data).read()
 
+    def kill_clickhouse(self, stop_start_wait_sec=5):
+        pid = self.get_process_pid("clickhouse")
+        if not pid:
+            raise Exception("No clickhouse found")
+        self.exec_in_container(["bash",  "-c", "kill -9 {}".format(pid)], user='root')
+        time.sleep(stop_start_wait_sec)
+
     def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
