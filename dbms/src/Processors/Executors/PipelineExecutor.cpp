@@ -589,7 +589,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 {
                     state = task_queue.pop(thread_num);
 
-                    if (!task_queue.empty() && !threads_queue.empty() && task_queue.quota() > threads_queue.size())
+                    if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
                     {
                         auto thread_to_wake = threads_queue.pop_any();
                         lock.unlock();
@@ -695,7 +695,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() && task_queue.quota() > threads_queue.size())
+                    if (!threads_queue.empty() /* && task_queue.quota() > threads_queue.size()*/)
                     {
                         auto thread_to_wake = threads_queue.pop_any();
                         lock.unlock();
