@@ -88,7 +88,7 @@ public:
     virtual std::string getName() const = 0;
 
     /// The name of the table.
-    StorageID getStorageID(std::unique_lock<std::mutex> * lock = nullptr) const;
+    StorageID getStorageID() const;
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -317,7 +317,7 @@ public:
      * Just updates names of database and table without moving any data on disk
      * Can be called directly only from DatabaseAtomic.
      */
-    virtual void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr);
+    virtual void renameInMemory(const String & new_database_name, const String & new_table_name);
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.

@@ -98,7 +98,6 @@ public:
 protected:
     Block readImpl() override
     {
-        //FIXME add uuids
         if (done)
             return {};
 
