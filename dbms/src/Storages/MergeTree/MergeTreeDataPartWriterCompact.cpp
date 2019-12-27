@@ -23,7 +23,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     storage_, columns_list_,
     indices_to_recalc_, marks_file_extension_,
     default_codec_, settings_, index_granularity_, true)
-    , squashing(storage.getSettings()->index_granularity, storage.getSettings()->index_granularity_bytes) /// FIXME
 {
     String data_file_name = DATA_FILE_NAME + settings.filename_suffix;
     stream = std::make_unique<ColumnStream>(
@@ -73,13 +72,18 @@ void MergeTreeDataPartWriterCompact::write(
     if (!header)
         header = result_block.cloneEmpty();
 
-    auto result = squashing.add(result_block.mutateColumns());
-    if (!result.ready)
+    columns_buffer.add(result_block.mutateColumns());
+    size_t last_mark_rows = index_granularity.getLastMarkRows();
+    size_t rows_in_buffer = columns_buffer.size();
+    
+    if (rows_in_buffer < last_mark_rows)
+    {
+        /// FIXME need comment
+        next_index_offset = last_mark_rows - rows_in_buffer;
         return;
+    }
 
-    result_block = header.cloneWithColumns(std::move(result.columns));
-
-    writeBlock(result_block);
+    writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
 }
 
 void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
@@ -94,32 +98,43 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         if (rows_to_write)
             data_written = true;
-
         /// There could already be enough data to compress into the new block.
         if (stream->compressed.offset() >= settings.min_compress_block_size)
              stream->compressed.next();
 
-        size_t next_row = 0;
-        writeIntBinary(rows_to_write, stream->marks);
-        for (const auto & it : columns_list)
-            next_row = writeColumnSingleGranule(block.getByName(it.name), current_row, rows_to_write);
+        for (const auto & column : columns_list)
+        {
+            size_t old_uncompressed_size = stream->compressed.count();
+            writeIntBinary(stream->plain_hashing.count(), stream->marks);
+            writeIntBinary(stream->compressed.offset(), stream->marks);
+
+            writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
+
+             /// We can't calculate compressed size by single column in compact format.
+            size_t uncompressed_size = stream->compressed.count();
+            columns_sizes[column.name].add(ColumnSize{0, 0, uncompressed_size - old_uncompressed_size});
+        }
 
         ++from_mark;
-        current_row = next_row;
+        size_t rows_written = total_rows - current_row;
+        current_row += rows_to_write;
+
+        if (current_row >= total_rows && rows_written != rows_to_write)
+        {
+            rows_to_write = rows_written;
+            index_granularity.popMark();
+            index_granularity.appendMark(rows_written);
+        }
+
+        writeIntBinary(rows_to_write, stream->marks);
     }
 
+    next_index_offset = 0;
     next_mark = from_mark;
-    next_index_offset = total_rows - current_row;
 }
 
-
-size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
+void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows) const
 {
-    size_t old_uncompressed_size = stream->compressed.count();
-
-    writeIntBinary(stream->plain_hashing.count(), stream->marks);
-    writeIntBinary(stream->compressed.offset(), stream->marks);
-
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
@@ -130,28 +145,21 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
     column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
-
-    /// We can't calculate compressed size by single column in compact format.
-    size_t uncompressed_size = stream->compressed.count();
-    columns_sizes[column.name].add(ColumnSize{0, 0, uncompressed_size - old_uncompressed_size});
-
-    return from_row + number_of_rows;
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    auto result = squashing.add({});
-    if (result.ready && !result.columns.empty())
-        writeBlock(header.cloneWithColumns(std::move(result.columns)));
+    if (columns_buffer.size() != 0)
+        writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
 
     if (with_final_mark && data_written)
     {
-        writeIntBinary(0ULL, stream->marks);
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
         }
+        writeIntBinary(0ULL, stream->marks);
     }
 
     size_t marks_size = stream->marks.count();
@@ -163,6 +171,32 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
         stream->sync();
     stream->addToChecksums(checksums);
     stream.reset();
+}
+
+void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)
+{
+    if (accumulated_columns.empty())
+        accumulated_columns = std::move(columns);
+    else
+    {
+        for (size_t i = 0; i < columns.size(); ++i)
+            accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+    }
+}
+
+Columns MergeTreeDataPartWriterCompact::ColumnsBuffer::releaseColumns()
+{
+    Columns res(std::make_move_iterator(accumulated_columns.begin()),
+        std::make_move_iterator(accumulated_columns.end()));
+    accumulated_columns.clear();
+    return res;
+}
+
+size_t MergeTreeDataPartWriterCompact::ColumnsBuffer::size() const
+{
+    if (accumulated_columns.empty())
+        return 0;
+    return accumulated_columns.at(0)->size();
 }
 
 }

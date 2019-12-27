@@ -168,8 +168,8 @@ void MergeTreeReaderCompact::initMarksLoader()
 
         while (!buffer.eof())
         {
-            buffer.seek(sizeof(size_t), SEEK_CUR);
             buffer.readStrict(reinterpret_cast<char *>(res->data() + i * columns_num), sizeof(MarkInCompressedFile) * columns_num);
+            buffer.seek(sizeof(size_t), SEEK_CUR);
             ++i;
         }
 
