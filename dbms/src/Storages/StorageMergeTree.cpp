@@ -67,13 +67,14 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const ASTPtr & ttl_table_ast_,
+    const ASTPtr & settings_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_, relative_data_path_,
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-            sample_by_ast_, ttl_table_ast_, merging_params_,
+            sample_by_ast_, ttl_table_ast_, settings_ast_, merging_params_,
             std::move(storage_settings_), false, attach),
         reader(*this), writer(*this),
         merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
@@ -262,7 +263,7 @@ void StorageMergeTree::alter(
     auto update_metadata = [&]()
     {
 
-        changeSettings(metadata.settings_changes, table_lock_holder);
+        changeSettings(metadata.settings_ast, table_lock_holder);
         /// Reinitialize primary key because primary key column types might have changed.
         setProperties(
             metadata.order_by_expression, metadata.primary_key_expression, metadata.columns, metadata.indices, metadata.constraints);

@@ -24,6 +24,8 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Parsers/queryToString.h>
+
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
@@ -345,18 +347,21 @@ void DatabaseOrdinary::alterTable(
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
     ASTStorage & storage_ast = *ast_create_query.storage;
-    if (metadata.order_by_expression && metadata.order_by_expression.get() != storage_ast.order_by)
+    /// ORDER BY may change, but cannot appear, it's required construction
+    if (metadata.order_by_expression && storage_ast.order_by)
         storage_ast.set(storage_ast.order_by, metadata.order_by_expression);
 
-    if (metadata.primary_key_expression && metadata.primary_key_expression.get() != storage_ast.primary_key)
+    if (metadata.primary_key_expression)
         storage_ast.set(storage_ast.primary_key, metadata.primary_key_expression);
 
-    if (metadata.ttl_for_table_expression && metadata.ttl_for_table_expression.get() != storage_ast.ttl_table)
+    if (metadata.ttl_for_table_expression)
         storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_expression);
 
-    if (metadata.settings_changes != storage_ast.settings->changes)
-        storage_ast.settings->changes = metadata.settings_changes;
+    if (metadata.settings_ast)
+        storage_ast.set(storage_ast.settings, metadata.settings_ast);
 
+
+    statement = getObjectDefinitionFromCreateQuery(ast);
     {
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);

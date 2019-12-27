@@ -398,7 +398,7 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
 {
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::COMMENT_COLUMN)
+        if (!command.isCommentAlter())
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);

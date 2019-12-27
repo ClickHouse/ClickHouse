@@ -205,13 +205,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
+    const ASTPtr & settings_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_, relative_data_path_,
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-            sample_by_ast_, ttl_table_ast_, merging_params_,
+            sample_by_ast_, ttl_table_ast_, settings_ast_, merging_params_,
             std::move(settings_), true, attach,
             [this] (const std::string & name) { enqueuePartForCheck(name); }),
         zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name_, table_name_)),
@@ -498,11 +499,14 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    IDatabase::ASTModifier storage_modifier;
+    if (new_columns != metadata.columns)
+        metadata.columns = new_columns;
+
     if (!metadata_diff.empty())
     {
         if (metadata_diff.sorting_key_changed)
         {
+            std::cerr << "SORTING KEY CHANGED\n";
             ParserNotEmptyExpressionList parser(false);
             auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
@@ -3205,6 +3209,9 @@ void StorageReplicatedMergeTree::alter(
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 
+
+    checkAlterIsPossible(params, query_context.getSettingsRef());
+
     /// We cannot check this alter commands with method isModifyingData()
     /// because ReplicatedMergeTree stores both columns and metadata for
     /// each replica. So we have to wait AlterThread even with lightweight
@@ -3217,7 +3224,7 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
         params.apply(metadata);
 
-        changeSettings(metadata.settings_changes, table_lock_holder);
+        changeSettings(metadata.settings_ast, table_lock_holder);
 
         global_context.getDatabase(current_database_name)->alterTable(query_context, current_table_name, metadata);
         return;
@@ -3249,6 +3256,13 @@ void StorageReplicatedMergeTree::alter(
         int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
     };
 
+    auto ast_to_str = [](ASTPtr query) -> String
+    {
+        if (!query)
+            return "";
+        return queryToString(query);
+    };
+
     /// /columns and /metadata nodes
     std::vector<ChangedNode> changed_nodes;
 
@@ -3267,10 +3281,10 @@ void StorageReplicatedMergeTree::alter(
             changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
 
         ReplicatedMergeTreeTableMetadata new_metadata(*this);
-        if (metadata.order_by_expression.get() != order_by_ast.get())
+        if (ast_to_str(metadata.order_by_expression) != ast_to_str(order_by_ast))
             new_metadata.sorting_key = serializeAST(*extractKeyExpressionList(metadata.order_by_expression));
 
-        if (metadata.ttl_for_table_expression.get() != ttl_table_ast.get())
+        if (ast_to_str(metadata.ttl_for_table_expression) != ast_to_str(ttl_table_ast))
             new_metadata.ttl_table = serializeAST(*metadata.ttl_for_table_expression);
 
         String new_indices_str = metadata.indices.toString();
@@ -3285,12 +3299,12 @@ void StorageReplicatedMergeTree::alter(
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
 
-
         /// Perform settings update locally
-        changeSettings(metadata.settings_changes, table_lock_holder);
 
-        global_context.getDatabase(current_database_name)->alterTable(query_context, current_table_name, metadata);
-
+        auto old_metadata = getInMemoryMetadata();
+        old_metadata.settings_ast = metadata.settings_ast;
+        changeSettings(metadata.settings_ast, table_lock_holder);
+        global_context.getDatabase(current_database_name)->alterTable(query_context, current_table_name, old_metadata);
 
         /// Modify shared metadata nodes in ZooKeeper.
         Coordination::Requests ops;
