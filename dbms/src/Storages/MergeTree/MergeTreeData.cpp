@@ -292,8 +292,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata,  bool only_check)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check)
 {
     if (!metadata.order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
