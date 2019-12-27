@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 #include <boost/noncopyable.hpp>
+#include <Poco/Path.h>
 
 
 namespace CurrentMetrics
@@ -165,5 +166,17 @@ public:
 inline String fullPath(const DiskPtr & disk, const String & path)
 {
     return disk->getPath() + path;
+}
+
+/// Return parent path for the specified path.
+inline String parentPath(const String & path)
+{
+    return Poco::Path(path).parent().toString();
+}
+
+/// Return file name for the specified path.
+inline String fileName(const String & path)
+{
+    return Poco::Path(path).getFileName();
 }
 }

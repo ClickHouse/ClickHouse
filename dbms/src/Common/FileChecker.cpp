@@ -1,5 +1,4 @@
 #include <common/JSON.h>
-#include <Poco/Path.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -13,7 +12,6 @@
 namespace DB
 {
 
-
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(disk_)
 {
     setPath(file_info_path_);
@@ -23,8 +21,7 @@ void FileChecker::setPath(const String & file_info_path_)
 {
     files_info_path = file_info_path_;
 
-    Poco::Path path(files_info_path);
-    tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
+    tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 }
 
 void FileChecker::update(const String & file_path)
@@ -57,7 +54,7 @@ CheckResults FileChecker::check() const
     for (const auto & name_size : local_map)
     {
         const String & name = name_size.first;
-        String path = Poco::Path(files_info_path).parent().toString() + "/" + name;
+        String path = parentPath(files_info_path) + name;
         if (!disk->exists(path))
         {
             results.emplace_back(name, false, "File " + path + " doesn't exist");
@@ -87,7 +84,7 @@ void FileChecker::initialize()
 
 void FileChecker::updateImpl(const String & file_path)
 {
-    map[Poco::Path(file_path).getFileName()] = disk->getFileSize(file_path);
+    map[fileName(file_path)] = disk->getFileSize(file_path);
 }
 
 void FileChecker::save() const
