@@ -46,7 +46,6 @@ void registerOutputFormatProcessorValues(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Values", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {

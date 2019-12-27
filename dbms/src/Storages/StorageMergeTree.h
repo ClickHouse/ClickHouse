@@ -160,6 +160,7 @@ protected:
     StorageMergeTree(
         const String & database_name_,
         const String & table_name_,
+        const String & relative_data_path_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         const ConstraintsDescription & constraints_,

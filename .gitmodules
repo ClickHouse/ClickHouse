@@ -128,6 +128,9 @@
 [submodule "contrib/icu"]
 	path = contrib/icu
 	url = https://github.com/unicode-org/icu.git
+[submodule "contrib/flatbuffers"]
+	path = contrib/flatbuffers
+	url = https://github.com/google/flatbuffers.git
 [submodule "contrib/libc-headers"]
 	path = contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git

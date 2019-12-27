@@ -237,7 +237,7 @@ public:
     virtual void shutdown() = 0;
 
     /// Delete data and metadata stored inside the database, if exists.
-    virtual void drop() {}
+    virtual void drop(const Context & /*context*/) {}
 
     virtual ~IDatabase() {}
 };
