@@ -90,7 +90,8 @@ bool IPolygonDictionary::isInjective(const std::string &) const
 }
 
 BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const {
-    // TODO: Better error message.
+    // TODO: In order for this to work one would first have to support retrieving arrays from dictionaries.
+    //  I believe this is a separate task done by some other people.
     throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
 }
 
@@ -152,7 +153,8 @@ void IPolygonDictionary::appendNullValue(AttributeUnderlyingType type, const Fie
     }    
 }
 
-void IPolygonDictionary::createAttributes() {
+void IPolygonDictionary::createAttributes()
+{
     attributes.resize(dict_struct.attributes.size());
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
     {
