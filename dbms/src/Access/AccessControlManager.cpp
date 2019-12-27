@@ -3,6 +3,7 @@
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/QuotaContextFactory.h>
+#include <Access/RowPolicyContextFactory.h>
 
 
 namespace DB
@@ -21,7 +22,8 @@ namespace
 
 AccessControlManager::AccessControlManager()
     : MultipleAccessStorage(createStorages()),
-      quota_context_factory(std::make_unique<QuotaContextFactory>(*this))
+      quota_context_factory(std::make_unique<QuotaContextFactory>(*this)),
+      row_policy_context_factory(std::make_unique<RowPolicyContextFactory>(*this))
 {
 }
 
@@ -49,4 +51,11 @@ std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 {
     return quota_context_factory->getUsageInfo();
 }
+
+
+std::shared_ptr<RowPolicyContext> AccessControlManager::getRowPolicyContext(const String & user_name) const
+{
+    return row_policy_context_factory->createContext(user_name);
+}
+
 }

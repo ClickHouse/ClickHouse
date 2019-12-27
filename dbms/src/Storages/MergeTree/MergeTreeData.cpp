@@ -51,11 +51,12 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <optional>
 #include <set>
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
-#include <optional>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -653,11 +654,22 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             else
             {
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+
+                new_ttl_entry.entry_ast = ttl_element_ptr;
+                new_ttl_entry.destination_type = ttl_element.destination_type;
+                new_ttl_entry.destination_name = ttl_element.destination_name;
+                if (!new_ttl_entry.getDestination(getStoragePolicy()))
+                {
+                    String message;
+                    if (new_ttl_entry.destination_type == PartDestinationType::DISK)
+                        message = "No such disk " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
+                    else
+                        message = "No such volume " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
+                    throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
+                }
+
                 if (!only_check)
                 {
-                    new_ttl_entry.entry_ast = ttl_element_ptr;
-                    new_ttl_entry.destination_type = ttl_element.destination_type;
-                    new_ttl_entry.destination_name = ttl_element.destination_name;
                     move_ttl_entries.emplace_back(std::move(new_ttl_entry));
                 }
             }
@@ -806,6 +818,27 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Poco::DirectoryIterator end;
 
     auto disks = storage_policy->getDisks();
+
+    if (getStoragePolicy()->getName() != "default")
+    {
+        /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
+        std::unordered_set<String> defined_disk_names;
+        for (const auto & disk_ptr : disks)
+            defined_disk_names.insert(disk_ptr->getName());
+
+        for (auto & [disk_name, disk_ptr] : global_context.getDiskSelector().getDisksMap())
+        {
+            if (defined_disk_names.count(disk_name) == 0 && Poco::File(getFullPathOnDisk(disk_ptr)).exists())
+            {
+                for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
+                {
+                    MergeTreePartInfo part_info;
+                    if (MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
+                        throw Exception("Part " + backQuote(it.name()) + " was found on disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
+                }
+            }
+        }
+    }
 
     /// Reversed order to load part from low priority disks firstly.
     /// Used for keep part on low priority disk if duplication found
