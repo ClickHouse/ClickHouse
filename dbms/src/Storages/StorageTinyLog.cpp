@@ -4,7 +4,6 @@
 
 #include <map>
 
-#include <Poco/Path.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Common/escapeForFileName.h>
@@ -379,7 +378,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file_path = table_path + Poco::Path(file.second.data_file_path).getFileName();
+        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 }
 
 

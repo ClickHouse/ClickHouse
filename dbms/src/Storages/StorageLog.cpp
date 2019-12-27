@@ -21,8 +21,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Poco/Path.h>
-
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_MARKS_FILE_NAME "__marks.mrk"
@@ -519,7 +517,7 @@ void StorageLog::rename(const String & new_path_to_table_data, const String & ne
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
-        file.second.data_file_path = table_path + Poco::Path(file.second.data_file_path).getFileName();
+        file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
 }
