@@ -369,7 +369,7 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
-    auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });
+    const auto & creator = [&] (const String & type_name) { return std::make_shared<DataTypeString>(type_name); };
 
     factory.registerSimpleDataType("String", creator);
 
