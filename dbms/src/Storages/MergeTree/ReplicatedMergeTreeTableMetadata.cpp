@@ -225,8 +225,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
 
     if (sorting_key != from_zk.sorting_key)
     {
-        std::cerr << "SORTING KEY BEFORE:" << sorting_key << std::endl;
-        std::cerr << "Sorting key from zk:" << from_zk.sorting_key << std::endl;
         if (allow_alter)
         {
             diff.sorting_key_changed = true;
