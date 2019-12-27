@@ -19,13 +19,20 @@ public:
     String readLine(const String & first_prompt, const String & second_prompt);
 
 private:
+    enum InputStatus
+    {
+        ABORT = 0,
+        RESET_LINE,
+        INPUT_LINE,
+    };
+
     String input;
     String prev_line;
     const String history_file_path;
     const char extender;
     const char delimiter;
 
-    bool readOneLine(const String & prompt);
+    InputStatus readOneLine(const String & prompt);
     void addToHistory(const String & line);
 
 #ifdef USE_REPLXX

@@ -36,8 +36,15 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
     String line;
     bool is_multiline = false;
 
-    while (readOneLine(is_multiline ? second_prompt : first_prompt))
+    while (auto status = readOneLine(is_multiline ? second_prompt : first_prompt))
     {
+        if (status == RESET_LINE)
+        {
+            line.clear();
+            is_multiline = false;
+            continue;
+        }
+
         if (input.empty())
             continue;
 
@@ -68,28 +75,29 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
     return {};
 }
 
-bool LineReader::readOneLine(const String & prompt)
+LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
+    input.clear();
+
 #ifdef USE_REPLXX
     const char* cinput = rx.input(prompt);
-    if (cinput == nullptr && errno != EAGAIN)
-        return false;
+    if (cinput == nullptr)
+        return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 #else
     std::cout << prompt;
     std::getline(std::cin, input);
     if (!std::cin.good())
-        return false;
+        return ABORT;
 #endif
-    trim(input);
 
-    return true;
+    trim(input);
+    return INPUT_LINE;
 }
 
 void LineReader::addToHistory(const String & line)
 {
 #ifdef USE_REPLXX
     rx.history_add(line);
-    /// TODO: implement this.
 #endif
 }
