@@ -709,6 +709,7 @@ void CacheDictionary::updateThreadFunction()
     while (!finished)
     {
         UpdateUnitPtr unit_ptr;
+        /// TODO: pop as many as we can + concatenate requested_ids
         update_queue.pop(unit_ptr);
         try
         {
