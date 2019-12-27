@@ -196,7 +196,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         context,
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
-        IStorage::chooseCompressionMethod(request_uri.toString(), compression_method));
+        IStorage::chooseCompressionMethod(request_uri.getPath(), compression_method));
 
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
