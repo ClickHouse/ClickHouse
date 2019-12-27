@@ -253,6 +253,10 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
         .indices = getIndices(),
         .constraints = getConstraints(),
     };
+
+    if (partition_by_ast)
+        metadata.partition_by_ast = partition_by_ast->clone();
+
     if (order_by_ast)
         metadata.order_by_ast = order_by_ast->clone();
 
@@ -261,6 +265,9 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 
     if (ttl_table_ast)
         metadata.ttl_for_table_ast = ttl_table_ast->clone();
+
+    if (sample_by_ast)
+        metadata.sample_by_ast = sample_by_ast->clone();
 
     if (settings_ast)
         metadata.settings_ast = settings_ast->clone();

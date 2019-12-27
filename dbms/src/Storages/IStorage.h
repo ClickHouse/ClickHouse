@@ -128,6 +128,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Returns storage metadata copy. Direct modification of
+    /// result structure doesn't affect storage.
     virtual StorageInMemoryMetadata getInMemoryMetadata() const;
 
     /// NOTE: these methods should include virtual columns,
