@@ -98,6 +98,8 @@ struct AlterCommand
 
     /// checks that only settings changed by alter
     bool isSettingsAlter() const;
+
+    bool isCommentAlter() const;
 };
 
 String alterTypeToString(const AlterCommand::Type type);
@@ -119,6 +121,8 @@ public:
     bool isModifyingData() const;
 
     bool isSettingsAlter() const;
+
+    bool isCommentAlter() const;
 };
 
 }

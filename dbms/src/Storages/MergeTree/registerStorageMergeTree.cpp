@@ -12,6 +12,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -573,6 +574,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
+    ASTPtr settings_ast;
     IndicesDescription indices_description;
     ConstraintsDescription constraints_description;
 
@@ -599,12 +601,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table)
             ttl_table_ast = args.storage_def->ttl_table->ptr();
 
+
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
                     std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
         storage_settings->loadFromQuery(*args.storage_def);
+
+        if (args.storage_def->settings)
+            settings_ast = args.storage_def->settings->ptr();
     }
     else
     {
@@ -642,13 +648,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             zookeeper_path, replica_name, args.attach, args.database_name, args.table_name, args.relative_data_path,
             args.columns, indices_description, args.constraints,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
+            sample_by_ast, ttl_table_ast, settings_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.database_name, args.table_name, args.relative_data_path, args.columns, indices_description,
             args.constraints, args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
-            primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
+            primary_key_ast, sample_by_ast, ttl_table_ast, settings_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
 }
 

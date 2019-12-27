@@ -388,14 +388,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == MODIFY_SETTING)
     {
-        auto & storage_changes = metadata.settings_changes;
+        auto & settings_from_storage = metadata.settings_ast->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
-            if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+            if (auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+                it != settings_from_storage.end())
                 it->value = change.value;
             else
-                storage_changes.push_back(change);
+                settings_from_storage.push_back(change);
         }
     }
     else
@@ -416,6 +417,23 @@ bool AlterCommand::isModifyingData() const
 bool AlterCommand::isSettingsAlter() const
 {
     return type == MODIFY_SETTING;
+}
+
+bool AlterCommand::isCommentAlter() const
+{
+    if (type == COMMENT_COLUMN)
+    {
+        return true;
+    }
+    else if (type == MODIFY_COLUMN)
+    {
+        return comment.has_value()
+            && codec == nullptr
+            && data_type == nullptr
+            && default_expression == nullptr
+            && ttl == nullptr;
+    }
+    return false;
 }
 
 
@@ -693,5 +711,10 @@ bool AlterCommands::isModifyingData() const
 bool AlterCommands::isSettingsAlter() const
 {
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
+}
+
+bool AlterCommands::isCommentAlter() const
+{
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
 }
 }

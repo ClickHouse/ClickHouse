@@ -124,6 +124,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
+    const ASTPtr & settings_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
@@ -133,6 +134,7 @@ MergeTreeData::MergeTreeData(
     , merging_params(merging_params_)
     , partition_by_ast(partition_by_ast_)
     , sample_by_ast(sample_by_ast_)
+    , settings_ast(settings_ast_)
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
@@ -246,17 +248,24 @@ MergeTreeData::MergeTreeData(
 
 StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
-
-    return
-    {
+    StorageInMemoryMetadata metadata{
         .columns = getColumns(),
         .indices = getIndices(),
         .constraints = getConstraints(),
-        .order_by_expression = order_by_ast,
-        .primary_key_expression = primary_key_ast,
-        .ttl_for_table_expression = ttl_table_ast,
-        .settings_changes = getSettings()->changes()
     };
+    if (order_by_ast)
+        metadata.order_by_expression = order_by_ast->clone();
+
+    if (primary_key_ast)
+        metadata.primary_key_expression = primary_key_ast->clone();
+
+    if (ttl_table_ast)
+        metadata.ttl_for_table_expression = ttl_table_ast->clone();
+
+    if (settings_ast)
+        metadata.settings_ast = settings_ast->clone();
+
+    return metadata;
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name)
@@ -1455,13 +1464,27 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_expression, /* only_check = */ true);
 
-
-    for (const auto & setting : metadata.settings_changes)
+    if (settings_ast)
     {
-        if (MergeTreeSettings::findIndex(setting.name) == MergeTreeSettings::npos)
-            throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
-        if (MergeTreeSettings::isReadonlySetting(setting.name))
-            throw Exception{"Setting '" + setting.name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
+        const auto & current_changes = settings_ast->as<const ASTSetQuery &>().changes;
+        for (const auto & changed_setting : metadata.settings_ast->as<const ASTSetQuery &>().changes)
+        {
+            if (MergeTreeSettings::findIndex(changed_setting.name) == MergeTreeSettings::npos)
+                throw Exception{"Storage '" + getName() + "' doesn't have setting '" + changed_setting.name + "'",
+                                ErrorCodes::UNKNOWN_SETTING};
+
+            auto comparator = [&changed_setting](const auto & change) { return change.name == changed_setting.name; };
+
+            auto current_setting_it
+                = std::find_if(current_changes.begin(), current_changes.end(), comparator);
+
+            if ((current_setting_it == current_changes.end() || *current_setting_it != changed_setting)
+                && MergeTreeSettings::isReadonlySetting(changed_setting.name))
+            {
+                throw Exception{"Setting '" + changed_setting.name + "' is readonly for storage '" + getName() + "'",
+                                 ErrorCodes::READONLY_SETTING};
+            }
+        }
     }
 
     if (commands.isModifyingData())
@@ -1787,14 +1810,16 @@ void MergeTreeData::alterDataPart(
 }
 
 void MergeTreeData::changeSettings(
-        const SettingsChanges & new_changes,
+        const ASTPtr & new_settings,
         TableStructureWriteLockHolder & /* table_lock_holder */)
 {
-    if (!new_changes.empty())
+    if (new_settings)
     {
+        const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+        settings_ast = new_settings;
     }
 }
 

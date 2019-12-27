@@ -342,6 +342,7 @@ public:
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
+                  const ASTPtr & settings_ast_,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
@@ -561,7 +562,7 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const SettingsChanges & new_changes,
+           const ASTPtr & new_changes,
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
@@ -786,6 +787,7 @@ protected:
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
+    ASTPtr settings_ast;
 
     bool require_part_metadata;
 

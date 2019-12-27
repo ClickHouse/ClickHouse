@@ -555,6 +555,7 @@ protected:
         const ASTPtr & primary_key_ast_,
         const ASTPtr & sample_by_ast_,
         const ASTPtr & table_ttl_ast_,
+        const ASTPtr & settings_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
