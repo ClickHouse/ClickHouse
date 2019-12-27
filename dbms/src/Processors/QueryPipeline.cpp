@@ -14,7 +14,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
@@ -48,36 +47,41 @@ void QueryPipeline::checkSource(const ProcessorPtr & source, bool can_have_total
                         toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void QueryPipeline::init(Processors sources)
+void QueryPipeline::init(Pipe pipe)
+{
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe));
+    init(std::move(pipes));
+}
+
+void QueryPipeline::init(Pipes pipes)
 {
     if (initialized())
         throw Exception("Pipeline has already been initialized.", ErrorCodes::LOGICAL_ERROR);
 
-    if (sources.empty())
-        throw Exception("Can't initialize pipeline with empty source list.", ErrorCodes::LOGICAL_ERROR);
+    if (pipes.empty())
+        throw Exception("Can't initialize pipeline with empty pipes list.", ErrorCodes::LOGICAL_ERROR);
 
     std::vector<OutputPort *> totals;
 
-    for (auto & source : sources)
+    for (auto & pipe : pipes)
     {
-        checkSource(source, true);
-
-        auto & header = source->getOutputs().front().getHeader();
+        auto & header = pipe.getHeader();
 
         if (current_header)
             assertBlocksHaveEqualStructure(current_header, header, "QueryPipeline");
         else
             current_header = header;
 
-        if (source->getOutputs().size() > 1)
+        if (auto * totals_port = pipe.getTotalsPort())
         {
-            assertBlocksHaveEqualStructure(current_header, source->getOutputs().back().getHeader(), "QueryPipeline");
-            totals.emplace_back(&source->getOutputs().back());
+            assertBlocksHaveEqualStructure(current_header, totals_port->getHeader(), "QueryPipeline");
+            totals.emplace_back(totals_port);
         }
 
-        /// source->setStream(streams.size());
-        streams.emplace_back(&source->getOutputs().front());
-        processors.emplace_back(std::move(source));
+        streams.emplace_back(&pipe.getPort());
+        auto cur_processors = std::move(pipe).detachProcessors();
+        processors.insert(processors.end(), cur_processors.begin(), cur_processors.end());
     }
 
     if (!totals.empty())
@@ -482,6 +486,10 @@ void QueryPipeline::unitePipelines(
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
         streams.insert(streams.end(), pipeline.streams.begin(), pipeline.streams.end());
+
+        table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
+        interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
+        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
     }
 
     if (!extremes.empty())

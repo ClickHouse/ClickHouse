@@ -4,11 +4,11 @@
 #include <dlfcn.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
+#include <Common/PipeFDs.h>
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <port/unistd.h>
 #include <csignal>
-#include <common/Pipe.h>
 
 namespace
 {
@@ -66,9 +66,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
     if (!real_vfork)
         throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);
 
-    Pipe pipe_stdin;
-    Pipe pipe_stdout;
-    Pipe pipe_stderr;
+    PipeFDs pipe_stdin;
+    PipeFDs pipe_stdout;
+    PipeFDs pipe_stderr;
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 

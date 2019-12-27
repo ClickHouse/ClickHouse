@@ -127,7 +127,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Column Compression Codecs
+### Column Compression Codecs {#codecs}
 
 By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -196,15 +196,16 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table use the Memory engine only.
+- A temporary table uses the Memory engine only.
 - The DB can't be specified for a temporary table. It is created outside of databases.
+- Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
+CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -213,6 +214,8 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
 ```
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
+
+It's possible to use tables with [ENGINE = Memory](../operations/table_engines/memory.md) instead of temporary tables.
 
 ## Distributed DDL queries (ON CLUSTER clause)
 
@@ -225,7 +228,6 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
 The local version of the query will eventually be implemented on each host in the cluster, even if some hosts are currently not available. The order for executing queries within a single host is guaranteed.
-`ALTER` queries are not yet supported for replicated tables.
 
 ## CREATE VIEW
 
@@ -272,3 +274,27 @@ Views look the same as normal tables. For example, they are listed in the result
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
+
+## CREATE DICTIONARY {#create-dictionary-query}
+
+```sql
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+(
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME([MIN val1] MAX val2)
+```
+
+Creates [external dictionary](dicts/external_dicts.md) with given [structure](dicts/external_dicts_dict_structure.md), [source](dicts/external_dicts_dict_sources.md), [layout](dicts/external_dicts_dict_layout.md) and [lifetime](dicts/external_dicts_dict_lifetime.md). 
+
+External dictionary structure consists of attributes. Dictionary attributes are specified similarly to table columns. The only required attribute property is its type, all other properties may have default values.
+
+Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
+
+For more information, see [External Dictionaries](dicts/external_dicts.md) section.

@@ -97,8 +97,7 @@
 #define BRACK_PASTE_LAST '~'
 #define BRACK_PASTE_SLEN 6
 
-/// Make sure we don't get ^J for the enter character.
-/// This handler also bypasses some unused macro/event checkings.
+/// This handler bypasses some unused macro/event checkings.
 static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 {
     std::string buf;
@@ -106,10 +105,10 @@ static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 
     RL_SETSTATE(RL_STATE_MOREINPUT);
     SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    char c;
+    int c;
     while ((c = rl_read_key()) >= 0)
     {
-        if (c == '\r' || c == '\n')
+        if (c == '\r')
             c = '\n';
         buf.push_back(c);
         if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
@@ -497,15 +496,21 @@ private:
                 throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
 
 #if RL_VERSION_MAJOR >= 7
-            /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
-            ///  that the program can differentiate pasted text from typed-in text. This helps
-            ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
-            ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
-            ///  more details.
-            rl_variable_bind("enable-bracketed-paste", "on");
+            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+            ///  disabled, so that we are able to paste and execute multiline queries in a whole
+            ///  instead of erroring out, while be less intrusive.
+            if (config().has("multiquery") && !config().has("multiline"))
+            {
+                /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
+                ///  that the program can differentiate pasted text from typed-in text. This helps
+                ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
+                ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
+                ///  more details.
+                rl_variable_bind("enable-bracketed-paste", "on");
 
-            /// Use our bracketed paste handler to get better user experience. See comments above.
-            rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+                /// Use our bracketed paste handler to get better user experience. See comments above.
+                rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+            }
 #endif
 
             auto clear_prompt_or_exit = [](int)
@@ -751,6 +756,9 @@ private:
 
     bool process(const String & text)
     {
+        if (exit_strings.end() != exit_strings.find(trim(text, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
+            return false;
+
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
@@ -845,9 +853,6 @@ private:
 
     bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
     {
-        if (exit_strings.end() != exit_strings.find(trim(line, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
-            return false;
-
         resetOutput();
         got_exception = false;
 
@@ -1106,7 +1111,14 @@ private:
             /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Exception)
+            {
+                /*
+                 * We're exiting with error, so it makes sense to kill the
+                 * input stream without waiting for it to complete.
+                 */
+                async_block_input->cancel(true);
                 return;
+            }
 
             connection->sendData(block);
             processed_rows += block.rows();
@@ -1220,7 +1232,7 @@ private:
     /// Returns true if one should continue receiving packets.
     bool receiveAndProcessPacket()
     {
-        Connection::Packet packet = connection->receivePacket();
+        Packet packet = connection->receivePacket();
 
         switch (packet.type)
         {
@@ -1268,7 +1280,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
@@ -1302,7 +1314,7 @@ private:
     {
         while (true)
         {
-            Connection::Packet packet = connection->receivePacket();
+            Packet packet = connection->receivePacket();
 
             switch (packet.type)
             {
@@ -1929,6 +1941,9 @@ public:
 };
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

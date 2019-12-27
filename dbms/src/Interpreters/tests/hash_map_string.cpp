@@ -337,8 +337,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getMapped() = 0;
+            ++it->getMapped();
         }
 
         watch.stop();
@@ -366,8 +366,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getMapped() = 0;
+            ++it->getMapped();
         }
 
         watch.stop();
@@ -396,8 +396,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getMapped() = 0;
+            ++it->getMapped();
         }
 
         watch.stop();
@@ -426,8 +426,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getMapped() = 0;
+            ++it->getMapped();
         }
 
         watch.stop();

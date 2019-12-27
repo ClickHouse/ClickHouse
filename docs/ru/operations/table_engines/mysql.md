@@ -63,7 +63,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Таблица в ClickHouse, которая получает данные из таблицы MySQL:
+Таблица в ClickHouse, которая получает данные из созданной ранее таблицы MySQL:
 
 ```sql
 CREATE TABLE mysql_table
@@ -75,7 +75,7 @@ ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
 ```sql
-SELECT * FROM mysql_table6
+SELECT * FROM mysql_table
 ```
 
 ```text

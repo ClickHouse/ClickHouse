@@ -19,8 +19,7 @@ public:
     // TODO: currently hashing contains redundant computations when doing distributed or external aggregations
     size_t hash(const Key & x) const
     {
-        return const_cast<Self &>(*this).dispatch(x,
-            [&](const auto &, const auto &, size_t hash) { return hash; });
+        return const_cast<Self &>(*this).dispatch(*this, x, [&](const auto &, const auto &, size_t hash) { return hash; });
     }
 
     size_t operator()(const Key & x) const { return hash(x); }
@@ -30,8 +29,12 @@ public:
 
 public:
     using key_type = typename Impl::key_type;
+    using mapped_type = typename Impl::mapped_type;
     using value_type = typename Impl::value_type;
+    using cell_type = typename Impl::cell_type;
+
     using LookupResult = typename Impl::LookupResult;
+    using ConstLookupResult = typename Impl::ConstLookupResult;
 
     Impl impls[NUM_BUCKETS];
 
@@ -71,16 +74,15 @@ public:
 
     // This function is mostly the same as StringHashTable::dispatch, but with
     // added bucket computation. See the comments there.
-    template <typename Func, typename KeyHolder>
-    decltype(auto) ALWAYS_INLINE dispatch(KeyHolder && key_holder, Func && func)
+    template <typename Self, typename Func, typename KeyHolder>
+    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
         const StringRef & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size;
         if (sz == 0)
         {
-            static constexpr StringKey0 key0{};
             keyHolderDiscardKey(key_holder);
-            return func(impls[0].m0, key0, 0);
+            return func(self.impls[0].m0, VoidKey{}, 0);
         }
 
         const char * p = x.data;
@@ -113,7 +115,7 @@ public:
                 auto res = hash(k8);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
-                return func(impls[buck].m1, k8, res);
+                return func(self.impls[buck].m1, k8, res);
             }
             case 1:
             {
@@ -124,7 +126,7 @@ public:
                 auto res = hash(k16);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
-                return func(impls[buck].m2, k16, res);
+                return func(self.impls[buck].m2, k16, res);
             }
             case 2:
             {
@@ -135,13 +137,13 @@ public:
                 auto res = hash(k24);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
-                return func(impls[buck].m3, k24, res);
+                return func(self.impls[buck].m3, k24, res);
             }
             default:
             {
                 auto res = hash(x);
                 auto buck = getBucketFromHash(res);
-                return func(impls[buck].ms, std::forward<KeyHolder>(key_holder), res);
+                return func(self.impls[buck].ms, std::forward<KeyHolder>(key_holder), res);
             }
         }
     }
@@ -149,12 +151,17 @@ public:
     template <typename KeyHolder>
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
-        dispatch(key_holder, typename Impl::EmplaceCallable{it, inserted});
+        dispatch(*this, key_holder, typename Impl::EmplaceCallable{it, inserted});
     }
 
-    LookupResult ALWAYS_INLINE find(Key x)
+    LookupResult ALWAYS_INLINE find(const Key x)
     {
-        return dispatch(x, typename Impl::FindCallable{});
+        return dispatch(*this, x, typename Impl::FindCallable{});
+    }
+
+    ConstLookupResult ALWAYS_INLINE find(const Key x) const
+    {
+        return dispatch(*this, x, typename Impl::FindCallable{});
     }
 
     void write(DB::WriteBuffer & wb) const

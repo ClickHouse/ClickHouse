@@ -247,8 +247,6 @@ public:
     {
         return true;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

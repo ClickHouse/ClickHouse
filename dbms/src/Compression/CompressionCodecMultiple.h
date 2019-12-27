@@ -29,4 +29,8 @@ private:
 
 };
 
+
+class CompressionCodecFactory;
+void registerCodecMultiple(CompressionCodecFactory & factory);
+
 }

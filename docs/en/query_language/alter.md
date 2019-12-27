@@ -26,10 +26,10 @@ These actions are described in detail below.
 #### ADD COLUMN {#alter_add-column}
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](create.md#codecs) and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -189,12 +189,13 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
-- [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
+- [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
+- [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
-
+- [MOVE PARTITION|PART](#alter_move-partition) – Move partition/data part to another disk or volume.                                                                                                                   
 #### DETACH PARTITION {#alter_detach-partition}
 
 ```sql
@@ -252,9 +253,22 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. Each replica checks whether there is data in the `detached` directory. If the data is in this directory, the query checks the integrity, verifies that it matches the data on the server that initiated the query. If everything is correct, the query adds data to the replica. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table. All other replicas download the data from the replica-initiator.
 
 So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+
+#### ATTACH PARTITION FROM {#alter_attach-partition-from}
+
+```sql
+ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
+```
+
+This query copies the data partition from the `table1` to `table2` adds data to exsisting in the `table2`. Note that data won't be deleted from `table1`.
+
+For the query to run successfully, the following conditions must be met:
+
+- Both tables must have the same structure.
+- Both tables must have the same partition key.
 
 #### REPLACE PARTITION {#alter_replace-partition}
 
@@ -262,7 +276,7 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`. Note that data won't be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2` and replaces existing partition in the `table2`. Note that data won't be deleted from `table1`.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -291,7 +305,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
-!!! note
+!!! note "Note"
     The entire backup process is performed without stopping the server.
 
 Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
@@ -300,6 +314,9 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 - `N` is the incremental number of the backup.
+
+!!! note "Note"
+    If you use [a set of disks for data storage in a table](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 
 The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs 'chmod' for all files, forbidding writing into them.
 
@@ -356,6 +373,25 @@ Before downloading, the system checks if the partition exists and the table stru
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
 #### MOVE PARTITION|PART {#alter_move-partition}
+
+Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+```sql
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+The `ALTER TABLE t MOVE` query:
+
+- Not replicated, because different replicas can have different storage policies.
+- Returns an error if the specified disk or volume is not configured. Query also returns an error if conditions of data moving, that specified in the storage policy, can't be applied.
+- Can return an error in the case, when data to be moved is already moved by a background process, concurrent `ALTER TABLE t MOVE` query or as a result of background data merging. A user shouldn't perform any additional actions in this case.
+
+Example:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
 
 #### How To Set Partition Expression {#alter-how-to-specify-part-expr}
 

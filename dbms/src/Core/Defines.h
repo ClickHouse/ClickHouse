@@ -59,8 +59,10 @@
 #define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
 
 #define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
-
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
+
+/// Mininum revision supporting SettingsBinaryFormat::STRINGS.
+#define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -148,9 +150,9 @@
     #define OPTIMIZE(x)
 #endif
 
-/// This number is only used for distributed version compatible.
-/// It could be any magic number.
-#define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
+/// Marks that extra information is sent to a shard. It could be any magic numbers.
+#define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
+#define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
 #if !__has_include(<sanitizer/asan_interface.h>)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)

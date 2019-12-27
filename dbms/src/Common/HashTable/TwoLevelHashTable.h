@@ -82,7 +82,9 @@ protected:
 
 public:
     using key_type = typename Impl::key_type;
+    using mapped_type = typename Impl::mapped_type;
     using value_type = typename Impl::value_type;
+    using cell_type = typename Impl::cell_type;
 
     using LookupResult = typename Impl::LookupResult;
     using ConstLookupResult = typename Impl::ConstLookupResult;
@@ -217,7 +219,7 @@ public:
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            insertSetMapped(lookupResultGetMapped(res.first), x);
+            insertSetMapped(res.first->getMapped(), x);
 
         return res;
     }

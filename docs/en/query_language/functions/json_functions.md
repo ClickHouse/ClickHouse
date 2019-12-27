@@ -206,4 +206,16 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
+## JSONExtractArrayRaw(json[, indices_or_keys]...)
+
+Returns an array with elements of JSON array, each represented as unparsed string.
+
+If the part does not exist or isn't array, an empty array will be returned.
+
+Example:
+
+```sql
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
