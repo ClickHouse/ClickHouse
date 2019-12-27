@@ -106,3 +106,6 @@
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
+[submodule "contrib/grpc"]
+	path = contrib/grpc
+	url = https://github.com/grpc/grpc.git

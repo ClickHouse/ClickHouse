@@ -332,6 +332,8 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+add_subdirectory(grpc-cmake)
+
 #if (USE_INTERNAL_ORC_LIBRARY)
 #    add_subdirectory(orc-cmake)
 #endif ()
