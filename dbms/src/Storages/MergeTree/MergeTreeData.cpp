@@ -114,17 +114,9 @@ MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
     const String & relative_data_path_,
-    const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
-    const ConstraintsDescription & constraints_,
+    const StorageInMemoryMetadata & metadata,
     Context & context_,
     const String & date_column_name,
-    const ASTPtr & partition_by_ast_,
-    const ASTPtr & order_by_ast_,
-    const ASTPtr & primary_key_ast_,
-    const ASTPtr & sample_by_ast_,
-    const ASTPtr & ttl_table_ast_,
-    const ASTPtr & settings_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
@@ -132,9 +124,6 @@ MergeTreeData::MergeTreeData(
     BrokenPartCallback broken_part_callback_)
     : global_context(context_)
     , merging_params(merging_params_)
-    , partition_by_ast(partition_by_ast_)
-    , sample_by_ast(sample_by_ast_)
-    , settings_ast(settings_ast_)
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
@@ -149,7 +138,7 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
 {
     const auto settings = getSettings();
-    setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
+    setProperties(metadata);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -191,7 +180,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(columns_.getColumnTTLs(), ttl_table_ast_);
+    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
     // format_file always contained on any data path
     String version_file_path;
@@ -304,17 +293,14 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setProperties(
-    const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
-    const ColumnsDescription & new_columns, const IndicesDescription & indices_description,
-    const ConstraintsDescription & constraints_description, bool only_check)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata,  bool only_check)
 {
-    if (!new_order_by_ast)
+    if (!metadata.order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    ASTPtr new_sorting_key_expr_list = extractKeyExpressionList(new_order_by_ast);
-    ASTPtr new_primary_key_expr_list = new_primary_key_ast
-        ? extractKeyExpressionList(new_primary_key_ast) : new_sorting_key_expr_list->clone();
+    ASTPtr new_sorting_key_expr_list = extractKeyExpressionList(metadata.order_by_ast);
+    ASTPtr new_primary_key_expr_list = metadata.primary_key_ast
+        ? extractKeyExpressionList(metadata.primary_key_ast) : new_sorting_key_expr_list->clone();
 
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         new_sorting_key_expr_list->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
@@ -346,7 +332,7 @@ void MergeTreeData::setProperties(
         }
     }
 
-    auto all_columns = new_columns.getAllPhysical();
+    auto all_columns = metadata.columns.getAllPhysical();
 
     /// Order by check AST
     if (order_by_ast && only_check)
@@ -384,7 +370,7 @@ void MergeTreeData::setProperties(
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
-                if (new_columns.getDefaults().count(col))
+                if (metadata.columns.getDefaults().count(col))
                     throw Exception("Newly added column " + col + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -419,11 +405,11 @@ void MergeTreeData::setProperties(
 
     MergeTreeIndices new_indices;
 
-    if (!indices_description.indices.empty())
+    if (!metadata.indices.indices.empty())
     {
         std::set<String> indices_names;
 
-        for (const auto & index_ast : indices_description.indices)
+        for (const auto & index_ast : metadata.indices.indices)
         {
             const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
@@ -460,24 +446,24 @@ void MergeTreeData::setProperties(
 
     if (!only_check)
     {
-        setColumns(std::move(new_columns));
+        setColumns(std::move(metadata.columns));
 
-        order_by_ast = new_order_by_ast;
+        order_by_ast = metadata.order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
         sorting_key_expr_ast = std::move(new_sorting_key_expr_list);
         sorting_key_expr = std::move(new_sorting_key_expr);
 
-        primary_key_ast = new_primary_key_ast;
+        primary_key_ast = metadata.primary_key_ast;
         primary_key_columns = std::move(new_primary_key_columns);
         primary_key_expr_ast = std::move(new_primary_key_expr_list);
         primary_key_expr = std::move(new_primary_key_expr);
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
 
-        setIndices(indices_description);
+        setIndices(metadata.indices);
         skip_indices = std::move(new_indices);
 
-        setConstraints(constraints_description);
+        setConstraints(metadata.constraints);
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
