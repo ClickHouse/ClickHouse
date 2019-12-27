@@ -25,7 +25,7 @@ LAYOUT(POLYGON());
 DROP TABLE IF EXISTS test_01037.points;
 
 CREATE TABLE test_01037.points (x Float64, y Float64, def_i UInt64, def_s String) ENGINE = Memory;
-INSERT INTO test_01037.points VALUES (0.0, 0.0, 11, 'aa'), (3.0, 3.0, 22, 'bb'), (5.0, 6.0, 33, 'cc'), (-100.0, -42.0, 44, 'dd'), (7.01, 7.01, 55, 'ee'), (0.99, 3.0, 0, '');
+INSERT INTO test_01037.points VALUES (0.0, 0.0, 11, 'aa'), (3.0, 3.0, 22, 'bb'), (5.0, 6.0, 33, 'cc'), (-100.0, -42.0, 44, 'dd'), (7.01, 7.01, 55, 'ee'), (0.99, 2.99, 66, 'ee');
 
 select 'dictGet', 'test_01037.dict' as dict_name, tuple(x, y) as key,
        dictGet(dict_name, 'name', key),
