@@ -15,8 +15,13 @@ root = tree.getroot()
 
 # Check main metric
 main_metric_element = root.find('main_metric/*')
-if main_metric_element and main_metric_element.tag != 'min_time':
-    raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric))
+if main_metric_element is not None and main_metric_element.tag != 'min_time':
+    raise Exception('Only the min_time main metric is supported. This test uses \'{}\''.format(main_metric_element.tag))
+
+# FIXME another way to detect infinite tests. They should have an appropriate main_metric but sometimes they don't.
+infinite_sign = root.find('.//average_speed_not_changing_for_ms')
+if infinite_sign is not None:
+    raise Exception('Looks like the test is infinite (sign 1)')
 
 # Open connections
 servers = [{'host': 'localhost', 'port': 9000, 'client_name': 'left'}, {'host': 'localhost', 'port': 9001, 'client_name': 'right'}]
@@ -24,12 +29,9 @@ connections = [clickhouse_driver.Client(**server) for server in servers]
 
 # Check tables that should exist
 tables = [e.text for e in root.findall('preconditions/table_exists')]
-if tables:
+for t in tables:
     for c in connections:
-        tables_list = ", ".join("'{}'".format(t) for t in tables)
-        res = c.execute("select t from values('t text', {}) anti join system.tables on database = currentDatabase() and name = t".format(tables_list))
-        if res:
-            raise Exception('Some tables are not found: {}'.format(res))
+        res = c.execute("select 1 from {}".format(t))
 
 # Apply settings
 settings = root.findall('settings/*')
@@ -76,6 +78,9 @@ for c in connections:
         c.execute(q)
 
 # Run test queries
+def tsv_escape(s):
+    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates, parameter_combinations)
 
@@ -83,7 +88,7 @@ for q in test_queries:
     for run in range(0, 7):
         for conn_index, c in enumerate(connections):
             res = c.execute(q)
-            print(q + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]
