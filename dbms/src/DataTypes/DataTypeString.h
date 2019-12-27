@@ -18,6 +18,8 @@ public:
 
     String doGetName() const override { return type_name; }
 
+    String getCanonicalName() const override { return getFamilyName(); }
+
     const char * getFamilyName() const override
     {
         return "String";

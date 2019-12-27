@@ -188,6 +188,16 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
+String DataTypeDateTime::getCanonicalName() const
+{
+    if (!has_explicit_time_zone)
+        return "DateTime";
+
+    WriteBufferFromOwnString out;
+    out << "DateTime(" << quote << time_zone.getTimeZone() << ")";
+    return out.str();
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;

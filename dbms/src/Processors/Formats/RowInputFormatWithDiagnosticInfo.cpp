@@ -127,13 +127,24 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 
     if (exception)
     {
-        if (type->getName() == "DateTime")
-            out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-        else if (type->getName() == "Date")
-            out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-        else
-            out << "ERROR\n";
-        return false;
+        switch(type->getTypeId())
+        {
+            case TypeIndex::Date:
+            {
+                out << "ERROR: Date must be in YYYY-MM-DD format.\n";
+                return false;
+            }
+            case TypeIndex::DateTime32:
+            {
+                out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
+                return false;
+            }
+            default:
+            {
+                out << "ERROR\n";
+                return false;
+            }
+        }
     }
 
     out << "\n";
@@ -146,10 +157,10 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
             verbosePrintString(curr_position, std::min(curr_position + 10, in.buffer().end()), out);
             out << "\n";
 
-            if (type->getName() == "DateTime")
-                out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-            else if (type->getName() == "Date")
+            if (type->getTypeId() == TypeIndex::Date)
                 out << "ERROR: Date must be in YYYY-MM-DD format.\n";
+            else if (type->getTypeId() == TypeIndex::DateTime32)
+                out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
 
             return false;
         }

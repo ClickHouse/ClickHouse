@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
@@ -65,16 +66,17 @@ void JSONCompactEachRowRowInputFormat::readPrefix()
         for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
         {
             skipWhitespaceIfAny(in);
-            String data_type;
-            readJSONString(data_type, in);
+            String data_type_ful_str;
+            readJSONString(data_type_ful_str, in);
 
+            const auto & data_type = DataTypeFactory::instance().get(data_type_ful_str);
             if (column_indexes_for_input_fields[i] &&
-                data_types[*column_indexes_for_input_fields[i]]->getName() != data_type)
+                data_types[*column_indexes_for_input_fields[i]]->getTypeId() != data_type->getTypeId())
             {
                 throw Exception(
                         "Type of '" + getPort().getHeader().getByPosition(*column_indexes_for_input_fields[i]).name
                         + "' must be " + data_types[*column_indexes_for_input_fields[i]]->getName() +
-                        ", not " + data_type,
+                        ", not " + data_type_ful_str,
                         ErrorCodes::INCORRECT_DATA
                 );
             }

@@ -160,12 +160,12 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getTypeId() != TypeId<T>::value)
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
                 + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getTypeId() != TypeIndex::String)
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
                 + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -254,17 +254,17 @@ public:
                 + toString(arguments.size()) + ", should be 2 or 3.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getTypeId() != TypeId<T>::value)
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments[1]->getName() != TypeName<T>::get())
+        if (arguments[1]->getTypeId() != TypeId<T>::value)
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>::get())
+        if (arguments.size() == 3 && arguments[2]->getTypeId() != TypeId<String>::value)
             throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
                 + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -392,12 +392,12 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<T>::get())
+        if (arguments[0]->getTypeId() != TypeId<T>::value)
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
             + " (must be " + String(TypeName<T>::get()) + ")",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getTypeId() != TypeId<String>::value)
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
                 + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -597,12 +597,12 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments[0]->getName() != TypeName<UInt32>::get())
+        if (arguments[0]->getTypeId() != TypeId<UInt32>::value)
             throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
                 + " (must be " + String(TypeName<UInt32>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
+        if (arguments.size() == 2 && arguments[1]->getTypeId() != TypeId<String>::value)
             throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
                 + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

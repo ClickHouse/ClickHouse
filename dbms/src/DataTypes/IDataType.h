@@ -56,6 +56,9 @@ public:
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
+    /// Return the canonical name of the type, which is always the same as getName for non alias types, and its true type name for alias types
+    virtual String getCanonicalName() const { return getName(); }
+
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
       * Some data types are represented in multiple streams while being serialized.

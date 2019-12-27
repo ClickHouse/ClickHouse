@@ -56,6 +56,9 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "ttl_expression";
     block.insert(col);
 
+    col.name = "canonical_type";
+    block.insert(col);
+
     return block;
 }
 
@@ -133,6 +136,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             res_columns[6]->insert(queryToString(column.ttl));
         else
             res_columns[6]->insertDefault();
+
+        res_columns[7]->insert(column.type->getCanonicalName());
     }
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));

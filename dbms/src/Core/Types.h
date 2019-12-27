@@ -108,6 +108,7 @@ template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = T
 template <> struct TypeId<Int64>    { static constexpr const TypeIndex value = TypeIndex::Int64; };
 template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32;  };
 template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64;  };
+template <> struct TypeId<String>  { static constexpr const TypeIndex value = TypeIndex::String;  };
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

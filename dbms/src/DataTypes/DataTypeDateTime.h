@@ -56,6 +56,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
+    String getCanonicalName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

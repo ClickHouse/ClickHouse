@@ -113,9 +113,10 @@ void NativeBlockOutputStream::write(const Block & block)
 
         /// For compatibility, we will not send explicit timezone parameter in DateTime data type
         ///  to older clients, that cannot understand it.
-        if (client_revision < DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE
-            && startsWith(type_name, "DateTime("))
+        if (client_revision < DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE &&
+            column.type->getTypeId() == TypeIndex::DateTime32)
             type_name = "DateTime";
+
 
         writeStringBinary(type_name, ostr);
 

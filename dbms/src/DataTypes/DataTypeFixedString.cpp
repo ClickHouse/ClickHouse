@@ -278,6 +278,11 @@ bool DataTypeFixedString::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
 }
 
+String DataTypeFixedString::getCanonicalName() const
+{
+    return "FixedString(" + toString(n) + ")";
+}
+
 
 static DataTypePtr create(const String & type_name, const ASTPtr & arguments)
 {

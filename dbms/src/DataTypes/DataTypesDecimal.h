@@ -41,6 +41,7 @@ public:
 
     const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
+    String getCanonicalName() const override;
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
