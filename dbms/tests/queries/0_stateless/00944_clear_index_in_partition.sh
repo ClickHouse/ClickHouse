@@ -8,7 +8,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx;"
 
 
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices=1;
 CREATE TABLE test.minmax_idx
 (
     u64 UInt64,
