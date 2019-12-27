@@ -124,8 +124,8 @@ public:
                 }
                 catch (...)
                 {
-                    agg_func.destroy(place.data());
-                    i = 0; // prevent destroy duplication
+                    // prevent destroy after creation failure
+                    i = 0;
 
                     throw;
                 }
