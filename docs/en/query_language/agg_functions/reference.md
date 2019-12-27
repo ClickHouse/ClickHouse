@@ -671,9 +671,12 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
 
-## groupArrayInsertAt(x)
+## groupArrayInsertAt(value, position)
 
 Inserts a value into the array in the specified position.
+
+!!! note "Note"
+    This function uses zero-based positions, contrary to the conventional one-based positions for SQL arrays.
 
 Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
 

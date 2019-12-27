@@ -8,6 +8,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
     registerFunctionCurrentQuota(factory);
+    registerFunctionCurrentRowPolicies(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
