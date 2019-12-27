@@ -36,7 +36,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     /// This code may looks strange, but previously we had only one entity: PRIMARY KEY (or ORDER BY, it doesn't matter)
     /// Now we have two different entities ORDER BY and it's optional prefix -- PRIMARY KEY.
-    /// In most cases users doesn't specify PRIMARY KEY and semantically it's equal to ORDER BY.
+    /// In most cases user doesn't specify PRIMARY KEY and semantically it's equal to ORDER BY.
     /// So rules in zookeeper metadata is following:
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata

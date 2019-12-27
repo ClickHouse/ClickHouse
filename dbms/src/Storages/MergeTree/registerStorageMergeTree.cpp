@@ -643,18 +643,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
+    StorageInMemoryMetadata metadata
+    {
+        .columns = args.columns,
+        .indices = indices_description,
+        .constraints = args.constraints,
+        .partition_by_ast = partition_by_ast,
+        .order_by_ast = order_by_ast,
+        .primary_key_ast = primary_key_ast,
+        .sample_by_ast = sample_by_ast,
+        .ttl_for_table_ast = ttl_table_ast,
+        .settings_ast = settings_ast,
+    };
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.database_name, args.table_name, args.relative_data_path,
-            args.columns, indices_description, args.constraints,
-            args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, ttl_table_ast, settings_ast, merging_params, std::move(storage_settings),
+            metadata, args.context, date_column_name,  merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.database_name, args.table_name, args.relative_data_path, args.columns, indices_description,
-            args.constraints, args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
-            primary_key_ast, sample_by_ast, ttl_table_ast, settings_ast, merging_params, std::move(storage_settings),
+            args.database_name, args.table_name, args.relative_data_path, metadata, args.attach, args.context,
+            date_column_name, partition_by_ast, order_by_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
 }
 

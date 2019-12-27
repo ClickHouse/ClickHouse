@@ -195,26 +195,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & database_name_,
     const String & table_name_,
     const String & relative_data_path_,
-    const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
-    const ConstraintsDescription & constraints_,
+    const StorageInMemoryMetadata & metadata,
     Context & context_,
     const String & date_column_name,
-    const ASTPtr & partition_by_ast_,
-    const ASTPtr & order_by_ast_,
-    const ASTPtr & primary_key_ast_,
-    const ASTPtr & sample_by_ast_,
-    const ASTPtr & ttl_table_ast_,
-    const ASTPtr & settings_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_, relative_data_path_,
-            columns_, indices_, constraints_,
-            context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-            sample_by_ast_, ttl_table_ast_, settings_ast_, merging_params_,
-            std::move(settings_), true, attach,
+    : MergeTreeData(database_name_, table_name_, relative_data_path_, metadata,
+        context_, date_column_name, merging_params_, std::move(settings_), true, attach,
             [this] (const std::string & name) { enqueuePartForCheck(name); }),
+
         zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name_, table_name_)),
         replica_name(global_context.getMacros()->expand(replica_name_, database_name_, table_name_)),
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads()),
@@ -543,7 +533,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    setProperties(metadata.order_by_ast, metadata.primary_key_ast, metadata.columns, metadata.indices, metadata.constraints);
+    setProperties(metadata);
     setTTLExpressions(new_columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 }
 

@@ -332,17 +332,9 @@ public:
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
                   const String & relative_data_path_,
-                  const ColumnsDescription & columns_,
-                  const IndicesDescription & indices_,
-                  const ConstraintsDescription & constraints_,
+                  const StorageInMemoryMetadata & metadata,
                   Context & context_,
                   const String & date_column_name,
-                  const ASTPtr & partition_by_ast_,
-                  const ASTPtr & order_by_ast_,
-                  const ASTPtr & primary_key_ast_,
-                  const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-                  const ASTPtr & ttl_table_ast_,
-                  const ASTPtr & settings_ast_,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
@@ -900,10 +892,7 @@ protected:
     std::mutex clear_old_temporary_directories_mutex;
     /// Mutex for settings usage
 
-    void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
-                                        const ColumnsDescription & new_columns,
-                                        const IndicesDescription & indices_description,
-                                        const ConstraintsDescription & constraints_description, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
 
     void initPartitionKey();
 
