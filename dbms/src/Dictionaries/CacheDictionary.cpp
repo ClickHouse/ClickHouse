@@ -759,6 +759,8 @@ void CacheDictionary::update(const std::vector<Key> & requested_ids, std::unorde
 
     const auto now = std::chrono::system_clock::now();
 
+    size_t found_num = 0;
+
     if (now > backoff_end_time)
     {
         try
@@ -822,6 +824,7 @@ void CacheDictionary::update(const std::vector<Key> & requested_ids, std::unorde
 
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
+                    ++found_num;
                 }
             }
 
@@ -844,22 +847,8 @@ void CacheDictionary::update(const std::vector<Key> & requested_ids, std::unorde
         }
     }
 
-    size_t not_found_num = 0, found_num = 0;
 
-
-    /// TODO: Replace! without checking the whole map with O(n) complexity
-    /// Check which ids have not been found and require setting null_value
-    for (const auto & id_found_pair : remaining_ids)
-    {
-        if (id_found_pair.second)
-        {
-            ++found_num;
-            continue;
-        }
-        ++not_found_num;
-    }
-
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, remaining_ids.size() - found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
