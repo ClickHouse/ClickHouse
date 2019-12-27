@@ -58,7 +58,7 @@ String DataTypeCustomSimpleAggregateFunction::getName() const
 }
 
 
-static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
+static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     String function_name;
     AggregateFunctionPtr function;

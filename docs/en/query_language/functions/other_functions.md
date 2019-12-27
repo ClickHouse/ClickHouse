@@ -379,16 +379,83 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## neighbor(column, offset\[, default_value\])
+## neighbor {#neighbor}
 
-Returns value for `column`, in `offset` distance from current row.
-This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
+The window function that provides access to a row at a specified offset which comes before or after the current row of a given column.
+
+**Syntax**
+
+```sql
+neighbor(column, offset[, default_value])
+```
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
-If `offset` value is outside block bounds, a default value for `column` returned. If `default_value` is given, then it will be used.
+**Parameters** 
+
+- `column` — A column name or scalar expression.
+- `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
+- `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
+
+**Returned values**
+
+- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds. 
+- Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
+
+Type: type of data blocks affected or default value type.
+
+**Example**
+
+Query:
+
+```sql
+SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
+```
+
+Result:
+
+```text
+┌─number─┬─neighbor(number, 2)─┐
+│      0 │                   2 │
+│      1 │                   3 │
+│      2 │                   4 │
+│      3 │                   5 │
+│      4 │                   6 │
+│      5 │                   7 │
+│      6 │                   8 │
+│      7 │                   9 │
+│      8 │                   0 │
+│      9 │                   0 │
+└────────┴─────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
+```
+
+Result:
+
+```text
+┌─number─┬─neighbor(number, 2, 999)─┐
+│      0 │                        2 │
+│      1 │                        3 │
+│      2 │                        4 │
+│      3 │                        5 │
+│      4 │                        6 │
+│      5 │                        7 │
+│      6 │                        8 │
+│      7 │                        9 │
+│      8 │                      999 │
+│      9 │                      999 │
+└────────┴──────────────────────────┘
+```
+
 This function can be used to compute year-over-year metric value:
+
+Query:
 
 ```sql
 WITH toDate('2018-01-01') AS start_date
@@ -399,6 +466,8 @@ SELECT
     round(prev_year / money, 2) AS year_over_year
 FROM numbers(16)
 ```
+
+Result:
 
 ```text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
@@ -420,7 +489,6 @@ FROM numbers(16)
 │ 2019-04-01 │    87 │        22 │           0.25 │
 └────────────┴───────┴───────────┴────────────────┘
 ```
-
 
 ## runningDifference(x) {#other_functions-runningdifference}
 
