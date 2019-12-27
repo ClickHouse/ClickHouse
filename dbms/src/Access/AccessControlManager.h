@@ -22,6 +22,8 @@ namespace DB
 class QuotaContext;
 class QuotaContextFactory;
 struct QuotaUsageInfo;
+class RowPolicyContext;
+class RowPolicyContextFactory;
 
 
 /// Manages access control entities.
@@ -38,8 +40,11 @@ public:
 
     std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
 
+    std::shared_ptr<RowPolicyContext> getRowPolicyContext(const String & user_name) const;
+
 private:
     std::unique_ptr<QuotaContextFactory> quota_context_factory;
+    std::unique_ptr<RowPolicyContextFactory> row_policy_context_factory;
 };
 
 }
