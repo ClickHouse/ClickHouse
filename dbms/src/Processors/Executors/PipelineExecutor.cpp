@@ -470,12 +470,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
 #endif
 
-    UInt64 total_time_ns = 0;
-    UInt64 execution_time_ns = 0;
-    UInt64 processing_time_ns = 0;
-    UInt64 wait_time_ns = 0;
+//    UInt64 total_time_ns = 0;
+//    UInt64 execution_time_ns = 0;
+//    UInt64 processing_time_ns = 0;
+//    UInt64 wait_time_ns = 0;
 
-    Stopwatch total_time_watch;
+//    Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
 
     auto prepare_processor = [&](UInt64 pid, Queue & queue)
@@ -713,14 +713,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         }
     }
 
-    total_time_ns = total_time_watch.elapsed();
-    wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
-
+//    total_time_ns = total_time_watch.elapsed();
+//    wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
+/*
     LOG_TRACE(log, "Thread finished."
                      << " Total time: " << (total_time_ns / 1e9) << " sec."
                      << " Execution time: " << (execution_time_ns / 1e9) << " sec."
                      << " Processing time: " << (processing_time_ns / 1e9) << " sec."
                      << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
+*/
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
