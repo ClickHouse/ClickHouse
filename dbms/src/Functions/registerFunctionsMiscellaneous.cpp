@@ -54,6 +54,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionBasename(factory);
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
+    registerFunctionRandomASCII(factory);
     registerFunctionGetScalar(factory);
 
 #if USE_ICU
