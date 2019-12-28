@@ -5,7 +5,7 @@ CREATE TABLE log_for_alter (
   Data String
 ) ENGINE = Log();
 
-ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError 471 }
+ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError 48 }
 
 DROP TABLE IF EXISTS log_for_alter;
 
