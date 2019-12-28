@@ -915,7 +915,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
 
-    OptimizeIfChainsVisitor(result.aliases).visit(query);
+    OptimizeIfChainsVisitor().visit(query);
 
     if (select_query)
     {
