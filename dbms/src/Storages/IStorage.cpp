@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int SETTINGS_ARE_NOT_SUPPORTED;
     extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
@@ -313,12 +314,6 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
-{
-    if (!supportsSettings())
-        throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
-}
-
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
 {
     TableStructureReadLockHolder result;
@@ -373,57 +368,40 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
     return result;
 }
 
-
-IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
+StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return [&] (IAST & ast)
+    return
     {
-        if (!new_changes.empty())
-        {
-            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
-            /// Make storage settings unique
-            for (const auto & change : new_changes)
-            {
-                checkSettingCanBeChanged(change.name);
-
-                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
-                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
-                    it->value = change.value;
-                else
-                    storage_changes.push_back(change);
-            }
-        }
+        .columns = getColumns(),
+        .indices = getIndices(),
+        .constraints = getConstraints(),
     };
 }
-
 
 void IStorage::alter(
     const AlterCommands & params,
     const Context & context,
-    TableStructureWriteLockHolder & table_lock_holder)
+    TableStructureWriteLockHolder & /*table_lock_holder*/)
 {
-    if (params.isModifyingData())
-        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    checkAlterIsPossible(params, context.getSettingsRef());
 
     const String database_name = getDatabaseName();
     const String table_name = getTableName();
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(database_name)->alterTable(context, table_name, metadata);
+    setColumns(std::move(metadata.columns));
+}
 
-    if (params.isSettingsAlter())
+
+void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
     {
-        SettingsChanges new_changes;
-        params.applyForSettingsOnly(new_changes);
-        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
-    }
-    else
-    {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-        auto new_columns = getColumns();
-        auto new_indices = getIndices();
-        auto new_constraints = getConstraints();
-        params.applyForColumnsOnly(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-        setColumns(std::move(new_columns));
+        if (!command.isCommentAlter())
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
