@@ -23,11 +23,22 @@ namespace
 
 struct AggregateFunctionThrowData
 {
-    std::unique_ptr<char> memory{ new char };
+    bool allocated;
+
+    AggregateFunctionThrowData() : allocated(true) {}
+    ~AggregateFunctionThrowData()
+    {
+        volatile bool * allocated_ptr = &allocated;
+
+        if (*allocated_ptr)
+            *allocated_ptr = false;
+        else
+            abort();
+    }
 };
 
 /** Throw on creation with probability specified in parameter.
-  * Allocates some memory in constructor and deallocates in desctructor.
+  * It will check correct destruction of the state.
   * This is intended to check for exception safety.
   */
 class AggregateFunctionThrow final : public IAggregateFunctionDataHelper<AggregateFunctionThrowData, AggregateFunctionThrow>
