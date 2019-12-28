@@ -94,9 +94,6 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
-        if (!argument_types.empty())
-            throw Exception("Aggregate function " + name + " requires zero number of arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         Float64 throw_probability = 1.0;
         if (parameters.size() == 1)
             throw_probability = parameters[0].safeGet<Float64>();
