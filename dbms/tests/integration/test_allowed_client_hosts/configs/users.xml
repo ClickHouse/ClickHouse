@@ -8,6 +8,12 @@
         <default>
             <profile>default</profile>
             <password></password>
+            <quota>default</quota>
         </default>
     </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
 </yandex>
