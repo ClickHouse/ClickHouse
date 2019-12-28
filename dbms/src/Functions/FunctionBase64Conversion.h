@@ -123,13 +123,13 @@ public:
 
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                outlen = tb64enc(source, srclen, dst_pos);
+                outlen = _tb64e(source, srclen, dst_pos);
             }
             else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
                 if (srclen > 0)
                 {
-                    outlen = tb64dec(source, srclen, dst_pos);
+                    outlen = _tb64d(source, srclen, dst_pos);
                     if (!outlen)
                         throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }
@@ -141,7 +141,7 @@ public:
                     // during decoding character array can be partially polluted
                     // if fail, revert back and clean
                     auto savepoint = dst_pos;
-                    outlen = tb64dec(source, srclen, dst_pos);
+                    outlen = _tb64d(source, srclen, dst_pos);
                     if (!outlen)
                     {
                         outlen = 0;
@@ -164,15 +164,6 @@ public:
         block.getByPosition(result).column = std::move(dst_column);
     }
 };
-}
-
-/** We must call it in advance from a single thread
-  *  to avoid thread sanitizer report about data race in "codec_choose" function.
-  */
-inline void initializeBase64()
-{
-    size_t outlen = 0;
-    base64_encode(nullptr, 0, nullptr, &outlen, 0);
 }
 
 #endif
