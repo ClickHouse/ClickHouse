@@ -6,7 +6,7 @@
 
 ## FQDN {#fqdn}
 
-Возвращает полное имя домена. 
+Возвращает полное имя домена.
 
 **Синтаксис**
 
@@ -377,7 +377,7 @@ neighbor(column, offset[, default_value])
 
 **Возвращаемое значение**
 
-- Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока. 
+- Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока.
 - Значение по умолчанию для `column`, если значение `offset`  выходит за пределы блока данных. Если передан параметр `default_value`, то значение берется из него.
 
 Тип: зависит от данных в `column` или переданного значения по умолчанию в `default_value`.
@@ -885,14 +885,14 @@ SELECT identity(42)
 ```
 Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
-## randomASCII {#randomascii}
+## randomPrintableASCII {#randomascii}
 
 Генерирует строку со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
 
 **Синтаксис**
 
 ```sql
-randomASKII(length)
+randomPrintableASCII(length)
 ```
 
 **Параметры**
@@ -910,14 +910,14 @@ randomASKII(length)
 **Пример**
 
 ```sql
-SELECT number, randomASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
 ```
 ```text
-┌─number─┬─str────────────────────────────┬─length(randomASCII(30))─┐
-│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                      30 │
-│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                      30 │
-│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                      30 │
-└────────┴────────────────────────────────┴─────────────────────────┘
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
