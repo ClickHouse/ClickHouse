@@ -2,10 +2,10 @@
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
