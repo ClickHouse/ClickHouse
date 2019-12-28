@@ -1357,7 +1357,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
-void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & context)
+void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & /*context*/)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
@@ -1368,10 +1368,6 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     SettingsChanges new_changes;
     commands.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-    if (getIndices().empty() && !new_indices.empty() &&
-            !context.getSettingsRef().allow_experimental_data_skipping_indices)
-        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
-                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
