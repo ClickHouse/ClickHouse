@@ -23,7 +23,7 @@ namespace
 
 struct AggregateFunctionThrowData
 {
-    std::unique_ptr<char[]> memory{ new char[1] };
+    std::unique_ptr<char> memory{ new char };
 };
 
 /** Throw on creation with probability specified in parameter.
