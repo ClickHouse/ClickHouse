@@ -48,7 +48,7 @@ ASTs OptimizeIfChainsVisitor::IfChain(ASTPtr & child)
         throw Exception("Wrong number of arguments for function 'if' (" + toString(args->children.size()) + " instead of 3)",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (args->children[2]->as<ASTFunction>() && args->children[2]->as<ASTFunction>()->name == "if" )
+    if (args->children[2]->as<ASTFunction>() && args->children[2]->as<ASTFunction>()->name == "if")
     {
         auto cur = IfChain(function_node->arguments->children[2]);
         cur.push_back(function_node->arguments->children[1]);

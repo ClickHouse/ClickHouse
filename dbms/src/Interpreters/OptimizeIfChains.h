@@ -9,16 +9,12 @@ namespace DB
 class OptimizeIfChainsVisitor
 {
 public:
-    OptimizeIfChainsVisitor(Aliases & aliases_)
-            : aliases(aliases_)
-    {}
+    OptimizeIfChainsVisitor() = default;
 
     void visit(ASTPtr & ast);
 
     ASTs IfChain(ASTPtr & child);
 
-private:
-    Aliases & aliases;
 };
 
 }
