@@ -109,7 +109,7 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
         if (parameters.size() == 1)
             throw_probability = parameters[0].safeGet<Float64>();
         else if (parameters.size() > 1)
-            throw Exception("Aggregate function " + name + " cannot have parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Aggregate function " + name + " cannot have more than one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
     });
