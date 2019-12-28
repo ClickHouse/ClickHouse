@@ -224,9 +224,10 @@ void SettingsConstraints::setProfile(const String & profile_name, const Poco::Ut
 
     for (const std::string & key : config_keys)
     {
-        if (key == "profile" || key.find("profile[") == 0)   /// Inheritance of profiles from the current one.
+        if (key == "profile" || 0 == key.compare(0, strlen("profile["), "profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
-        else continue;
+        else
+            continue;
     }
 
     String path_to_constraints = "profiles." + profile_name + ".constraints";
