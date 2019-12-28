@@ -136,8 +136,6 @@ public:
     {
         return true;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -400,8 +398,6 @@ public:
     {
         return true;
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE

@@ -89,9 +89,9 @@ public:
     ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & table_name) const override;
 
 
-    void attachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
+    void attachDictionary(const String & dictionary_name, const Context & context) override;
 
-    void detachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
+    void detachDictionary(const String & dictionary_name, const Context & context) override;
 
     void shutdown() override;
 

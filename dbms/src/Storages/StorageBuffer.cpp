@@ -165,6 +165,9 @@ BlockInputStreams StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
+            if (query_info.order_by_optimizer)
+                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
+
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
         }
@@ -399,7 +402,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            storage.flushBuffer(buffer, true, true /* locked */);
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
         }
 
         if (!buffer.first_write_time)

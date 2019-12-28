@@ -4,6 +4,7 @@ set -e
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+# Please note that we don't support paths with whitespaces. This is rather ignorant.
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
@@ -135,6 +136,8 @@ Please fix this and reinstall this package." >&2
         defaultpassword="$RET"
         if [ -n "$defaultpassword" ]; then
             echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
         fi
 
         # everything went well, so now let's reset the password

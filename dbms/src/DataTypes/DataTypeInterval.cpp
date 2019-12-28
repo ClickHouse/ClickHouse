@@ -10,17 +10,22 @@ bool DataTypeInterval::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this) && kind == static_cast<const DataTypeInterval &>(rhs).kind;
 }
 
+template <IntervalKind::Kind kind>
+static DataTypePtr create(const String & /*type_name*/)
+{
+    return DataTypePtr(std::make_shared<DataTypeInterval>(kind));
+}
 
 void registerDataTypeInterval(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("IntervalSecond", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Second)); });
-    factory.registerSimpleDataType("IntervalMinute", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Minute)); });
-    factory.registerSimpleDataType("IntervalHour", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Hour)); });
-    factory.registerSimpleDataType("IntervalDay", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Day)); });
-    factory.registerSimpleDataType("IntervalWeek", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Week)); });
-    factory.registerSimpleDataType("IntervalMonth", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Month)); });
-    factory.registerSimpleDataType("IntervalQuarter", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Quarter)); });
-    factory.registerSimpleDataType("IntervalYear", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(DataTypeInterval::Year)); });
+    factory.registerSimpleDataType("IntervalSecond", create<IntervalKind::Second>);
+    factory.registerSimpleDataType("IntervalMinute", create<IntervalKind::Minute>);
+    factory.registerSimpleDataType("IntervalHour", create<IntervalKind::Hour>);
+    factory.registerSimpleDataType("IntervalDay", create<IntervalKind::Day>);
+    factory.registerSimpleDataType("IntervalWeek", create<IntervalKind::Week>);
+    factory.registerSimpleDataType("IntervalMonth", create<IntervalKind::Month>);
+    factory.registerSimpleDataType("IntervalQuarter", create<IntervalKind::Quarter>);
+    factory.registerSimpleDataType("IntervalYear", create<IntervalKind::Year>);
 }
 
 }

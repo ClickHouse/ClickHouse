@@ -66,6 +66,7 @@ public:
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     Float64 getFloat64(size_t n) const override { return getNestedColumn()->getFloat64(n); }
+    Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -262,7 +263,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getNullValueIndex();
 
     if (size_of_value_if_fixed)
-        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
+        return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
     return uniqueInsertData(val.data(), val.size());

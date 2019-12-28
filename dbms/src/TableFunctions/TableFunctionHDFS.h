@@ -24,7 +24,7 @@ public:
 
 private:
     StoragePtr getStorage(
-        const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const override;
+        const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const override;
 };
 }
 

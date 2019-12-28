@@ -32,6 +32,8 @@
                 <value>CSVWithNames</value>
                 <value>Values</value>
                 <value>JSONEachRow</value>
+                <value>JSONCompactEachRow</value>
+                <value>JSONCompactEachRowWithNamesAndTypes</value>
                 <value>TSKV</value>
                 <value>RowBinary</value>
                 <value>Native</value>

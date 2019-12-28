@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -37,20 +38,24 @@ struct ArraySplitImpl
 
             size_t pos = 0;
 
-            out_offsets_2.reserve(in_offsets.size()); // the actual size would be equal or larger
+            out_offsets_2.reserve(in_offsets.size()); // assume the actual size to be equal or larger
             out_offsets_1.reserve(in_offsets.size());
 
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
-                pos += !reverse;
-                for (; pos < in_offsets[i] - reverse; ++pos)
+                if (pos < in_offsets[i])
                 {
-                    if (cut[pos])
-                        out_offsets_2.push_back(pos + reverse);
-                }
-                pos += reverse;
+                    pos += !reverse;
+                    for (; pos < in_offsets[i] - reverse; ++pos)
+                    {
+                        if (cut[pos])
+                            out_offsets_2.push_back(pos + reverse);
+                    }
+                    pos += reverse;
 
-                out_offsets_2.push_back(pos);
+                    out_offsets_2.push_back(pos);
+                }
+
                 out_offsets_1.push_back(out_offsets_2.size());
             }
         }
@@ -73,13 +78,21 @@ struct ArraySplitImpl
             }
             else
             {
+                size_t pos = 0;
+
                 out_offsets_2.reserve(in_offsets.size());
                 out_offsets_1.reserve(in_offsets.size());
 
                 for (size_t i = 0; i < in_offsets.size(); ++i)
                 {
-                    out_offsets_2.push_back(in_offsets[i]);
-                    out_offsets_1.push_back(i + 1);
+                    if (pos < in_offsets[i])
+                    {
+                        pos = in_offsets[i];
+
+                        out_offsets_2.push_back(pos);
+                    }
+
+                    out_offsets_1.push_back(out_offsets_2.size());
                 }
             }
         }
