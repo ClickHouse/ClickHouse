@@ -361,30 +361,26 @@ void CacheDictionary::prepareAnswer(
             continue;
         }
 
-        /// TODO: understand properly this code and remove
-//        if (error_count)
-//        {
-//            if (find_result.outdated)
-//            {
-//                /// We have expired data for that `id` so we can continue using it.
-//                bool was_default = cell.isDefault();
-//
-//                if (was_default)
-//                    LOG_FATAL(log, "WAS DEFAULT");
-//
-//                cell.setExpiresAt(backoff_end_time);
-//                if (was_default)
-//                    cell.setDefault();
-//
-//                if (was_default)
-//                    on_id_not_found(id, cell_idx);
-//                else
-//                    on_cell_updated(id, cell_idx);
-//                continue;
-//            }
-//            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-//            std::rethrow_exception(last_exception);
-//        }
+        if (error_count)
+        {
+            if (find_result.outdated)
+            {
+                /// We have expired data for that `id` so we can continue using it.
+                bool was_default = cell.isDefault();
+
+                cell.setExpiresAt(backoff_end_time);
+                if (was_default)
+                    cell.setDefault();
+
+                if (was_default)
+                    on_id_not_found(id, cell_idx);
+                else
+                    on_cell_updated(id, cell_idx);
+                continue;
+            }
+            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
+            std::rethrow_exception(last_exception);
+        }
 
         /// Check if cell had not been occupied before and increment element counter if it hadn't
         if (cell.id == 0 && cell_idx != zero_cell_idx)
