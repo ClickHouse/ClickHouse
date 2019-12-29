@@ -142,11 +142,17 @@ if(ENABLE_THREADED_RESOLVER)
 endif()
 
 # Check for all needed libraries
-check_library_exists_concat("${CMAKE_DL_LIBS}" dlopen HAVE_LIBDL)
-check_library_exists_concat("socket" connect      HAVE_LIBSOCKET)
-check_library_exists("c" gethostbyname "" NOT_NEED_LIBNSL)
 
+# We don't want any plugin loading at runtime. It is harmful.
+#check_library_exists_concat("${CMAKE_DL_LIBS}" dlopen HAVE_LIBDL)
+
+# This is unneeded.
+#check_library_exists_concat("socket" connect      HAVE_LIBSOCKET)
+
+# Obsolete functions, but we have those.
+check_library_exists("c" gethostbyname "" NOT_NEED_LIBNSL)
 check_function_exists(gethostname HAVE_GETHOSTNAME)
+
 
 # From cmake/find/ssl.cmake
 if (OPENSSL_FOUND)
@@ -167,10 +173,12 @@ if (OPENSSL_FOUND)
 endif()
 
 # Check for idn
-check_library_exists_concat("idn2" idn2_lookup_ul HAVE_LIBIDN2)
+# No, we don't need that.
+# check_library_exists_concat("idn2" idn2_lookup_ul HAVE_LIBIDN2)
 
 # Check for symbol dlopen (same as HAVE_LIBDL)
-check_library_exists("${CURL_LIBS}" dlopen "" HAVE_DLOPEN)
+# We don't want any plugin loading at runtime. It is harmful.
+# check_library_exists("${CURL_LIBS}" dlopen "" HAVE_DLOPEN)
 
 # From /cmake/find/zlib.cmake
 if (ZLIB_FOUND)
