@@ -97,8 +97,7 @@
 #define BRACK_PASTE_LAST '~'
 #define BRACK_PASTE_SLEN 6
 
-/// Make sure we don't get ^J for the enter character.
-/// This handler also bypasses some unused macro/event checkings.
+/// This handler bypasses some unused macro/event checkings.
 static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 {
     std::string buf;
@@ -106,10 +105,10 @@ static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 
     RL_SETSTATE(RL_STATE_MOREINPUT);
     SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    char c;
+    int c;
     while ((c = rl_read_key()) >= 0)
     {
-        if (c == '\r' || c == '\n')
+        if (c == '\r')
             c = '\n';
         buf.push_back(c);
         if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
@@ -1942,6 +1941,9 @@ public:
 };
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

@@ -90,7 +90,7 @@ private:
         if (function.name == "lambda")
             return;
 
-        FunctionBuilderPtr builder = FunctionFactory::instance().get(function.name, context);
+        FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function.name, context);
         /// Do not replace literals which must be constant
         ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
         /// Allow nullable arguments if function never returns NULL

@@ -209,6 +209,24 @@ BlockInputStreams StorageMerge::read(
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
 
+    InputSortingInfoPtr input_sorting_info;
+    if (query_info.order_by_optimizer)
+    {
+        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+        {
+            auto current_info = query_info.order_by_optimizer->getInputOrder(it->first);
+            if (it == selected_tables.begin())
+                input_sorting_info = current_info;
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+                input_sorting_info.reset();
+
+            if (!input_sorting_info)
+                break;
+        }
+
+        query_info.input_sorting_info = input_sorting_info;
+    }
+
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
@@ -395,17 +413,27 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(new_columns);
+    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    params.apply(storage_metadata);
+    context.getDatabase(database_name)->alterTable(context, table_name, storage_metadata);
+    setColumns(storage_metadata.columns);
 }
 
 Block StorageMerge::getQueryHeader(

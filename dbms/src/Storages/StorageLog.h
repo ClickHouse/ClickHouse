@@ -38,13 +38,13 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    std::string fullPath() const { return path + escapeForFileName(table_name) + '/';}
+    std::string fullPath() const { return path; }
 
     Strings getDataPaths() const override { return {fullPath()}; }
 
@@ -54,14 +54,16 @@ protected:
       *  consisting of the specified columns; Create files if they do not exist.
       */
     StorageLog(
-        const std::string & path_,
+        const std::string & relative_path_,
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        size_t max_compress_block_size_);
+        size_t max_compress_block_size_,
+        const Context & context_);
 
 private:
+    String base_path;
     String path;
     String table_name;
     String database_name;
@@ -124,7 +126,7 @@ private:
       */
     const Marks & getMarksWithRealRowCount() const;
 
-    std::string getFullPath() const { return path + escapeForFileName(table_name) + '/'; }
+    std::string getFullPath() const { return path; }
 };
 
 }

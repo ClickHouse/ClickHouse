@@ -20,6 +20,15 @@ public:
     String getName() const override { return "NativeInputFormatFromNativeBlockInputStream"; }
 
 protected:
+    void resetParser() override
+    {
+        IInputFormat::resetParser();
+        stream->resetParser();
+        read_prefix = false;
+        read_suffix = false;
+    }
+
+
     Chunk generate() override
     {
         /// TODO: do something with totals and extremes.
@@ -147,7 +156,6 @@ void registerInputFormatProcessorNative(FormatFactory & factory)
     factory.registerInputFormatProcessor("Native", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         const RowInputFormatParams &,
         const FormatSettings &)
     {
@@ -160,7 +168,6 @@ void registerOutputFormatProcessorNative(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings &)
     {

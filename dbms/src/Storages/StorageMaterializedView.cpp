@@ -9,12 +9,13 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
 #include <Common/typeid_cast.h>
 
@@ -200,6 +201,9 @@ BlockInputStreams StorageMaterializedView::read(
 {
     auto storage = getTargetTable();
     auto lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
+    if (query_info.order_by_optimizer)
+        query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
+
     auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     for (auto & stream : streams)
         stream->addTableLock(lock);

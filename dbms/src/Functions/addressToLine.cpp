@@ -8,7 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
@@ -18,6 +18,7 @@
 #include <mutex>
 #include <filesystem>
 #include <unordered_map>
+#include "registerFunctions.h"
 
 
 namespace DB
