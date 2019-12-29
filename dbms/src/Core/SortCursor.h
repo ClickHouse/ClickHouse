@@ -119,7 +119,7 @@ struct SortCursor
     const SortCursorImpl * operator-> () const { return impl; }
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
-    bool greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
@@ -135,7 +135,7 @@ struct SortCursor
     }
 
     /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
-    bool totallyLessOrEquals(const SortCursor & rhs) const
+    bool ALWAYS_INLINE totallyLessOrEquals(const SortCursor & rhs) const
     {
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
@@ -144,13 +144,13 @@ struct SortCursor
         return !greaterAt(rhs, impl->rows - 1, 0);
     }
 
-    bool greater(const SortCursor & rhs) const
+    bool ALWAYS_INLINE greater(const SortCursor & rhs) const
     {
         return greaterAt(rhs, impl->pos, rhs.impl->pos);
     }
 
     /// Inverted so that the priority queue elements are removed in ascending order.
-    bool operator< (const SortCursor & rhs) const
+    bool ALWAYS_INLINE operator< (const SortCursor & rhs) const
     {
         return greater(rhs);
     }
@@ -233,7 +233,7 @@ public:
 
     Cursor & current() { return queue.front(); }
 
-    void next()
+    void ALWAYS_INLINE next()
     {
         assert(isValid());
 
@@ -253,7 +253,7 @@ private:
     /// This is adapted version of the function __sift_down from libc++.
     /// Why cannot simply use std::priority_queue?
     /// - because it doesn't support updating the top element and requires pop and push instead.
-    void updateTop()
+    void ALWAYS_INLINE updateTop()
     {
         size_t size = queue.size();
         if (size < 2)
