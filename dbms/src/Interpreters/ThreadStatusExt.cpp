@@ -29,7 +29,9 @@ namespace ErrorCodes
 
 void ThreadStatus::attachQueryContext(Context & query_context_)
 {
-    query_context = &query_context_;
+    if (!query_context)
+        query_context = &query_context_;
+
     query_id = query_context->getCurrentQueryId();
     if (!global_context)
         global_context = &query_context->getGlobalContext();
@@ -41,6 +43,28 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
+
+        {
+        query_id = query_context->getCurrentQueryId();
+
+#if defined(__linux__)
+        /// Set "nice" value if required.
+        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+        {
+            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
+
+            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
+                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+
+            os_thread_priority = new_os_thread_priority;
+        }
+#endif
+    }
+
+    initPerformanceCounters();
+    initQueryProfiler();
+
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -104,26 +128,9 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     }
 
     if (query_context)
-    {
-        query_id = query_context->getCurrentQueryId();
-
-#if defined(__linux__)
-        /// Set "nice" value if required.
-        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
-        if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
-        {
-            LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);
-
-            if (0 != setpriority(PRIO_PROCESS, os_thread_id, new_os_thread_priority))
-                throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-            os_thread_priority = new_os_thread_priority;
-        }
-#endif
-    }
+        attachQueryContext(*query_context);
 
     initPerformanceCounters();
-    initQueryProfiler();
 
     thread_state = ThreadState::AttachedToQuery;
 }
