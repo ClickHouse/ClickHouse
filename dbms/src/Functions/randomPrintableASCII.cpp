@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -61,6 +62,8 @@ public:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t length = length_column.getUInt(row_num);
+            if (length > (1 << 30))
+                throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             IColumn::Offset next_offset = offset + length + 1;
             data_to.resize(next_offset);
