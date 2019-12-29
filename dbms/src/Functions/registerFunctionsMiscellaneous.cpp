@@ -54,7 +54,6 @@ void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
-void registerFunctionRandomPrintableASCII(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
 
 #if USE_ICU
@@ -112,7 +111,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionBasename(factory);
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
-    registerFunctionRandomPrintableASCII(factory);
     registerFunctionGetScalar(factory);
 
 #if USE_ICU
