@@ -411,8 +411,6 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    checkAlterIsPossible(params, context.getSettingsRef());
-
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 

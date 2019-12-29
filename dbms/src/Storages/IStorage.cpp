@@ -383,8 +383,6 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & /*table_lock_holder*/)
 {
-    checkAlterIsPossible(params, context.getSettingsRef());
-
     const String database_name = getDatabaseName();
     const String table_name = getTableName();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
