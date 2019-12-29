@@ -1480,3 +1480,4 @@ target_link_libraries(grpc_cpp_plugin
   ${_gRPC_ALLTARGETS_LIBRARIES}
   grpc_plugin_support
 )
+
