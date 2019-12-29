@@ -714,21 +714,32 @@ private:
 
         size_t size = src.size();
         dst.resize(size);
+
+        /// Linear search with value on previous iteration as a hint.
+        /// Not optimal if the size of list is large and distribution of values is uniform random.
+
+        auto begin = boundary_values.begin();
+        auto end = boundary_values.end();
+        auto it = begin + (end - begin) / 2;
+
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
-            if (it == boundary_values.end())
+            auto value = src[i];
+
+            if (*it < value)
             {
-                dst[i] = boundary_values.back();
-            }
-            else if (it == boundary_values.begin())
-            {
-                dst[i] = boundary_values.front();
+                while (it != end && *it <= value)
+                    ++it;
+                if (it != begin)
+                    --it;
             }
             else
             {
-                dst[i] = *(it - 1);
+                while (*it > value && it != begin)
+                    --it;
             }
+
+            dst[i] = *it;
         }
     }
 
