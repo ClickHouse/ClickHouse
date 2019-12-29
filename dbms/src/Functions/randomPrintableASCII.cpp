@@ -86,6 +86,7 @@ public:
                 data_to[pos + 2] = 32 + ((rand3 * 95) >> 16);
                 data_to[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
+                /// NOTE gcc failed to vectorize this code (aliasing of char?)
                 /// TODO Implement SIMD optimizations from Danila Kutenin.
             }
 
