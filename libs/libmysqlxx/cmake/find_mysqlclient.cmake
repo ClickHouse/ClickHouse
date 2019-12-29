@@ -1,4 +1,9 @@
-option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
+if(OS_LINUX)
+    option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
+else ()
+    option(ENABLE_MYSQL "Enable MySQL" FALSE)
+endif ()
+
 if(ENABLE_MYSQL)
     option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" ${NOT_UNBUNDLED})
 
