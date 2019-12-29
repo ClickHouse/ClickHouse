@@ -2,7 +2,7 @@
 #if USE_BASE64
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include "registerFunctions.h"
+
 
 namespace DB
 {
