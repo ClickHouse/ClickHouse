@@ -50,6 +50,65 @@ def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
 
 
+@pytest.mark.parametrize("name,engine,alter", [
+    ("mt_test_rule_with_invalid_destination","MergeTree()",0),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",0),
+    ("mt_test_rule_with_invalid_destination","MergeTree()",1),
+    ("replicated_mt_test_rule_with_invalid_destination","ReplicatedMergeTree('/clickhouse/replicated_test_rule_with_invalid_destination', '1')",1),
+])
+def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
+    try:
+        def get_command(x, policy):
+            x = x or ""
+            if alter and x:
+                return """
+                    ALTER TABLE {name} MODIFY TTL {expression}
+                """.format(expression=x, name=name)
+            else:
+                return """
+                    CREATE TABLE {name} (
+                        s1 String,
+                        d1 DateTime
+                    ) ENGINE = {engine}
+                    ORDER BY tuple()
+                    {expression}
+                    SETTINGS storage_policy='{policy}'
+                """.format(expression=x, name=name, engine=engine, policy=policy)
+    
+        if alter:
+            node1.query(get_command(None, "small_jbod_with_external"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO DISK 'unknown'", "small_jbod_with_external"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "small_jbod_with_external"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO VOLUME 'unknown'", "small_jbod_with_external"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "only_jbod2"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO DISK 'jbod1'", "only_jbod2"))
+    
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+    
+        if alter:
+            node1.query(get_command(None, "only_jbod2"))
+    
+        with pytest.raises(QueryRuntimeException):
+            node1.query(get_command("TTL d1 TO VOLUME 'external'", "only_jbod2"))
+    
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_inserts_to_disk_do_not_work","MergeTree()",0),
     ("replicated_mt_test_inserts_to_disk_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_inserts_to_disk_do_not_work', '1')",0),
@@ -479,3 +538,85 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
+@pytest.mark.parametrize("name,engine,positive", [
+    ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
+    ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
+    ("mt_test_alter_multiple_ttls_negative", "MergeTree()", False),
+    ("mt_replicated_test_alter_multiple_ttls_negative", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_negative', '1')", False),
+])
+def test_alter_multiple_ttls(started_cluster, name, engine, positive):
+    """Copyright 2019, Altinity LTD
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."""
+    """Check that when multiple TTL expressions are set
+    and before any parts are inserted the TTL expressions
+    are changed with ALTER command then all old
+    TTL expressions are removed and the
+    the parts are moved to the specified disk or volume or
+    deleted if the new TTL expression is triggered
+    and are not moved or deleted when it is not.
+    """
+    now = time.time()
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                p1 Int64,
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY p1
+            TTL d1 + INTERVAL 30 SECOND TO DISK 'jbod2', 
+                d1 + INTERVAL 60 SECOND TO VOLUME 'external'
+            SETTINGS storage_policy='jbods_with_external', merge_with_ttl_timeout=0
+        """.format(name=name, engine=engine))
+
+        node1.query("""
+            ALTER TABLE {name} MODIFY
+            TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2', 
+                d1 + INTERVAL 5 SECOND TO VOLUME 'external',
+                d1 + INTERVAL 10 SECOND DELETE
+        """.format(name=name))
+
+        for p in range(3):
+            data = [] # 6MB in total
+            now = time.time()
+            for i in range(2):
+                p1 = p
+                s1 = get_random_string(1024 * 1024) # 1MB
+                d1 = now - 1 if i > 0 or positive else now + 300
+                data.append("({}, '{}', toDateTime({}))".format(p1, s1, d1))
+            node1.query("INSERT INTO {name} (p1, s1, d1) VALUES {values}".format(name=name, values=",".join(data)))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod2"} if positive else {"jbod1", "jbod2"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
+
+        time.sleep(5)
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"external"} if positive else {"jbod1", "jbod2"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["6"]
+
+        time.sleep(5)
+
+        node1.query("OPTIMIZE TABLE {name} FINAL".format(name=name))
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).splitlines() == ["0"] if positive else ["3"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))

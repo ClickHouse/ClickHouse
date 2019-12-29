@@ -213,7 +213,7 @@ protected:
 
 public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-            : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
     void create(AggregateDataPtr place) const override
     {

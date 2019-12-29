@@ -9,7 +9,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
-#include "registerFunctions.h"
 
 
 namespace DB
