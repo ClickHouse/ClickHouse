@@ -12,7 +12,6 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include "registerFunctionsArray.h"
 
 #include <ext/scope_guard.h>
 
