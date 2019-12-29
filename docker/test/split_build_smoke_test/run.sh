@@ -10,7 +10,7 @@ install_and_run_server() {
 }
 
 run_client() {
-    LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-client --query \"select 'OK'\" 2>/var/log/clickhouse-server/clientstderr.log || echo 'FAIL'
+    LD_LIBRARY_PATH=/unpacked /unpacked/clickhouse-client --query "select 'OK'" 2>/var/log/clickhouse-server/clientstderr.log || echo "FAIL"
 }
 
 install_and_run_server

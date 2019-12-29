@@ -90,7 +90,7 @@ public:
     size_t columns() const { return data.size(); }
 
     /// Checks that every column in block is not nullptr and has same number of elements.
-    void checkNumberOfRows() const;
+    void checkNumberOfRows(bool allow_null_columns = false) const;
 
     /// Approximate number of bytes in memory - for profiling and limits.
     size_t bytes() const;

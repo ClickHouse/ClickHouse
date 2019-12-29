@@ -5,7 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
-
+#include <Core/SettingsCollectionImpl.h>
 
 namespace DB
 {
@@ -37,7 +37,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     {
         if (key == "constraints")
             continue;
-        if (key == "profile")   /// Inheritance of one profile from another.
+        if (key == "profile" || 0 == key.compare(0, strlen("profile["), "profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));

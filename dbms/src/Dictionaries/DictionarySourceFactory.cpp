@@ -80,7 +80,8 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const DictionaryStructure & dict_struct,
-    Context & context) const
+    const Context & context,
+    bool check_config) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -95,7 +96,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, context);
+        return create_source(dict_struct, config, config_prefix, sample_block, context, check_config);
     }
 
     throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};

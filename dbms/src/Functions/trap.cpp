@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
+#include <Interpreters/Context.h>
 
 #include <thread>
 #include <memory>
@@ -27,12 +28,17 @@ namespace ErrorCodes
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
 class FunctionTrap : public IFunction
 {
+private:
+    const Context & context;
+
 public:
     static constexpr auto name = "trap";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionTrap>();
+        return std::make_shared<FunctionTrap>(context);
     }
+
+    FunctionTrap(const Context & context_) : context(context_) {}
 
     String getName() const override
     {
@@ -76,6 +82,10 @@ public:
             {
                 abort();
             }
+            else if (mode == "std::terminate")
+            {
+                std::terminate();
+            }
             else if (mode == "use after free")
             {
                 int * x_ptr;
@@ -113,6 +123,10 @@ public:
                 std::thread t2([&]{ ++x; });
                 t1.join();
                 t2.join();
+            }
+            else if (mode == "access context")
+            {
+                (void)context.getCurrentQueryId();
             }
             else
                 throw Exception("Unknown trap mode", ErrorCodes::BAD_ARGUMENTS);

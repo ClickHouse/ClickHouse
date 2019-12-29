@@ -6,17 +6,19 @@
 #include <iostream>
 #include <dlfcn.h>
 
-
-NO_INLINE const void * getAddress()
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
-
-using namespace DB;
+#pragma GCC diagnostic pop
 
 int main(int argc, char ** argv)
 {
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
+    using namespace DB;
+
     if (argc < 2)
     {
         std::cerr << "Usage: ./symbol_index address\n";
@@ -47,7 +49,7 @@ int main(int argc, char ** argv)
     Dwarf dwarf(*object->elf);
 
     Dwarf::LocationInfo location;
-    if (dwarf.findAddress(uintptr_t(address), location, Dwarf::LocationInfoMode::FAST))
+    if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else
         std::cerr << "Dwarf: Not found\n";

@@ -2,18 +2,14 @@
 
 #include <functional>
 #include <memory>
-#include <sstream>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
-#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include "CacheDictionary.inc.h"
@@ -611,7 +607,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
-    factory.registerLayout("cache", create_layout);
+    factory.registerLayout("cache", create_layout, false);
 }
 
 

@@ -46,23 +46,26 @@ template <typename Map>
 void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 {
     Map map;
-    typename Map::iterator it;
-    bool inserted;
 
     Stopwatch watch;
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
+        typename Map::LookupResult it;
+        bool inserted;
+
         map.emplace(data[i], it, inserted);
         if (inserted)
-            it->getSecond() = 1;
+            it->getMapped() = 1;
         else
-            ++it->getSecond();
+            ++it->getMapped();
     }
 
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
-        it = map.find(data[i]);
-        ++it->getSecond();
+        auto it = map.find(data[i]);
+        auto curr = ++it;
+        if (curr)
+            curr->getMapped();
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
@@ -77,13 +80,13 @@ template <typename Map>
 void insert(Map & map, StringRef & k)
 {
     bool inserted;
-    typename Map::iterator it;
+    typename Map::LookupResult it;
     map.emplace(k, it, inserted, nullptr);
     if (inserted)
-        *it = 1;
+        it->getMapped() = 1;
     else
-        ++*it;
-    std::cout << *map.find(k) << std::endl;
+        ++it->getMapped();
+    std::cout << map.find(k)->getMapped() << std::endl;
 }
 
 int main(int argc, char ** argv)

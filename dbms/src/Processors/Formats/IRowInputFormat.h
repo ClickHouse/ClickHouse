@@ -34,6 +34,9 @@ struct RowInputFormatParams
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
 
+bool isParseError(int code);
+bool checkTimeLimit(const RowInputFormatParams & params, const Stopwatch & stopwatch);
+
 ///Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
 {
@@ -49,6 +52,8 @@ public:
     }
 
     Chunk generate() override;
+
+    void resetParser() override;
 
 protected:
     /** Read next row and append it to the columns.
@@ -74,7 +79,6 @@ protected:
 
 private:
     Params params;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     size_t total_rows = 0;
     size_t num_errors = 0;

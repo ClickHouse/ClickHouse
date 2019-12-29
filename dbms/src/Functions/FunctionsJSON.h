@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
+#include <Core/AccurateComparison.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
@@ -8,7 +9,6 @@
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -65,7 +65,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
+        if (context.getSettingsRef().allow_simdjson && Cpu::CpuFlagsCache::have_SSE42 && Cpu::CpuFlagsCache::have_PCLMUL)
         {
             Executor<SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
             return;
@@ -279,6 +279,7 @@ private:
 
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
+struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
 struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
 struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
 struct NameJSONType { static constexpr auto name{"JSONType"}; };
@@ -290,6 +291,7 @@ struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; 
 struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
 struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
+struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
 
 
 template <typename JSONParser>
@@ -301,6 +303,36 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator &)
     {
+        ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
+        col_vec.insertValue(1);
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+};
+
+
+template <typename JSONParser>
+class IsValidJSONImpl
+{
+public:
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() != 1)
+        {
+            /// IsValidJSON() shouldn't get parameters other than JSON.
+            throw Exception{"Function " + String(function_name) + " needs exactly one argument",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        }
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator &)
+    {
+        /// This function is called only if JSON is valid.
+        /// If JSON isn't valid then `FunctionJSON::Executor::run()` adds default value (=zero) to `dest` without calling this function.
         ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(1);
         return true;
@@ -447,7 +479,7 @@ public:
             if (!accurate::convertNumeric(JSONParser::getDouble(it), value))
                 return false;
         }
-        else if (JSONParser::isBool(it) && std::is_integral_v<NumberType> && convert_bool_to_integer)
+        else if (JSONParser::isBool(it) && is_integral_v<NumberType> && convert_bool_to_integer)
             value = static_cast<NumberType>(JSONParser::getBool(it));
         else
             return false;
@@ -1057,4 +1089,39 @@ private:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractArrayRawImpl
+{
+public:
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        if (!JSONParser::isArray(it))
+        {
+            return false;
+        }
+        ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
+        Iterator array_it = it;
+        size_t size = 0;
+        if (JSONParser::firstArrayElement(array_it))
+        {
+            do
+            {
+                JSONExtractRawImpl<JSONParser>::addValueToColumn(col_res.getData(), array_it);
+                ++size;
+            } while (JSONParser::nextArrayElement(array_it));
+        }
+
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + size);
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+};
 }

@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 
 
 namespace DB
@@ -58,9 +60,11 @@ public:
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_populate{false};
+    bool is_dictionary{false}; /// CREATE DICTIONARY
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList *tables = nullptr;
+    ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
+    ASTExpressionList * tables = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
     ASTStorage * storage = nullptr;
@@ -68,6 +72,7 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
+    ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

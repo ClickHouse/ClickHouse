@@ -11,19 +11,21 @@ struct FixedHashMapCell
     using State = TState;
 
     using value_type = PairNoInit<Key, Mapped>;
-    Mapped mapped;
+    using mapped_type = TMapped;
+
     bool full;
+    Mapped mapped;
 
     FixedHashMapCell() {}
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
 
-    Mapped & getSecond() { return mapped; }
-    const Mapped & getSecond() const { return mapped; }
+    const VoidKey getKey() const { return {}; }
+    Mapped & getMapped() { return mapped; }
+    const Mapped & getMapped() const { return mapped; }
+
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
-    static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & value) { mapped = value.getSecond(); }
 
     /// Similar to FixedHashSetCell except that we need to contain a pointer to the Mapped field.
     ///  Note that we have to assemble a continuous layout for the value_type on each call of getValue().
@@ -39,24 +41,20 @@ struct FixedHashMapCell
         Key key;
         FixedHashMapCell * ptr;
 
-        const Key & getFirst() const { return key; }
-        Mapped & getSecond() { return ptr->mapped; }
-        const Mapped & getSecond() const { return ptr->mapped; }
+        const Key & getKey() const { return key; }
+        Mapped & getMapped() { return ptr->mapped; }
+        const Mapped & getMapped() const { return ptr->mapped; }
         const value_type getValue() const { return {key, ptr->mapped}; }
     };
 };
 
-
-template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
-class FixedHashMap : public FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>
+template <typename Key, typename Mapped, typename Cell = FixedHashMapCell<Key, Mapped>, typename Allocator = HashTableAllocator>
+class FixedHashMap : public FixedHashTable<Key, Cell, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>;
+    using Base = FixedHashTable<Key, Cell, Allocator>;
     using Self = FixedHashMap;
-    using key_type = Key;
-    using mapped_type = Mapped;
-    using Cell = typename Base::cell_type;
-    using value_type = typename Cell::value_type;
+    using LookupResult = typename Base::LookupResult;
 
     using Base::Base;
 
@@ -65,10 +63,10 @@ public:
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            decltype(it) res_it;
+            typename Self::LookupResult res_it;
             bool inserted;
-            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
-            func(res_it->getSecond(), it->getSecond(), inserted);
+            that.emplace(it->getKey(), res_it, inserted, it.getHash());
+            func(res_it->getMapped(), it->getMapped(), inserted);
         }
     }
 
@@ -77,11 +75,11 @@ public:
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            decltype(it) res_it = that.find(it->getFirst(), it.getHash());
-            if (res_it == that.end())
-                func(it->getSecond(), it->getSecond(), false);
+            auto res_it = that.find(it->getKey(), it.getHash());
+            if (!res_it)
+                func(it->getMapped(), it->getMapped(), false);
             else
-                func(res_it->getSecond(), it->getSecond(), true);
+                func(res_it->getMapped(), it->getMapped(), true);
         }
     }
 
@@ -89,24 +87,24 @@ public:
     void forEachValue(Func && func)
     {
         for (auto & v : *this)
-            func(v.getFirst(), v.getSecond());
+            func(v.getKey(), v.getMapped());
     }
 
     template <typename Func>
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-            func(v.getSecond());
+            func(v.getMapped());
     }
 
-    mapped_type & ALWAYS_INLINE operator[](Key x)
+    Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
-        typename Base::iterator it;
+        LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
-            new (&it->getSecond()) mapped_type();
+            new (&it->getMapped()) Mapped();
 
-        return it->getSecond();
+        return it->getMapped();
     }
 };

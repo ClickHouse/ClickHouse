@@ -2,7 +2,7 @@
 
 An external dictionary can be connected from many different sources.
 
-The configuration looks like this:
+If dictionary is configured using xml-file, the configuration looks like this:
 
 ```xml
 <yandex>
@@ -19,6 +19,15 @@ The configuration looks like this:
 </yandex>
 ```
 
+In case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like:
+
+```sql
+CREATE DICTIONARY dict_name (...)
+...
+SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
+...
+```
+
 The source is configured in the `source` section.
 
 Types of sources (`source_type`):
@@ -27,10 +36,11 @@ Types of sources (`source_type`):
 - [Executable file](#dicts-external_dicts_dict_sources-executable)
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - DBMS
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    - [Redis](#dicts-external_dicts_dict_sources-redis)
 
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
@@ -44,6 +54,12 @@ Example of settings:
     <format>TabSeparated</format>
   </file>
 </source>
+```
+
+or
+
+```sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
@@ -67,6 +83,12 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Setting fields:
 
 - `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
@@ -84,8 +106,29 @@ Example of settings:
     <http>
         <url>http://[::1]/os.tsv</url>
         <format>TabSeparated</format>
+        <credentials>
+            <user>user</user>
+            <password>password</password>
+        </credentials>
+        <headers>
+            <header>
+                <name>API-KEY</name>
+                <value>key</value>
+            </header>
+        </headers>
     </http>
 </source>
+```
+
+or
+
+```sql
+SOURCE(HTTP(
+    url 'http://[::1]/os.tsv'
+    format 'TabSeparated'
+    credentials(user 'user' password 'password')
+    headers(header(name 'API-KEY' value 'key'))
+))
 ```
 
 In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openssl) in the server configuration.
@@ -94,6 +137,13 @@ Setting fields:
 
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `credentials` – Basic HTTP authentification. Optional parameter.
+    - `user` – Username required for the authentification.
+    - `password` – Password required for the authentification.
+- `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
+    - `header` – Single HTTP header entry.
+        - `name` – Identifiant name used for the header send on the request.
+        - `value` – Value set for a specific identifiant name.
 
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
@@ -103,12 +153,25 @@ You can use this method to connect any database that has an ODBC driver.
 Example of settings:
 
 ```xml
-<odbc>
-    <db>DatabaseName</db>
-    <table>ShemaName.TableName</table>
-    <connection_string>DSN=some_parameters</connection_string>
-    <invalidate_query>SQL_QUERY</invalidate_query>
-</odbc>
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </odbc>
+</source>
+```
+
+or
+
+```sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Setting fields:
@@ -215,6 +278,19 @@ The dictionary configuration in ClickHouse:
 </yandex>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY table_name (
+    id UInt64,
+    some_column UInt64 DEFAULT 0
+)
+PRIMARY KEY id
+SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 360)
+```
+
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
 ### Example of Connecting MS SQL Server
@@ -298,6 +374,19 @@ Configuring the dictionary in ClickHouse:
 </yandex>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY test (
+    k UInt64,
+    s String DEFAULT ''
+)
+PRIMARY KEY k
+SOURCE(ODBC(table 'dict' connection_string 'DSN=MSSQL;UID=test;PWD=test'))
+LAYOUT(FLAT())
+LIFETIME(MIN 300 MAX 360)
+```
+
 ## DBMS
 
 
@@ -325,6 +414,22 @@ Example of settings:
       <invalidate_query>SQL_QUERY</invalidate_query>
   </mysql>
 </source>
+```
+
+or
+
+```sql
+SOURCE(MYSQL(
+    port 3306
+    user 'clickhouse'
+    password 'qwerty'
+    replica(host 'example01-1' priority 1)
+    replica(host 'example01-2' priority 1)
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Setting fields:
@@ -367,6 +472,21 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(MYSQL(
+    host 'localhost'
+    socket '/path/to/socket/file.sock'
+    user 'clickhouse'
+    password 'qwerty'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
 
 ### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
@@ -384,6 +504,20 @@ Example of settings:
         <where>id=10</where>
     </clickhouse>
 </source>
+```
+
+or
+
+```sql
+SOURCE(CLICKHOUSE(
+    host 'example01-01-1'
+    port 9000
+    user 'default'
+    password ''
+    db 'default'
+    table 'ids'
+    where 'id=10'
+))
 ```
 
 Setting fields:
@@ -415,6 +549,19 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(MONGO(
+    host 'localhost'
+    port 27017
+    user ''
+    password ''
+    db 'test'
+    collection 'dictionary_source'
+))
+```
+
 Setting fields:
 
 - `host` – The MongoDB host.
@@ -423,5 +570,39 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
+
+
+### Redis {#dicts-external_dicts_dict_sources-redis}
+
+Example of settings:
+
+```xml
+<source>
+    <redis>
+        <host>localhost</host>
+        <port>6379</port>
+        <storage_type>simple</storage_type>
+        <db_index>0</db_index>
+    </redis>
+</source>
+```
+
+or
+
+```sql
+SOURCE(REDIS(
+    host 'localhost'
+    port 6379
+    storage_type 'simple'
+    db_index 0
+))
+```
+
+Setting fields:
+
+- `host` – The Redis host.
+- `port` – The port on the Redis server.
+- `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
+- `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

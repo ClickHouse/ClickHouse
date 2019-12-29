@@ -1,10 +1,9 @@
 #include <DataStreams/MergeSortingBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/processConstants.h>
 #include <Common/formatReadable.h>
-#include <common/config_common.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
@@ -79,23 +78,16 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
-#if !UNBUNDLED
-                auto free_space = Poco::File(tmp_path).freeSpace();
-                if (sum_bytes_in_blocks + min_free_disk_space > free_space)
+                if (!enoughSpaceInDirectory(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
                     throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
-#endif
 
-                Poco::File(tmp_path).createDirectories();
-                temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
+                temporary_files.emplace_back(createTemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
-                WriteBufferFromFile file_buf(path);
-                CompressedWriteBuffer compressed_buf(file_buf);
-                NativeBlockOutputStream block_out(compressed_buf, 0, header_without_constants);
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
-                copyData(block_in, block_out, &is_cancelled);    /// NOTE. Possibly limit disk usage.
+                TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled); /// NOTE. Possibly limit disk usage.
                 LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
                 blocks.clear();
@@ -142,7 +134,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
-    Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+    Blocks & blocks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Blocks nonempty_blocks;
@@ -159,15 +151,9 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     blocks.swap(nonempty_blocks);
 
     if (!has_collation)
-    {
-        for (size_t i = 0; i < cursors.size(); ++i)
-            queue_without_collation.push(SortCursor(&cursors[i]));
-    }
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-    {
-        for (size_t i = 0; i < cursors.size(); ++i)
-            queue_with_collation.push(SortCursorWithCollation(&cursors[i]));
-    }
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
 }
 
 
@@ -184,52 +170,50 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     }
 
     return !has_collation
-        ? mergeImpl<SortCursor>(queue_without_collation)
-        : mergeImpl<SortCursorWithCollation>(queue_with_collation);
+        ? mergeImpl(queue_without_collation)
+        : mergeImpl(queue_with_collation);
 }
 
 
-template <typename TSortCursor>
-Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCursor> & queue)
+template <typename TSortingHeap>
+Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 {
-    size_t num_columns = blocks[0].columns();
+    size_t num_columns = header.columns();
 
-    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
+    MutableColumns merged_columns = header.cloneEmptyColumns();
     /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        TSortCursor current = queue.top();
-        queue.pop();
+        auto current = queue.current();
 
+        /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
             merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-        if (!current->isLast())
-        {
-            current->next();
-            queue.push(current);
-        }
-
         ++total_merged_rows;
+        ++merged_rows;
+
+        /// We don't need more rows because of limit has reached.
         if (limit && total_merged_rows == limit)
         {
-            auto res = blocks[0].cloneWithColumns(std::move(merged_columns));
             blocks.clear();
-            return res;
+            break;
         }
 
-        ++merged_rows;
+        queue.next();
+
+        /// It's enough for current output block but we will continue.
         if (merged_rows == max_merged_block_size)
-            return blocks[0].cloneWithColumns(std::move(merged_columns));
+            break;
     }
 
     if (merged_rows == 0)
         return {};
 
-    return blocks[0].cloneWithColumns(std::move(merged_columns));
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 

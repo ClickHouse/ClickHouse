@@ -88,7 +88,7 @@ public:
     void schedule(EventCounter & watch) override
     {
         active = true;
-        pool.schedule([&watch, this]
+        pool.scheduleOrThrowOnError([&watch, this]
         {
             usleep(sleep_useconds);
             current_chunk = generate();

@@ -1,0 +1,32 @@
+left
+0	a1	
+1	a2	
+2	a3	b1
+2	a3	b2
+3	a4	
+4	a5	b3
+4	a5	b4
+4	a5	b5
+inner
+2	a3	b1
+2	a3	b2
+4	a5	b3
+4	a5	b4
+4	a5	b5
+right
+2	a3	b1
+2	a3	b2
+4	a5	b3
+4	a5	b4
+4	a5	b5
+5		b6
+full
+0	a1	
+1	a2	
+2	a3	b1
+2	a3	b2
+3	a4	
+4	a5	b3
+4	a5	b4
+4	a5	b5
+5		b6

@@ -2,6 +2,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Parsers/IAST.h>
 
 

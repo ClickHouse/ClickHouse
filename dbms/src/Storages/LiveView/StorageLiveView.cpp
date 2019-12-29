@@ -37,7 +37,7 @@ limitations under the License. */
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 namespace DB
@@ -86,26 +86,6 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         throw Exception("Logical error while creating StorageLiveView."
             " Could not retrieve table name from select query.",
             DB::ErrorCodes::LOGICAL_ERROR);
-}
-
-static void checkAllowedQueries(const ASTSelectQuery & query)
-{
-    if (query.prewhere() || query.final() || query.sample_size())
-        throw Exception("LIVE VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
-
-    ASTPtr subquery = extractTableExpression(query, 0);
-    if (!subquery)
-        return;
-
-    if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
-    {
-        if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
-
-        const auto & inner_query = ast_select->list_of_selects->children.at(0);
-
-        checkAllowedQueries(inner_query->as<ASTSelectQuery &>());
-    }
 }
 
 
@@ -273,6 +253,8 @@ bool StorageLiveView::hasColumn(const String & column_name) const
 
 Block StorageLiveView::getHeader() const
 {
+    std::lock_guard lock(sample_block_lock);
+
     if (!sample_block)
     {
         auto storage = global_context.getTable(select_database_name, select_table_name);
@@ -375,7 +357,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
     {
         while (1)
         {
-            std::unique_lock lock(storage->no_users_thread_mutex);
+            std::unique_lock lock(storage->no_users_thread_wakeup_mutex);
             if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))
             {
                 storage->no_users_thread_wakeup = false;
@@ -421,17 +403,22 @@ void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
 
     if (is_temporary)
     {
+        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+
+        if (shutdown_called)
+            return;
+
         if (no_users_thread.joinable())
         {
             {
-                std::lock_guard lock(no_users_thread_mutex);
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
                 no_users_thread_wakeup = true;
                 no_users_thread_condition.notify_one();
             }
             no_users_thread.join();
         }
         {
-            std::lock_guard lock(no_users_thread_mutex);
+            std::lock_guard lock(no_users_thread_wakeup_mutex);
             no_users_thread_wakeup = false;
         }
         if (!is_dropped)
@@ -453,12 +440,15 @@ void StorageLiveView::shutdown()
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
 
-    if (no_users_thread.joinable())
     {
+        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
     }
 }
@@ -466,8 +456,12 @@ void StorageLiveView::shutdown()
 StorageLiveView::~StorageLiveView()
 {
     shutdown();
-    if (no_users_thread.joinable())
-        no_users_thread.detach();
+
+    {
+        std::lock_guard lock(no_users_thread_mutex);
+        if (no_users_thread.joinable())
+            no_users_thread.detach();
+    }
 }
 
 void StorageLiveView::drop(TableStructureWriteLockHolder &)
@@ -499,8 +493,7 @@ BlockInputStreams StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    /// add user to the blocks_ptr
-    std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
+    std::shared_ptr<BlocksBlockInputStream> stream;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -508,8 +501,9 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
+        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
     }
-    return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };
+    return { stream };
 }
 
 BlockInputStreams StorageLiveView::watch(
@@ -539,11 +533,14 @@ BlockInputStreams StorageLiveView::watch(
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
-        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+            if (no_users_thread.joinable())
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
 
         {
@@ -567,11 +564,14 @@ BlockInputStreams StorageLiveView::watch(
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
-        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+            if (no_users_thread.joinable())
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
 
         {

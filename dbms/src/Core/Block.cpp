@@ -219,11 +219,14 @@ size_t Block::getPositionByName(const std::string & name) const
 }
 
 
-void Block::checkNumberOfRows() const
+void Block::checkNumberOfRows(bool allow_null_columns) const
 {
     ssize_t rows = -1;
     for (const auto & elem : data)
     {
+        if (!elem.column && allow_null_columns)
+            continue;
+
         if (!elem.column)
             throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
                 , ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

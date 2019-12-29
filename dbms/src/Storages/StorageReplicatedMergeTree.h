@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -88,13 +89,17 @@ public:
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    bool supportProcessorsPipeline() const override { return true; }
+
+    std::optional<UInt64> totalRows() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -114,7 +119,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -174,6 +179,10 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
 private:
+
+    /// Get a sequential consistent view of current parts.
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
@@ -191,10 +200,10 @@ private:
     using LogEntryPtr = LogEntry::Ptr;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
-    std::mutex current_zookeeper_mutex;            /// To recreate the session in the background thread.
+    mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
 
-    zkutil::ZooKeeperPtr tryGetZooKeeper();
-    zkutil::ZooKeeperPtr getZooKeeper();
+    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// If true, the table is offline and can not be written to it.
@@ -523,6 +532,10 @@ private:
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
 
+    /// Wait for timeout seconds mutation is finished on replicas
+    void waitMutationToFinishOnReplicas(
+        const Strings & replicas, const String & mutation_id) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -531,16 +544,10 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & database_name_, const String & name_,
-        const ColumnsDescription & columns_,
-        const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
         Context & context_,
         const String & date_column_name,
-        const ASTPtr & partition_by_ast_,
-        const ASTPtr & order_by_ast_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sample_by_ast_,
-        const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);

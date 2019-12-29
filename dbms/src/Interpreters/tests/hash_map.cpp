@@ -154,7 +154,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         HashMap<Key, Value> map;
-        HashMap<Key, Value>::iterator it;
+        HashMap<Key, Value>::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -162,8 +162,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }
@@ -185,7 +185,7 @@ int main(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, AlternativeHash>;
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -193,8 +193,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }
@@ -217,7 +217,7 @@ int main(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, CRC32Hash_>;
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -225,8 +225,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }

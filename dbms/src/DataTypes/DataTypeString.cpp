@@ -7,6 +7,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include <Core/Field.h>
+
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -348,6 +350,10 @@ void DataTypeString::deserializeProtobuf(IColumn & column, ProtobufReader & prot
     }
 }
 
+Field DataTypeString::getDefault() const
+{
+    return String();
+}
 
 MutableColumnPtr DataTypeString::createColumn() const
 {
@@ -363,7 +369,7 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
-    auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });
+    const auto & creator = [&] (const String & type_name) { return std::make_shared<DataTypeString>(type_name); };
 
     factory.registerSimpleDataType("String", creator);
 

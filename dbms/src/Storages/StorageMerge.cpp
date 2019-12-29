@@ -25,7 +25,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <Core/SettingsCommon.h>
 #include <ext/range.h>
 #include <algorithm>
 #include <Parsers/ASTFunction.h>
@@ -143,7 +142,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseIteratorPtr iterator = getDatabaseIterator(context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(context);
 
     size_t selected_table_size = 0;
 
@@ -209,6 +208,24 @@ BlockInputStreams StorageMerge::read(
     Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
     num_streams *= num_streams_multiplier;
     size_t remaining_streams = num_streams;
+
+    InputSortingInfoPtr input_sorting_info;
+    if (query_info.order_by_optimizer)
+    {
+        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+        {
+            auto current_info = query_info.order_by_optimizer->getInputOrder(it->first);
+            if (it == selected_tables.begin())
+                input_sorting_info = current_info;
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+                input_sorting_info.reset();
+
+            if (!input_sorting_info)
+                break;
+        }
+
+        query_info.input_sorting_info = input_sorting_info;
+    }
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
@@ -353,7 +370,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabaseIteratorPtr iterator = getDatabaseIterator(global_context);
+    DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
 
     auto virtual_column = ColumnString::create();
 
@@ -387,26 +404,36 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 }
 
 
-DatabaseIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
+DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & context) const
 {
     checkStackSize();
     auto database = context.getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getIterator(global_context, table_name_match);
+    return database->getTablesIterator(global_context, table_name_match);
 }
 
+
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
 
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(new_columns);
+    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    params.apply(storage_metadata);
+    context.getDatabase(database_name)->alterTable(context, table_name, storage_metadata);
+    setColumns(storage_metadata.columns);
 }
 
 Block StorageMerge::getQueryHeader(

@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -893,7 +894,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
-        TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -933,6 +934,11 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
 }
 
+Field DataTypeLowCardinality::getDefault() const
+{
+    return dictionary_type->getDefault();
+}
+
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -943,7 +949,7 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("LowCardinality data type family must have single argument - type of elements",

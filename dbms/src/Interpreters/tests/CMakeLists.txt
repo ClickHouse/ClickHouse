@@ -37,6 +37,12 @@ add_executable (hash_map_string_small hash_map_string_small.cpp)
 target_include_directories (hash_map_string_small SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map_string_small PRIVATE dbms)
 
+add_executable (string_hash_map string_hash_map.cpp)
+target_link_libraries (string_hash_map PRIVATE dbms)
+
+add_executable (string_hash_map_aggregation string_hash_map.cpp)
+target_link_libraries (string_hash_map_aggregation PRIVATE dbms)
+
 add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_include_directories (two_level_hash_map SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (two_level_hash_map PRIVATE dbms)
@@ -53,7 +59,7 @@ target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_syst
 add_check(expression_analyzer)
 
 add_executable (users users.cpp)
-target_link_libraries (users PRIVATE dbms clickhouse_common_config stdc++fs)
+target_link_libraries (users PRIVATE dbms clickhouse_common_config)
 
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)

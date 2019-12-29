@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-std::string createTmpPath(const std::string & filename)
+static std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
     char * dir = mkdtemp(pattern);
@@ -246,7 +246,7 @@ struct Generator3
     }
 };
 
-void runTests()
+static void runTests()
 {
     std::cout << "Test set 1\n";
     TestSet<Generator1>::execute();

@@ -200,12 +200,12 @@ struct FormatImpl
     /// res_data is result_data, res_offsets is offset result.
     /// input_rows_count is the number of rows processed.
     /// Precondition: data.size() == offsets.size() == fixed_string_N.size() == constant_strings.size().
-    template <bool HasColumnString, bool HasColumnFixedString>
+    template <bool has_column_string, bool has_column_fixed_string>
     static inline void format(
         String pattern,
         const std::vector<const ColumnString::Chars *> & data,
         const std::vector<const ColumnString::Offsets *> & offsets,
-        [[maybe_unused]] /* Because sometimes !HasColumnFixedString */ const std::vector<size_t> & fixed_string_N,
+        [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const std::vector<size_t> & fixed_string_N,
         const std::vector<String> & constant_strings,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
@@ -265,7 +265,7 @@ struct FormatImpl
             memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[0].data(), substrings[0].size());
             offset += substrings[0].size();
             /// All strings are constant, we should have substrings.size() == 1.
-            if constexpr (HasColumnString || HasColumnFixedString)
+            if constexpr (has_column_string || has_column_fixed_string)
             {
                 for (size_t j = 1; j < substrings.size(); ++j)
                 {
@@ -274,18 +274,18 @@ struct FormatImpl
                     UInt64 arg_offset = 0;
                     UInt64 size = 0;
 
-                    if constexpr (HasColumnString)
+                    if constexpr (has_column_string)
                     {
-                        if (!HasColumnFixedString || offset_ptr)
+                        if (!has_column_fixed_string || offset_ptr)
                         {
                             arg_offset = (*offset_ptr)[i - 1];
                             size = (*offset_ptr)[i] - arg_offset - 1;
                         }
                     }
 
-                    if constexpr (HasColumnFixedString)
+                    if constexpr (has_column_fixed_string)
                     {
-                        if (!HasColumnString || !offset_ptr)
+                        if (!has_column_string || !offset_ptr)
                         {
                             arg_offset = fixed_string_N[arg] * i;
                             size = fixed_string_N[arg];

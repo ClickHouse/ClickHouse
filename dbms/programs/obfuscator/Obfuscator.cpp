@@ -123,14 +123,14 @@ UInt64 hash(Ts... xs)
 }
 
 
-UInt64 maskBits(UInt64 x, size_t num_bits)
+static UInt64 maskBits(UInt64 x, size_t num_bits)
 {
     return x & ((1ULL << num_bits) - 1);
 }
 
 
 /// Apply Feistel network round to least significant num_bits part of x.
-UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
+static UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
     size_t num_bits_left_half = num_bits / 2;
     size_t num_bits_right_half = num_bits - num_bits_left_half;
@@ -146,7 +146,7 @@ UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
-UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
+static UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
@@ -156,7 +156,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 
 
 /// Pseudorandom permutation within set of numbers with the same log2(x).
-UInt64 transform(UInt64 x, UInt64 seed)
+static UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
     if (x == 0 || x == 1)
@@ -199,7 +199,7 @@ public:
 
 
 /// Keep sign and apply pseudorandom permutation after converting to unsigned as above.
-Int64 transformSigned(Int64 x, UInt64 seed)
+static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
@@ -298,7 +298,7 @@ public:
 
 
 /// Pseudorandom function, but keep word characters as word characters.
-void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
         SipHash hash;
@@ -579,7 +579,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -593,7 +593,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -625,7 +625,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -641,7 +641,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -670,13 +670,13 @@ public:
 
         while (pos < end)
         {
-            Table::iterator it = table.end();
+            Table::LookupResult it;
 
             size_t context_size = params.order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->getSecond().total + it->getSecond().count_end != 0)
+                if (it && it->getMapped().total + it->getMapped().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -684,7 +684,7 @@ public:
                 --context_size;
             }
 
-            if (table.end() == it)
+            if (!it)
                 throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
 
             size_t offset_from_begin_of_string = pos - data;
@@ -710,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getMapped().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -943,6 +943,8 @@ public:
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try

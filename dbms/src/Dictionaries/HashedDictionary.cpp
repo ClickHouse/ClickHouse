@@ -13,8 +13,8 @@ template <typename T> auto first(const T & value) -> decltype(value.first) { ret
 template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return value.getFirst(); }
-template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return value.getSecond(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
 
 }
 
@@ -696,7 +696,7 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
-        out[i] = attr.find(ids[i]) != std::end(attr);
+        out[i] = attr.find(ids[i]) != nullptr;
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -715,8 +715,8 @@ template <typename T>
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
 {
     if (!sparse)
-        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<Key>>(attribute.maps));
-    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<Key>>(attribute.sparse_maps));
+        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<T>>(attribute.maps));
+    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
@@ -787,8 +787,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const bool sparse = name == "sparse_hashed";
         return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
-    factory.registerLayout("hashed", create_layout);
-    factory.registerLayout("sparse_hashed", create_layout);
+    factory.registerLayout("hashed", create_layout, false);
+    factory.registerLayout("sparse_hashed", create_layout, false);
 }
 
 }

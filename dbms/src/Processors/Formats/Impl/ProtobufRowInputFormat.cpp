@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -64,17 +65,17 @@ void ProtobufRowInputFormat::syncAfterError()
     reader.endMessage(true);
 }
 
-
 void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Protobuf", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
         IRowInputFormat::Params params,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(context, "Protobuf"));
+        return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
+            FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                             settings.schema.is_server, settings.schema.format_schema_path));
     });
 }
 

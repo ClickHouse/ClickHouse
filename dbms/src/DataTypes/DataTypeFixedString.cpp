@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 std::string DataTypeFixedString::doGetName() const
 {
-    return "FixedString(" + toString(n) + ")";
+    return type_name + "(" + toString(n) + ")";
 }
 
 
@@ -268,6 +268,10 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
     return ColumnFixedString::create(n);
 }
 
+Field DataTypeFixedString::getDefault() const
+{
+    return String();
+}
 
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {
@@ -275,7 +279,7 @@ bool DataTypeFixedString::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & type_name, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -284,7 +288,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
         throw Exception("FixedString data type family must have a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    return std::make_shared<DataTypeFixedString>(argument->value.get<UInt64>());
+    return std::make_shared<DataTypeFixedString>(argument->value.get<UInt64>(), type_name);
 }
 
 

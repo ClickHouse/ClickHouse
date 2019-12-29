@@ -60,7 +60,7 @@ private:
     std::ostream * response_header_ostr = nullptr;
 #endif
 
-    std::optional<WriteBufferFromOStream> out_raw;
+    std::unique_ptr<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 #if USE_BROTLI
     std::optional<BrotliWriteBuffer> brotli_buf;
@@ -109,7 +109,7 @@ public:
     /// Use after the data has possibly been sent and no error happened (and thus you do not plan
     /// to change response HTTP code.
     /// This method is idempotent.
-    void finalize();
+    void finalize() override;
 
     /// Turn compression on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.

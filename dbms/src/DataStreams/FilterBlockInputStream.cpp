@@ -17,9 +17,11 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                                               const String & filter_column_name, bool remove_filter_)
-    : remove_filter(remove_filter_), expression(expression_)
+FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_,
+                                               String filter_column_name_, bool remove_filter_)
+    : remove_filter(remove_filter_)
+    , expression(std::move(expression_))
+    , filter_column_name(std::move(filter_column_name_))
 {
     children.push_back(input);
 
@@ -71,6 +73,9 @@ Block FilterBlockInputStream::readImpl()
 
     if (constant_filter_description.always_false)
         return removeFilterIfNeed(std::move(res));
+
+    if (expression->checkColumnIsAlwaysFalse(filter_column_name))
+        return {};
 
     /// Until non-empty block after filtering or end of stream.
     while (1)

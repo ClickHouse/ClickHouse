@@ -16,9 +16,6 @@ RUN apt-get --allow-unauthenticated update -y \
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test
-RUN curl https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
-RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
-
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -57,7 +54,27 @@ RUN apt-get update -y \
             gperf \
             cmake \
             gdb \
-            rename
+            rename \
+            wget
+
+ENV CC=clang-8
+ENV CXX=clang++-8
+
+# libtapi is required to support .tbh format from recent MacOS SDKs
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git
+RUN cd apple-libtapi && INSTALLPREFIX=/cctools ./build.sh && ./install.sh
+RUN rm -rf apple-libtapi
+
+# Build and install tools for cross-linking to Darwin
+RUN git clone https://github.com/tpoechtrager/cctools-port.git
+RUN cd cctools-port/cctools && ./configure --prefix=/cctools --with-libtapi=/cctools --target=x86_64-apple-darwin && make install
+RUN rm -rf cctools-port
+
+# Download toolchain for Darwin
+RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
+
+# Download toolchain for ARM
+RUN wget "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

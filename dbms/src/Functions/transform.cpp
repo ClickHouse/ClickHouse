@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -204,10 +204,13 @@ private:
             tmp_arguments.push_back(i);
         }
 
+        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
+                    .build(tmp_block.getColumnsWithTypeAndName());
+
         tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
-        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
+        impl->execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }
@@ -507,8 +510,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default;
         }
@@ -523,8 +526,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default[i];
         }
@@ -539,8 +542,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
                 dst[i] = src[i];
         }
@@ -557,7 +560,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            StringRef ref = it != table.end() ? it->getSecond() : dst_default;
+            StringRef ref = it ? it->getMapped() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
             current_dst_offset += ref.size;
@@ -580,8 +583,8 @@ private:
             auto it = table.find(src[i]);
             StringRef ref;
 
-            if (it != table.end())
-                ref = it->getSecond();
+            if (it)
+                ref = it->getMapped();
             else
             {
                 ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
@@ -610,8 +613,8 @@ private:
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
                 dst[i] = dst_default;
         }
@@ -631,8 +634,8 @@ private:
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
                 dst[i] = dst_default[i];
         }
@@ -655,7 +658,7 @@ private:
 
             auto it = table.find(src_ref);
 
-            StringRef dst_ref = it != table.end() ? it->getSecond() : (with_default ? dst_default : src_ref);
+            StringRef dst_ref = it ? it->getMapped() : (with_default ? dst_default : src_ref);
             dst_data.resize(current_dst_offset + dst_ref.size);
             memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
             current_dst_offset += dst_ref.size;
@@ -696,8 +699,8 @@ private:
             auto it = table.find(src_ref);
             StringRef dst_ref;
 
-            if (it != table.end())
-                dst_ref = it->getSecond();
+            if (it)
+                dst_ref = it->getMapped();
             else
             {
                 dst_ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
@@ -793,7 +796,11 @@ private:
             table_num_to_num = std::make_unique<NumToNum>();
             auto & table = *table_num_to_num;
             for (size_t i = 0; i < size; ++i)
-                table[from[i].get<UInt64>()] = (*used_to)[i].get<UInt64>();
+            {
+                // Field may be of Float type, but for the purpose of bitwise
+                // equality we can treat them as UInt64, hence the reinterpret().
+                table[from[i].reinterpret<UInt64>()] = (*used_to)[i].reinterpret<UInt64>();
+            }
         }
         else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
         {
@@ -803,7 +810,7 @@ private:
             {
                 const String & str_to = to[i].get<const String &>();
                 StringRef ref{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                table[from[i].get<UInt64>()] = ref;
+                table[from[i].reinterpret<UInt64>()] = ref;
             }
         }
         else if (from[0].getType() == Field::Types::String && to[0].getType() != Field::Types::String)
@@ -814,7 +821,7 @@ private:
             {
                 const String & str_from = from[i].get<const String &>();
                 StringRef ref{string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                table[ref] = (*used_to)[i].get<UInt64>();
+                table[ref] = (*used_to)[i].reinterpret<UInt64>();
             }
         }
         else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)

@@ -6,8 +6,10 @@
 #include <cstdint>
 
 #include <Core/Block.h>
+#include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
+#include <common/likely.h>
 
 namespace DB
 {
@@ -16,11 +18,34 @@ class InputPort;
 class OutputPort;
 class IProcessor;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class Port
 {
     friend void connect(OutputPort &, InputPort &);
     friend class IProcessor;
+
+public:
+    struct UpdateInfo
+    {
+        std::vector<void *> * update_list = nullptr;
+        void * id = nullptr;
+        UInt64 version = 0;
+        UInt64 prev_version = 0;
+
+        void inline ALWAYS_INLINE update()
+        {
+            if (version == prev_version && update_list)
+                update_list->push_back(id);
+
+            ++version;
+        }
+
+        void inline ALWAYS_INLINE trigger() { prev_version = version; }
+    };
 
 protected:
     /// Shared state of two connected ports.
@@ -176,11 +201,16 @@ protected:
 
     IProcessor * processor = nullptr;
 
+    /// If update_info was set, will call update() for it in case port's state have changed.
+    UpdateInfo * update_info = nullptr;
+
 public:
     using Data = State::Data;
 
     Port(Block header_) : header(std::move(header_)) {}
     Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
+
+    void setUpdateInfo(UpdateInfo * info) { update_info = info; }
 
     const Block & getHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
@@ -210,6 +240,13 @@ public:
             throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
+
+protected:
+    void inline ALWAYS_INLINE updateVersion()
+    {
+        if (likely(update_info))
+            update_info->update();
+    }
 };
 
 /// Invariants:
@@ -224,20 +261,14 @@ class InputPort : public Port
 private:
     OutputPort * output_port = nullptr;
 
-    /// If version was set, it will be increased on each pull.
-    UInt64 * version = nullptr;
-
     mutable bool is_finished = false;
 
 public:
     using Port::Port;
 
-    void setVersion(UInt64 * value) { version = value; }
-
     Data ALWAYS_INLINE pullData()
     {
-        if (version)
-            ++(*version);
+        updateVersion();
 
         assumeConnected();
 
@@ -290,8 +321,8 @@ public:
     {
         assumeConnected();
 
-        if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0 && version)
-            ++(*version);
+        if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0)
+            updateVersion();
     }
 
     void ALWAYS_INLINE setNotNeeded()
@@ -304,10 +335,21 @@ public:
     {
         assumeConnected();
 
-        if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0 && version)
-            ++(*version);
+        if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0)
+            updateVersion();
 
         is_finished = true;
+    }
+
+    void ALWAYS_INLINE reopen()
+    {
+        assumeConnected();
+
+        if (!isFinished())
+            return;
+
+        state->setFlags(0, State::IS_FINISHED);
+        is_finished = false;
     }
 
     OutputPort & getOutputPort()
@@ -336,13 +378,8 @@ class OutputPort : public Port
 private:
     InputPort * input_port = nullptr;
 
-    /// If version was set, it will be increased on each push.
-    UInt64 * version = nullptr;
-
 public:
     using Port::Port;
-
-    void setVersion(UInt64 * value) { version = value; }
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
@@ -368,8 +405,7 @@ public:
             throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
 
-        if (version)
-            ++(*version);
+        updateVersion();
 
         assumeConnected();
 
@@ -384,8 +420,8 @@ public:
 
         auto flags = state->setFlags(State::IS_FINISHED, State::IS_FINISHED);
 
-        if (version && (flags & State::IS_FINISHED) == 0)
-            ++(*version);
+        if ((flags & State::IS_FINISHED) == 0)
+            updateVersion();
     }
 
     bool ALWAYS_INLINE isNeeded() const

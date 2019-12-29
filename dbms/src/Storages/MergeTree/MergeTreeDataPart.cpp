@@ -43,6 +43,17 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
+static String getFileNameForColumn(const NameAndTypePair & column)
+{
+    String filename;
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column.name, substream_path);
+    });
+    return filename;
+}
+
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const String & part_path)
 {
     size_t minmax_idx_size = data.minmax_idx_column_types.size();
@@ -134,7 +145,7 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
-MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_)
+MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & disk_, const String & name_)
     : storage(storage_)
     , disk(disk_)
     , name(name_)
@@ -145,7 +156,7 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::
 
 MergeTreeDataPart::MergeTreeDataPart(
     const MergeTreeData & storage_,
-    const DiskSpace::DiskPtr & disk_,
+    const DiskPtr & disk_,
     const String & name_,
     const MergeTreePartInfo & info_)
     : storage(storage_)
@@ -335,6 +346,11 @@ MergeTreeDataPart::~MergeTreeDataPart()
             }
 
             dir.remove(true);
+
+            if (state == State::DeleteOnDestroy)
+            {
+                LOG_TRACE(storage.log, "Removed part from old location " << path);
+            }
         }
         catch (...)
         {
@@ -534,9 +550,9 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     localBackup(src, dst, 0);
 }
 
-void MergeTreeDataPart::makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const
+void MergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
 {
-    auto & reserved_disk = reservation->getDisk();
+    auto reserved_disk = reservation->getDisk();
     if (reserved_disk->getName() == disk->getName())
         throw Exception("Can not clone data part " + name + " to same disk " + disk->getName(), ErrorCodes::LOGICAL_ERROR);
 
@@ -570,15 +586,15 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 
 void MergeTreeDataPart::loadIndexGranularity()
 {
-
     String full_path = getFullPath();
     index_granularity_info.changeGranularityIfRequired(full_path);
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
+
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + escapeForFileName(columns.front().name));
+    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + getFileNameForColumn(columns.front()));
     if (!Poco::File(marks_file_path).exists())
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -808,7 +824,7 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : storage.getColumns().getAllPhysical())
-            if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
+            if (Poco::File(getFullPath() + getFileNameForColumn(column) + ".bin").exists())
                 columns.push_back(column);
 
         if (columns.empty())

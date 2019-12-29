@@ -69,7 +69,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return dictionary_type->getDefault(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -126,6 +126,6 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
-ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
+ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 }

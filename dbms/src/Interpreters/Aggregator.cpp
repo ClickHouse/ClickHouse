@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -25,6 +26,8 @@
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
 #include <common/config_common.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 
 
 namespace ProfileEvents
@@ -486,11 +489,17 @@ void NO_INLINE Aggregator::executeImplBatch(
             aggregate_data = emplace_result.getMapped();
 
         places[i] = aggregate_data;
+        assert(places[i] != nullptr);
     }
 
     /// Add values to the aggregate functions.
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-        inst->that->addBatch(rows, places.data(), inst->state_offset, inst->arguments, aggregates_pool);
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, places.data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, places.data(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+    }
 }
 
 
@@ -502,7 +511,13 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 {
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-        inst->that->addBatchSinglePlace(rows, res + inst->state_offset, inst->arguments, arena);
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchSinglePlace(
+                inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+        else
+            inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);
+    }
 }
 
 
@@ -562,6 +577,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     AggregateFunctionInstructions aggregate_functions_instructions(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
 
+    std::vector<std::vector<const IColumn *>> nested_columns_holder;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
@@ -577,10 +593,30 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             }
         }
 
-        aggregate_functions_instructions[i].that = aggregate_functions[i];
-        aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
-        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+        auto that = aggregate_functions[i];
+        /// Unnest consecutive trailing -State combinators
+        while (auto func = typeid_cast<const AggregateFunctionState *>(that))
+            that = func->getNestedFunction().get();
+        aggregate_functions_instructions[i].that = that;
+        aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
+
+        if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
+        {
+            /// Unnest consecutive -State combinators before -Array
+            that = func->getNestedFunction().get();
+            while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
+                that = nested_func->getNestedFunction().get();
+            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+            nested_columns_holder.push_back(std::move(nested_columns));
+            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+            aggregate_functions_instructions[i].offsets = offsets;
+        }
+        else
+            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+        aggregate_functions_instructions[i].batch_that = that;
     }
 
     if (isCancelled())
@@ -645,11 +681,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-#if !UNBUNDLED
-        auto free_space = Poco::File(params.tmp_path).freeSpace();
-        if (current_memory_usage + params.min_free_disk_space > free_space)
+        if (!enoughSpaceInDirectory(params.tmp_path, current_memory_usage + params.min_free_disk_space))
             throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
-#endif
 
         writeToTemporaryFile(result);
     }
@@ -663,8 +696,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    Poco::File(params.tmp_path).createDirectories();
-    auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
+    auto file = createTemporaryFile(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
@@ -1160,7 +1192,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::getGroup()));
 
             if (thread_pool)
-                thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+                thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
             else
                 tasks[bucket]();
         }
@@ -1616,7 +1648,7 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
+        parallel_merge_data->pool.scheduleOrThrowOnError(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
             max_scheduled_bucket_num, CurrentThread::getGroup()));
     }
 
@@ -1970,7 +2002,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::getGroup());
 
             if (thread_pool)
-                thread_pool->schedule(task);
+                thread_pool->scheduleOrThrowOnError(task);
             else
                 task();
         }

@@ -1,26 +1,31 @@
-
 # Type Conversion Functions
+
+## Common Issues of Numeric Conversions {#numeric-conversion-issues}
+
+When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
+
+ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
 ## toInt(8|16|32|64)
 
-Converts an input value to the [Int](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [Int](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toInt8(expr)` — Results in `Int8` data type.
-* `toInt16(expr)` — Results in `Int16` data type.
-* `toInt32(expr)` — Results in `Int32` data type.
-* `toInt64(expr)` — Results in `Int64` data type.
+* `toInt8(expr)` — Results in the `Int8` data type.
+* `toInt16(expr)` — Results in the `Int16` data type.
+* `toInt32(expr)` — Results in the `Int32` data type.
+* `toInt64(expr)` — Results in the `Int64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
+Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
+The behavior of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -35,28 +40,56 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8|16|32|64)OrZero
 
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns 0.
+
+**Example**
+
+```sql
+select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
+```
+```text
+┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
+│                  123123 │                         0 │
+└─────────────────────────┴───────────────────────────┘
+```
+
+
 ## toInt(8|16|32|64)OrNull
+
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns NULL.
+
+**Example**
+
+```sql
+select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
+```
+```text
+┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
+│                  123123 │                      ᴺᵁᴸᴸ │
+└─────────────────────────┴───────────────────────────┘
+```
+
 
 ## toUInt(8|16|32|64)
 
-Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toUInt8(expr)` — Results in `UInt8` data type.
-* `toUInt16(expr)` — Results in `UInt16` data type.
-* `toUInt32(expr)` — Results in `UInt32` data type.
-* `toUInt64(expr)` — Results in `UInt64` data type.
+* `toUInt8(expr)` — Results in the `UInt8` data type.
+* `toUInt16(expr)` — Results in the `UInt16` data type.
+* `toUInt32(expr)` — Results in the `UInt32` data type.
+* `toUInt64(expr)` — Results in the `UInt64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
+Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass the string with negative number, for example `'-32'`, ClickHouse rises an exception.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -316,10 +349,32 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second)
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
 
-Converts a Number type argument to a Interval type (duration).
-The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
+Converts a Number type argument to an [Interval](../../data_types/special_data_types/interval.md) data type.
+
+**Syntax**
+
+```sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
+```
+
+**Parameters**
+
+- `number` — Duration of interval. Positive integer number.
+
+**Returned values**
+
+- The value in `Interval` data type.
+
+**Example**
 
 ```sql
 WITH

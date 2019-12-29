@@ -1,14 +1,21 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/bit_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Interpreters/BloomFilter.h>
 
 namespace DB
 {
@@ -29,27 +36,73 @@ struct BloomFilterHash
     static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
     {
         WhichDataType which(data_type);
+        UInt64 hash = 0;
+        bool unexpected_type = false;
 
-        if (which.isUInt() || which.isDateOrDateTime())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
+        if (field.isNull())
+        {
+            if (which.isInt() || which.isUInt() || which.isEnum() || which.isDateOrDateTime() || which.isFloat())
+                hash = intHash64(0);
+            else if (which.isString())
+                hash = CityHash_v1_0_2::CityHash64("", 0);
+            else if (which.isFixedString())
+            {
+                const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
+                const std::vector<char> value(fixed_string_type->getN(), 0);
+                hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            }
+            else
+                unexpected_type = true;
+        }
+        else if (which.isUInt() || which.isDateOrDateTime())
+            hash = intHash64(field.safeGet<UInt64>());
         else if (which.isInt() || which.isEnum())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
+            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()));
         else if (which.isFloat32() || which.isFloat64())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
+            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()));
         else if (which.isString() || which.isFixedString())
         {
             const auto & value = field.safeGet<String>();
-            return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
+            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
         }
         else
+            unexpected_type = true;
+
+        if (unexpected_type)
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+        return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
+        WhichDataType which(data_type);
+        if (which.isArray())
+        {
+            const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
+
+            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+            const auto & offsets = array_col->getOffsets();
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
+            pos = offsets[pos - 1];
+
+            if (limit == 0)
+            {
+                auto index_column = ColumnUInt64::create(1);
+                ColumnUInt64::Container & index_column_vec = index_column->getData();
+                index_column_vec[0] = 0;
+                return index_column;
+            }
+        }
+
+        const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);
+        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
+
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
-        getAnyTypeHash<true>(&*data_type, &*column, index_column_vec, pos);
+        getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column_vec, pos);
         return index_column;
     }
 
@@ -58,7 +111,7 @@ struct BloomFilterHash
     {
         WhichDataType which(data_type);
 
-        if      (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
+        if (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
         else if (which.isUInt16()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isUInt32()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isUInt64()) getNumberTypeHash<UInt64, is_first>(column, vec, pos);

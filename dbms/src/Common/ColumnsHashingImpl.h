@@ -168,34 +168,41 @@ protected:
             }
         }
 
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         bool inserted = false;
         data.emplace(key_holder, it, inserted);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
-            cached = &it->getSecond();
+            cached = &it->getMapped();
 
         if (inserted)
         {
             if constexpr (has_mapped)
             {
-                new(&it->getSecond()) Mapped();
+                new (&it->getMapped()) Mapped();
             }
         }
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.value = it->getValue();
             cache.found = true;
             cache.empty = false;
 
             if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
                 cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getSecond(), *cached, inserted);
+            return EmplaceResult(it->getMapped(), *cached, inserted);
         else
             return EmplaceResult(inserted);
     }
@@ -215,28 +222,30 @@ protected:
         }
 
         auto it = data.find(key);
-        bool found = it != data.end();
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.found = found;
+            cache.found = it != nullptr;
             cache.empty = false;
 
-            if (found)
-                cache.value = it->getValue();
+            if constexpr (has_mapped)
+            {
+                cache.value.first = key;
+                if (it)
+                {
+                    cache.value.second = it->getMapped();
+                }
+            }
             else
             {
-                if constexpr (has_mapped)
-                    cache.value.first = key;
-                else
-                    cache.value = key;
+                cache.value = key;
             }
         }
 
         if constexpr (has_mapped)
-            return FindResult(found ? &it->getSecond() : nullptr, found);
+            return FindResult(it ? &it->getMapped() : nullptr, it != nullptr);
         else
-            return FindResult(found);
+            return FindResult(it != nullptr);
     }
 };
 

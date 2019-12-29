@@ -10,7 +10,7 @@ class Context;
 class FormatSchemaInfo
 {
 public:
-    FormatSchemaInfo(const Context & context, const String & format);
+    FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path);
 
     /// Returns path to the schema file.
     const String & schemaPath() const { return schema_path; }

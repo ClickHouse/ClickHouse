@@ -18,6 +18,7 @@ class Context;
 struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
 struct ASTTableJoin;
 class IJoin;
@@ -46,6 +47,9 @@ struct ExpressionAnalyzerData
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
+
+    /// Actions by every element of ORDER BY
+    ManyExpressionActions order_by_elements_actions;
 };
 
 
@@ -119,6 +123,7 @@ protected:
     const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    NamesAndTypesList sourceWithJoinedColumns() const;
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global);
@@ -169,6 +174,8 @@ public:
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
+    const ManyExpressionActions & getOrderByActions() const { return order_by_elements_actions; }
+
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const Tables & getExternalTables() const { return external_tables; }
 
@@ -189,6 +196,8 @@ public:
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
+    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
+    void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
@@ -199,7 +208,7 @@ public:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
-    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
@@ -216,6 +225,13 @@ private:
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
+
+    /**
+      * Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,

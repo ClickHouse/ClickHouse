@@ -101,10 +101,17 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Deletes the table.
 If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
+```
+DROP DICTIONARY [IF EXISTS] [db.]name
+```
+
+Delets the dictionary.
+If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
+
 ## EXISTS
 
 ```sql
-EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.
@@ -174,19 +181,20 @@ Changes already made by the mutation are not rolled back.
 ## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
-OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
-This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines aren't supported.
 
-When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 
-- If `OPTIMIZE` doesn't perform merging for any reason, it doesn't notify the client about it. To enable notification use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
-- If you specify a `PARTITION`, only the specified partition is optimized.
+- If `OPTIMIZE` doesn't perform a merge for any reason, it doesn't notify the client. To enable notifications, use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
 - If you specify `FINAL`, optimization is performed even when all the data is already in one part.
+- If you specify `DEDUPLICATE`, then completely identical rows will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
 
-!!! warning
-    OPTIMIZE can't fix the "Too many parts" error.
+!!! warning "Warning"
+    `OPTIMIZE` can't fix the "Too many parts" error.
 
 ## RENAME {#misc_operations-rename}
 
@@ -213,72 +221,6 @@ SET profile = 'profile-name-from-the-settings-file'
 ```
 
 For more information, see [Settings](../operations/settings/settings.md).
-
-## SHOW CREATE TABLE
-
-```sql
-SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
-```
-
-Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
-
-## SHOW DATABASES {#show-databases}
-
-```sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
-```
-
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
-
-See also the section "Formats".
-
-## SHOW PROCESSLIST
-
-```sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs a list of queries currently being processed, other than `SHOW PROCESSLIST` queries.
-
-Prints a table containing the columns:
-
-**user** – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the 'default' user. SHOW PROCESSLIST shows the username for a specific query, not for a query that this query initiated.
-
-**address** – The name of the host that the query was sent from. For distributed processing, on remote servers, this is the name of the query requestor host. To track where a distributed query was originally made from, look at SHOW PROCESSLIST on the query requestor server.
-
-**elapsed** – The execution time, in seconds. Queries are output in order of decreasing execution time.
-
-**rows_read**, **bytes_read** – How many rows and bytes of uncompressed data were read when processing the query. For distributed processing, data is totaled from all the remote servers. This is the data used for restrictions and quotas.
-
-**memory_usage** – Current RAM usage in bytes. See the setting 'max_memory_usage'.
-
-**query** – The query itself. In INSERT queries, the data for insertion is not output.
-
-**query_id** – The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
-
-This query is nearly identical to: `SELECT * FROM system.processes`. The difference is that the `SHOW PROCESSLIST` query does not show itself in a list, when the `SELECT .. FROM system.processes` query does.
-
-Tip (execute in the console):
-
-```bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
-
-## SHOW TABLES
-
-```sql
-SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
-```
-
-Displays a list of tables
-
-- Tables from the current database, or from the 'db' database if "FROM db" is specified.
-- All tables, or tables whose name matches the pattern, if "LIKE 'pattern'" is specified.
-
-This query is identical to: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
-
-See also the section "LIKE operator".
 
 ## TRUNCATE
 

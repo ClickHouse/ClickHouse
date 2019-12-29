@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Parsers/ASTIndexDeclaration.h>
+#include <Core/Types.h>
 
+#include <memory>
+#include <vector>
 
 namespace DB
 {
 
+class ASTIndexDeclaration;
 using IndicesASTs = std::vector<std::shared_ptr<ASTIndexDeclaration>>;
 
 struct IndicesDescription
@@ -14,7 +17,7 @@ struct IndicesDescription
 
     IndicesDescription() = default;
 
-    bool empty() const { return indices.empty(); }
+    bool empty() const;
     bool has(const String & name) const;
 
     String toString() const;

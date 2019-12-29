@@ -10,7 +10,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx2;"
 
 # NGRAM BF
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE bloom_filter_idx
 (
     k UInt64,
@@ -21,7 +20,6 @@ ORDER BY k
 SETTINGS index_granularity = 2;"
 
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE bloom_filter_idx2
 (
     k UInt64,
@@ -105,7 +103,6 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM bloom_filter_idx WHERE (s, lower(s)) I
 
 # TOKEN BF
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE bloom_filter_idx3
 (
     k UInt64,
@@ -141,3 +138,12 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM bloom_filter_idx3 WHERE s IN ('some st
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx"
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx2"
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx3"
+
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx_na;"
+$CLICKHOUSE_CLIENT -n --query="
+CREATE TABLE bloom_filter_idx_na
+(
+    na Array(Array(String)),
+    INDEX bf na TYPE bloom_filter(0.1) GRANULARITY 1
+) ENGINE = MergeTree()
+ORDER BY na" 2>&1 | grep -c 'DB::Exception: Unexpected type Array(Array(String)) of bloom filter index'

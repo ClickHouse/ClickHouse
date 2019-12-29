@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.15.1.*
+ARG version=19.19.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -18,7 +18,6 @@ RUN apt-get update \
             clickhouse-common-static=$version \
             clickhouse-client=$version \
             clickhouse-server=$version \
-            libgcc-7-dev \
             locales \
             tzdata \
             wget \

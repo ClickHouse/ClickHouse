@@ -546,6 +546,7 @@ We recommend using this function in almost all scenarios.
 **See Also**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -557,7 +558,7 @@ Calculates the approximate number of different argument values.
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
+The `uniqCombined` function is a good choice for calculating the number of different values.
 
 **Parameters**
 
@@ -573,12 +574,15 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 - Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
     For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
+
+!!! note "Note"
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
@@ -589,9 +593,13 @@ Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 **See Also**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
@@ -663,9 +671,12 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
 
-## groupArrayInsertAt(x)
+## groupArrayInsertAt(value, position)
 
 Inserts a value into the array in the specified position.
+
+!!! note "Note"
+    This function uses zero-based positions, contrary to the conventional one-based positions for SQL arrays.
 
 Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
 
@@ -850,7 +861,7 @@ Don't use this function for calculating timings. There is a more suitable functi
 
 ## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of the specified level with determined precision. The function intended for calculating quantiles of page loading time in milliseconds. 
+Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds.
 
 ```sql
 quantileTiming(level)(expr)
@@ -859,8 +870,8 @@ quantileTiming(level)(expr)
 **Parameters**
 
 - `level` — Quantile level. Range: [0, 1].
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
-    
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a [Float*](../../data_types/float.md)-type number. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
+
     - If negative values are passed to the function, the behavior is undefined.
     - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
@@ -868,13 +879,13 @@ quantileTiming(level)(expr)
 
 The calculation is accurate if:
 
-- Total number of values is not more than about 5670.
-- Total number of values is more than about 5670, but the times of page loading is less than 1024ms.
+- Total number of values doesn't exceed 5670.
+- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
-Otherwise, the result of a calculation is rounded to the value, multiple of 16 ms.
+Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!! note "Note"
-    For calculating quantiles of page loading times, this function is more effective and accurate compared to [quantile](#agg_function-quantile).
+!!! note "Note"
+    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
 
 **Returned value**
 
@@ -883,9 +894,9 @@ Otherwise, the result of a calculation is rounded to the value, multiple of 16 m
 Type: `Float32`.
 
 !!! note "Note"
-    If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../select.md#select-order-by) for notes on sorting `NaN` values.
 
-The result is deterministic (it doesn't depend on the order of query processing).
+The result is deterministic (it doesn't depend on the query processing order).
 
 **Example**
 
@@ -999,6 +1010,16 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## categoricalInformationValue
+
+Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
+
+```sql
+categoricalInformationValue(category1, category2, ..., tag)
+```
+
+The result indicates how a discrete (categorical) feature `[category1, category2, ...]` contribute to a learning model which predicting the value of `tag`.
+
 ## simpleLinearRegression
 
 Performs simple (unidimensional) linear regression.
@@ -1061,39 +1082,40 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Fitting
 
-    Such query may be used.
+**1.** Fitting
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Such query may be used.
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    ```
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
 
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+```
 
-2. Predicting
+Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+**2.** Predicting
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
 
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    `test_data` is a table like `train_data` but may not contain target value.
+The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+`test_data` is a table like `train_data` but may not contain target value.
 
 ### Notes {#agg_functions-stochasticlinearregression-notes}
 
@@ -1163,6 +1185,141 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
+
+## groupBitmapAnd
+
+Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapAnd(z)─┐
+│               3   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
+│ [6,8,10]                                         │
+└──────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapOr
+
+Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md). This is equivalent to `groupBitmapMerge`.
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapOr(z)─┐
+│             15   │
+└──────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
+│ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
+└─────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapXor
+
+Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapXor(z)─┐
+│              10   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
+│ [1,3,5,6,8,10,11,13,14,15]                       │
+└──────────────────────────────────────────────────┘
+
+```
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

@@ -39,8 +39,8 @@ void StorageFactory::registerStorage(const std::string & name, Creator creator)
 
 
 StoragePtr StorageFactory::get(
-    ASTCreateQuery & query,
-    const String & data_path,
+    const ASTCreateQuery & query,
+    const String & relative_data_path,
     const String & table_name,
     const String & database_name,
     Context & local_context,
@@ -104,11 +104,12 @@ StoragePtr StorageFactory::get(
             }
 
             if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
-                 (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
+                storage_def->ttl_table || !columns.getColumnTTLs().empty() ||
+                (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses and skipping indices. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY, TTL or SAMPLE BY clauses and skipping indices. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 
@@ -149,7 +150,7 @@ StoragePtr StorageFactory::get(
         .engine_args = args,
         .storage_def = storage_def,
         .query = query,
-        .data_path = data_path,
+        .relative_data_path = relative_data_path,
         .table_name = table_name,
         .database_name = database_name,
         .local_context = local_context,

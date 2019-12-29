@@ -1,5 +1,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -100,7 +101,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & tuple = get<const Tuple &>(field).toUnderType();
+    const auto & tuple = get<const Tuple &>(field);
     for (const auto idx_elem : ext::enumerate(elems))
         idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
 }
@@ -108,10 +109,12 @@ void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) con
 void DataTypeTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     const size_t size = elems.size();
-    field = Tuple(TupleBackend(size));
-    TupleBackend & tuple = get<Tuple &>(field).toUnderType();
+
+    Tuple tuple(size);
     for (const auto i : ext::range(0, size))
         elems[i]->deserializeBinary(tuple[i], istr);
+
+    field = tuple;
 }
 
 void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -185,6 +188,13 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
         }
     });
 
+    // Special format for one element tuple (1,)
+    if (1 == elems.size())
+    {
+        skipWhitespaceIfAny(istr);
+        // Allow both (1) and (1,)
+        checkChar(',', istr);
+    }
     skipWhitespaceIfAny(istr);
     assertChar(')', istr);
 }
@@ -446,7 +456,7 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 Field DataTypeTuple::getDefault() const
 {
-    return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+    return Tuple(ext::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
@@ -519,7 +529,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -558,7 +568,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 void registerDataTypeNested(DataTypeFactory & factory)
 {
     /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
+    factory.registerDataType("Nested", [&factory](const String & /*type_name*/, const ASTPtr & arguments)
     {
         return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
     });

@@ -14,6 +14,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
+| [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
@@ -125,14 +126,14 @@ world
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
-Для этого используются настройки `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
+Для этого используются настройки `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
 
-Форматная строка `format_schema_rows` задаёт формат для строк таблицы и должна иметь вид:
+Настройка `format_template_row` задаёт путь к файлу, содержащему форматную строку для строк таблицы, которая должна иметь вид:
 
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
   где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`), 
-  `column_i` - имена столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
+  `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
   `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
   
   - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
@@ -151,14 +152,14 @@ world
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
   
- Настройка `format_schema_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
+ Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
   
-Форматная строка `format_schema` имеет аналогичный `format_schema_rows` синтаксис и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
+Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
- - `data` - строки с данными в формате `format_schema_rows`, разделённые `format_schema_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
- - `totals` - строка с тотальными значениями в формате `format_schema_rows` (при использовании WITH TOTALS)
- - `min` - строка с минимальными значениями в формате `format_schema_rows` (при настройке extremes, выставленной в 1)
- - `max` - строка с максимальными значениями в формате `format_schema_rows` (при настройке extremes, выставленной в 1)
+ - `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
+ - `totals` - строка с тотальными значениями в формате `format_template_row` (при использовании WITH TOTALS)
+ - `min` - строка с минимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
+ - `max` - строка с максимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
  - `rows` - общее количество выведенных стрчек
  - `rows_before_limit` - не менее скольких строчек получилось бы, если бы не было LIMIT-а. Выводится только если запрос содержит LIMIT. В случае, если запрос содержит GROUP BY, `rows_before_limit` - точное число строк, которое получилось бы, если бы не было LIMIT-а.
  - `time` - время выполнения запроса в секундах
@@ -166,15 +167,18 @@ world
  - `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
  
  У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
- Если строка `format_schema` пустая, то по-умолчанию используется `${data}`.
- Из всех перечисленных подстановок форматная строка `format_schema` для ввода может содержать только `data`.
+ Если строка `format_template_resultset` пустая, то по-умолчанию используется `${data}`.
+ Из всех перечисленных подстановок форматная строка `format_template_resultset` для ввода может содержать только `data`.
  Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
  
  Пример вывода:
 ```sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
-FORMAT Template 
-SETTINGS format_schema = '<!DOCTYPE HTML>
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS 
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
+```
+`/some/path/resultset.format`:
+```
+<!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
   <table border="1"> <caption>Search phrases</caption>
@@ -186,10 +190,13 @@ SETTINGS format_schema = '<!DOCTYPE HTML>
   </table>
   <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
  </body>
-</html>',
-format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
-format_schema_rows_between_delimiter = '\n    '
+</html>
 ```
+`/some/path/row.format`:
+```
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+```
+Резутьтат:
 ```html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
@@ -219,8 +226,15 @@ Total rows: 2
 ```
 ```sql
 INSERT INTO UserActivity FORMAT Template SETTINGS 
-format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
-format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+```
+`/some/path/resultset.format`:
+```
+Some header\n${data}\nTotal rows: ${:CSV}\n
+```
+`/some/path/row.format`:
+```
+Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
 ```
 `PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows: ` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
@@ -291,6 +305,11 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 ## CSVWithNames
 
 Выводит также заголовок, аналогично `TabSeparatedWithNames`.
+
+## CustomSeparated {#format-customseparated}
+
+Аналогичен [Template](#format-template), но выводит (или считывает) все столбцы, используя для них правило экранирования из настройки `format_custom_escaping_rule` и разделители из настроек `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` и `format_custom_result_after_delimiter`, а не из форматных строк.
+Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный `TemplateIgnoreSpaces`.
 
 ## JSON {#json}
 
@@ -920,7 +939,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдержанные типы данных Parquet: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствущих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Inserting and Selecting Data
 

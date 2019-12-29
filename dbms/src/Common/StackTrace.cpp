@@ -30,7 +30,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
@@ -158,7 +158,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGPROF:
+        case SIGTSTP:
         {
             error << "This is a signal used for debugging purposes by the user.";
             break;
@@ -250,7 +250,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
     if (size == 0)
         return callback("<Empty trace>");
 
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
@@ -258,10 +258,14 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
 
     for (size_t i = offset; i < size; ++i)
     {
-        const void * addr = frames[i];
+        const void * virtual_addr = frames[i];
+        auto object = symbol_index.findObject(virtual_addr);
+        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+        const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
-        out << i << ". " << addr << " ";
-        auto symbol = symbol_index.findSymbol(addr);
+        out << i << ". " << physical_addr << " ";
+
+        auto symbol = symbol_index.findSymbol(virtual_addr);
         if (symbol)
         {
             int status = 0;
@@ -272,18 +276,17 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
 
         out << " ";
 
-        if (auto object = symbol_index.findObject(addr))
+        if (object)
         {
             if (std::filesystem::exists(object->name))
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(addr) - uintptr_t(object->address_begin), location, DB::Dwarf::LocationInfoMode::FAST))
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
                     out << location.file.toString() << ":" << location.line;
-                else
-                    out << object->name;
             }
+            out << " in " << object->name;
         }
         else
             out << "?";

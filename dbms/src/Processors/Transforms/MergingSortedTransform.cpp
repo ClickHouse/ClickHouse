@@ -132,9 +132,12 @@ IProcessor::Status MergingSortedTransform::prepare()
             }
 
             auto chunk = input.pull();
-            if (chunk.hasNoRows())
+            if (!chunk.hasRows())
             {
-                all_inputs_has_data = false;
+
+                if (!input.isFinished())
+                    all_inputs_has_data = false;
+
                 continue;
             }
 
@@ -176,13 +179,14 @@ IProcessor::Status MergingSortedTransform::prepare()
                     return Status::NeedData;
 
                 auto chunk = input.pull();
-                if (chunk.hasNoRows())
+                if (!chunk.hasRows() && !input.isFinished())
                     return Status::NeedData;
 
                 updateCursor(std::move(chunk), next_input_to_read);
                 pushToQueue(next_input_to_read);
-                need_data = false;
             }
+
+            need_data = false;
         }
 
         return Status::Ready;

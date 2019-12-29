@@ -1,10 +1,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -78,7 +79,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
     node = list;
 
     while (true)
@@ -556,10 +557,17 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
+bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
+
 bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr node_comp;
-    if (!ParserComparisonExpression{}.parse(pos, node_comp, expected))
+    if (!elem_parser.parse(pos, node_comp, expected))
         return false;
 
     ParserKeyword s_is{"IS"};
@@ -603,12 +611,9 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
         return false;
 
-
-    ParserInterval interval_parser;
-    if (!interval_parser.ignore(pos, expected))
+    IntervalKind interval_kind;
+    if (!parseIntervalKind(pos, expected, interval_kind))
         return false;
-
-    const char * function_name = interval_parser.getToIntervalKindFunctionName();
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
@@ -617,7 +622,7 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto exp_list = std::make_shared<ASTExpressionList>();
 
     /// the first argument of the function is the previous element, the second is the next one
-    function->name = function_name;
+    function->name = interval_kind.toNameOfFunctionToIntervalDataType();
     function->arguments = exp_list;
     function->children.push_back(exp_list);
 
@@ -627,5 +632,47 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     return true;
 }
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr value;
+    bool with_brackets = false;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    /// If it's not literal or identifier, than it's possible list of pairs
+    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    {
+        ParserKeyValuePairsList kv_pairs_list;
+        ParserToken open(TokenType::OpeningRoundBracket);
+        ParserToken close(TokenType::ClosingRoundBracket);
+
+        if (!open.ignore(pos))
+            return false;
+
+        if (!kv_pairs_list.parse(pos, value, expected))
+            return false;
+
+        if (!close.ignore(pos))
+            return false;
+
+        with_brackets = true;
+    }
+
+    auto pair = std::make_shared<ASTPair>(with_brackets);
+    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->second = value;
+    node = pair;
+    return true;
+}
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    return parser.parse(pos, node, expected);
+}
 
 }
