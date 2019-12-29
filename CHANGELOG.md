@@ -1,3 +1,45 @@
+### Bug Fix
+* Fixed potential buffer overflow in decompress. Malicious user can pass fabricated compressed data that will cause read after buffer. This issue was found by Eldar Zaitov from Yandex information security team. [#8404](https://github.com/ClickHouse/ClickHouse/pull/8404) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed possible server crash (`std::terminate`) when the server cannot send or write data in JSON or XML format with values of String data type (that require UTF-8 validation) or when compressing result data with Brotli algorithm or in some other rare cases. This fixes [#7603](https://github.com/ClickHouse/ClickHouse/issues/7603) [#8384](https://github.com/ClickHouse/ClickHouse/pull/8384) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix race in `StorageDistributedDirectoryMonitor`. [#8383](https://github.com/ClickHouse/ClickHouse/pull/8383) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix tests with processors. [#8376](https://github.com/ClickHouse/ClickHouse/pull/8376) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix dict with clickhouse source and subquery [#8351](https://github.com/ClickHouse/ClickHouse/pull/8351) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix checks if a client host is allowed in case it's the localhost. This PR fixes the solution provided in https://github.com/ClickHouse/ClickHouse/pull/8241. [#8342](https://github.com/ClickHouse/ClickHouse/pull/8342) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fixes [#7868](https://github.com/ClickHouse/ClickHouse/issues/7868) [#8306](https://github.com/ClickHouse/ClickHouse/pull/8306) ([tavplubix](https://github.com/tavplubix))
+* Add ability to work with different types besides Date in RangeHashed external dictionary created from DDL query. Fixes https://github.com/ClickHouse/ClickHouse/issues/7899. [#8275](https://github.com/ClickHouse/ClickHouse/pull/8275) ([alesapin](https://github.com/alesapin))
+* Fixed checking if a client host is allowed by matching the client host to `host_regexp` specified in `users.xml`. [#8241](https://github.com/ClickHouse/ClickHouse/pull/8241) ([Vitaly Baranov](https://github.com/vitlibar))
+* Insert select from mysql(...) table function now should work ... [#8234](https://github.com/ClickHouse/ClickHouse/pull/8234) ([tavplubix](https://github.com/tavplubix))
+* Fixed segfault in table function file while inserting into file that doesn't exist. Now in this case file would be created and then insert would be processed. [#8177](https://github.com/ClickHouse/ClickHouse/pull/8177) ([Olga Khvostikova](https://github.com/stavrolia))
+* fix bitmapAnd error when intersecting an aggregated bitmap and a scalar bitmap. [#8082](https://github.com/ClickHouse/ClickHouse/pull/8082) ([Yue Huang](https://github.com/moon03432))
+* Fixed segfault when `EXISTS` query was used without `TABLE` or `DICTIONARY` qualifier. Just like `EXISTS t`. This fixes [#8172](https://github.com/ClickHouse/ClickHouse/issues/8172). This bug was introduced in version 19.17. [#8213](https://github.com/ClickHouse/ClickHouse/pull/8213) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed return type for functions `rand` and `randConstant` in case of nullable argument. Now functions always return `UInt32` and never `Nullable(UInt32)`. [#8204](https://github.com/ClickHouse/ClickHouse/pull/8204) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix `DROP DICTIONARY IF EXISTS db.dict`, now it doesn't throw exception if `db` doesn't exist. [#8185](https://github.com/ClickHouse/ClickHouse/pull/8185) ([Vitaly Baranov](https://github.com/vitlibar))
+* If table was not completely dropped because of server crash, try to restore and load it [#8176](https://github.com/ClickHouse/ClickHouse/pull/8176) ([tavplubix](https://github.com/tavplubix))
+* case: ```select count(1) from distributed_table``` ... [#8164](https://github.com/ClickHouse/ClickHouse/pull/8164) ([小路](https://github.com/nicelulu))
+* Fixed bug that lead to a data race in DB::BlockStreamProfileInfo::calculateRowsBeforeLimit() [#8143](https://github.com/ClickHouse/ClickHouse/pull/8143) ([Alexander Kazakov](https://github.com/Akazz))
+* FIxed behavior with ALTER MOVE ran immediately after merge finish moves superpart of specified. Fixes [#8103](https://github.com/ClickHouse/ClickHouse/issues/8103) [#8104](https://github.com/ClickHouse/ClickHouse/pull/8104) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Now dictionaries support string as expression and fix for default string values. [#8098](https://github.com/ClickHouse/ClickHouse/pull/8098) ([alesapin](https://github.com/alesapin))
+* Refine the definition of ZXid according to the ZooKeeper Programmer's Guide. ... [#8088](https://github.com/ClickHouse/ClickHouse/pull/8088) ([Ding Xiang Fei](https://github.com/dingxiangfei2009))
+* Read temporary tables on failure to avoid interpreting that bits as query [#8084](https://github.com/ClickHouse/ClickHouse/pull/8084) ([Azat Khuzhin](https://github.com/azat))
+* Avoid null dereference after "Unknown packet X from server" [#8071](https://github.com/ClickHouse/ClickHouse/pull/8071) ([Azat Khuzhin](https://github.com/azat))
+* Restore support of all ICU locales, add the ability to apply collations for constant expressions and add language name to system.collations table. [#8051](https://github.com/ClickHouse/ClickHouse/pull/8051) ([alesapin](https://github.com/alesapin))
+* Limit maximum number of streams for read from `StorageFile` and `StorageHDFS`. Fixes https://github.com/ClickHouse/ClickHouse/issues/7650. [#7981](https://github.com/ClickHouse/ClickHouse/pull/7981) ([alesapin](https://github.com/alesapin))
+* Fix `CHECK TABLE` query for `*MergeTree` tables without key. Fixes [#7543](https://github.com/ClickHouse/ClickHouse/issues/7543). [#7979](https://github.com/ClickHouse/ClickHouse/pull/7979) ([alesapin](https://github.com/alesapin))
+* Remove mutation number from part_name by default. [#8250](https://github.com/ClickHouse/ClickHouse/pull/8250) ([alesapin](https://github.com/alesapin))
+* Fixed the bug that mutations be skipped for some attached parts due to their data_version are larger than the table mutation version. [#7812](https://github.com/ClickHouse/ClickHouse/pull/7812) ([Zhichang Yu](https://github.com/yuzhichang))
+* Ignore redundant copies of parts after move and restart. Progress on [#7660](https://github.com/ClickHouse/ClickHouse/issues/7660). ... [#7810](https://github.com/ClickHouse/ClickHouse/pull/7810) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Fix the "Sizes of columns doesn't match" error that might appear when using aggregate function columns. ... [#7790](https://github.com/ClickHouse/ClickHouse/pull/7790) ([Boris Granveaud](https://github.com/bgranvea))
+* Now an exception will be thrown in case of using WITH TIES alongside LIMIT BY. And also you can use TOP with LIMIT BY. ... [#7637](https://github.com/ClickHouse/ClickHouse/pull/7637) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+
+### Improvement
+* Remove `Context` from formats. [#8388](https://github.com/ClickHouse/ClickHouse/pull/8388) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+
+### Bugfix
+* Fix dictionary reload if it has `invalidate_query`, which stopped updates and some exception on previous update tries. [#8029](https://github.com/ClickHouse/ClickHouse/pull/8029) ([alesapin](https://github.com/alesapin))
+
+Commits which are not from any pull request:
+
+
 ## ClickHouse release v19.17.4.11, 2019-11-22
 
 ### Backward Incompatible Change
