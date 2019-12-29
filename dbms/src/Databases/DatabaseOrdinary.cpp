@@ -19,6 +19,8 @@
 #include <Parsers/formatAST.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Parsers/queryToString.h>
+
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
@@ -231,10 +233,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
-    const ColumnsDescription & columns,
-    const IndicesDescription & indices,
-    const ConstraintsDescription & constraints,
-    const ASTModifier & storage_modifier)
+    const StorageInMemoryMetadata & metadata)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -252,19 +251,30 @@ void DatabaseOrdinary::alterTable(
 
     const auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
-    if (storage_modifier)
-        storage_modifier(*ast_create_query.storage);
+    ASTStorage & storage_ast = *ast_create_query.storage;
+    /// ORDER BY may change, but cannot appear, it's required construction
+    if (metadata.order_by_ast && storage_ast.order_by)
+        storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
+
+    if (metadata.primary_key_ast)
+        storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
+
+    if (metadata.ttl_for_table_ast)
+        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
+
+    if (metadata.settings_ast)
+        storage_ast.set(storage_ast.settings, metadata.settings_ast);
+
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-
     {
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
