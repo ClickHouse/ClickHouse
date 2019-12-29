@@ -17,6 +17,7 @@
 #include <Storages/StorageFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTSetQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Parsers/queryToString.h>
