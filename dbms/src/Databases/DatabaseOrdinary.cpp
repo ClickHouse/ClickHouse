@@ -1,7 +1,6 @@
 #include <iomanip>
 
 #include <Core/Settings.h>
-#include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -15,13 +14,10 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDictionary.h>
 #include <Storages/StorageFactory.h>
-#include <Dictionaries/DictionaryFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Parsers/queryToString.h>
@@ -29,7 +25,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -47,7 +42,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED;
 }
 
 
@@ -71,7 +65,7 @@ namespace
             String table_name;
             StoragePtr table;
             std::tie(table_name, table)
-                = createTableFromAST(query, database_name, database.getDataPath(), context, has_force_restore_data_flag);
+                = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
         catch (const Exception & e)
@@ -117,11 +111,8 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithOwnTablesBase(std::move(name_))
-    , metadata_path(metadata_path_)
-    , data_path("data/" + escapeForFileName(name) + "/")
-    , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
+    : DatabaseWithDictionaries(name_, metadata_path_, "DatabaseOrdinary (" + name_ + ")")
 {
     Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
@@ -140,12 +131,12 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    DatabaseOnDisk::iterateMetadataFiles(*this, log, context, [&file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
     {
-        String full_path = metadata_path + "/" + file_name;
+        String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseCreateQueryFromMetadataFile(full_path, log);
+            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -240,91 +231,14 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     thread_pool.wait();
 }
 
-void DatabaseOrdinary::createTable(
-    const Context & context,
-    const String & table_name,
-    const StoragePtr & table,
-    const ASTPtr & query)
-{
-    DatabaseOnDisk::createTable(*this, context, table_name, table, query);
-}
-
-void DatabaseOrdinary::createDictionary(
-    const Context & context,
-    const String & dictionary_name,
-    const ASTPtr & query)
-{
-    DatabaseOnDisk::createDictionary(*this, context, dictionary_name, query);
-}
-
-void DatabaseOrdinary::removeTable(
-    const Context & context,
-    const String & table_name)
-{
-    DatabaseOnDisk::removeTable(*this, context, table_name, log);
-}
-
-void DatabaseOrdinary::removeDictionary(
-    const Context & context,
-    const String & table_name)
-{
-    DatabaseOnDisk::removeDictionary(*this, context, table_name, log);
-}
-
-void DatabaseOrdinary::renameTable(
-    const Context & context,
-    const String & table_name,
-    IDatabase & to_database,
-    const String & to_table_name,
-    TableStructureWriteLockHolder & lock)
-{
-    DatabaseOnDisk::renameTable<DatabaseOrdinary>(*this, context, table_name, to_database, to_table_name, lock);
-}
-
-
-time_t DatabaseOrdinary::getObjectMetadataModificationTime(
-    const Context & /* context */,
-    const String & table_name)
-{
-    return DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
-}
-
-ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
-{
-    return DatabaseOnDisk::getCreateTableQuery(*this, context, table_name);
-}
-
-ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
-{
-    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, table_name);
-}
-
-
-ASTPtr DatabaseOrdinary::getCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
-{
-    return DatabaseOnDisk::getCreateDictionaryQuery(*this, context, dictionary_name);
-}
-
-ASTPtr DatabaseOrdinary::tryGetCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
-{
-    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, dictionary_name);
-}
-
-ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & context) const
-{
-    return DatabaseOnDisk::getCreateDatabaseQuery(*this, context);
-}
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
     const StorageInMemoryMetadata & metadata)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
-
-    String table_name_escaped = escapeForFileName(table_name);
-    String table_metadata_tmp_path = getMetadataPath() + "/" + table_name_escaped + ".sql.tmp";
-    String table_metadata_path = getMetadataPath() + "/" + table_name_escaped + ".sql";
+    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
     {
@@ -381,33 +295,6 @@ void DatabaseOrdinary::alterTable(
         Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
-}
-
-
-void DatabaseOrdinary::drop(const Context & context)
-{
-    DatabaseOnDisk::drop(*this, context);
-}
-
-
-String DatabaseOrdinary::getDataPath() const
-{
-    return data_path;
-}
-
-String DatabaseOrdinary::getMetadataPath() const
-{
-    return metadata_path;
-}
-
-String DatabaseOrdinary::getDatabaseName() const
-{
-    return name;
-}
-
-String DatabaseOrdinary::getObjectMetadataPath(const String & table_name) const
-{
-    return DatabaseOnDisk::getObjectMetadataPath(*this, table_name);
 }
 
 }
