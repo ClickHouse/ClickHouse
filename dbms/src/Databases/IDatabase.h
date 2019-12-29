@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Exception.h>
 
@@ -227,12 +228,9 @@ public:
     virtual void alterTable(
         const Context & /*context*/,
         const String & /*name*/,
-        const ColumnsDescription & /*columns*/,
-        const IndicesDescription & /*indices*/,
-        const ConstraintsDescription & /*constraints*/,
-        const ASTModifier & /*engine_modifier*/)
+        const StorageInMemoryMetadata & /*metadata*/)
     {
-        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

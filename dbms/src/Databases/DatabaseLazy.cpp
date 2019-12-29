@@ -99,10 +99,7 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 void DatabaseLazy::alterTable(
     const Context & /* context */,
     const String & /* table_name */,
-    const ColumnsDescription & /* columns */,
-    const IndicesDescription & /* indices */,
-    const ConstraintsDescription & /* constraints */,
-    const ASTModifier & /* storage_modifier */)
+    const StorageInMemoryMetadata & /* metadata */)
 {
     clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);

@@ -168,7 +168,8 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         }
         catch (...)
         {
-            agg_func.destroy(places[i]);
+            for (size_t j = 0; j < i; ++j)
+                agg_func.destroy(places[j]);
             throw;
         }
     }
