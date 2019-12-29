@@ -61,7 +61,6 @@ void registerInputFormatProcessorRowBinary(FormatFactory & factory)
     factory.registerInputFormatProcessor("RowBinary", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         const IRowInputFormat::Params & params,
         const FormatSettings &)
     {
@@ -71,7 +70,6 @@ void registerInputFormatProcessorRowBinary(FormatFactory & factory)
     factory.registerInputFormatProcessor("RowBinaryWithNamesAndTypes", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         const IRowInputFormat::Params & params,
         const FormatSettings &)
     {

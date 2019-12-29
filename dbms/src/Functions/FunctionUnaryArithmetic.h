@@ -5,7 +5,7 @@
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Common/config.h>

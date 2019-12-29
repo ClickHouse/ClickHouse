@@ -32,6 +32,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -152,6 +153,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -441,7 +443,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.count("help"))
+    if (options.empty() || options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
@@ -496,6 +498,9 @@ void LocalServer::applyCmdOptions()
 }
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

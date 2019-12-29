@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -212,14 +213,46 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
+        UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
-        if (have_date || have_datetime)
+        if (have_date || have_datetime || have_datetime64)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime);
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeDateTime>();
+            if (have_datetime64 == 0)
+            {
+                return std::make_shared<DataTypeDateTime>();
+            }
+
+            // When DateTime64 involved, make sure that supertype has whole-part precision
+            // big enough to hold max whole-value of any type from `types`.
+            // That would sacrifice scale when comparing DateTime64 of different scales.
+
+            UInt32 max_datetime64_whole_precision = 0;
+            for (const auto & t : types)
+            {
+                if (auto dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                {
+                    const auto whole_precision = dt64->getPrecision() - dt64->getScale();
+                    max_datetime64_whole_precision = std::max(whole_precision, max_datetime64_whole_precision);
+                }
+            }
+
+            UInt32 least_decimal_precision = 0;
+            if (have_datetime)
+            {
+                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt32);
+            }
+            else if (have_date)
+            {
+                least_decimal_precision = leastDecimalPrecisionFor(TypeIndex::UInt16);
+            }
+            max_datetime64_whole_precision = std::max(least_decimal_precision, max_datetime64_whole_precision);
+
+            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_whole_precision;
+            return std::make_shared<DataTypeDateTime64>(scale);
         }
     }
 

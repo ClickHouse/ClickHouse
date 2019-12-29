@@ -1,17 +1,20 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -19,6 +22,7 @@
 #include <Core/TypeListNumber.h>
 #include <Interpreters/castColumn.h>
 #include <ext/range.h>
+#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -99,6 +103,19 @@ private:
         ColumnPtr & result;
 
         NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
+            : arrays(arrays_), data_type(data_type_), result(result_) {}
+
+        template <typename T, size_t>
+        void operator()();
+    };
+
+    struct DecimalExecutor
+    {
+        const UnpackedArrays & arrays;
+        const DataTypePtr & data_type;
+        ColumnPtr & result;
+
+        DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <typename T, size_t>
@@ -399,7 +416,8 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TypeListNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListNativeNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListDecimalNumbers::forEach(DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMap<DataTypeDate::FieldType, size_t, DefaultHash<DataTypeDate::FieldType>,
             HashTableGrower<INITIAL_SIZE_DEGREE>,
@@ -443,6 +461,17 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
         result = execute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
+}
+
+template <typename T, size_t>
+void FunctionArrayIntersect::DecimalExecutor::operator()()
+{
+    using Map = ClearableHashMap<T, size_t, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+
+    if (!result)
+        if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
+            result = execute<Map, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()));
 }
 
 template <typename Map, typename ColumnType, bool is_numeric_column>

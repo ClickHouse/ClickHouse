@@ -18,7 +18,7 @@ class ReadBuffer;
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
-class ValuesBlockInputFormat : public IInputFormat
+class ValuesBlockInputFormat final : public IInputFormat
 {
 public:
     /** Data is parsed using fast, streaming parser.
@@ -29,9 +29,14 @@ public:
       * than interpreting expressions in each row separately, but it's still slower than streaming parsing)
       */
     ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                           const Context & context_, const FormatSettings & format_settings_);
+                           const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesBlockInputFormat"; }
+
+    void resetParser() override;
+
+    /// TODO: remove context somehow.
+    void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 

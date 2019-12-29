@@ -198,13 +198,20 @@ if(WITH_COVERAGE AND COMPILER_GCC)
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
-set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
+
+if (COMPILER_CLANG)
+    # Exception unwinding doesn't work in clang release build without this option
+    # TODO investigate if contrib/libcxxabi is out of date
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 
@@ -215,7 +222,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause lot of warnings in includes.
+# Using system libs can cause lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
@@ -325,6 +332,7 @@ include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
+include (cmake/find/s3.cmake)
 include (cmake/find/consistent-hashing.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
@@ -344,7 +352,6 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
@@ -354,18 +361,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
-    endif ()
-
-    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
-    else ()
-        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
-    endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
 elseif (OS_LINUX)
@@ -382,16 +377,12 @@ add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
 macro (add_executable target)
     # invoke built-in add_executable
-    _add_executable (${ARGV})
+    # explicitly acquire and interpose malloc symbols by clickhouse_malloc
+    _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        file (RELATIVE_PATH dir ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
-        if (${dir} MATCHES "^dbms")
-            # Only interpose operator::new/delete for dbms executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
-        else ()
-            target_link_libraries (${target} PRIVATE ${MALLOC_LIBRARIES})
-        endif ()
+        # operator::new/delete for executables (MemoryTracker stuff)
+        target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
     endif()
 endmacro()
 
