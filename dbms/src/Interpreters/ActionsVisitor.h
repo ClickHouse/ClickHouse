@@ -125,7 +125,7 @@ private:
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data);
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
 
-    static SetPtr makeSet(const ASTFunction & node, Data & data);
+    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
 };
 
 using ActionsVisitor = ActionsMatcher::Visitor;

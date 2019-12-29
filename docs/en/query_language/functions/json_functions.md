@@ -57,6 +57,17 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
+## isValidJSON(json)
+
+Checks that passed string is a valid json.
+
+Examples:
+
+```sql
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
+SELECT isValidJSON('not a json') = 0
+```
+
 ## JSONHas(json[, indices_or_keys]...)
 
 If the value exists in the JSON document, `1` will be returned.
@@ -193,6 +204,18 @@ Example:
 
 ```sql
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```
+
+## JSONExtractArrayRaw(json[, indices_or_keys]...)
+
+Returns an array with elements of JSON array, each represented as unparsed string.
+
+If the part does not exist or isn't array, an empty array will be returned.
+
+Example:
+
+```sql
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->

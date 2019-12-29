@@ -1,3 +1,4 @@
+#include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
@@ -27,12 +28,6 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     Widths max_widths;
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
-
-    /// Do not align on too long values.
-    if (terminal_width > 80)
-        for (size_t i = 0; i < num_columns; ++i)
-            if (max_widths[i] > terminal_width / 2)
-                max_widths[i] = terminal_width / 2;
 
     /// Names
     for (size_t i = 0; i < num_columns; ++i)
@@ -102,7 +97,6 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -112,7 +106,6 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {

@@ -47,6 +47,42 @@ select sleep(0.7) format Null; -- wait if very fast merge happen
 optimize table ttl_00933_1 final;
 select * from ttl_00933_1 order by d;
 
+-- const DateTime TTL positive
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl now()-1000) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
+-- const DateTime TTL negative
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl now()+1000) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
+-- const Date TTL positive
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl today()-1) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
+-- const Date TTL negative
+drop table if exists ttl_00933_1;
+create table ttl_00933_1 (b Int, a Int ttl today()+1) engine = MergeTree order by tuple() partition by tuple();
+show create table ttl_00933_1;
+insert into ttl_00933_1 values (1, 1);
+select sleep(0.7) format Null; -- wait if very fast merge happen
+optimize table ttl_00933_1 final;
+select * from ttl_00933_1;
+
 set send_logs_level = 'none';
 
 drop table if exists ttl_00933_1;
@@ -54,7 +90,9 @@ drop table if exists ttl_00933_1;
 create table ttl_00933_1 (d DateTime ttl d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 44}
 create table ttl_00933_1 (d DateTime, a Int ttl d) engine = MergeTree order by a partition by toSecond(d); -- { serverError 44}
 create table ttl_00933_1 (d DateTime, a Int ttl 2 + 2) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 450 }
-create table ttl_00933_1 (d DateTime, a Int ttl toDateTime(1)) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 450 }
 create table ttl_00933_1 (d DateTime, a Int ttl d - d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 450 }
+
+create table ttl_00933_1 (d DateTime, a Int  ttl d + interval 1 day) engine = Log; -- { serverError 36 }
+create table ttl_00933_1 (d DateTime, a Int) engine = Log ttl d + interval 1 day; -- { serverError 36 }
 
 drop table if exists ttl_00933_1;

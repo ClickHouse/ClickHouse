@@ -5,10 +5,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table2"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table2 (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/alter_table', 'r2') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS alter_table;
+    DROP TABLE IF EXISTS alter_table2;
+
+    CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_DATABASE.alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1;
+    CREATE TABLE alter_table2 (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_DATABASE.alter_table', 'r2') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1
+"
 
 function thread1()
 {
@@ -32,7 +35,7 @@ function thread4()
 
 function thread5()
 {
-    while true; do $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table DELETE WHERE rand() % 2 = 1"; done
+    while true; do $CLICKHOUSE_CLIENT -q "ALTER TABLE alter_table DELETE WHERE cityHash64(a,b,c,d,e,g) % 1048576 < 524288"; done
 }
 
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
@@ -70,5 +73,7 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE alter_table"
-$CLICKHOUSE_CLIENT -q "DROP TABLE alter_table2"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE alter_table;
+    DROP TABLE alter_table2
+"

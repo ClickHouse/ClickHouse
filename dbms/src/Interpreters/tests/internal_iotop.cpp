@@ -15,7 +15,7 @@
 std::mutex mutex;
 
 
-std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
+static std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
 {
 #define PRINT(field) (stream << #field << " " << stat.field)
 
@@ -44,7 +44,7 @@ std::ostream & operator << (std::ostream & stream, const ::taskstats & stat)
 using namespace DB;
 
 
-void do_io(size_t id)
+static void do_io(size_t id)
 {
     ::taskstats stat;
     int tid = TaskStatsInfoGetter::getCurrentTID();
@@ -99,7 +99,7 @@ void do_io(size_t id)
     Poco::File(path_dst).remove(false);
 }
 
-void test_perf()
+static void test_perf()
 {
 
     ::taskstats stat;
@@ -140,7 +140,7 @@ try
     size_t num_threads = 2;
     ThreadPool pool(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
-        pool.schedule([i]() { do_io(i); });
+        pool.scheduleOrThrowOnError([i]() { do_io(i); });
     pool.wait();
 
     test_perf();

@@ -36,7 +36,7 @@ public:
 
     std::string getName() const override { return name; }
 
-    std::string getTypeName() const override { return "Hashed"; }
+    std::string getTypeName() const override { return sparse ? "SparseHashed" : "Hashed"; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
@@ -47,8 +47,6 @@ public:
     size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
-
-    bool isCached() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {

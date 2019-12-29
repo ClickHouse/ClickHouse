@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -10,6 +12,8 @@
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Processors/Formats/Impl/MySQLOutputFormat.h>
 
 
 namespace DB
@@ -32,7 +36,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-static FormatSettings getInputFormatSetting(const Settings & settings)
+static FormatSettings getInputFormatSetting(const Settings & settings, const Context & context)
 {
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
@@ -40,22 +44,35 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
-    format_settings.csv.null_as_default = settings.input_format_null_as_default;
+    format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
+    format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    format_settings.template_settings.format = settings.format_schema;
-    format_settings.template_settings.row_format = settings.format_schema_rows;
-    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
+    format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
+    format_settings.schema.format_schema = settings.format_schema;
+    format_settings.schema.format_schema_path = context.getFormatSchemaPath();
+    format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
+    format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
+    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
+    format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
+    format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
+    format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
+    format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
+    format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
 
     return format_settings;
 }
 
-static FormatSettings getOutputFormatSetting(const Settings & settings)
+static FormatSettings getOutputFormatSetting(const Settings & settings, const Context & context)
 {
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
@@ -67,11 +84,21 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
-    format_settings.template_settings.format = settings.format_schema;
-    format_settings.template_settings.row_format = settings.format_schema_rows;
-    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
+    format_settings.schema.format_schema = settings.format_schema;
+    format_settings.schema.format_schema_path = context.getFormatSchemaPath();
+    format_settings.schema.is_server = context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
+    format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
+    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
+    format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
+    format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
+    format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
+    format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
+    format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
 
     return format_settings;
 }
@@ -90,14 +117,45 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     if (!getCreators(name).input_processor_creator)
     {
-        const auto & input_getter = getCreators(name).inout_creator;
+        const auto & input_getter = getCreators(name).input_creator;
         if (!input_getter)
             throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
         const Settings & settings = context.getSettingsRef();
-        FormatSettings format_settings = getInputFormatSetting(settings);
+        FormatSettings format_settings = getInputFormatSetting(settings, context);
 
-        return input_getter(buf, sample, context, max_block_size, callback ? callback : ReadCallback(), format_settings);
+        return input_getter(buf, sample, max_block_size, callback ? callback : ReadCallback(), format_settings);
+    }
+
+    const Settings & settings = context.getSettingsRef();
+    const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
+
+    // Doesn't make sense to use parallel parsing with less than four threads
+    // (segmentator + two parsers + reader).
+    if (settings.input_format_parallel_parsing
+        && file_segmentation_engine
+        && settings.max_threads >= 4)
+    {
+        const auto & input_getter = getCreators(name).input_processor_creator;
+        if (!input_getter)
+            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+
+        FormatSettings format_settings = getInputFormatSetting(settings, context);
+
+        RowInputFormatParams row_input_format_params;
+        row_input_format_params.max_block_size = max_block_size;
+        row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
+        row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+        row_input_format_params.callback = std::move(callback);
+        row_input_format_params.max_execution_time = settings.max_execution_time;
+        row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+        auto input_creator_params = ParallelParsingBlockInputStream::InputCreatorParams{sample, row_input_format_params, format_settings};
+        ParallelParsingBlockInputStream::Params params{buf, input_getter,
+            input_creator_params, file_segmentation_engine,
+            static_cast<int>(settings.max_threads),
+            settings.min_chunk_bytes_for_parallel_parsing};
+        return std::make_shared<ParallelParsingBlockInputStream>(params);
     }
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
@@ -128,16 +186,16 @@ BlockOutputStreamPtr FormatFactory::getOutput(
             throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
         const Settings & settings = context.getSettingsRef();
-        FormatSettings format_settings = getOutputFormatSetting(settings);
+        FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
         /**  Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
         return std::make_shared<MaterializingBlockOutputStream>(
-                output_getter(buf, sample, context, callback, format_settings), sample);
+                output_getter(buf, sample, std::move(callback), format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, callback);
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -155,7 +213,7 @@ InputFormatPtr FormatFactory::getInputFormat(
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
     const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getInputFormatSetting(settings);
+    FormatSettings format_settings = getInputFormatSetting(settings, context);
 
     RowInputFormatParams params;
     params.max_block_size = max_block_size;
@@ -165,7 +223,13 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-    return input_getter(buf, sample, context, params, format_settings);
+    auto format = input_getter(buf, sample, params, format_settings);
+
+    /// It's a kludge. Because I cannot remove context from values format.
+    if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
+        values->setContext(context);
+
+    return format;
 }
 
 
@@ -177,18 +241,24 @@ OutputFormatPtr FormatFactory::getOutputFormat(
         throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
     const Settings & settings = context.getSettingsRef();
-    FormatSettings format_settings = getOutputFormatSetting(settings);
+    FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    return output_getter(buf, sample, context, callback, format_settings);
+    auto format = output_getter(buf, sample, std::move(callback), format_settings);
+
+    /// It's a kludge. Because I cannot remove context from MySQL format.
+    if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
+        mysql->setContext(context);
+
+    return format;
 }
 
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
-    auto & target = dict[name].inout_creator;
+    auto & target = dict[name].input_creator;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
@@ -218,53 +288,13 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
     target = std::move(output_creator);
 }
 
-
-/// Formats for both input/output.
-
-void registerInputFormatNative(FormatFactory & factory);
-void registerOutputFormatNative(FormatFactory & factory);
-
-void registerInputFormatProcessorNative(FormatFactory & factory);
-void registerOutputFormatProcessorNative(FormatFactory & factory);
-void registerInputFormatProcessorRowBinary(FormatFactory & factory);
-void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
-void registerInputFormatProcessorValues(FormatFactory & factory);
-void registerOutputFormatProcessorValues(FormatFactory & factory);
-void registerInputFormatProcessorCSV(FormatFactory & factory);
-void registerOutputFormatProcessorCSV(FormatFactory & factory);
-void registerInputFormatProcessorTSKV(FormatFactory & factory);
-void registerOutputFormatProcessorTSKV(FormatFactory & factory);
-void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
-void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
-void registerOutputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorProtobuf(FormatFactory & factory);
-void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
-void registerInputFormatProcessorTemplate(FormatFactory & factory);
-void registerOutputFormatProcessorTemplate(FormatFactory &factory);
-
-/// Output only (presentational) formats.
-
-void registerOutputFormatNull(FormatFactory & factory);
-
-void registerOutputFormatProcessorPretty(FormatFactory & factory);
-void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
-void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
-void registerOutputFormatProcessorVertical(FormatFactory & factory);
-void registerOutputFormatProcessorJSON(FormatFactory & factory);
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
-void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
-void registerOutputFormatProcessorXML(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
-void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
-void registerOutputFormatProcessorNull(FormatFactory & factory);
-void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
-
-/// Input only formats.
-void registerInputFormatProcessorCapnProto(FormatFactory & factory);
+void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
+{
+    auto & target = dict[name].file_segmentation_engine;
+    if (target)
+        throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(file_segmentation_engine);
+}
 
 FormatFactory::FormatFactory()
 {
@@ -287,6 +317,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorTSKV(*this);
     registerInputFormatProcessorJSONEachRow(*this);
     registerOutputFormatProcessorJSONEachRow(*this);
+    registerInputFormatProcessorJSONCompactEachRow(*this);
+    registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
@@ -296,6 +328,9 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
 
+    registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineJSONEachRow(*this);
 
     registerOutputFormatNull(*this);
 
@@ -309,9 +344,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-#if USE_POCO_NETSSL
     registerOutputFormatProcessorMySQLWrite(*this);
-#endif
 }
 
 FormatFactory & FormatFactory::instance()

@@ -20,8 +20,8 @@ private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 public:
-    FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                           const String & filter_column_name_, bool remove_filter_ = false);
+    FilterBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_,
+                           String filter_column_name_, bool remove_filter_ = false);
 
     String getName() const override;
     Block getTotals() override;
@@ -35,6 +35,7 @@ protected:
 private:
     ExpressionActionsPtr expression;
     Block header;
+    String filter_column_name;
     ssize_t filter_column;
 
     ConstantFilterDescription constant_filter_description;

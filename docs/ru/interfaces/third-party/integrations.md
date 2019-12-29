@@ -13,9 +13,10 @@
         - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (использует [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
         - [pg2ch](https://github.com/mkabilov/pg2ch)
+        - [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
-- Очереди ообщений
+- Очереди сообщений
     - [Kafka](https://kafka.apache.org)
         - [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/kshvakov/clickhouse/))
 - Хранилища объектов

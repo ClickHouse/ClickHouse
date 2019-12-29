@@ -1,12 +1,12 @@
 #include "QueryProfiler.h"
 
 #include <random>
-#include <common/Pipe.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
-#include <Common/StackTrace.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -22,7 +22,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-extern LazyPipe trace_pipe;
+extern LazyPipeFDs trace_pipe;
 
 namespace
 {
@@ -30,13 +30,13 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
-# if !defined(__APPLE__)
+#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
 #endif
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
-# if !defined(__APPLE__)
+#if defined(OS_LINUX)
         /// Quickly drop if signal handler is called too frequently.
         /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
         ++write_trace_iteration;
@@ -99,6 +99,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
     extern const int CANNOT_DELETE_TIMER;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename ProfilerImpl>

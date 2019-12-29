@@ -2,6 +2,8 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import redis
+import aerospike
 from tzlocal import get_localzone
 import datetime
 import os
@@ -331,6 +333,16 @@ class SourceHTTPBase(ExternalSource):
             <http>
                 <url>{url}</url>
                 <format>TabSeparated</format>
+                <credentials>
+                    <user>foo</user>
+                    <password>bar</password>
+                </credentials>
+                <headers>
+                    <header>
+                        <name>api-key</name>
+                        <value>secret</value>
+                    </header>
+                </headers>
             </http>
         '''.format(url=url)
 
@@ -372,3 +384,122 @@ class SourceHTTP(SourceHTTPBase):
 class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
+
+
+class SourceRedis(ExternalSource):
+    def __init__(
+            self, name, internal_hostname, internal_port, docker_hostname, docker_port, user, password, storage_type
+    ):
+        super(SourceRedis, self).__init__(
+            name, internal_hostname, internal_port, docker_hostname, docker_port, user, password
+        )
+        self.storage_type = storage_type
+
+    def get_source_str(self, table_name):
+        return '''
+            <redis>
+                <host>{host}</host>
+                <port>{port}</port>
+                <db_index>0</db_index>
+                <storage_type>{storage_type}</storage_type>
+            </redis>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            storage_type=self.storage_type,  # simple or hash_map
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
+        self.prepared = True
+        self.ordered_names = structure.get_ordered_names()
+
+    def load_data(self, data, table_name):
+        self.client.flushdb()
+        for row in list(data):
+            values = []
+            for name in self.ordered_names:
+                values.append(str(row.data[name]))
+            print 'values: ', values
+            if len(values) == 2:
+                self.client.set(*values)
+                print 'kek: ', self.client.get(values[0])
+            else:
+                self.client.hset(*values)
+
+    def compatible_with_layout(self, layout):
+        if (
+            layout.is_simple and self.storage_type == "simple" or
+            layout.is_complex and self.storage_type == "simple" and layout.name == "complex_key_hashed_one_key" or
+            layout.is_complex and self.storage_type == "hash_map" and layout.name == "complex_key_hashed_two_keys"
+        ):
+            return True
+        return False
+
+
+class SourceAerospike(ExternalSource):
+    def __init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password):
+        ExternalSource.__init__(self, name, internal_hostname, internal_port,
+                 docker_hostname, docker_port, user, password)
+        self.namespace = "test"
+        self.set = "test_set"
+
+    def get_source_str(self, table_name):
+        print("AEROSPIKE get source str")
+        return '''
+            <aerospike>
+                <host>{host}</host>
+                <port>{port}</port>
+            </aerospike>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        config = {
+            'hosts': [ (self.internal_hostname, self.internal_port) ]
+        }
+        self.client = aerospike.client(config).connect()
+        self.prepared = True
+        print("PREPARED AEROSPIKE")
+        print(config)
+
+    def compatible_with_layout(self, layout):
+        print("compatible AEROSPIKE")
+        return layout.is_simple
+
+    def _flush_aerospike_db(self):
+        keys = []
+
+        def handle_record((key, metadata, record)):
+            print("Handle record {} {}".format(key, record))
+            keys.append(key)
+
+        def print_record((key, metadata, record)):
+            print("Print record {} {}".format(key, record))
+
+        scan = self.client.scan(self.namespace, self.set)
+        scan.foreach(handle_record)
+
+        [self.client.remove(key) for key in keys]
+
+    def load_kv_data(self, values):
+        self._flush_aerospike_db()
+
+        print("Load KV Data Aerospike")
+        if len(values[0]) == 2:
+            for value in values:
+                key = (self.namespace, self.set, value[0])
+                print(key)
+                self.client.put(key, {"bin_value": value[1]}, policy={"key": aerospike.POLICY_KEY_SEND})
+                assert self.client.exists(key)
+        else:
+            assert("VALUES SIZE != 2")
+
+        # print(values)
+
+    def load_data(self, data, table_name):
+        print("Load Data Aerospike")
+        # print(data)

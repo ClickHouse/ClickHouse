@@ -1,10 +1,5 @@
 #pragma once
-#include <Common/config.h>
-#if USE_POCO_NETSSL
-
 #include <ext/scope_guard.h>
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
 #include <random>
 #include <sstream>
 #include <Common/MemoryTracker.h>
@@ -25,6 +20,11 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
+#include "config_core.h"
+#if USE_SSL
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#endif
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.
@@ -127,6 +127,14 @@ enum ColumnType
     MYSQL_TYPE_VAR_STRING = 0xfd,
     MYSQL_TYPE_STRING = 0xfe,
     MYSQL_TYPE_GEOMETRY = 0xff
+};
+
+
+// https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
+enum ColumnDefinitionFlags
+{
+    UNSIGNED_FLAG = 32,
+    BINARY_FLAG = 128
 };
 
 
@@ -824,19 +832,40 @@ protected:
     }
 };
 
+
+ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex index);
+
+
+namespace ProtocolText
+{
+
 class ResultsetRow : public WritePacket
 {
-    std::vector<String> columns;
+    const Columns & columns;
+    int row_num;
     size_t payload_size = 0;
+    std::vector<String> serialized;
 public:
-    ResultsetRow() = default;
-
-    void appendColumn(String && value)
+    ResultsetRow(const DataTypes & data_types, const Columns & columns_, int row_num_)
+        : columns(columns_)
+        , row_num(row_num_)
     {
-        payload_size += getLengthEncodedStringSize(value);
-        columns.emplace_back(std::move(value));
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            if (columns[i]->isNullAt(row_num))
+            {
+                payload_size += 1;
+                serialized.emplace_back("\xfb");
+            }
+            else
+            {
+                WriteBufferFromOwnString ostr;
+                data_types[i]->serializeAsText(*columns[i], row_num, ostr, FormatSettings());
+                payload_size += getLengthEncodedStringSize(ostr.str());
+                serialized.push_back(std::move(ostr.str()));
+            }
+        }
     }
-
 protected:
     size_t getPayloadSize() const override
     {
@@ -845,10 +874,17 @@ protected:
 
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
-        for (const String & column : columns)
-            writeLengthEncodedString(column, buffer);
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            if (columns[i]->isNullAt(row_num))
+                buffer.write(serialized[i].data(), 1);
+            else
+                writeLengthEncodedString(serialized[i], buffer);
+        }
     }
 };
+
+}
 
 namespace Authentication
 {
@@ -917,10 +953,7 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (user->password_double_sha1_hex.empty())
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
-
-        Poco::SHA1Engine::Digest double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
@@ -939,6 +972,7 @@ private:
     String scramble;
 };
 
+#if USE_SSL
 /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
 /// https://dev.mysql.com/doc/internals/en/sha256.html
 class Sha256Password : public IPlugin
@@ -999,7 +1033,6 @@ public:
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
-
             BIO * mem = BIO_new(BIO_s_mem());
             SCOPE_EXIT(BIO_free(mem));
             if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
@@ -1007,7 +1040,10 @@ public:
                 throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
             char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
             long pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
             LOG_TRACE(log, "Key: " << pem);
@@ -1072,9 +1108,9 @@ private:
     Logger * log;
     String scramble;
 };
-
-}
-
-}
-}
 #endif
+
+}
+
+}
+}

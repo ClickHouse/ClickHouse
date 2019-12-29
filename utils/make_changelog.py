@@ -35,7 +35,7 @@ def http_get_json(url, token, max_retries, retry_timeout):
                         logging.warning(msg)
                         time.sleep(retry_timeout)
                         continue
-                except:
+                except Exception:
                     pass
 
             raise Exception(msg)
@@ -60,8 +60,20 @@ def get_merge_base(first, second, project_root):
         sha = tuple(filter(len, text.split()))[0]
         check_sha(sha)
         return sha
-    except:
+    except Exception:
         logging.error('Cannot find merge base for %s and %s', first, second)
+        raise
+
+def rev_parse(rev, project_root):
+    try:
+        command = "git rev-parse {}".format(rev)
+        text = subprocess.check_output(command, shell=True, cwd=project_root)
+        text = text.decode('utf-8', 'ignore')
+        sha = tuple(filter(len, text.split()))[0]
+        check_sha(sha)
+        return sha
+    except Exception:
+        logging.error('Cannot find revision %s', rev)
         raise
 
 
@@ -98,9 +110,29 @@ def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, tok
     return commits
 
 
+# Get list of commits a specified commit is cherry-picked from. Can return an empty list.
+def parse_original_commits_from_cherry_pick_message(commit_message):
+    prefix = '(cherry picked from commits'
+    pos = commit_message.find(prefix)
+    if pos == -1:
+        prefix = '(cherry picked from commit'
+        pos = commit_message.find(prefix)
+        if pos == -1:
+            return []
+    pos += len(prefix)
+    endpos = commit_message.find(')', pos)
+    if endpos == -1:
+        return []
+    lst = [x.strip() for x in commit_message[pos:endpos].split(',')]
+    lst = [x for x in lst if x]
+    return lst
+
+
 # Use GitHub search api to check if commit from any pull request. Update pull_requests info.
-def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, retry_timeout):
-    resp = github_api_get_json('search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(commit_sha, repo), token, max_retries, retry_timeout)
+def find_pull_request_for_commit(commit_info, pull_requests, token, max_retries, retry_timeout):
+    commits = [commit_info['sha']] + parse_original_commits_from_cherry_pick_message(commit_info['commit']['message'])
+    query = 'search/issues?q={}+type:pr+repo:{}&sort=created&order=asc'.format(' '.join(commits), repo)
+    resp = github_api_get_json(query, token, max_retries, retry_timeout)
 
     found = False
     for item in resp['items']:
@@ -118,14 +150,14 @@ def find_pull_request_for_commit(commit_sha, pull_requests, token, max_retries, 
 
 
 # Find pull requests from list of commits. If no pull request found, add commit to not_found_commits list.
-def find_pull_requests(commits, token, max_retries, retry_timeout):
+def find_pull_requests(commits, commits_info, token, max_retries, retry_timeout):
     not_found_commits = []
     pull_requests = {}
 
     for i, commit in enumerate(commits):
         if (i + 1) % 10 == 0:
             logging.info('Processed %d commits', i + 1)
-        if not find_pull_request_for_commit(commit, pull_requests, token, max_retries, retry_timeout):
+        if not find_pull_request_for_commit(commits_info[commit], pull_requests, token, max_retries, retry_timeout):
             not_found_commits.append(commit)
 
     return not_found_commits, pull_requests
@@ -198,7 +230,7 @@ def process_unknown_commits(commits, commits_info, users):
                 # First, try get name from github user
                 try:
                     name = users[login]['name']
-                except:
+                except KeyError:
                     pass
             else:
                 login = 'Unknown'
@@ -207,7 +239,7 @@ def process_unknown_commits(commits, commits_info, users):
             if not name:
                 try:
                     name = info['commit']['author']['name']
-                except:
+                except KeyError:
                     pass
 
             author = '[{}]({})'.format(name or login, info['author']['html_url'])
@@ -217,49 +249,61 @@ def process_unknown_commits(commits, commits_info, users):
     text = 'Commits which are not from any pull request:\n\n'
     return text + '\n\n'.join(texts)
 
+# This function mirrors the PR description checks in ClickhousePullRequestTrigger.
+# Returns False if the PR should not be mentioned changelog.
+def parse_one_pull_request(item):
+    description = item['description']
+    lines = [line for line in map(lambda x: x.strip(), description.split('\n')) if line]
+    lines = [re.sub(r'\s+', ' ', l) for l in lines]
+
+    cat_pos = None
+    short_descr_pos = None
+    long_descr_pos = None
+
+    if lines:
+        for i in range(len(lines) - 1):
+            if re.match(r'(?i).*category.*:$', lines[i]):
+                cat_pos = i
+            if re.match(r'(?i)^\**\s*(Short description|Change\s*log entry)', lines[i]):
+                short_descr_pos = i
+            if re.match(r'(?i)^\**\s*Detailed description', lines[i]):
+                long_descr_pos = i
+
+    if cat_pos is None:
+        return False
+    cat = lines[cat_pos + 1]
+    cat = re.sub(r'^[-*\s]*', '', cat)
+
+    # Filter out the PR categories that are not for changelog.
+    if re.match(r'(?i)doc|((non|in|not|un)[-\s]*significant)', cat):
+        return False
+
+    short_descr = ''
+    if short_descr_pos:
+        short_descr_end = long_descr_pos or len(lines)
+        short_descr = lines[short_descr_pos + 1]
+        if short_descr_pos + 2 != short_descr_end:
+            short_descr += ' ...'
+
+    # If we have nothing meaningful
+    if not re.match('\w', short_descr):
+        short_descr = item['title']
+
+    # TODO: Add detailed description somewhere
+
+    item['entry'] = short_descr
+    item['category'] = cat
+
+    return True
+
 
 # List of pull requests -> text description.
 def process_pull_requests(pull_requests, users, repo):
     groups = {}
 
     for id, item in pull_requests.items():
-        lines = list(filter(len, map(lambda x: x.strip(), item['description'].split('\n'))))
-
-        cat_pos = None
-        short_descr_pos = None
-        long_descr_pos = None
-
-        if lines:
-            for i in range(len(lines) - 1):
-                if re.match('^\**Category', lines[i]):
-                    cat_pos = i
-                if re.match('^\**\s*Short description', lines[i]):
-                    short_descr_pos = i
-                if re.match('^\**\s*Detailed description', lines[i]):
-                    long_descr_pos = i
-
-        cat = ''
-        if cat_pos:
-            # TODO: Sometimes have more than one
-            cat = lines[cat_pos + 1]
-        cat = cat.strip().lstrip('-').strip()
-
-        # We are not interested in documentation PRs in changelog.
-        if re.match('^\**\s*(?:Documentation|Doc\s)', cat):
-            continue;
-
-        short_descr = ''
-        if short_descr_pos:
-            short_descr_end = long_descr_pos or len(lines)
-            short_descr = lines[short_descr_pos + 1]
-            if short_descr_pos + 2 != short_descr_end:
-                short_descr += ' ...'
-
-        # If we have nothing meaningful
-        if not re.match('\w', short_descr):
-            short_descr = item['title']
-
-        # TODO: Add detailed description somewhere
+        if not parse_one_pull_request(item):
+            continue
 
         pattern = u"{} [#{}]({}) ({})"
         link = 'https://github.com/{}/pull/{}'.format(repo, id)
@@ -269,20 +313,21 @@ def process_pull_requests(pull_requests, users, repo):
             user = users[item['user']]
             author = u'[{}]({})'.format(user['name'] or user['login'], user['html_url'])
 
+        cat = item['category']
         if cat not in groups:
             groups[cat] = []
-        groups[cat].append(pattern.format(short_descr, id, link, author))
+        groups[cat].append(pattern.format(item['entry'], id, link, author))
 
-    categories_preferred_order = ['New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Backward Incompatible Change', 'Other']
+    categories_preferred_order = ['Backward Incompatible Change', 'New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement', 'Build/Testing/Packaging Improvement', 'Other']
 
     def categories_sort_key(name):
         if name in categories_preferred_order:
-            return categories_preferred_order.index(name)
+            return str(categories_preferred_order.index(name)).zfill(3)
         else:
             return name.lower()
 
     texts = []
-    for group, text in sorted(groups.items(), key = lambda (k, v):  categories_sort_key(k)):
+    for group, text in sorted(groups.items(), key = lambda kv: categories_sort_key(kv[0])):
         items = [u'* {}'.format(pr) for pr in text]
         texts.append(u'### {}\n{}'.format(group if group else u'[No category]', '\n'.join(items)))
 
@@ -385,7 +430,7 @@ def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, sta
 
         if not is_pull_requests_loaded:
             logging.info('Searching for pull requests using github api.')
-            unknown_commits, pull_requests = find_pull_requests(commits, token, max_retries, retry_timeout)
+            unknown_commits, pull_requests = find_pull_requests(commits, commits_info, token, max_retries, retry_timeout)
             state['unknown_commits'] = unknown_commits
             state['pull_requests'] = pull_requests
     else:
@@ -422,7 +467,7 @@ if __name__ == '__main__':
     parser.add_argument('--token', help='Github token. Use it to increase github api query limit.')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
-    parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='yandex/ClickHouse')
+    parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='ClickHouse/ClickHouse')
     parser.add_argument('--max_retry', default=100, type=int,
                         help='Max number of retries pre api query in case of API rate limit exceeded error.')
     parser.add_argument('--retry_timeout', help='Timeout after retry in seconds.', type=int, default=5)
@@ -447,5 +492,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
     repo_folder = os.path.expanduser(repo_folder)
+    new_release_tag = rev_parse(new_release_tag, repo_folder)
+    prev_release_tag = rev_parse(prev_release_tag, repo_folder)
 
     make_changelog(new_release_tag, prev_release_tag, pull_requests, repo, repo_folder, state_file, token, max_retry, retry_timeout)

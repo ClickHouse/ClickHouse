@@ -209,7 +209,7 @@ int main(int argc, char ** argv)
 
         for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
         {
-            RefsHashMap::iterator inserted_it;
+            RefsHashMap::LookupResult inserted_it;
             bool inserted;
             set.emplace(StringRef(*it), inserted_it, inserted);
         }
@@ -222,7 +222,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->getFirst().data, it->getFirst().size);
+            devnull.write(it->getKey().data, it->getKey().size);
             devnull << std::endl;
         }
 
@@ -236,7 +236,7 @@ int main(int argc, char ** argv)
 
         for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
         {
-            RefsHashMap::iterator inserted_it;
+            RefsHashMap::LookupResult inserted_it;
             bool inserted;
             set.emplace(StringRef(pool.insert(it->data(), it->size()), it->size()), inserted_it, inserted);
         }
@@ -249,7 +249,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->getFirst().data, it->getFirst().size);
+            devnull.write(it->getKey().data, it->getKey().size);
             devnull << std::endl;
         }
     }

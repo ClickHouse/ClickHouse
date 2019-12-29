@@ -1,12 +1,13 @@
+#include <Storages/System/StorageSystemSettings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Storages/System/StorageSystemSettings.h>
+#include <Access/SettingsConstraints.h>
 
 
 namespace DB
 {
-
 NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 {
     return {
@@ -14,6 +15,9 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"value", std::make_shared<DataTypeString>()},
         {"changed", std::make_shared<DataTypeUInt8>()},
         {"description", std::make_shared<DataTypeString>()},
+        {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"readonly", std::make_shared<DataTypeUInt8>()}
     };
 }
 
@@ -23,12 +27,38 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
 
 void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    for (const auto & setting : context.getSettingsRef())
+    const Settings & settings = context.getSettingsRef();
+    auto settings_constraints = context.getSettingsConstraints();
+    for (const auto & setting : settings)
     {
-        res_columns[0]->insert(setting.getName().toString());
+        StringRef setting_name = setting.getName();
+        res_columns[0]->insert(setting_name.toString());
         res_columns[1]->insert(setting.getValueAsString());
         res_columns[2]->insert(setting.isChanged());
         res_columns[3]->insert(setting.getDescription().toString());
+
+        Field min, max;
+        bool read_only = false;
+        if (settings_constraints)
+            settings_constraints->get(setting_name, min, max, read_only);
+
+        /// These two columns can accept strings only.
+        if (!min.isNull())
+            min = Settings::valueToString(setting_name, min);
+        if (!max.isNull())
+            max = Settings::valueToString(setting_name, max);
+
+        if (!read_only)
+        {
+            if ((settings.readonly == 1)
+                || ((settings.readonly > 1) && (setting_name == "readonly"))
+                || ((!settings.allow_ddl) && (setting_name == "allow_ddl")))
+                read_only = true;
+        }
+
+        res_columns[4]->insert(min);
+        res_columns[5]->insert(max);
+        res_columns[6]->insert(read_only);
     }
 }
 

@@ -1,3 +1,6 @@
+SELECT range(100) == range(0, 100) and  range(0, 100) == range(0, 100, 1);
+SELECT distinct length(range(number, number + 100, 99))  == 2 FROM numbers(1000);
+SELECT distinct length(range(number, number + 100, 100)) == 1 FROM numbers(1000);
 SELECT range(0)[-1];
 SELECT range(0)[1];
 SELECT range(number)[2] FROM system.numbers LIMIT 10;

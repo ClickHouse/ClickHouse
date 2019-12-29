@@ -1,10 +1,10 @@
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>

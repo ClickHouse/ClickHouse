@@ -5,10 +5,12 @@ nav:
   - 'Distinctive Features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica Task': 'introduction/ya_metrika_task.md'
+  - 'History': 'introduction/history.md'
 
 - 'Getting Started':
-  - 'Deploying and Running': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - 'Installation': 'getting_started/install.md'
+  - 'Tutorial': 'getting_started/tutorial.md'
   - 'Example Datasets':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'
@@ -26,44 +28,17 @@ nav:
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'
+  - 'C++ Client Library': 'interfaces/cpp.md'
   - 'Third-Party':
     - 'Client Libraries': 'interfaces/third-party/client_libraries.md'
     - 'Integrations': 'interfaces/third-party/integrations.md'
     - 'Visual Interfaces': 'interfaces/third-party/gui.md'
     - 'Proxies': 'interfaces/third-party/proxy.md'
 
-- 'Data Types':
-  - 'Introduction': 'data_types/index.md'
-  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
-  - 'Float32, Float64': 'data_types/float.md'
-  - 'Decimal': 'data_types/decimal.md'
-  - 'Boolean': 'data_types/boolean.md'
-  - 'String': 'data_types/string.md'
-  - 'FixedString(N)': 'data_types/fixedstring.md'
-  - 'UUID': 'data_types/uuid.md'
-  - 'Date': 'data_types/date.md'
-  - 'DateTime': 'data_types/datetime.md'
-  - 'Enum': 'data_types/enum.md'
-  - 'Array(T)': 'data_types/array.md'
-  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
-  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
-  - 'Nullable': 'data_types/nullable.md'
-  - 'Nested Data Structures':
-    - 'hidden': 'data_types/nested_data_structures/index.md'
-    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
-  - 'Special Data Types':
-    - 'hidden': 'data_types/special_data_types/index.md'
-    - 'Expression': 'data_types/special_data_types/expression.md'
-    - 'Set': 'data_types/special_data_types/set.md'
-    - 'Nothing': 'data_types/special_data_types/nothing.md'
-  - 'Domains':
-    - 'Overview': 'data_types/domains/overview.md'
-    - 'IPv4': 'data_types/domains/ipv4.md'
-    - 'IPv6': 'data_types/domains/ipv6.md'
-
 - 'Database Engines':
     - 'Introduction': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'
@@ -105,12 +80,15 @@ nav:
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
-  - 'SELECT': 'query_language/select.md'
-  - 'INSERT INTO': 'query_language/insert_into.md'
-  - 'CREATE': 'query_language/create.md'
-  - 'ALTER': 'query_language/alter.md'
-  - 'SYSTEM': 'query_language/system.md'
-  - 'Other Kinds of Queries': 'query_language/misc.md'
+  - 'Syntax': 'query_language/syntax.md'
+  - 'Statements':
+    - 'SELECT': 'query_language/select.md'
+    - 'INSERT INTO': 'query_language/insert_into.md'
+    - 'CREATE': 'query_language/create.md'
+    - 'ALTER': 'query_language/alter.md'
+    - 'SYSTEM': 'query_language/system.md'
+    - 'SHOW': 'query_language/show.md'
+    - 'Other': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'
     - 'Arithmetic': 'query_language/functions/arithmetic_functions.md'
@@ -143,6 +121,7 @@ nav:
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
     - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
+    - 'Introspection': 'query_language/functions/introspection.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -172,7 +151,39 @@ nav:
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
-  - 'General Syntax': 'query_language/syntax.md'
+  - 'Data Types':
+    - 'Introduction': 'data_types/index.md'
+    - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
+    - 'Float32, Float64': 'data_types/float.md'
+    - 'Decimal': 'data_types/decimal.md'
+    - 'Boolean': 'data_types/boolean.md'
+    - 'String': 'data_types/string.md'
+    - 'FixedString(N)': 'data_types/fixedstring.md'
+    - 'UUID': 'data_types/uuid.md'
+    - 'Date': 'data_types/date.md'
+    - 'DateTime': 'data_types/datetime.md'
+    - 'Enum': 'data_types/enum.md'
+    - 'Array(T)': 'data_types/array.md'
+    - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
+    - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+    - 'Nullable': 'data_types/nullable.md'
+    - 'Nested Data Structures':
+      - 'hidden': 'data_types/nested_data_structures/index.md'
+      - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
+    - 'Special Data Types':
+      - 'hidden': 'data_types/special_data_types/index.md'
+      - 'Expression': 'data_types/special_data_types/expression.md'
+      - 'Set': 'data_types/special_data_types/set.md'
+      - 'Nothing': 'data_types/special_data_types/nothing.md'
+      - 'Interval': 'data_types/special_data_types/interval.md'
+    - 'Domains':
+      - 'Overview': 'data_types/domains/overview.md'
+      - 'IPv4': 'data_types/domains/ipv4.md'
+      - 'IPv6': 'data_types/domains/ipv6.md'
+
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - 'Operations':
   - 'Introduction': 'operations/index.md'
@@ -201,20 +212,24 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
-- 'F.A.Q.':
-  - 'General Questions': 'faq/general.md'
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
-  - 'How to Write C++ code': 'development/style.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross_osx.md'
+  - 'How to Build ClickHouse on Linux for AARCH64 (ARM64)': 'development/build_cross_arm.md'
+  - 'How to Write C++ Code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
   - 'Security Changelog': 'security_changelog.md'
+
+- 'F.A.Q.':
+  - 'General Questions': 'faq/general.md'

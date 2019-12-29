@@ -1,5 +1,0 @@
-<yandex>
-    <s3>
-        <minimum_upload_part_size>1000000</minimum_upload_part_size>
-    </s3>
-</yandex>

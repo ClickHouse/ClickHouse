@@ -349,7 +349,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         auto key_holder = getKeyHolder(row_, pool);
 
         bool inserted = false;
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         if (saved_hash)
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
@@ -359,12 +359,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
+            auto & mapped = it->getMapped();
             if (inserted)
             {
-                new (&it->getSecond()) Mapped();
+                new (&mapped) Mapped();
             }
-            mapped_cache[row] = it->getSecond();
-            return EmplaceResult(it->getSecond(), mapped_cache[row], inserted);
+            mapped_cache[row] = mapped;
+            return EmplaceResult(mapped, mapped_cache[row], inserted);
         }
         else
             return EmplaceResult(inserted);

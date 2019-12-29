@@ -10,7 +10,7 @@ $ sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-a
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
+$ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
@@ -24,15 +24,9 @@ $ ./release
 
 The following tutorial is based on the Ubuntu Linux system.
 With appropriate changes, it should also work on any other Linux distribution.
-Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
+Supported platforms: x86_64 and AArch64. Support for Power9 is experimental.
 
-To test for SSE 4.2, do
-
-```bash
-$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
-```
-
-## Install Git and CMake
+## Install Git, CMake and Ninja
 
 ```bash
 $ sudo apt-get install git cmake ninja-build
@@ -55,7 +49,7 @@ $ sudo apt-get install gcc-9 g++-9
 
 ### Install from Sources
 
-Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 9 for Builds
 
@@ -67,21 +61,19 @@ $ export CXX=g++-9
 ## Install Required Libraries from Packages
 
 ```bash
-$ sudo apt-get install libicu-dev libreadline-dev gperf
+$ sudo apt-get install libreadline-dev
 ```
 
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive git@github.com:yandex/ClickHouse.git
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
-or 
+or
 ```bash
-$ git clone --recursive https://github.com/yandex/ClickHouse.git
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

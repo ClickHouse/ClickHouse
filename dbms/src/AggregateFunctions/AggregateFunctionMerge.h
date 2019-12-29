@@ -98,8 +98,6 @@ public:
     {
         return nested_func->allocatesMemoryInArena();
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

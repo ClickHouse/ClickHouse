@@ -11,15 +11,15 @@ SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        1 AS a, \n        1 AS b
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT 1 AS a\n)\nANY FULL OUTER JOIN \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) USING (a)\nWHERE b = 0
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        1 AS a, \n        1 AS b\n)\nANY FULL OUTER JOIN \n(\n    SELECT 1 AS a\n) USING (a)\nWHERE b = 0
 -------Need push down-------
-SELECT toString(value) AS value\nFROM \n(\n    SELECT 1 AS value\n    WHERE toString(value) = \'1\'\n)\nWHERE value = \'1\'
+SELECT toString(value) AS value\nFROM \n(\n    SELECT 1 AS value\n)
 1
-SELECT id\nFROM \n(\n    SELECT 1 AS id\n    WHERE id = 1\n    UNION ALL\n    SELECT 2 AS `2`\n    WHERE `2` = 1\n)\nWHERE id = 1
-1
-SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n)\nWHERE id = 1
+SELECT id\nFROM \n(\n    SELECT 1 AS id\n    UNION ALL\n    SELECT 2 AS `2`\n    WHERE 0\n)\nWHERE id = 1
 1
 SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n)\nWHERE id = 1
 1
-SELECT \n    id, \n    subquery\nFROM \n(\n    SELECT \n        1 AS id, \n        CAST(1, \'UInt8\') AS subquery\n    WHERE subquery = 1\n)\nWHERE subquery = 1
+SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n)\nWHERE id = 1
+1
+SELECT \n    id, \n    subquery\nFROM \n(\n    SELECT \n        1 AS id, \n        CAST(1, \'UInt8\') AS subquery\n)
 1	1
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        toUInt64(sum(id) AS b) AS a, \n        b\n    FROM test_00597\n    HAVING a = 3\n)\nWHERE a = 3
 3	3

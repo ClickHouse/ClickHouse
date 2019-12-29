@@ -8,6 +8,7 @@ namespace DB
 void registerFunctionsJSON(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionJSON<NameJSONHas, JSONHasImpl>>();
+    factory.registerFunction<FunctionJSON<NameIsValidJSON, IsValidJSONImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONLength, JSONLengthImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONKey, JSONKeyImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONType, JSONTypeImpl>>();
@@ -19,6 +20,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
     factory.registerFunction<FunctionJSON<NameJSONExtract, JSONExtractImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
 }
 
 }

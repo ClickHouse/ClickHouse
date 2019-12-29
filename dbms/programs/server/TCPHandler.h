@@ -63,6 +63,8 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
+    /// Temporary tables read
+    bool temporary_tables_read = false;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -153,7 +155,7 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
-    bool receiveData();
+    bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & global_settings);
     std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);

@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS bitmap_test;
 CREATE TABLE bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
 INSERT INTO bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
 INSERT INTO bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
+INSERT INTO bitmap_test SELECT '2019-01-03', 2, number FROM numbers(1,10);
 
 
 SELECT groupBitmap( uid ) AS user_num FROM bitmap_test;
@@ -65,6 +66,9 @@ SELECT count(*) FROM bitmap_test WHERE bitmapContains((SELECT groupBitmapState(u
 
 SELECT count(*) FROM bitmap_test WHERE 0 = bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
 
+-- PR#8082
+SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3], 'Array(UInt32)')))) FROM bitmap_test GROUP BY city_id;
+
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
 CREATE TABLE bitmap_state_test
@@ -103,11 +107,62 @@ SELECT bitmapAndCardinality( z, bitmapBuild(cast([19,7] AS Array(UInt32))) ) FRO
 SELECT bitmapCardinality(bitmapAnd(bitmapBuild(cast([19,7] AS Array(UInt32))), z )) FROM bitmap_column_expr_test;
 SELECT bitmapCardinality(bitmapAnd(z, bitmapBuild(cast([19,7] AS Array(UInt32))))) FROM bitmap_column_expr_test;
 
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+
+DROP TABLE IF EXISTS bitmap_column_expr_test3;
+CREATE TABLE bitmap_column_expr_test3
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32),
+    replace Nested (
+        from UInt32,
+        to UInt32
+    )
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+DROP TABLE IF EXISTS numbers10;
+CREATE VIEW numbers10 AS SELECT number FROM system.numbers LIMIT 10;
+
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag1', groupBitmapState(toUInt32(number)), cast([] as Array(UInt32)), cast([] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag2', groupBitmapState(toUInt32(number)), cast([0] as Array(UInt32)), cast([2] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag3', groupBitmapState(toUInt32(number)), cast([0,7] as Array(UInt32)), cast([3,101] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag4', groupBitmapState(toUInt32(number)), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)) FROM numbers10;
+
+SELECT tag_id, bitmapToArray(z), replace.from, replace.to, bitmapToArray(bitmapTransform(z, replace.from, replace.to)) FROM bitmap_column_expr_test3 ORDER BY tag_id;
 
 
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;
 DROP TABLE IF EXISTS bitmap_column_expr_test;
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+DROP TABLE IF EXISTS numbers10;
+DROP TABLE IF EXISTS bitmap_column_expr_test3;
 
 -- bitmapHasAny:
 ---- Empty

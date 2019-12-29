@@ -2,9 +2,9 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/asof.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
@@ -38,14 +38,18 @@ class AnalyzedJoin
     friend class SyntaxAnalyzer;
 
     const SizeLimits size_limits;
+    const size_t default_max_bytes;
     const bool join_use_nulls;
-    const bool partial_merge_join;
+    const bool partial_merge_join = false;
+    const bool partial_merge_join_optimizations = false;
+    const size_t partial_merge_join_rows_in_right_blocks = 0;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
+    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -57,15 +61,17 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
+    String tmp_path;
+
 public:
-    AnalyzedJoin(const Settings &);
+    AnalyzedJoin(const Settings &, const String & tmp_path);
 
     /// for StorageJoin
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
                  const Names & key_names_right_)
         : size_limits(limits)
+        , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , partial_merge_join(false)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;
@@ -75,18 +81,21 @@ public:
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     const SizeLimits & sizeLimits() const { return size_limits; }
+    const String & getTemporaryPath() const { return tmp_path; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
+    size_t defaultMaxBytes() const { return default_max_bytes; }
+    size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
+    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return !hasUsing(); }
+    bool hasOn() const { return table_join.on_expression != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
-    NameSet getOriginalColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_columns) const;
 
@@ -97,6 +106,9 @@ public:
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
 
+    void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
+    ASOF::Inequality getAsofInequality() { return asof_inequality; }
+
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
@@ -106,11 +118,13 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
+    /// StorageJoin overrides key names (cause of different names qualification)
+    void setRightKeys(const Names & keys) { key_names_right = keys; }
+
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
     friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
 
-struct ASTTableExpression;
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
+bool isMergeJoin(const JoinPtr &);
 
 }

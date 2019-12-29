@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include <config_core.h>
 
 namespace DB
 {
@@ -7,7 +7,10 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentQuota(FunctionFactory &);
+void registerFunctionCurrentRowPolicies(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
+void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
 void registerFunctionToTypeName(FunctionFactory &);
 void registerFunctionGetSizeOfEnumType(FunctionFactory &);
@@ -50,6 +53,8 @@ void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
+void registerFunctionGetMacro(FunctionFactory &);
+void registerFunctionGetScalar(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -59,7 +64,10 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentQuota(factory);
+    registerFunctionCurrentRowPolicies(factory);
     registerFunctionHostName(factory);
+    registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
     registerFunctionToTypeName(factory);
     registerFunctionGetSizeOfEnumType(factory);
@@ -102,6 +110,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);
     registerFunctionTransform(factory);
+    registerFunctionGetMacro(factory);
+    registerFunctionGetScalar(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

@@ -158,14 +158,14 @@ def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_direc
 
 def clear_old_incoming_packages(ssh_connection, user):
     for pkg in ('deb', 'rpm', 'tgz'):
-        for release_type in ('stable', 'testing', 'prestable'):
+        for release_type in ('stable', 'testing', 'prestable', 'lts'):
             try:
                 if pkg != 'tgz':
                     ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
                         user=user, pkg=pkg, release_type=release_type))
                 else:
                     ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/*".format(
-                        user=user, pkg=pkg, release_type=release_type))
+                        user=user, pkg=pkg))
             except Exception:
                 logging.info("rm is not required")
 
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument('--deb-directory')
     parser.add_argument('--rpm-directory')
     parser.add_argument('--tgz-directory')
-    parser.add_argument('--release-type', choices=('testing', 'stable', 'prestable'), default='testing')
+    parser.add_argument('--release-type', choices=('testing', 'stable', 'prestable', 'lts'), default='testing')
     parser.add_argument('--ssh-key-path')
     parser.add_argument('--gpg-passphrase', required=True)
     parser.add_argument('--gpg-sec-key-path')

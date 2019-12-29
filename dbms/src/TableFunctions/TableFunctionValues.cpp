@@ -16,6 +16,7 @@
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB
@@ -44,7 +45,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
             const DataTypes & value_types_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get())->getElements();
-            const TupleBackend & value_tuple = value_field.safeGet<Tuple>().toUnderType();
+            const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
                 throw Exception("Values size should match with number of columns", ErrorCodes::LOGICAL_ERROR);

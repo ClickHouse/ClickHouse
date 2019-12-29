@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <vector>
 #include <string>
@@ -38,6 +38,7 @@ public:
         std::unique_ptr<Elf> elf;
     };
 
+    /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.
     const Symbol * findSymbol(const void * address) const;
     const Object * findObject(const void * address) const;
 

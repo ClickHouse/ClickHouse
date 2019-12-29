@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {

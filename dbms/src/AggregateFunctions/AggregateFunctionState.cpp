@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionMerge.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -51,6 +52,17 @@ DataTypePtr AggregateFunctionState::getReturnType() const
             throw Exception("Combinator -MergeState expects argument with AggregateFunction type", ErrorCodes::BAD_ARGUMENTS);
 
         return arguments[0];
+    }
+    if (arguments.size() > 0)
+    {
+        DataTypePtr argument_type_ptr = arguments[0];
+        WhichDataType which(*argument_type_ptr);
+        if (which.idx == TypeIndex::AggregateFunction)
+        {
+            if (arguments.size() != 1)
+                throw Exception("Nested aggregation expects only one argument", ErrorCodes::BAD_ARGUMENTS);
+            return arguments[0];
+        }
     }
 
     return ptr;

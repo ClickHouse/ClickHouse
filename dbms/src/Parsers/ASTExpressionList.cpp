@@ -16,7 +16,11 @@ void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
-            settings.ostr << ", ";
+        {
+            if (separator)
+                settings.ostr << separator;
+            settings.ostr << ' ';
+        }
 
         (*it)->formatImpl(settings, state, frame);
     }
@@ -30,7 +34,12 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
-            settings.ostr << ", ";
+        {
+            if (separator)
+                settings.ostr << separator;
+            settings.ostr << ' ';
+        }
+
 
         if (children.size() > 1)
             settings.ostr << indent_str;

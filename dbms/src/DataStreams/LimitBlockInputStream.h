@@ -2,6 +2,7 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/SharedBlockRowRef.h>
+#include <Core/SortDescription.h>
 
 
 namespace DB
