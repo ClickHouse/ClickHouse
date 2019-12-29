@@ -491,82 +491,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         }
     };
 
-
-//    auto prepare_all_processors = [&](Queue & queue)
-//    {
-//        while (!stack.empty() && !finished)
-//        {
-//            auto current_processor = stack.top();
-//            stack.pop();
-//
-//            if (prepare_processor(current_processor))
-//                queue.push(graph[current_processor].execution_state.get());
-//        }
-//    };
-
     auto wake_up_executor = [&](size_t executor)
     {
         std::lock_guard guard(executor_contexts[executor]->mutex);
         executor_contexts[executor]->wake_flag = true;
         executor_contexts[executor]->condvar.notify_one();
     };
-
-//    auto process_pinned_tasks = [&](Queue & queue)
-//    {
-//        Queue tmp_queue;
-//
-//        struct PinnedTask
-//        {
-//            ExecutionState * task;
-//            size_t thread_num;
-//        };
-//
-//        std::stack<PinnedTask> pinned_tasks;
-//
-//        while (!queue.empty())
-//        {
-//            auto task = queue.front();
-//            queue.pop();
-//
-//            auto stream = task->processor->getStream();
-//            if (stream != IProcessor::NO_STREAM)
-//                pinned_tasks.push({.task = task, .thread_num = stream % num_threads});
-//            else
-//                tmp_queue.push(task);
-//        }
-//
-//        if (!pinned_tasks.empty())
-//        {
-//            std::stack<size_t> threads_to_wake;
-//
-//            {
-//                std::lock_guard lock(task_queue_mutex);
-//
-//                while (!pinned_tasks.empty())
-//                {
-//                    auto & pinned_task = pinned_tasks.top();
-//                    auto thread = pinned_task.thread_num;
-//
-//                    executor_contexts[thread]->pinned_tasks.push(pinned_task.task);
-//                    pinned_tasks.pop();
-//
-//                    if (threads_queue.has(thread))
-//                    {
-//                        threads_queue.pop(thread);
-//                        threads_to_wake.push(thread);
-//                    }
-//                }
-//            }
-//
-//            while (!threads_to_wake.empty())
-//            {
-//                wake_up_executor(threads_to_wake.top());
-//                threads_to_wake.pop();
-//            }
-//        }
-//
-//        queue.swap(tmp_queue);
-//    };
 
     while (!finished)
     {
@@ -576,14 +506,6 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         {
             {
                 std::unique_lock lock(task_queue_mutex);
-
-//                if (!executor_contexts[thread_num]->pinned_tasks.empty())
-//                {
-//                    state = executor_contexts[thread_num]->pinned_tasks.front();
-//                    executor_contexts[thread_num]->pinned_tasks.pop();
-//
-//                    break;
-//                }
 
                 if (!task_queue.empty())
                 {
@@ -657,32 +579,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 prepare_processor(state->processors_id, queue);
                 state = nullptr;
 
-                /// Process all neighbours. Children will be on the top of stack, then parents.
-                /// prepare_all_processors(queue, children, children, parents);
-                //process_pinned_tasks(queue);
-
                 /// Take local task from queue if has one.
                 if (!queue.empty())
                 {
                     state = queue.front();
                     queue.pop();
                 }
-
-                /// prepare_all_processors(queue, parents, parents, parents);
-                //process_pinned_tasks(queue);
-
-                /// Take pinned task if has one.
-//                {
-//                    std::lock_guard guard(task_queue_mutex);
-//                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
-//                    {
-//                        if (state)
-//                        queue.push(state);
-//
-//                        state = executor_contexts[thread_num]->pinned_tasks.front();
-//                        executor_contexts[thread_num]->pinned_tasks.pop();
-//                    }
-//                }
 
                 /// Push other tasks to global queue.
                 if (!queue.empty())
