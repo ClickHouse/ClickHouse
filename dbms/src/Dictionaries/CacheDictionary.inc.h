@@ -21,7 +21,6 @@ extern const Event DictCacheRequestTimeNs;
 extern const Event DictCacheRequests;
 extern const Event DictCacheLockWriteNs;
 extern const Event DictCacheLockReadNs;
-extern const Event DictCacheReadsRottedValues;
 }
 
 namespace CurrentMetrics
@@ -175,8 +174,7 @@ void CacheDictionary::getItemsString(
     /// save on some allocations
     out->getOffsets().reserve(rows);
 
-    auto &attribute_array = std::get<ContainerPtrType < StringRef>>
-    (attribute.arrays);
+    auto & attribute_array = std::get<ContainerPtrType < StringRef>>(attribute.arrays);
 
     auto found_outdated_values = false;
 
@@ -198,8 +196,8 @@ void CacheDictionary::getItemsString(
             }
             else
             {
-                const auto &cell_idx = find_result.cell_idx;
-                const auto &cell = cells[cell_idx];
+                const auto & cell_idx = find_result.cell_idx;
+                const auto & cell = cells[cell_idx];
                 const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
                 out->insertData(string_ref.data, string_ref.size);
             }
@@ -274,7 +272,7 @@ void CacheDictionary::getItemsString(
     query_count.fetch_add(rows, std::memory_order_relaxed);
     hit_count.fetch_add(rows - cache_expired_ids.size() - cache_not_found_ids.size(), std::memory_order_release);
 
-    /// Async udpdare of expired keys.
+    /// Async update of expired keys.
     if (cache_not_found_ids.empty())
     {
         if (allow_read_expired_keys && !cache_expired_ids.empty())

@@ -716,22 +716,35 @@ void CacheDictionary::updateThreadFunction()
     setThreadName("AsyncUpdater");
     while (!finished)
     {
+        UpdateUnitPtr first_popped;
+        update_queue.pop(first_popped);
+
         /// Here we pop as many unit pointers from update queue as we can.
         /// We fix current size to avoid livelock (or too long waiting),
         /// when this thread pops from the queue and other threads push to the queue.
         const size_t current_queue_size = update_queue.size();
-        std::vector<UpdateUnitPtr> update_request(current_queue_size);
+
+        /// Word "bunch" must present in this log message, because it is being checked in tests.
+        if (current_queue_size > 0)
+            LOG_DEBUG(log, "Performing a bunch of keys update in cache dictionary.");
+
+        /// We use deque since there is first_popped pointer.
+        /// And we have to add to the update_request without breaking order.
+        std::deque<UpdateUnitPtr> update_request(current_queue_size);
+
         for (auto & unit_ptr: update_request)
             update_queue.pop(unit_ptr);
 
+        update_request.push_front(first_popped);
+
         /// Here we prepare total count of all requested ids
         /// not to do useless allocations later.
-        size_t requested_keys_count = 0;
+        size_t total_requested_keys_count = 0;
         for (auto & unit_ptr: update_request)
-            requested_keys_count += unit_ptr->requested_ids.size();
+            total_requested_keys_count += unit_ptr->requested_ids.size();
 
         std::vector<Key> concatenated_requested_ids;
-        concatenated_requested_ids.reserve(requested_keys_count);
+        concatenated_requested_ids.reserve(total_requested_keys_count);
         for (auto & unit_ptr: update_request)
             std::for_each(std::begin(unit_ptr->requested_ids), std::end(unit_ptr->requested_ids),
                     [&] (const Key & key) {concatenated_requested_ids.push_back(key);});
@@ -754,8 +767,10 @@ void CacheDictionary::updateThreadFunction()
             /// Notify all threads about finished updating the bunch of ids
             /// where their own ids were included.
             std::unique_lock<std::mutex> lock(update_mutex);
+
             for (auto & unit_ptr: update_request)
                 unit_ptr->is_done = true;
+
             is_update_finished.notify_all();
         }
         catch (...)
