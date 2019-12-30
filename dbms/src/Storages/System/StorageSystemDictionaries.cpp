@@ -50,9 +50,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
     {
-        if (startsWith(load_result.repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX))
-            continue;
-
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
         String database, short_name;

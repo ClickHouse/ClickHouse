@@ -7,6 +7,7 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -26,7 +27,6 @@ struct ExternalLoaderConfigSettings
     std::string external_name;
     std::string external_database;
 };
-
 
 /** Interface for manage user-defined objects.
   * Monitors configuration file and automatically reloads objects in separate threads.
@@ -88,13 +88,9 @@ public:
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    void addConfigRepository(
-        const std::string & repository_name,
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-        const ExternalLoaderConfigSettings & config_settings);
+    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
 
-    /// Removes a repository which were used to read configurations.
-    std::unique_ptr<IExternalLoaderConfigRepository> removeConfigRepository(const std::string & repository_name);
+    void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
