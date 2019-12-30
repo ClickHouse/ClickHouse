@@ -716,8 +716,6 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    checkAlterIsPossible(params, context.getSettingsRef());
-
     const String database_name_ = getDatabaseName();
     const String table_name_ = getTableName();
 
