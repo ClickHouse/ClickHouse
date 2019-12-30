@@ -10,6 +10,7 @@
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
