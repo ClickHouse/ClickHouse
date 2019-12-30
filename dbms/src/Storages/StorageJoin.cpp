@@ -139,35 +139,36 @@ void registerStorageJoin(StorageFactory & factory)
         {
             const String strictness_str = Poco::toLower(*opt_strictness_id);
 
-            if (strictness_str == "any" || strictness_str == "\'any\'")
+            if (strictness_str == "any")
             {
                 if (old_any_join)
                     strictness = ASTTableJoin::Strictness::RightAny;
                 else
                     strictness = ASTTableJoin::Strictness::Any;
             }
-            else if (strictness_str == "all" || strictness_str == "\'all\'")
+            else if (strictness_str == "all")
                 strictness = ASTTableJoin::Strictness::All;
-            else if (strictness_str == "semi" || strictness_str == "\'semi\'")
+            else if (strictness_str == "semi")
                 strictness = ASTTableJoin::Strictness::Semi;
-            else if (strictness_str == "anti" || strictness_str == "\'anti\'")
+            else if (strictness_str == "anti")
                 strictness = ASTTableJoin::Strictness::Anti;
         }
 
         if (strictness == ASTTableJoin::Strictness::Unspecified)
-            throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
+                            ErrorCodes::BAD_ARGUMENTS);
 
         if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
         {
             const String kind_str = Poco::toLower(*opt_kind_id);
 
-            if (kind_str == "left" || kind_str == "\'left\'")
+            if (kind_str == "left")
                 kind = ASTTableJoin::Kind::Left;
-            else if (kind_str == "inner" || kind_str == "\'inner\'")
+            else if (kind_str == "inner")
                 kind = ASTTableJoin::Kind::Inner;
-            else if (kind_str == "right" || kind_str == "\'right\'")
+            else if (kind_str == "right")
                 kind = ASTTableJoin::Kind::Right;
-            else if (kind_str == "full" || kind_str == "\'full\'")
+            else if (kind_str == "full")
             {
                 if (strictness == ASTTableJoin::Strictness::Any)
                     strictness = ASTTableJoin::Strictness::RightAny;
@@ -176,7 +177,8 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (kind == ASTTableJoin::Kind::Comma)
-            throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).",
+                            ErrorCodes::BAD_ARGUMENTS);
 
         Names key_names;
         key_names.reserve(engine_args.size() - 2);
