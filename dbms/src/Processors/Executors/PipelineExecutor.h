@@ -240,21 +240,21 @@ private:
     /// Graph related methods.
     bool addEdges(UInt64 node);
     void buildGraph();
-    void expandPipeline(Stack & stack, UInt64 pid);
+    bool expandPipeline(Stack & stack, UInt64 pid);
 
     using Queue = std::queue<ExecutionState *>;
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    void tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number);
+    bool tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    void prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
-    void doExpandPipeline(ExpandPipelineTask * task, bool processing);
+    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
+    bool doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);
