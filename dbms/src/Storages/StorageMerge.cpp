@@ -117,7 +117,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        if (table.first->mayBenefitFromIndexForIn(left_in_operand, query_context))
+        if (std::get<0>(table)->mayBenefitFromIndexForIn(left_in_operand, query_context))
             return true;
 
         ++i;
@@ -189,12 +189,12 @@ BlockInputStreams StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables(
-        query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
+        query_info.query, has_table_virtual_column, context.getCurrentQueryId());
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
         return createSourceStreams(
-            query_info, processed_stage, max_block_size, header, {}, {}, real_column_names, modified_context, 0, has_table_virtual_column);
+            query_info, processed_stage, max_block_size, header, {}, real_column_names, modified_context, 0, has_table_virtual_column);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier = std::min(unsigned(tables_count), std::max(1U, unsigned(context.getSettingsRef().max_streams_multiplier_for_merge_tables)));
@@ -206,7 +206,7 @@ BlockInputStreams StorageMerge::read(
     {
         for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
         {
-            auto current_info = query_info.order_by_optimizer->getInputOrder(it->first);
+            auto current_info = query_info.order_by_optimizer->getInputOrder(std::get<0>(*it));
             if (it == selected_tables.begin())
                 input_sorting_info = current_info;
             else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
@@ -226,8 +226,7 @@ BlockInputStreams StorageMerge::read(
         remaining_streams -= current_streams;
         current_streams = std::max(size_t(1), current_streams);
 
-        StoragePtr storage = it->first;
-        TableStructureReadLockHolder struct_lock = it->second;
+        auto & storage = std::get<0>(*it);
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sample_size() && !storage->supportsSampling())
@@ -238,8 +237,8 @@ BlockInputStreams StorageMerge::read(
         if (current_streams)
         {
             source_streams = createSourceStreams(
-                query_info, processed_stage, max_block_size, header, storage,
-                struct_lock, real_column_names, modified_context, current_streams, has_table_virtual_column);
+                query_info, processed_stage, max_block_size, header, *it, real_column_names, modified_context,
+                current_streams, has_table_virtual_column);
         }
         else
         {
@@ -247,7 +246,7 @@ BlockInputStreams StorageMerge::read(
                 header, [=]() mutable -> BlockInputStreamPtr
                 {
                     BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
-                                                                    header, storage, struct_lock, real_column_names,
+                                                                    header, *it, real_column_names,
                                                                     modified_context, current_streams, has_table_virtual_column, true);
 
                     if (!streams.empty() && streams.size() != 1)
@@ -268,15 +267,15 @@ BlockInputStreams StorageMerge::read(
 }
 
 BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                                    const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
+                                                    const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+                                                    Names & real_column_names,
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
+    auto & [storage, struct_lock, table_name] = storage_with_lock;
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
-    String table_name = storage ? storage->getStorageID().table_name : "";
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
     if (!storage)
@@ -289,7 +288,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     if (processed_stage <= storage->getQueryProcessingStage(modified_context))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
-        if (real_column_names.size() ==0)
+        if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
 
         source_streams = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size,
@@ -360,7 +359,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
@@ -376,9 +375,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
-            auto table_id = storage->getStorageID();
-            virtual_column->insert(table_id.table_name);
+            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            virtual_column->insert(iterator->name());
         }
 
         iterator->next();
@@ -391,8 +389,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
-        //FIXME table name can be changed, use StorageID
-        selected_tables.remove_if([&] (const auto & elem) { return values.find(elem.first->getStorageID().table_name) == values.end(); });
+        selected_tables.remove_if([&] (const auto & elem) { return values.find(std::get<2>(elem)) == values.end(); });
     }
 
     return selected_tables;

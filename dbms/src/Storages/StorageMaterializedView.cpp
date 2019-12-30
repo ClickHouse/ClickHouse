@@ -36,25 +36,25 @@ static inline String generateInnerTableName(const String & table_name)
     return ".inner." + table_name;
 }
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view /*= false*/, bool need_visitor /*= true*/)
+StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view /*= false*/, bool add_default_db /*= true*/)
 {
-    if (need_visitor)
+    if (add_default_db)
     {
         AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), nullptr);
         visitor.visit(query);
     }
-    auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = extractTableExpression(query, 0);
 
-    if (!db_and_table && !subquery)
-        return {};
-
-    if (db_and_table)
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
     {
         return StorageID(db_and_table->database, db_and_table->table/*, db_and_table->uuid*/);
     }
-    else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
+    else if (auto subquery = extractTableExpression(query, 0))
     {
+        auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
+        if (!ast_select)
+            throw Exception(String("Logical error while creating Storage") + (is_live_view ? "Live" : "Materialized") +
+                            "View. Could not retrieve table name from select query.",
+                            DB::ErrorCodes::LOGICAL_ERROR);
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception(String("UNION is not supported for ") + (is_live_view ? "LIVE VIEW" : "MATERIALIZED VIEW"),
                   is_live_view ? ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW : ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
@@ -64,9 +64,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context &
         return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, is_live_view, false);
     }
     else
-        throw Exception(String("Logical error while creating Storage") + (is_live_view ? "Live" : "Materialized") +
-            "View. Could not retrieve table name from select query.",
-            DB::ErrorCodes::LOGICAL_ERROR);
+        return StorageID::createEmpty();
 }
 
 
@@ -214,7 +212,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
-    global_context.removeDependency(select_table_id, table_id);
+    if (!select_table_id.empty())
+        global_context.removeDependency(select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
@@ -278,16 +277,18 @@ void StorageMaterializedView::rename(
     }
 
     auto lock = global_context.getLock();
-    global_context.removeDependencyUnsafe(select_table_id, getStorageID());
+    if (!select_table_id.empty())
+        global_context.removeDependencyUnsafe(select_table_id, getStorageID());
     IStorage::renameInMemory(new_database_name, new_table_name);
-    global_context.addDependencyUnsafe(select_table_id, getStorageID());
+    if (!select_table_id.empty())
+        global_context.addDependencyUnsafe(select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
-    auto table_id = getStorageID();
     /// Make sure the dependency is removed after DETACH TABLE
-    global_context.removeDependency(select_table_id, table_id);
+    if (!select_table_id.empty())
+        global_context.removeDependency(select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
