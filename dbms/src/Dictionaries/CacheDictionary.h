@@ -52,7 +52,7 @@ public:
         const bool allow_read_expired_keys_,
         const size_t max_update_queue_size_,
         const size_t update_queue_push_timeout_milliseconds_,
-        const size_t timeout_for_each_update_finish_);
+        const size_t each_update_finish_timeout_seconds_);
 
     ~CacheDictionary() override;
 
