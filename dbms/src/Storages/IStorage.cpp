@@ -381,10 +381,10 @@ StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 void IStorage::alter(
     const AlterCommands & params,
     const Context & context,
-    TableStructureWriteLockHolder & /*table_lock_holder*/)
+    TableStructureWriteLockHolder & table_lock_holder)
 {
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto table_id = getStorageID();
-    checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
     context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);

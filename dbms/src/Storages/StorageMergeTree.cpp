@@ -251,8 +251,6 @@ void StorageMergeTree::alter(
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    checkAlterIsPossible(params, context.getSettingsRef());
-
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
 
     params.apply(metadata);
