@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Aliases.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
@@ -10,11 +10,10 @@ class OptimizeIfChainsVisitor
 {
 public:
     OptimizeIfChainsVisitor() = default;
-
     void visit(ASTPtr & ast);
 
-    ASTs IfChain(ASTPtr & child);
-
+private:
+    ASTs ifChain(const ASTPtr & child);
 };
 
 }
