@@ -71,6 +71,17 @@ SELECT * FROM t1 RIGHT JOIN right_join j USING(x) ORDER BY x, str, s;
 SELECT 'full (join_use_nulls)';
 SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s;
 
+SET join_use_nulls = 0;
+
+SELECT * FROM t1 LEFT JOIN left_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
+SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
+
+SELECT 'inner (join_use_nulls mix2)';
+SELECT * FROM t1 INNER JOIN inner_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'right (join_use_nulls mix2)';
+SELECT * FROM t1 RIGHT JOIN right_join j USING(x) ORDER BY x, str, s;
+
 DROP TABLE t1;
 
 DROP TABLE left_join;
