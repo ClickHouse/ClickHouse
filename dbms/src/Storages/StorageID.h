@@ -19,31 +19,53 @@ struct StorageID
 {
     String database_name;
     String table_name;
-    UUID uuid;
+    UUID uuid = UUID{UInt128(0, 0)};
 
-    //StorageID() = delete;
-    StorageID() = default;
 
     StorageID(const String & database, const String & table, UUID uuid_ = UUID{UInt128(0, 0)})
             : database_name(database), table_name(table), uuid(uuid_)
     {
+        assertNotEmpty();
+    }
+
+    String getDatabaseName() const
+    {
+        assertNotEmpty();
+        return database_name;
+    }
+
+    String getTableName() const
+    {
+        assertNotEmpty();
+        return table_name;
     }
 
     String getFullTableName() const
     {
-        assert_valid();
+        assertNotEmpty();
         return (database_name.empty() ? "" : database_name + ".") + table_name;
     }
 
     String getNameForLogs() const
     {
-        assert_valid();
-        return (database_name.empty() ? "" : backQuoteIfNeed(database_name) + ".") + backQuoteIfNeed(table_name) + (hasUUID() ? "" : " (UUID " + toString(uuid) + ")");
+        assertNotEmpty();
+        return (database_name.empty() ? "" : backQuoteIfNeed(database_name) + ".") + backQuoteIfNeed(table_name)
+               + (hasUUID() ? "" : " (UUID " + toString(uuid) + ")");
+    }
+
+    bool empty() const
+    {
+        return table_name.empty() && !hasUUID();
+    }
+
+    bool hasUUID() const
+    {
+        return uuid != UUID{UInt128(0, 0)};
     }
 
     bool operator<(const StorageID & rhs) const
     {
-        assert_valid();
+        assertNotEmpty();
         /// It's needed for ViewDependencies
         if (!hasUUID() && !rhs.hasUUID())
             /// If both IDs don't have UUID, compare them like pair of strings
@@ -56,24 +78,21 @@ struct StorageID
             return !hasUUID();
     }
 
-    bool empty() const
-    {
-        return table_name.empty() || (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID());
-    }
-
-    void assert_valid() const
+    void assertNotEmpty() const
     {
         if (empty())
-            throw Exception("empty table name", ErrorCodes::LOGICAL_ERROR);
-        if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID() && !database_name.empty())
-            throw Exception("unexpected database name", ErrorCodes::LOGICAL_ERROR);
-
+            throw Exception("Both table name and UUID are empty", ErrorCodes::LOGICAL_ERROR);
+        if (table_name == TABLE_WITH_UUID_NAME_PLACEHOLDER && !hasUUID())
+            throw Exception("Table name was replaced with placeholder, but UUID is Nil", ErrorCodes::LOGICAL_ERROR);
+        if (table_name.empty() && !database_name.empty())
+            throw Exception("Table name is empty, but database name is not", ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool hasUUID() const
-    {
-        return uuid != UUID{UInt128(0, 0)};
-    }
+    /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
+    static StorageID createEmpty() { return {}; }
+
+private:
+    StorageID() = default;
 };
 
 }

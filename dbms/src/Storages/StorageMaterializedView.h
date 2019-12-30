@@ -9,7 +9,7 @@
 namespace DB
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view = false, bool need_visitor = true);
+StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view = false, bool add_default_db = true);
 
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
@@ -69,8 +69,11 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    StorageID select_table_id;
-    StorageID target_table_id;
+    /// Can be empty if SELECT query doesn't contain table
+    StorageID select_table_id = StorageID::createEmpty();
+    /// Will be initialized in constructor
+    StorageID target_table_id = StorageID::createEmpty();
+
     ASTPtr inner_query;
     Context & global_context;
     bool has_inner_table = false;

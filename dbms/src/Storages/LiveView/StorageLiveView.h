@@ -139,7 +139,7 @@ public:
         const Context & context);
 
 private:
-    StorageID select_table_id;
+    StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query;
     Context & global_context;
     bool is_temporary = false;
