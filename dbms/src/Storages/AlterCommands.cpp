@@ -392,8 +392,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
-            if (auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
-                it != settings_from_storage.end())
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+
+            if (it != settings_from_storage.end())
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
@@ -644,11 +645,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
-    /// We will save ALTER ADD/MODIFY command indices (only the last for each column) for possible modification
-    /// (we might need to add deduced types or modify default expressions).
-    /// Saving indices because we can add new commands later and thus cause vector resize.
-    std::unordered_map<String, size_t> column_to_command_idx;
-
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
