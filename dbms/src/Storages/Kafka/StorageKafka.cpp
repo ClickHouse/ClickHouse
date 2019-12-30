@@ -409,15 +409,6 @@ bool StorageKafka::streamToViews()
     return limits_applied;
 }
 
-
-void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
-{
-    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
-        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
-
-    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
-}
-
 void registerStorageKafka(StorageFactory & factory)
 {
     factory.registerStorage("Kafka", [](const StorageFactory::Arguments & args)

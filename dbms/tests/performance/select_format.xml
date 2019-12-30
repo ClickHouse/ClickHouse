@@ -1,7 +1,7 @@
 <test>
     <type>loop</type>
 
-    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}, '/dev/null') AS test.hits</create_query>
 
     <stop_conditions>
         <all_of>
