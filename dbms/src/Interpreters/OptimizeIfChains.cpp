@@ -11,46 +11,69 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 void OptimizeIfChainsVisitor::visit(ASTPtr & current_ast)
 {
     if (!current_ast)
-    {
         return;
-    }
+
     for (ASTPtr & child : current_ast->children)
     {
-        auto * function_node = child->as<ASTFunction>();
+        /// Fallthrough cases
 
-        if (!function_node || function_node->name != "if" ||
-            (!function_node->arguments->as<ASTExpressionList>()->children[2]->as<ASTFunction>() ||
-             function_node->arguments->as<ASTExpressionList>()->children[2]->as<ASTFunction>()->name != "if"))
+        const auto * function_node = child->as<ASTFunction>();
+        if (!function_node || function_node->name != "if" || !function_node->arguments)
         {
             visit(child);
             continue;
         }
 
-        auto chain = IfChain(child);
-        reverse(chain.begin(), chain.end());
+        const auto * function_args = function_node->arguments->as<ASTExpressionList>();
+        if (!function_args || function_args->children.size() != 3 || !function_args->children[2])
+        {
+            visit(child);
+            continue;
+        }
+
+        const auto * else_arg = function_args->children[2]->as<ASTFunction>();
+        if (!else_arg || else_arg->name != "if")
+        {
+            visit(child);
+            continue;
+        }
+
+        /// The case of:
+        /// if(cond, a, if(...))
+
+        auto chain = ifChain(child);
+        std::reverse(chain.begin(), chain.end());
         child->as<ASTFunction>()->name = "multiIf";
         child->as<ASTFunction>()->arguments->children = std::move(chain);
     }
 }
 
-ASTs OptimizeIfChainsVisitor::IfChain(ASTPtr & child)
+ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
 {
-    auto * function_node = child->as<ASTFunction>();
+    const auto * function_node = child->as<ASTFunction>();
+    if (!function_node || !function_node->arguments)
+        throw Exception("Unexpected AST for function 'if'", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    const auto * args = function_node->arguments->as<ASTExpressionList>();
+    const auto * function_args = function_node->arguments->as<ASTExpressionList>();
 
-    if (args->children.size() != 3)
-        throw Exception("Wrong number of arguments for function 'if' (" + toString(args->children.size()) + " instead of 3)",
+    if (!function_args || function_args->children.size() != 3)
+        throw Exception("Wrong number of arguments for function 'if' (" + toString(function_args->children.size()) + " instead of 3)",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (args->children[2]->as<ASTFunction>() && args->children[2]->as<ASTFunction>()->name == "if")
+    const auto * else_arg = function_args->children[2]->as<ASTFunction>();
+
+    /// Recursively collect arguments from the innermost if ("head-resursion").
+    /// Arguments will be returned in reverse order.
+
+    if (else_arg && else_arg->name == "if")
     {
-        auto cur = IfChain(function_node->arguments->children[2]);
+        auto cur = ifChain(function_node->arguments->children[2]);
         cur.push_back(function_node->arguments->children[1]);
         cur.push_back(function_node->arguments->children[0]);
         return cur;
@@ -58,6 +81,7 @@ ASTs OptimizeIfChainsVisitor::IfChain(ASTPtr & child)
     else
     {
         ASTs end;
+        end.reserve(3);
         end.push_back(function_node->arguments->children[2]);
         end.push_back(function_node->arguments->children[1]);
         end.push_back(function_node->arguments->children[0]);
