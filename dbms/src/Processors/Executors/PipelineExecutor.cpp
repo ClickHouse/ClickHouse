@@ -411,7 +411,7 @@ bool PipelineExecutor::doExpandPipeline(ExpandPipelineTask * task, bool processi
         return task->num_waiting_processing_threads >= num_processing_executors || expand_pipeline_task != task;
     });
 
-    bool result = false;
+    bool result = true;
 
     /// After condvar.wait() task may point to trash. Can change it only if it is still in expand_pipeline_task.
     if (expand_pipeline_task == task)
