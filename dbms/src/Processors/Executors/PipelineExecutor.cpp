@@ -391,9 +391,17 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         if (!doExpandPipeline(desired, true))
             return false;
 
-        /// Prepare itself again.
-        if (!prepareProcessor(pid, thread_number, queue, std::unique_lock<std::mutex>(graph[pid].status_mutex)))
-            return false;
+        /// Add itself back to be prepared again.
+        stack.push(pid);
+
+        while (!stack.empty())
+        {
+            auto item = stack.top();
+            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(graph[item].status_mutex)))
+                return false;
+
+            stack.pop();
+        }
     }
 
     return true;
