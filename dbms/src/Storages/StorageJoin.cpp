@@ -71,11 +71,11 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
 HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
     if (kind != analyzed_join->kind() || strictness != analyzed_join->strictness())
-        throw Exception("Table " + table_name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception("Table " + backQuote(table_name) + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
-        throw Exception("Table " + table_name + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
+        throw Exception("Table " + backQuote(table_name) + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
                         ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     /// TODO: check key columns
