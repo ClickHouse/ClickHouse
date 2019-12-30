@@ -142,6 +142,7 @@ void DatabaseOnDisk::createTable(
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement;
 
+    try
     {
         statement = getObjectDefinitionFromCreateQuery(query);
 
@@ -152,6 +153,14 @@ void DatabaseOnDisk::createTable(
         if (settings.fsync_metadata)
             out.sync();
         out.close();
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Cannot complete the creation of temporary metadata file for table " <<
+                  table_name << " because of "<< getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        if (Poco::File(table_metadata_path).exists())
+            Poco::File(table_metadata_path).remove();
+        throw;
     }
 
     try
