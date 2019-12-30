@@ -21,6 +21,7 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/OptimizeIfChains.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -913,6 +914,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
+
+    OptimizeIfChainsVisitor().visit(query);
 
     if (select_query)
     {
