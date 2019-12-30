@@ -15,8 +15,6 @@
 namespace DB
 {
 
-template <> struct NearestFieldTypeImpl<PartLogElement::Type> { using Type = UInt64; };
-
 Block PartLogElement::createBlock()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(

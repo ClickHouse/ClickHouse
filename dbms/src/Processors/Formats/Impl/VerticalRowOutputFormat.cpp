@@ -168,7 +168,6 @@ void registerOutputFormatProcessorVertical(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {

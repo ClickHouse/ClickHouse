@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

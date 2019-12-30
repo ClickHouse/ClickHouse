@@ -134,7 +134,6 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompact", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -144,7 +143,6 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {
@@ -157,7 +155,6 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
 //    factory.registerOutputFormat("PrettyCompactMonoBlock", [](
 //        WriteBuffer & buf,
 //        const Block & sample,
-//        const Context &,
 //        const FormatSettings & format_settings)
 //    {
 //        BlockOutputStreamPtr impl = std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings);

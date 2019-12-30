@@ -3,7 +3,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -30,22 +29,19 @@ namespace ErrorCodes
 
 
 
-DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
-    : name(name_)
-    , metadata_path(metadata_path_)
-    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_)
+    : DatabaseOnDisk(name_, metadata_path_, "DatabaseLazy (" + name_ + ")")
     , expiration_time(expiration_time_)
-    , log(&Logger::get("DatabaseLazy (" + name + ")"))
 {
-    Poco::File(getDataPath()).createDirectories();
+    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
 
 void DatabaseLazy::loadStoredObjects(
-    Context & /* context */,
+    Context & context,
     bool /* has_force_restore_data_flag */)
 {
-    DatabaseOnDisk::iterateMetadataFiles(*this, log, [this](const String & file_name)
+    iterateMetadataFiles(context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
         attachTable(table_name, nullptr);
@@ -62,76 +58,21 @@ void DatabaseLazy::createTable(
     SCOPE_EXIT({ clearExpiredTables(); });
     if (!endsWith(table->getName(), "Log"))
         throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-    DatabaseOnDisk::createTable(*this, context, table_name, table, query);
+    DatabaseOnDisk::createTable(context, table_name, table, query);
 
     /// DatabaseOnDisk::createTable renames file, so we need to get new metadata_modification_time.
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     auto it = tables_cache.find(table_name);
     if (it != tables_cache.end())
-        it->second.metadata_modification_time = DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
+        it->second.metadata_modification_time = DatabaseOnDisk::getObjectMetadataModificationTime(table_name);
 }
-
-
-void DatabaseLazy::createDictionary(
-    const Context & /*context*/,
-    const String & /*dictionary_name*/,
-    const ASTPtr & /*query*/)
-{
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
 
 void DatabaseLazy::removeTable(
     const Context & context,
     const String & table_name)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::removeTable(*this, context, table_name, log);
-}
-
-void DatabaseLazy::removeDictionary(
-    const Context & /*context*/,
-    const String & /*table_name*/)
-{
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
-ASTPtr DatabaseLazy::getCreateDictionaryQuery(
-    const Context & /*context*/,
-    const String & /*table_name*/) const
-{
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
-ASTPtr DatabaseLazy::tryGetCreateDictionaryQuery(const Context & /*context*/, const String & /*table_name*/) const
-{
-    return nullptr;
-}
-
-bool DatabaseLazy::isDictionaryExist(const Context & /*context*/, const String & /*table_name*/) const
-{
-    return false;
-}
-
-
-DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
-    const Context & /*context*/,
-    const FilterByNameFunction & /*filter_by_dictionary_name*/)
-{
-    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
-}
-
-void DatabaseLazy::attachDictionary(
-    const String & /*dictionary_name*/,
-    const Context & /*context*/,
-    bool /*load*/)
-{
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
-void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
-{
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+    DatabaseOnDisk::removeTable(context, table_name);
 }
 
 void DatabaseLazy::renameTable(
@@ -142,53 +83,26 @@ void DatabaseLazy::renameTable(
     TableStructureWriteLockHolder & lock)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::renameTable<DatabaseLazy>(*this, context, table_name, to_database, to_table_name, lock);
+    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, lock);
 }
 
 
-time_t DatabaseLazy::getObjectMetadataModificationTime(
-    const Context & /* context */,
-    const String & table_name)
+time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name) const
 {
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     auto it = tables_cache.find(table_name);
     if (it != tables_cache.end())
         return it->second.metadata_modification_time;
-    else
-        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-}
-
-ASTPtr DatabaseLazy::getCreateTableQuery(const Context & context, const String & table_name) const
-{
-    return DatabaseOnDisk::getCreateTableQuery(*this, context, table_name);
-}
-
-ASTPtr DatabaseLazy::tryGetCreateTableQuery(const Context & context, const String & table_name) const
-{
-    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, table_name);
-}
-
-ASTPtr DatabaseLazy::getCreateDatabaseQuery(const Context & context) const
-{
-    return DatabaseOnDisk::getCreateDatabaseQuery(*this, context);
+    throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 void DatabaseLazy::alterTable(
     const Context & /* context */,
     const String & /* table_name */,
-    const ColumnsDescription & /* columns */,
-    const IndicesDescription & /* indices */,
-    const ConstraintsDescription & /* constraints */,
-    const ASTModifier & /* storage_modifier */)
+    const StorageInMemoryMetadata & /* metadata */)
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
-}
-
-
-void DatabaseLazy::drop()
-{
-    DatabaseOnDisk::drop(*this);
 }
 
 bool DatabaseLazy::isTableExist(
@@ -196,7 +110,7 @@ bool DatabaseLazy::isTableExist(
     const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     return tables_cache.find(table_name) != tables_cache.end();
 }
 
@@ -206,7 +120,7 @@ StoragePtr DatabaseLazy::tryGetTable(
 {
     SCOPE_EXIT({ clearExpiredTables(); });
     {
-        std::lock_guard lock(tables_mutex);
+        std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
             throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -226,7 +140,7 @@ StoragePtr DatabaseLazy::tryGetTable(
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     Strings filtered_tables;
     for (const auto & [table_name, cached_table] : tables_cache)
     {
@@ -245,12 +159,12 @@ bool DatabaseLazy::empty(const Context & /* context */) const
 void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table)
 {
     LOG_DEBUG(log, "Attach table " << backQuote(table_name) << ".");
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
-                              std::forward_as_tuple(table, current_time, DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name)));
+                              std::forward_as_tuple(table, current_time, DatabaseOnDisk::getObjectMetadataModificationTime(table_name)));
     if (!inserted)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
@@ -262,7 +176,7 @@ StoragePtr DatabaseLazy::detachTable(const String & table_name)
     StoragePtr res;
     {
         LOG_DEBUG(log, "Detach table " << backQuote(table_name) << ".");
-        std::lock_guard lock(tables_mutex);
+        std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
             throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -278,7 +192,7 @@ void DatabaseLazy::shutdown()
 {
     TablesCache tables_snapshot;
     {
-        std::lock_guard lock(tables_mutex);
+        std::lock_guard lock(mutex);
         tables_snapshot = tables_cache;
     }
 
@@ -288,7 +202,7 @@ void DatabaseLazy::shutdown()
             kv.second.table->shutdown();
     }
 
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     tables_cache.clear();
 }
 
@@ -304,26 +218,6 @@ DatabaseLazy::~DatabaseLazy()
     }
 }
 
-String DatabaseLazy::getDataPath() const
-{
-    return data_path;
-}
-
-String DatabaseLazy::getMetadataPath() const
-{
-    return metadata_path;
-}
-
-String DatabaseLazy::getDatabaseName() const
-{
-    return name;
-}
-
-String DatabaseLazy::getObjectMetadataPath(const String & table_name) const
-{
-    return DatabaseOnDisk::getObjectMetadataPath(*this, table_name);
-}
-
 StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
@@ -334,19 +228,21 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 
     try
     {
-        String table_name_;
         StoragePtr table;
         Context context_copy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseCreateQueryFromMetadataFile(table_metadata_path, log);
+        auto ast = parseQueryFromMetadata(table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
-            std::tie(table_name_, table) = createTableFromAST(
-                ast->as<const ASTCreateQuery &>(), name, getDataPath(), context_copy, false);
+        {
+            auto & ast_create = ast->as<const ASTCreateQuery &>();
+            String table_data_path_relative = getTableDataPath(ast_create);
+            table = createTableFromAST(ast_create, database_name, table_data_path_relative, context_copy, false).second;
+        }
 
         if (!ast || !endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         {
-            std::lock_guard lock(tables_mutex);
+            std::lock_guard lock(mutex);
             auto it = tables_cache.find(table_name);
             if (it == tables_cache.end())
                 throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -368,7 +264,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 
 void DatabaseLazy::clearExpiredTables() const
 {
-    std::lock_guard lock(tables_mutex);
+    std::lock_guard lock(mutex);
     auto time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     CacheExpirationQueue expired_tables;

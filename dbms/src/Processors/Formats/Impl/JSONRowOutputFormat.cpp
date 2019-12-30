@@ -250,7 +250,6 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory)
     factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings)
     {

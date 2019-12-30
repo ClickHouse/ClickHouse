@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return "LimitsCheckingTransform"; }
 
-    void setQuota(QuotaForIntervals & quota_) { quota = &quota_; }
+    void setQuota(const std::shared_ptr<QuotaContext> & quota_) { quota = quota_; }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -44,8 +44,8 @@ protected:
 private:
     LocalLimits limits;
 
-    QuotaForIntervals * quota = nullptr;
-    double prev_elapsed = 0;
+    std::shared_ptr<QuotaContext> quota;
+    UInt64 prev_elapsed = 0;
 
     ProcessorProfileInfo info;
 

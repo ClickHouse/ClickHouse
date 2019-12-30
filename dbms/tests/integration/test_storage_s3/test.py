@@ -5,6 +5,9 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
+import helpers.client
+
+
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
@@ -53,12 +56,18 @@ def prepare_s3_bucket(cluster):
 
     minio_client.set_bucket_policy(cluster.minio_bucket, json.dumps(bucket_read_write_policy))
 
+    cluster.minio_restricted_bucket = "{}-with-auth".format(cluster.minio_bucket)
+    if minio_client.bucket_exists(cluster.minio_restricted_bucket):
+        minio_client.remove_bucket(cluster.minio_restricted_bucket)
+
+    minio_client.make_bucket(cluster.minio_restricted_bucket)
+
 
 # Returns content of given S3 file as string.
-def get_s3_file_content(cluster, filename):
+def get_s3_file_content(cluster, bucket, filename):
     # type: (ClickHouseCluster, str) -> str
 
-    data = cluster.minio_client.get_object(cluster.minio_bucket, filename)
+    data = cluster.minio_client.get_object(bucket, filename)
     data_str = ""
     for chunk in data.stream():
         data_str += chunk
@@ -77,6 +86,7 @@ def get_nginx_access_logs():
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
+        cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"], with_minio=True)
         cluster.add_instance("dummy", with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -101,53 +111,78 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 # Test simple put.
-def test_put(cluster):
+@pytest.mark.parametrize("maybe_auth,positive", [
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
+])
+def test_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
+    bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-        cluster.minio_host, cluster.minio_port, cluster.minio_bucket, filename, table_format, values)
-    run_query(instance, put_query)
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') values {}".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, maybe_auth, table_format, values)
 
-    assert values_csv == get_s3_file_content(cluster, filename)
+    try:
+        run_query(instance, put_query)
+    except helpers.client.QueryRuntimeException:
+        if positive:
+            raise
+    else:
+        assert positive
+        assert values_csv == get_s3_file_content(cluster, bucket, filename)
 
 
 # Test put values in CSV format.
-def test_put_csv(cluster):
+@pytest.mark.parametrize("maybe_auth,positive", [
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
+])
+def test_put_csv(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
+    bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') format CSV".format(
-        cluster.minio_host, cluster.minio_port, cluster.minio_bucket, filename, table_format)
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, maybe_auth, table_format)
     csv_data = "8,9,16\n11,18,13\n22,14,2\n"
-    run_query(instance, put_query, stdin=csv_data)
 
-    assert csv_data == get_s3_file_content(cluster, filename)
+    try:
+        run_query(instance, put_query, stdin=csv_data)
+    except helpers.client.QueryRuntimeException:
+        if positive:
+            raise
+    else:
+        assert positive
+        assert csv_data == get_s3_file_content(cluster, bucket, filename)
 
 
 # Test put and get with S3 server redirect.
 def test_put_get_with_redirect(cluster):
     # type: (ClickHouseCluster) -> None
 
+    bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     values_csv = "1,1,1\n1,1,1\n11,11,11\n"
     filename = "test.csv"
     query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-        cluster.minio_redirect_host, cluster.minio_redirect_port, cluster.minio_bucket, filename, table_format, values)
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, table_format, values)
     run_query(instance, query)
 
-    assert values_csv == get_s3_file_content(cluster, filename)
+    assert values_csv == get_s3_file_content(cluster, bucket, filename)
 
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/{}', 'CSV', '{}')".format(
-        cluster.minio_redirect_host, cluster.minio_redirect_port, cluster.minio_bucket, filename, table_format)
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, table_format)
     stdout = run_query(instance, query)
 
     assert list(map(str.split, stdout.splitlines())) == [
@@ -158,9 +193,15 @@ def test_put_get_with_redirect(cluster):
 
 
 # Test multipart put.
-def test_multipart_put(cluster):
+@pytest.mark.parametrize("maybe_auth,positive", [
+    ("", True),
+    # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
+    ("'wrongid','wrongkey',", False)
+])
+def test_multipart_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
+    bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
@@ -178,14 +219,46 @@ def test_multipart_put(cluster):
     assert len(csv_data) > min_part_size_bytes
 
     filename = "test_multipart.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') format CSV".format(
-        cluster.minio_redirect_host, cluster.minio_redirect_port, cluster.minio_bucket, filename, table_format)
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, filename, maybe_auth, table_format)
 
-    run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
+    try:
+        run_query(instance, put_query, stdin=csv_data, settings={'s3_min_upload_part_size': min_part_size_bytes})
+    except helpers.client.QueryRuntimeException:
+        if positive:
+            raise
+    else:
+        assert positive
 
-    # Use Nginx access logs to count number of parts uploaded to Minio.
-    nginx_logs = get_nginx_access_logs()
-    uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
-    assert uploaded_parts > 1
+        # Use Nginx access logs to count number of parts uploaded to Minio.
+        nginx_logs = get_nginx_access_logs()
+        uploaded_parts = filter(lambda log_line: log_line.find(filename) >= 0 and log_line.find("PUT") >= 0, nginx_logs)
+        assert len(uploaded_parts) > 1
 
-    assert csv_data == get_s3_file_content(cluster, filename)
+        assert csv_data == get_s3_file_content(cluster, bucket, filename)
+
+
+def test_remote_host_filter(cluster):
+    instance = cluster.instances["restricted_dummy"]
+    format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
+        "invalid_host", cluster.minio_port, cluster.minio_bucket, format)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
+    other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
+        "invalid_host", cluster.minio_port, cluster.minio_bucket, format, other_values)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
+
+@pytest.mark.parametrize("s3_storage_args", [
+    "''",  # 1 arguments
+    "'','','','','',''"  # 6 arguments
+])
+def test_wrong_s3_syntax(cluster, s3_storage_args):
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3({})".format(s3_storage_args)
+    assert expected_err_msg in instance.query_and_get_error(query)

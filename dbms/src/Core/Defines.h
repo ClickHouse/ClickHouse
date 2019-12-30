@@ -152,8 +152,8 @@
 #endif
 
 /// Marks that extra information is sent to a shard. It could be any magic numbers.
-#define DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO 0xCAFEDACEull
-#define DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT 0xCAFECABEull
+#define DBMS_DISTRIBUTED_SIGNATURE_HEADER 0xCAFEDACEull
+#define DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT 0xCAFECABEull
 
 #if !__has_include(<sanitizer/asan_interface.h>)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)

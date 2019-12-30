@@ -5,6 +5,7 @@
     "docker/test/compatibility/ubuntu": "yandex/clickhouse-test-old-ubuntu",
     "docker/test/integration": "yandex/clickhouse-integration-test",
     "docker/test/performance": "yandex/clickhouse-performance-test",
+    "docker/test/performance-comparison": "yandex/clickhouse-performance-comparison",
     "docker/test/pvs": "yandex/clickhouse-pvs-test",
     "docker/test/stateful": "yandex/clickhouse-stateful-test",
     "docker/test/stateful_with_coverage": "yandex/clickhouse-stateful-test-with-coverage",

@@ -953,10 +953,7 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
-            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
-
-        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordDoubleSHA1();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
@@ -1043,7 +1040,10 @@ public:
                 throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
             char * pem_buf = nullptr;
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wold-style-cast"
             long pem_size = BIO_get_mem_data(mem, &pem_buf);
+#    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
             LOG_TRACE(log, "Key: " << pem);

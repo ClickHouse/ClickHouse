@@ -197,6 +197,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
     memory_tracker.setParent(nullptr);
 
+    query_id.clear();
     query_context = nullptr;
     thread_group.reset();
 

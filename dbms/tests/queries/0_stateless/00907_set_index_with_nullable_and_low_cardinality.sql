@@ -1,4 +1,3 @@
-SET allow_experimental_data_skipping_indices=1;
 
 drop table if exists nullable_set_index;
 create table nullable_set_index (a UInt64, b Nullable(String), INDEX b_index b TYPE set(0) GRANULARITY 8192) engine = MergeTree order by a;

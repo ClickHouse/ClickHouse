@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include "registerTableFunctions.h"
 
 
 namespace DB

@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -991,24 +991,37 @@ private:
     void executeBitmapData(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnAggregateFunction * columns[2];
+        bool is_column_const[2];
         for (size_t i = 0; i < 2; ++i)
         {
             if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+            {
                 columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+                is_column_const[i] = true;
+            }
             else
+            {
                 columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+                is_column_const[i] = false;
+            }
         }
 
         auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
 
         col_to->reserve(input_rows_count);
 
+        const PaddedPODArray<AggregateDataPtr> & container0 = columns[0]->getData();
+        const PaddedPODArray<AggregateDataPtr> & container1 = columns[1]->getData();
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            col_to->insertFrom(columns[0]->getData()[i]);
+            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
+            const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
+
+            col_to->insertFrom(data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(columns[1]->getData()[i]);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
         block.getByPosition(result).column = std::move(col_to);
