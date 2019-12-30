@@ -119,7 +119,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -544,16 +544,10 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & database_name_, const String & name_,
-        const ColumnsDescription & columns_,
-        const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
         Context & context_,
         const String & date_column_name,
-        const ASTPtr & partition_by_ast_,
-        const ASTPtr & order_by_ast_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sample_by_ast_,
-        const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);

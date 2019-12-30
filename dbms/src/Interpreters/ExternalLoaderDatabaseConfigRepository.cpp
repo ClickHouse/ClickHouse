@@ -37,7 +37,7 @@ bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable
 
 Poco::Timestamp ExternalLoaderDatabaseConfigRepository::getUpdateTime(const std::string & loadable_definition_name)
 {
-    return database->getObjectMetadataModificationTime(context, trimDatabaseName(loadable_definition_name, database));
+    return database->getObjectMetadataModificationTime(trimDatabaseName(loadable_definition_name, database));
 }
 
 std::set<std::string> ExternalLoaderDatabaseConfigRepository::getAllLoadablesDefinitionNames() const
