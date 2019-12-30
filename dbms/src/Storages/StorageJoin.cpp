@@ -73,8 +73,9 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) co
     if (kind != analyzed_join->kind() || strictness != analyzed_join->strictness())
         throw Exception("Table " + table_name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
-    if (analyzed_join->forceNullableRight() && !use_nulls)
-        throw Exception("Table " + table_name + " need join_use_nulls settings to support LEFT or FULL JOIN with join_use_nulls.",
+    if ((analyzed_join->forceNullableRight() && !use_nulls) ||
+        (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
+        throw Exception("Table " + table_name + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
                         ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     /// TODO: check key columns
