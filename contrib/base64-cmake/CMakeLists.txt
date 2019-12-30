@@ -25,19 +25,20 @@ endif ()
 configure_file(config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 add_library(base64
-        ${LIBRARY_DIR}/lib/lib.c
-        ${LIBRARY_DIR}/lib/codec_choose.c
-        ${LIBRARY_DIR}/lib/arch/avx/codec.c
-        ${LIBRARY_DIR}/lib/arch/avx2/codec.c
-        ${LIBRARY_DIR}/lib/arch/generic/codec.c
-        ${LIBRARY_DIR}/lib/arch/neon32/codec.c
-        ${LIBRARY_DIR}/lib/arch/neon64/codec.c
-        ${LIBRARY_DIR}/lib/arch/sse41/codec.c
-        ${LIBRARY_DIR}/lib/arch/sse42/codec.c
-        ${LIBRARY_DIR}/lib/arch/ssse3/codec.c
+    ${LIBRARY_DIR}/lib/lib.c
+    ${LIBRARY_DIR}/lib/codec_choose.c
+    ${LIBRARY_DIR}/lib/arch/avx/codec.c
+    ${LIBRARY_DIR}/lib/arch/avx2/codec.c
+    ${LIBRARY_DIR}/lib/arch/generic/codec.c
+    ${LIBRARY_DIR}/lib/arch/neon32/codec.c
+    ${LIBRARY_DIR}/lib/arch/neon64/codec.c
+    ${LIBRARY_DIR}/lib/arch/sse41/codec.c
+    ${LIBRARY_DIR}/lib/arch/sse42/codec.c
+    ${LIBRARY_DIR}/lib/arch/ssse3/codec.c
 
-        ${LIBRARY_DIR}/lib/codecs.h
-        ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+    ${LIBRARY_DIR}/lib/codecs.h
+    ${CMAKE_CURRENT_BINARY_DIR}/config.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/tables.h)
 
 if(HAVE_AVX)
     set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx/codec.c PROPERTIES COMPILE_FLAGS -mavx)
@@ -55,4 +56,4 @@ if(HAVE_SSSE3)
     set_source_files_properties(${LIBRARY_DIR}/lib/arch/ssse3/codec.c PROPERTIES COMPILE_FLAGS -mssse3)
 endif()
 
-target_include_directories(base64 PRIVATE ${LIBRARY_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(base64 PRIVATE ${LIBRARY_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})

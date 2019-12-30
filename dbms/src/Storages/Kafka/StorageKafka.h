@@ -64,8 +64,6 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    void checkSettingCanBeChanged(const String & setting_name) const override;
-
 protected:
     StorageKafka(
         const std::string & table_name_,
