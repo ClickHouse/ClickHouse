@@ -50,14 +50,6 @@
 
 #pragma GCC diagnostic pop
 
-#define __msan_unpoison(X, Y)
-#if defined(__has_feature)
-#   if __has_feature(memory_sanitizer)
-#       undef __msan_unpoison
-#       include <sanitizer/msan_interface.h>
-#   endif
-#endif
-
 /// 'LegacyRTDyldObjectLinkingLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use ORCv2
 /// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
