@@ -12,7 +12,7 @@
 namespace DB
 {
 
-FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(disk_)
+FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
 {
     setPath(file_info_path_);
 }
