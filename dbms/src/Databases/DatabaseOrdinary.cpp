@@ -10,8 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/StorageFactory.h>
@@ -181,12 +179,8 @@ void DatabaseOrdinary::loadStoredObjects(
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
 
-    /// Add database as repository
-    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    auto & external_loader = context.getExternalDictionariesLoader();
-    external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
-
     /// Attach dictionaries.
+    attachToExternalDictionariesLoader(context);
     for (const auto & name_with_query : file_names)
     {
         auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
