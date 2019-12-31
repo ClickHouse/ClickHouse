@@ -372,9 +372,6 @@ Approximate size (in bytes) of the cache of marks used by table engines of the [
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
-!!! warning "Warning"
-    This parameter could be exceeded by the [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime) setting.
-
 **Example**
 
 ```xml
