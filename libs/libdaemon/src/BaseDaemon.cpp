@@ -686,7 +686,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     // sensitive data masking rules are not used here
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), self.commandName());
 
     if (is_daemon)
     {

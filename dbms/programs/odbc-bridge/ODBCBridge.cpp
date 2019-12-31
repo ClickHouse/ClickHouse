@@ -124,7 +124,7 @@ void ODBCBridge::initialize(Application & self)
 
     config().setString("logger", "ODBCBridge");
 
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), self.commandName());
 
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
