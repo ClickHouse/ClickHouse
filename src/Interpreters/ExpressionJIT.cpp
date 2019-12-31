@@ -302,7 +302,7 @@ public:
 
             /// Memory sanitizer don't know about stores from JIT-ed code.
             /// But maybe we can generate this code with MSan instrumentation?
-            __msan_unpoison(column->getRawData().data, column->getRawData().size);
+            __msan_unpoison(col_res->getRawData().data, col_res->getRawData().size);
         }
 
         return col_res;
