@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -181,7 +182,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
+    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}}, true))
+    , table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
     if (args.format_name != "Distributed")
@@ -223,7 +225,8 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage->rwlock);
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
+            file_path = std::make_optional(file_path_);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path.value()), compression_method);
         }
 
         if (!reader)
@@ -237,10 +240,19 @@ public:
 
     Block readImpl() override
     {
-        return reader->read();
+        auto res = reader->read();
+        if (res && file_path)
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value()), std::make_shared<DataTypeString>(), "_path"});
+        return res;
     }
 
-    Block getHeader() const override { return reader->getHeader(); }
+    Block getHeader() const override
+    {
+        auto res = reader->getHeader();
+        if (res && file_path)
+            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        return res;
+    }
 
     void readPrefixImpl() override
     {
@@ -254,6 +266,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
+    std::optional<std::string> file_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;

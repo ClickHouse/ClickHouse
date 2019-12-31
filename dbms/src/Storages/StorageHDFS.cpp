@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -42,7 +43,8 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : uri(uri_)
+    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}}, true))
+    , uri(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
     , database_name(database_name_)
@@ -68,7 +70,7 @@ public:
         const CompressionMethod compression_method)
     {
         auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri), compression_method);
-
+        file_path = uri;
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
     }
@@ -80,12 +82,18 @@ public:
 
     Block readImpl() override
     {
-        return reader->read();
+        auto res = reader->read();
+        if (res)
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path), std::make_shared<DataTypeString>(), "_path"});
+        return res;
     }
 
     Block getHeader() const override
     {
-        return reader->getHeader();
+        auto res = reader->getHeader();
+        if (res)
+            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+        return res;
     }
 
     void readPrefixImpl() override
@@ -100,6 +108,7 @@ public:
 
 private:
     BlockInputStreamPtr reader;
+    String file_path;
 };
 
 class HDFSBlockOutputStream : public IBlockOutputStream

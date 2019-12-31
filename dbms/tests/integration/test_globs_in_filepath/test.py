@@ -120,10 +120,12 @@ def test_deep_structure(start_cluster):
             select count(*) from file('{}{}', 'TSV', 'text String, number Float64')
         '''.format(path_to_userfiles_from_defaut_config, pattern)) == '{}\n'.format(value)
 
-def test_table_function(start_cluster):
+def test_table_function_and_virtual_columns(start_cluster):
     node.exec_in_container(['bash', '-c', 'mkdir -p {}some/path/to/'.format(path_to_userfiles_from_defaut_config)])
     node.exec_in_container(['bash', '-c', 'touch {}some/path/to/data.CSV'.format(path_to_userfiles_from_defaut_config)])
     node.query("insert into table function file('some/path/to/data.CSV', CSV, 'n UInt8, s String') select number, concat('str_', toString(number)) from numbers(100000)")
     assert node.query("select count() from file('some/path/to/data.CSV', CSV, 'n UInt8, s String')").rstrip() == '100000'
     node.query("insert into table function file('nonexist.csv', 'CSV', 'val1 UInt32') values (1)")
     assert node.query("select * from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()== '1'
+    assert "nonexist.csv" in node.query("select _path from file('nonexis?.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" in node.query("select _path from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()
