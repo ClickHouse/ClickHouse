@@ -316,7 +316,8 @@ void MergeTreeRangeReader::ReadResult::optimize()
         /// Check if const 1 after shrink
         if (countBytesInResultFilter(filter->getData()) + total_zero_rows_in_tails == total_rows_per_granule)
         {
-            num_rows = total_rows_per_granule = total_rows_per_granule - total_zero_rows_in_tails;
+            total_rows_per_granule = total_rows_per_granule - total_zero_rows_in_tails;
+            num_rows = total_rows_per_granule;
             setFilterConstTrue();
             shrink(columns); /// shrink acts as filtering in such case
         }
@@ -326,7 +327,8 @@ void MergeTreeRangeReader::ReadResult::optimize()
             IColumn::Filter & new_data = new_filter->getData();
 
             collapseZeroTails(filter->getData(), new_data);
-            num_rows = total_rows_per_granule = new_filter->size();
+            total_rows_per_granule = new_filter->size();
+            num_rows = total_rows_per_granule;
             filter_original = filter;
             filter_holder_original = std::move(filter_holder);
             filter = new_filter.get();
