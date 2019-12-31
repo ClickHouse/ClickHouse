@@ -308,6 +308,8 @@ public:
             columns[arguments.size()] = getColumnData(col_res.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
 
+            /// Memory sanitizer don't know about stores from JIT-ed code.
+            /// But maybe we can generate this code with MSan instrumentation?
             __msan_unpoison(column->getRawData().data, column->getRawData().size);
         }
 
