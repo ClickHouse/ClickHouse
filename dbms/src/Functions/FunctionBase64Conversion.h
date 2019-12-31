@@ -118,9 +118,6 @@ public:
             size_t srclen = src_offsets[row] - src_offset_prev - 1;
             size_t outlen = 0;
 
-            if (srclen >= (3U << 30))
-                throw Exception("Base64 encoding/decoding doesn't support strings larger than 4 GiB", ErrorCodes::INCORRECT_DATA);
-
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
                 outlen = _tb64e(source, srclen, dst_pos);
