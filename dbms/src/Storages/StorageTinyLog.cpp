@@ -177,6 +177,7 @@ Block TinyLogBlockInputStream::readImpl()
         return res;
     }
 
+    /// if there are no files in the folder, it means that the table is empty
     if (storage.disk->isDirectoryEmpty(storage.table_path))
         return res;
 
