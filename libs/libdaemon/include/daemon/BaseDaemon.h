@@ -166,6 +166,15 @@ protected:
     {
         std::string file;
 
+        /// track weather the process really write a PID file
+        /// If the process write a PID file, it's value will be set to true.
+        /// If there is a old running process, the daemon will not start,
+        /// and the process will not write a PID file. In this case it's
+        /// value will be false.
+        /// clear() will check the value, and it will only remove the file
+        /// when it's valeu is true.
+        bool pid_created = false;
+
         /// Создать объект, не создавая PID файл
         PID() {}
 

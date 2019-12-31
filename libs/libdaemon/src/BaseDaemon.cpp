@@ -835,6 +835,7 @@ void BaseDaemon::PID::seed(const std::string & file_)
         s << getpid();
         if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
             throw Poco::Exception("Cannot write to pid file.");
+        pid_created = true;
     }
     catch (...)
     {
@@ -847,7 +848,7 @@ void BaseDaemon::PID::seed(const std::string & file_)
 
 void BaseDaemon::PID::clear()
 {
-    if (!file.empty())
+    if (!file.empty() && pid_created)
     {
         Poco::File(file).remove();
         file.clear();
