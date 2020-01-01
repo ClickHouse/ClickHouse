@@ -87,7 +87,7 @@ std::string ReportBuilder::buildFullReport(
             array_string << "[";
             for (size_t i = 0; i != values.size(); ++i)
             {
-                array_string << '"' << jsonString(values[i], settings) << '"';
+                array_string << jsonString(values[i], settings);
                 if (i != values.size() - 1)
                 {
                     array_string << ", ";
@@ -204,7 +204,7 @@ std::string ReportBuilder::buildCompactReport(
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             if (test_info.queries.size() > 1)
-                output << "query \"" << jsonString(test_info.queries[query_index], settings) << "\", ";
+                output << "query " << jsonString(test_info.queries[query_index], settings) << ", ";
 
             output << "run " << std::to_string(number_of_launch + 1) << ": ";
 
