@@ -720,29 +720,35 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         }
     }
 
-    for (size_t i = 0; i < num_threads; ++i)
+    if (num_threads > 1)
     {
-        threads.emplace_back([this, thread_group, thread_num = i, num_threads]
+
+        for (size_t i = 0; i < num_threads; ++i)
         {
-            /// ThreadStatus thread_status;
+            threads.emplace_back([this, thread_group, thread_num = i, num_threads]
+            {
+                /// ThreadStatus thread_status;
 
-            setThreadName("QueryPipelineEx");
+                setThreadName("QueryPipelineEx");
 
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
 
-            SCOPE_EXIT(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-            );
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                );
 
-            executeSingleThread(thread_num, num_threads);
-        });
+                executeSingleThread(thread_num, num_threads);
+            });
+        }
+
+        for (auto & thread : threads)
+            if (thread.joinable())
+                thread.join();
     }
-
-    for (auto & thread : threads)
-        if (thread.joinable())
-            thread.join();
+    else
+        executeSingleThread(0, num_threads);
 
     finished_flag = true;
 }
