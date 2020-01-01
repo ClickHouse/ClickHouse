@@ -29,33 +29,32 @@ constexpr size_t FILE_OFFSET_SIZE = sizeof(size_t) * 8 - FILE_ID_SIZE;
 
 class SSDCacheDictionary;
 
-class BlockFile
+class CachePartition
 {
 public:
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
 
-    BlockFile(size_t file_id, const std::string & file_name, const Block & header, size_t buffer_size = 4 * 1024 * 1024);
+    CachePartition(const std::string & file_name, const Block & header = {}, size_t buffer_size = 4 * 1024 * 1024);
 
     void appendBlock(const Block & block);
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    template <typename Out>
-    void getValue(size_t column, const PaddedPODArray<UInt64> & ids, ResultArrayType<Out> & out, PaddedPODArray<UInt64> & not_found) const;
+    template <typename Out, typename Key>
+    void getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const;
 
     // TODO:: getString
 
 private:
     void flush();
 
-    size_t id;
     std::string file_name;
     size_t buffer_size;
 
     WriteBufferFromFile out_file; // 4MB
-    mutable ReadBufferFromFile in_file; // ssd page size TODO:: adaptive buffer (read two if there less than pagesize bytes)
 
     /// Block structure: Key, (Default + TTL), Attr1, Attr2, ...
     Block header;
@@ -65,28 +64,38 @@ private:
 };
 
 
-class BlockFilesController
+class CacheStorage
 {
-    BlockFilesController(const std::string & path) : path(path) {
+    CacheStorage(const std::string & path_, size_t partition_max_size_)
+        : path(path_)
+        , partition_max_size(partition_max_size_)
+    {
+        partition = std::make_unique<CachePartition>(path);
     }
 
-    void appendBlock(const Block& block) {
-        file->appendBlock(block);
+    void appendBlock(const Block& block)
+    {
+        partition->appendBlock(block);
     }
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    template <typename Out>
-    void getValue(size_t column, const PaddedPODArray<UInt64> & ids, ResultArrayType<Out> & out, PaddedPODArray<UInt64> & not_found) const {
-        file->getValue(column, ids, out, not_found);
+    template <typename Out, typename Key>
+    void getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
+    {
+        partition->getValue(attribute_name, ids, out, not_found);
     }
 
     // getString();
 
+    //BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const;
+
 private:
     const std::string path;
-    std::unique_ptr<BlockFile> file;
+    const size_t partition_max_size;
+    std::unique_ptr<CachePartition> partition;
 };
 
 
@@ -98,13 +107,14 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             const DictionaryLifetime dict_lifetime_,
-            const size_t size_);
+            const std::string & path,
+            const size_t partition_max_size_);
 
     std::string getName() const override { return name; }
 
     std::string getTypeName() const override { return "SSDCache"; }
 
-    size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); } // TODO: ?
+    size_t getBytesAllocated() const override { return 0; } // TODO: ?
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -115,13 +125,13 @@ public:
 
     size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; } // TODO: fix
+    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / max_size; } // TODO: fix
 
-    bool isCached() const override { return true; }
+    bool supportUpdates() const override { return true; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, max_size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -132,19 +142,14 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.attributes[getAttributeIndex(attribute_name)].injective;
     }
 
-    bool hasHierarchy() const override { return hierarchical_attribute; }
+    bool hasHierarchy() const override { return false; }
 
-    void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
+    void toParent(const PaddedPODArray<Key> & /* ids */, PaddedPODArray<Key> & /* out */ ) const override {}
 
-    void isInVectorVector(
-            const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-    void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
-    void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-
-    std::exception_ptr getLastException() const override;
+    std::exception_ptr getLastException() const override { return last_exception; }
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -196,7 +201,7 @@ public:
     const;
 
 #define DECLARE(TYPE) \
-void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -220,138 +225,64 @@ void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & i
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value>
-    using ContainerType = Value[];
-    template <typename Value>
-    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
-
-    struct CellMetadata final
-    {
-        using time_point_t = std::chrono::system_clock::time_point;
-        using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
-
-        static constexpr UInt64 EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
-        static constexpr UInt64 IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
-
-        UInt64 id;
-        /// Stores both expiration time and `is_default` flag in the most significant bit
-        time_point_urep_t data;
-
-        /// Sets expiration time, resets `is_default` flag to false
-        time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
-        void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
-
-        bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
-        void setDefault() { data |= IS_DEFAULT_MASK; }
-    };
-
-    struct Attribute final
+    struct Attribute
     {
         AttributeUnderlyingType type;
         std::variant<
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            UInt128,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Decimal32,
-            Decimal64,
-            Decimal128,
-            Float32,
-            Float64,
-            String>
-            null_values;
-        std::variant<
-            ContainerPtrType<UInt8>,
-            ContainerPtrType<UInt16>,
-            ContainerPtrType<UInt32>,
-            ContainerPtrType<UInt64>,
-            ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>,
-            ContainerPtrType<Int16>,
-            ContainerPtrType<Int32>,
-            ContainerPtrType<Int64>,
-            ContainerPtrType<Decimal32>,
-            ContainerPtrType<Decimal64>,
-            ContainerPtrType<Decimal128>,
-            ContainerPtrType<Float32>,
-            ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>>
-            arrays;
+                UInt8,
+                UInt16,
+                UInt32,
+                UInt64,
+                UInt128,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+                Decimal32,
+                Decimal64,
+                Decimal128,
+                Float32,
+                Float64,
+                String> null_value;
     };
+    using Attributes = std::vector<Attribute>;
 
-    void createAttributes();
+    size_t getAttributeIndex(const std::string & attr_name) const;
+    Attribute & getAttribute(const std::string & attr_name);
+    const Attribute & getAttribute(const std::string & attr_name) const;
 
+    template <typename T>
+    Attribute createAttributeWithTypeImpl(const AttributeUnderlyingType type, const Field & null_value);
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    void createAttributes();
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-            Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
-
+            const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
     template <typename DefaultGetter>
-    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsString(const std::string & attribute_name, const PaddedPODArray<Key> & ids,
+            ColumnString * out, DefaultGetter && get_default) const;
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
-    void update(const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated, AbsentIdHandler && on_id_not_found) const;
-
-    PaddedPODArray<Key> getCachedIds() const;
-
-    bool isEmptyCell(const UInt64 idx) const;
-
-    size_t getCellIdx(const Key id) const;
-
-    void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
-
-    void setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const;
-
-    Attribute & getAttribute(const std::string & attribute_name) const;
-
-    struct FindResult
-    {
-        const size_t cell_idx;
-        const bool valid;
-        const bool outdated;
-    };
-
-    FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
-
-    template <typename AncestorType>
-    void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
-
+    void update(const std::vector<Key> & requested_ids, PresentIdHandler && on_updated,
+            AbsentIdHandler && on_id_not_found) const;
+    
     const std::string name;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    CacheStorage storage;
     Logger * const log;
 
     mutable std::shared_mutex rw_lock;
 
-    /// Actual size will be increased to match power of 2
-    const size_t size;
-
-    /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
-    const size_t size_overlap_mask;
-
-    /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr size_t max_collision_length = 10;
-
-    const size_t zero_cell_idx{getCellIdx(0)};
     std::map<std::string, size_t> attribute_index_by_name;
-    mutable std::vector<Attribute> attributes;
-    mutable std::vector<CellMetadata> cells;
-    Attribute * hierarchical_attribute = nullptr;
-    std::unique_ptr<ArenaWithFreeLists> string_arena;
+    Attributes attributes;
 
     mutable std::exception_ptr last_exception;
     mutable size_t error_count = 0;
     mutable std::chrono::system_clock::time_point backoff_end_time;
-
-    mutable pcg64 rnd_engine;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};
