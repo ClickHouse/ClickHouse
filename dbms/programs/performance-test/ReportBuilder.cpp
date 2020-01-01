@@ -117,16 +117,12 @@ std::string ReportBuilder::buildFullReport(
 
             JSONString runJSON;
 
-            WriteBufferFromOwnString buffer;
-            writeJSONString(test_info.queries[query_index], buffer, FormatSettings());
-            auto & query = buffer.str();
-
-            runJSON.set("query", query);
+            runJSON.set("query", jsonString(test_info.queries[query_index], settings), false);
             runJSON.set("query_index", query_index);
             if (!statistics.exception.empty())
             {
                 if (isASCIIString(statistics.exception))
-                    runJSON.set("exception", jsonString(statistics.exception, settings));
+                    runJSON.set("exception", jsonString(statistics.exception, settings), false);
                 else
                     runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
