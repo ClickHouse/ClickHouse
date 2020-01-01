@@ -40,7 +40,6 @@ if (SANITIZE)
         set (ENABLE_HDFS 0 CACHE BOOL "")
         set (ENABLE_CAPNP 0 CACHE BOOL "")
         set (ENABLE_RDKAFKA 0 CACHE BOOL "")
-        set (ENABLE_ICU 0 CACHE BOOL "")
         set (ENABLE_POCO_MONGODB 0 CACHE BOOL "")
         set (ENABLE_POCO_NETSSL 0 CACHE BOOL "")
         set (ENABLE_POCO_ODBC 0 CACHE BOOL "")
@@ -76,6 +75,9 @@ if (SANITIZE)
         if (MAKE_STATIC_LIBRARIES AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libubsan")
         endif ()
+
+        # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
+        set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
 
     elseif (SANITIZE STREQUAL "libfuzzer")
         # NOTE: Eldar Zaitov decided to name it "libfuzzer" instead of "fuzzer" to keep in mind another possible fuzzer backends.

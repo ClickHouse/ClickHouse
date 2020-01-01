@@ -165,6 +165,9 @@ BlockInputStreams StorageBuffer::read(
 
         if (dst_has_same_structure)
         {
+            if (query_info.order_by_optimizer)
+                query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
+
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
         }
@@ -399,7 +402,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            storage.flushBuffer(buffer, true, true /* locked */);
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
         }
 
         if (!buffer.first_write_time)
@@ -696,6 +699,18 @@ void StorageBuffer::flushThread()
     } while (!shutdown_event.tryWait(1000));
 }
 
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
@@ -707,12 +722,10 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
-    setColumns(std::move(new_columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(database_name_)->alterTable(context, table_name_, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 

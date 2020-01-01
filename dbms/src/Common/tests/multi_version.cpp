@@ -11,13 +11,13 @@ using MV = MultiVersion<T>;
 using Results = std::vector<T>;
 
 
-void thread1(MV & x, T & result)
+static void thread1(MV & x, T & result)
 {
     MV::Version v = x.get();
     result = *v;
 }
 
-void thread2(MV & x, const char * result)
+static void thread2(MV & x, const char * result)
 {
     x.set(std::make_unique<T>(result));
 }

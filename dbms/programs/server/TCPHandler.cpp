@@ -110,7 +110,7 @@ void TCPHandler::runImpl()
     {
         if (!connection_context.isDatabaseExist(default_database))
         {
-            Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
@@ -919,10 +919,15 @@ void TCPHandler::receiveQuery()
     }
 
     /// Per query settings.
-    Settings & settings = query_context->getSettingsRef();
+    Settings custom_settings{};
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
-    settings.deserialize(*in, settings_format);
+    custom_settings.deserialize(*in, settings_format);
+    auto settings_changes = custom_settings.changes();
+    query_context->checkSettingsConstraints(settings_changes);
+    query_context->applySettingsChanges(settings_changes);
+
+    Settings & settings = query_context->getSettingsRef();
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),

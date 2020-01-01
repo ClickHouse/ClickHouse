@@ -124,7 +124,7 @@ void ODBCBridge::initialize(Application & self)
 
     config().setString("logger", "ODBCBridge");
 
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), self.commandName());
 
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
@@ -193,6 +193,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 }
 }
 
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 int mainEntryClickHouseODBCBridge(int argc, char ** argv)
 {
     DB::ODBCBridge app;

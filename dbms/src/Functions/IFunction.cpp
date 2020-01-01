@@ -126,7 +126,11 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+        {
+            auto result_type = block.getByPosition(result).type;
+            assert(result_type->isNullable());
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
 
         if (isColumnConst(*elem.column))
             continue;
@@ -281,7 +285,13 @@ bool ExecutableFunctionAdaptor::defaultImplementationForNulls(
 
     if (null_presence.has_null_constant)
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+        auto & result_column = block.getByPosition(result).column;
+        auto result_type = block.getByPosition(result).type;
+        // Default implementation for nulls returns null result for null arguments,
+        // so the result type must be nullable.
+        assert(result_type->isNullable());
+
+        result_column = result_type->createColumnConstWithDefaultValue(input_rows_count);
         return true;
     }
 

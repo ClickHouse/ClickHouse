@@ -6,6 +6,7 @@
 
 namespace DB
 {
+#pragma GCC diagnostic warning "-Wold-style-cast"
 
 String getOpenSSLErrors()
 {
