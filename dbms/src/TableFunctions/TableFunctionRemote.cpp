@@ -143,10 +143,11 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         /// Use an existing cluster from the main config
         cluster = context.getCluster(cluster_name);
     }
-    else if(!cluster_name.empty() && name == "clusterAll") {
+    else if (!cluster_name.empty() && name == "clusterAllReplicas")
+    {
         std::vector<std::vector<String>> clusterNodes;
         cluster = context.getCluster(cluster_name);
-        // creating a new topology for clusterAll
+        // creating a new topology for clusterAllReplicas
         const auto & addresses_with_failovers = cluster->getShardsAddresses();
         const auto & shards_info = cluster->getShardsInfo();
         auto maybe_secure_port = context.getTCPPortSecure();
@@ -156,11 +157,18 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             const auto & replicas = addresses_with_failovers[shard_index];
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
-                std::vector<String> newNode={replicas[replica_index].host_name};
+                std::vector<String> newNode = {replicas[replica_index].host_name};
                 clusterNodes.push_back(newNode);
             }
         }
-        cluster = std::make_shared<Cluster>(context.getSettings(), clusterNodes, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
+        cluster = std::make_shared<Cluster>(
+            context.getSettings(),
+            clusterNodes,
+            username,
+            password,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
+            false,
+            secure);
     }
     else
     {
@@ -218,7 +226,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {
-    is_cluster_function = (name == "cluster" || name == "clusterAll");
+    is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
 
     std::stringstream ss;
     ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
@@ -233,7 +241,7 @@ void registerTableFunctionRemote(TableFunctionFactory & factory)
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
     factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
     factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
-    factory.registerFunction("clusterAll", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAll"); });
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); });
 }
 
 }
