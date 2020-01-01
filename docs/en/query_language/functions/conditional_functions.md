@@ -29,7 +29,7 @@ The function returns one of the values `then_N` or `else`, depending on the cond
 
 **Example**
 
-Take the table
+Take the following `temp` table:
 
 ```text
 ┌─x─┬────y─┐
@@ -38,7 +38,7 @@ Take the table
 └───┴──────┘
 ```
 
-Run the query `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`. Result:
+Run the query `SELECT multiIf(isNull(y), x, y < 3, y, NULL) FROM temp`. Result:
 
 ```text
 ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
