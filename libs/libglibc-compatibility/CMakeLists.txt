@@ -27,10 +27,6 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
-    if(MAKE_STATIC_LIBRARIES)
-        list(APPEND glibc_compatibility_sources libcxxabi/cxa_thread_atexit.cpp)
-    endif()
-
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
@@ -38,6 +34,8 @@ if (GLIBC_COMPATIBILITY)
 
     if (COMPILER_CLANG)
         target_compile_options(glibc-compatibility PRIVATE -Wno-unused-command-line-argument)
+    elseif (COMPILER_GCC)
+        target_compile_options(glibc-compatibility PRIVATE -Wno-unused-but-set-variable)
     endif ()
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})

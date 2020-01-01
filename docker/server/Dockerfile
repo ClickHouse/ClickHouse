@@ -18,7 +18,6 @@ RUN apt-get update \
             clickhouse-common-static=$version \
             clickhouse-client=$version \
             clickhouse-server=$version \
-            libgcc-7-dev \
             locales \
             tzdata \
             wget \

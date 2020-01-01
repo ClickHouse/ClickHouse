@@ -1,4 +1,5 @@
 #include "DiskFactory.h"
+#include "registerDisks.h"
 
 namespace DB
 {

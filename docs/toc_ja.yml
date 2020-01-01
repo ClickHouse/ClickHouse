@@ -212,7 +212,8 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
+    
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'

@@ -19,14 +19,20 @@ select * from simple;
 -- complex types
 drop table if exists simple;
 
-create table simple (id UInt64,nullable_str SimpleAggregateFunction(anyLast,Nullable(String)),low_str SimpleAggregateFunction(anyLast,LowCardinality(Nullable(String))),ip SimpleAggregateFunction(anyLast,IPv4)) engine=AggregatingMergeTree order by id;
-insert into simple values(1,'1','1','1.1.1.1');
-insert into simple values(1,null,'2','2.2.2.2');
+create table simple (
+    id UInt64,
+    nullable_str SimpleAggregateFunction(anyLast,Nullable(String)),
+    low_str SimpleAggregateFunction(anyLast,LowCardinality(Nullable(String))),
+    ip SimpleAggregateFunction(anyLast,IPv4),
+    status SimpleAggregateFunction(groupBitOr, UInt32)
+) engine=AggregatingMergeTree order by id;
+insert into simple values(1,'1','1','1.1.1.1', 1);
+insert into simple values(1,null,'2','2.2.2.2', 2);
 -- String longer then MAX_SMALL_STRING_SIZE (actual string length is 100)
-insert into simple values(10,'10','10','10.10.10.10');
-insert into simple values(10,'2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222','20','20.20.20.20');
+insert into simple values(10,'10','10','10.10.10.10', 4);
+insert into simple values(10,'2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222','20','20.20.20.20', 1);
 
 select * from simple final;
-select toTypeName(nullable_str),toTypeName(low_str),toTypeName(ip) from simple limit 1;
+select toTypeName(nullable_str),toTypeName(low_str),toTypeName(ip),toTypeName(status) from simple limit 1;
 
 drop table simple;
