@@ -691,7 +691,9 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     String dictionary_name = create.table;
 
-    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
+    if (create.database.empty())
+        create.database = context.getCurrentDatabase();
+    const String & database_name = create.database;
 
     auto guard = context.getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = context.getDatabase(database_name);
