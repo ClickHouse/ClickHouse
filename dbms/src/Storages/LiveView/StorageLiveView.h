@@ -49,7 +49,6 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
     {
@@ -57,10 +56,10 @@ public:
             return inner_subquery->clone();
         return nullptr;
     }
-    ASTPtr getInnerOuterQuery() const
+    ASTPtr getInnerBlocksQuery() const
     {
-        if (inner_outer_query)
-            return inner_outer_query->clone();
+        if (inner_blocks_query)
+            return inner_blocks_query->clone();
         return nullptr;
     }
 
@@ -160,7 +159,7 @@ private:
     String database_name;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
-    ASTPtr inner_outer_query; /// query right before innermost subquery
+    ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
 
