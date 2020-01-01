@@ -76,7 +76,6 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
         factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
         {
