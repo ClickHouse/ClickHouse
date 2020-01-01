@@ -233,7 +233,7 @@ StorageLiveView::StorageLiveView(
     inner_blocks_query = inner_query->clone();
 
     InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
-    
+
     extractDependentTable(inner_blocks_query, select_database_name, select_table_name, table_name, inner_subquery);
 
     /// If the table is not specified - use the table `system.one`
