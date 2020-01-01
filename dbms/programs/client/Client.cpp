@@ -1,5 +1,6 @@
 #include "TestHint.h"
 #include "ConnectionParameters.h"
+#include "Suggest.h"
 
 #include <port/unistd.h>
 #include <stdlib.h>
@@ -405,6 +406,10 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
+            if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
+                /// Load suggestion data from the server.
+                Suggest::instance()->load(connection_parameters, config().getInt("suggestion_limit"));
+
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -420,7 +425,7 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+            LineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 
             do
             {
@@ -466,7 +471,12 @@ private:
             /// This is intended for testing purposes.
             if (config().getBool("always_load_suggestion_data", false))
             {
+#ifdef USE_REPLXX
+                SCOPE_EXIT({ Suggest::instance().finalize(); });
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+#else
                 throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
+#endif
             }
 
             query_id = config().getString("query_id", "");

@@ -13,12 +13,37 @@ void trim(String & s)
 
 }
 
-LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
+LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
+{
+    if (!ready)
+        return std::make_pair(words.end(), words.end());
+
+    return std::equal_range(
+        words.begin(), words.end(), prefix, [prefix_length](const std::string & s, const std::string & prefix_searched)
+        {
+            return strncmp(s.c_str(), prefix_searched.c_str(), prefix_length) < 0;
+        });
+}
+
+LineReader::LineReader(const Suggest * suggest, const String & history_file_path_, char extender_, char delimiter_)
     : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
 {
 #ifdef USE_REPLXX
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
+
+    auto callback = [suggest] (const String & context, size_t context_size)
+    {
+        auto range = suggest->getCompletions(context, context_size);
+        return replxx::Replxx::completions_t(range.first, range.second);
+    };
+
+    if (suggest)
+    {
+        rx.set_completion_callback(callback);
+        rx.set_complete_on_empty(false);
+        rx.set_word_break_characters(" \t\n\r\"\\'`@$><=;|&{(.");
+    }
 #endif
     /// FIXME: check extender != delimiter
 }
