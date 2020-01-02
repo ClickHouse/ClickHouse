@@ -131,7 +131,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     }
     catch (const Exception & e)
     {
-        elem.stack_trace = e.getStackTrace().toString();
+        elem.stack_trace = e.getStackTraceString();
     }
     catch (...) {}
 }

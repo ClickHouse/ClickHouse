@@ -36,10 +36,19 @@ public:
     /// Creates empty object for deferred initialization
     StackTrace(NoCapture);
 
+    void assign(void ** frames_, size_t size_)
+    {
+        size = size_;
+        for (size_t i = 0; i < size; ++i)
+            frames[i] = frames_[i];
+    }
+
     size_t getSize() const;
     size_t getOffset() const;
     const Frames & getFrames() const;
     std::string toString() const;
+
+    static std::string toString(void ** frames, size_t offset, size_t size);
 
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 

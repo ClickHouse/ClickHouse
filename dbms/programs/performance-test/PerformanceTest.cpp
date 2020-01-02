@@ -337,7 +337,7 @@ void PerformanceTest::runQueries(
         {
             statistics.exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
         }
 
         if (!statistics.got_SIGINT)
