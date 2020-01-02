@@ -38,13 +38,17 @@ Exception::Exception(const std::string & msg, int code)
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+#endif
 }
 
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(String(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
     set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+#endif
 }
 
 
