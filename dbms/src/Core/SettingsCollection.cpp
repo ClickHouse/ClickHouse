@@ -216,6 +216,10 @@ void SettingMaxThreads::setAuto()
 UInt64 SettingMaxThreads::getAutoValue() const
 {
     static auto res = getNumberOfPhysicalCPUCores();
+
+    if (res > 32)
+        res /= 2;
+
     return res;
 }
 
