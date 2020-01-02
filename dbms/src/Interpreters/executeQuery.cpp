@@ -129,9 +129,9 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         throw;
     }
-    catch (const Exception & e)
+    catch (const std::exception & e)
     {
-        elem.stack_trace = e.getStackTraceString();
+        elem.stack_trace = getExceptionStackTraceString(e);
     }
     catch (...) {}
 }
