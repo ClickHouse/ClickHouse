@@ -823,7 +823,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     auto disks = storage_policy->getDisks();
 
-    if (getStoragePolicy()->getName() != "default")
+    /// Only check if user did touch storage configuration for this table.
+    if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks)
     {
         /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;

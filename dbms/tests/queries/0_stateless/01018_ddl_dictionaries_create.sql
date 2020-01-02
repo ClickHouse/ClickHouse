@@ -89,7 +89,7 @@ CREATE DICTIONARY memory_db.dict2
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(FLAT()); -- {serverError 1}
+LAYOUT(FLAT()); -- {serverError 48}
 
 SHOW CREATE DICTIONARY memory_db.dict2; -- {serverError 487}
 
@@ -114,7 +114,7 @@ CREATE DICTIONARY lazy_db.dict3
 PRIMARY KEY key_column, second_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_HASHED()); -- {serverError 1}
+LAYOUT(COMPLEX_KEY_HASHED()); -- {serverError 48}
 
 DROP DATABASE IF EXISTS lazy_db;
 

@@ -6,7 +6,7 @@ Returns a string with the name of the host that this function was performed on. 
 
 ## FQDN {#fqdn}
 
-Returns the fully qualified domain name. 
+Returns the fully qualified domain name.
 
 **Syntax**
 
@@ -392,7 +392,7 @@ neighbor(column, offset[, default_value])
 The result of the function depends on the affected data blocks and the order of data in the block.
 If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
 
-**Parameters** 
+**Parameters**
 
 - `column` — A column name or scalar expression.
 - `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
@@ -400,7 +400,7 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 **Returned values**
 
-- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds. 
+- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
 - Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
 
 Type: type of data blocks affected or default value type.
@@ -545,7 +545,7 @@ WHERE diff != 1
 └────────┴──────┘
 ```
 ```sql
-set max_block_size=100000 -- default value is 65536! 
+set max_block_size=100000 -- default value is 65536!
 
 SELECT
     number,
@@ -886,7 +886,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity()
 
-Returns the same value that was used as its argument. 
+Returns the same value that was used as its argument.
 
 ```sql
 SELECT identity(42)
@@ -897,5 +897,40 @@ SELECT identity(42)
 └──────────────┘
 ```
 Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
+
+## randomPrintableASCII {#randomascii}
+
+Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+**Syntax**
+
+```sql
+randomPrintableASCII(length)
+```
+
+**Parameters**
+
+- `length` — Resulting string length. Positive integer.
+
+    If you pass `length < 0`, behavior of the function is undefined.
+
+**Returned value**
+
+ - String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../data_types/string.md)
+
+**Example**
+
+```sql
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+```text
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
