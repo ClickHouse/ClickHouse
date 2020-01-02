@@ -524,6 +524,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Live View",
                 ErrorCodes::INCORRECT_QUERY);
 
+        if (as_create.is_dictionary)
+            throw Exception(
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Dictionary",
+                ErrorCodes::INCORRECT_QUERY);
+
         create.set(create.storage, as_create.storage->ptr());
     }
 }
