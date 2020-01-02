@@ -1,6 +1,8 @@
 set(ICU_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source)
 set(ICUDATA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icudata/)
 
+set (CMAKE_CXX_STANDARD 17)
+
 # These lists of sources were generated from build log of the original ICU build system (configure + make).
 
 set(ICUUC_SOURCES

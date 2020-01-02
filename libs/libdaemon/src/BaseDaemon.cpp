@@ -209,7 +209,7 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
             }
         }
     }
@@ -686,7 +686,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     // sensitive data masking rules are not used here
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), self.commandName());
 
     if (is_daemon)
     {
