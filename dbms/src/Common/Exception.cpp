@@ -42,7 +42,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 }
 
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
-    : Poco::Exception(String(exc.what()), ErrorCodes::STD_EXCEPTION)
+    : Poco::Exception(String(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
     set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
 }
