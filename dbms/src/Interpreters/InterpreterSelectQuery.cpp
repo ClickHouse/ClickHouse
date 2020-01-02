@@ -242,17 +242,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-    if (settings.allow_experimental_cross_to_join_conversion)
-    {
-        CrossToInnerJoinVisitor::Data cross_to_inner;
-        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
-    }
+    CrossToInnerJoinVisitor::Data cross_to_inner;
+    CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
 
-    if (settings.allow_experimental_multiple_joins_emulation)
-    {
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
-        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
-    }
+    JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+    JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
 
     max_streams = settings.max_threads;
     auto & query = getSelectQuery();
@@ -411,8 +405,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
+    if (query.prewhere() && query.where())
+    {
+        /// Filter block in WHERE instead to get better performance
+        query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+        need_analyze_again = true;
+    }
     if (need_analyze_again)
         analyze();
+
+    /// If there is no WHERE, filter blocks as usual
+    if (query.prewhere() && !query.where())
+        analysis_result.prewhere_info->need_filter = true;
 
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample

@@ -38,4 +38,4 @@ from
         group by query
    ) original_medians_array
 where rd.query = original_medians_array.query
-order by fail desc, rd_quantiles_percent[3] asc;
+order by rd_quantiles_percent[3] desc;
