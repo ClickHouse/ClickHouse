@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Join.h>
 #include <Storages/StorageJoin.h>
-#include "registerFunctions.h"
 
 
 namespace DB

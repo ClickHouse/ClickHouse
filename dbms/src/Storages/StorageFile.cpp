@@ -108,7 +108,8 @@ static void checkCreationIsAllowed(const Context & context_global, const std::st
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    if (!startsWith(table_path, db_dir_path))
+    /// "/dev/null" is allowed for perf testing
+    if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);

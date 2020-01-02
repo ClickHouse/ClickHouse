@@ -55,7 +55,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
 
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>>(res_type, val_type); \
+        return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<TYPE>>>>(res_type, val_type);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
