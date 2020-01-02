@@ -1,13 +1,33 @@
 #include "SSDCacheDictionary.h"
 
 #include <Columns/ColumnsNumber.h>
-#include <Common/ProfilingScopedRWLock.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ProfilingScopedRWLock.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <ext/chrono_io.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
+
+namespace ProfileEvents
+{
+    extern const Event DictCacheKeysRequested;
+    extern const Event DictCacheKeysRequestedMiss;
+    extern const Event DictCacheKeysRequestedFound;
+    extern const Event DictCacheKeysExpired;
+    extern const Event DictCacheKeysNotFound;
+    extern const Event DictCacheKeysHit;
+    extern const Event DictCacheRequestTimeNs;
+    extern const Event DictCacheRequests;
+    extern const Event DictCacheLockWriteNs;
+    extern const Event DictCacheLockReadNs;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DictCacheRequests;
+}
 
 namespace DB
 {
@@ -21,8 +41,8 @@ namespace ErrorCodes
     extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
-CachePartition::CachePartition(const std::string & file_name, const Block & header, size_t buffer_size)
-    : file_name(file_name), buffer_size(buffer_size), out_file(file_name, buffer_size), header(header), buffer(header.cloneEmptyColumns())
+CachePartition::CachePartition(CacheStorage & storage_, const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
+    : storage(storage_), file_id(file_id_), max_size(max_size_), buffer_size(buffer_size_)
 {
 }
 
@@ -91,6 +111,124 @@ void CachePartition::flush()
     buffer = header.cloneEmptyColumns();
 }
 
+template <typename PresentIdHandler, typename AbsentIdHandler>
+std::exception_ptr CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
+        PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found)
+{
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
+
+    std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
+    for (const auto id : requested_ids)
+        remaining_ids.insert({id, 0});
+
+    const auto now = std::chrono::system_clock::now();
+
+    const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
+    if (now > backoff_end_time)
+    {
+        try
+        {
+            if (update_error_count)
+            {
+                /// Recover after error: we have to clone the source here because
+                /// it could keep connections which should be reset after error.
+                source_ptr = source_ptr->clone();
+            }
+
+            Stopwatch watch;
+            auto stream = source_ptr->loadIds(requested_ids);
+            stream->readPrefix();
+
+            while (const auto block = stream->read())
+            {
+                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+                if (!id_column)
+                    throw Exception{"Id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
+
+                const auto & ids = id_column->getData();
+
+                /// cache column pointers
+                const auto column_ptrs = ext::map<std::vector>(
+                        ext::range(0, dictionary.getAttributes().size()),
+                        [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
+
+                for (const auto i : ext::range(0, ids.size()))
+                {
+                    const auto id = ids[i];
+
+                    on_updated(id, i, column_ptrs);
+                    /// mark corresponding id as found
+                    remaining_ids[id] = 1;
+                }
+
+                /// TODO: Add TTL to block
+                partitions[0]->appendBlock(block);
+            }
+
+            stream->readSuffix();
+
+            update_error_count = 0;
+            last_update_exception = std::exception_ptr{};
+            backoff_end_time = std::chrono::system_clock::time_point{};
+
+            ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
+        }
+        catch (...)
+        {
+            ++update_error_count;
+            last_update_exception = std::current_exception();
+            backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, update_error_count));
+
+            tryLogException(last_update_exception, log, "Could not update cache dictionary '" + dictionary.getName() +
+                                                 "', next update is scheduled at " + ext::to_string(backoff_end_time));
+        }
+    }
+
+    size_t not_found_num = 0, found_num = 0;
+
+    /// Check which ids have not been found and require setting null_value
+    auto mutable_columns = header.cloneEmptyColumns();
+    for (const auto & id_found_pair : remaining_ids)
+    {
+        if (id_found_pair.second)
+        {
+            ++found_num;
+            continue;
+        }
+        ++not_found_num;
+
+        const auto id = id_found_pair.first;
+
+        if (update_error_count)
+        {
+            /// TODO: юзать старые значения.
+
+            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
+            std::rethrow_exception(last_update_exception);
+        }
+
+        /// TODO: Add TTL
+
+        /// Set null_value for each attribute
+        const auto & attributes = dictionary.getAttributes();
+        for (size_t i = 0; i < attributes.size(); ++i)
+        {
+            const auto & attribute = attributes[i];
+            mutable_columns[i].insert(attribute.null_value);
+        }
+
+        /// inform caller that the cell has not been found
+        on_id_not_found(id);
+    }
+    partitions[0]->appendBlock(header.cloneWithColumns(std::move(mutable_columns)));
+
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
+    ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+}
+
 SSDCacheDictionary::SSDCacheDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
@@ -102,7 +240,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
-    , storage(path, partition_max_size)
+    , storage(*this, path, 1, partition_max_size)
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
@@ -209,6 +347,8 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
+    const auto attribute_index = getAttributeIndex(attribute_index);
+
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
     storage.getValue(attribute_name, ids, out, not_found_ids);
     if (not_found_ids.empty())
@@ -217,12 +357,13 @@ void SSDCacheDictionary::getItemsNumberImpl(
     std::vector<Key> required_ids(not_found_ids.size());
     std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
 
-    update(
+    storage.update(
+            source_ptr,
             required_ids,
-            [&](const auto id, const auto & attribute_value)
+            [&](const auto id, const auto row, const auto & attributes)
             {
                 for (const size_t row : not_found_ids[id])
-                    out[row] = static_cast<OutputType>(attribute_value);
+                    out[row] = static_cast<OutputType>(attributes[attribute_index][row]);
             },
             [&](const auto id)
             {
@@ -285,6 +426,11 @@ SSDCacheDictionary::Attribute & SSDCacheDictionary::getAttribute(const std::stri
 const SSDCacheDictionary::Attribute & SSDCacheDictionary::getAttribute(const std::string & attr_name) const
 {
     return attributes[getAttributeIndex(attr_name)];
+}
+
+const SSDCacheDictionary::Attributes & SSDCacheDictionary::getAttributes() const
+{
+    return attributes;
 }
 
 template <typename T>
