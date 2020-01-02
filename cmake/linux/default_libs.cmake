@@ -50,6 +50,11 @@ if (ARCH_AMD64)
         ${ClickHouse_SOURCE_DIR}/contrib/libc-headers
         ${COMPILER_INCLUDE_DIRS})
 
+    set(CMAKE_REQUIRED_INCLUDES
+        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu
+        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers
+        ${COMPILER_INCLUDE_DIRS})
+
     # Disable unwanted includes to get more isolated build. The build should not depend on the percularities of the user environment.
     # NOTE It is very similar to using custom "toolchain". And using custom toolchain is more simple but is less convenient for users.
     # This is also very helpful to avoid mess with system libraries (e.g. using wrong version of zlib.h)
