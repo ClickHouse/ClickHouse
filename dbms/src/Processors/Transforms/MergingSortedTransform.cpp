@@ -254,6 +254,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
             size_t source_num = current.impl->order;
             insertFromChunk(source_num);
+            queue.removeTop();
             return;
         }
 

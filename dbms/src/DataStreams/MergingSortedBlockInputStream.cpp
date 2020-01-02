@@ -238,6 +238,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
 
             total_merged_rows += merged_rows;
             fetchNextBlock(current, queue);
+            queue.removeTop();
             return;
         }
 
