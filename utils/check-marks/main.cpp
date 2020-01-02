@@ -133,7 +133,7 @@ int main(int argc, char ** argv)
         std::cerr << e.what() << ", " << e.message() << std::endl
             << std::endl
             << "Stack trace:" << std::endl
-            << e.getStackTrace().toString()
+            << e.getStackTraceString()
             << std::endl;
         throw;
     }
