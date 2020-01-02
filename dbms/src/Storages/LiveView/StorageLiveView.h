@@ -45,6 +45,7 @@ public:
     String getDatabaseName() const override { return database_name; }
     String getSelectDatabaseName() const { return select_database_name; }
     String getSelectTableName() const { return select_table_name; }
+    StoragePtr getParentStorage() const { return parent_storage; }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -139,6 +140,8 @@ public:
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
+    /// collect and set mergeable blocks. Must be called holding mutex
+    BlocksPtrs collectMergeableBlocks(const Context & context);
     void setMergeableBlocks(BlocksPtrs blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
@@ -146,6 +149,9 @@ public:
     bool getNewBlocks();
 
     Block getHeader() const;
+
+    /// convert blocks to input streams
+    static BlockInputStreams blocksToInputStreams(BlocksPtrs blocks);
 
     static void writeIntoLiveView(
         StorageLiveView & live_view,
@@ -162,6 +168,7 @@ private:
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
+    StoragePtr parent_storage;
 
     bool is_temporary = false;
     /// Mutex to protect access to sample block
