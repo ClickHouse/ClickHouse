@@ -72,11 +72,6 @@ public:
         return nested_function->getName() + "Resample";
     }
 
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
-
     bool isState() const override
     {
         return nested_function->isState();
@@ -105,7 +100,18 @@ public:
     void create(AggregateDataPtr place) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->create(place + i * size_of_data);
+        {
+            try
+            {
+                nested_function->create(place + i * size_of_data);
+            }
+            catch (...)
+            {
+                for (size_t j = 0; j < i; ++j)
+                    nested_function->destroy(place + j * size_of_data);
+                throw;
+            }
+        }
     }
 
     void destroy(AggregateDataPtr place) const noexcept override

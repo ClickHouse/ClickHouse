@@ -1,6 +1,6 @@
 #include "FunctionFactory.h"
 #include "FunctionsEmbeddedDictionaries.h"
-#include "registerFunctions.h"
+
 
 namespace DB
 {

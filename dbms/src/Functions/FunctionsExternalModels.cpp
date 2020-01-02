@@ -15,7 +15,6 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/assert_cast.h>
-#include "registerFunctions.h"
 
 
 namespace DB

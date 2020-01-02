@@ -234,36 +234,32 @@ void ParsedTemplateFormatString::throwInvalidFormat(const String & message, size
                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
 }
 
-ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(const Context & context)
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(const FormatSettings::Custom & settings)
 {
-    const Settings & settings = context.getSettingsRef();
-
     /// Set resultset format to "result_before_delimiter ${data} result_after_delimiter"
     ParsedTemplateFormatString resultset_format;
-    resultset_format.delimiters.emplace_back(settings.format_custom_result_before_delimiter);
-    resultset_format.delimiters.emplace_back(settings.format_custom_result_after_delimiter);
+    resultset_format.delimiters.emplace_back(settings.result_before_delimiter);
+    resultset_format.delimiters.emplace_back(settings.result_after_delimiter);
     resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
     resultset_format.format_idx_to_column_idx.emplace_back(0);
     resultset_format.column_names.emplace_back("data");
     return resultset_format;
 }
 
-ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFormat(const Context & context, const Block & sample)
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFormat(const FormatSettings::Custom & settings, const Block & sample)
 {
-    const Settings & settings = context.getSettingsRef();
-
     /// Set row format to
     /// "row_before_delimiter ${Col0:escaping} field_delimiter ${Col1:escaping} field_delimiter ... ${ColN:escaping} row_after_delimiter"
-    ParsedTemplateFormatString::ColumnFormat escaping = ParsedTemplateFormatString::stringToFormat(settings.format_custom_escaping_rule);
+    ParsedTemplateFormatString::ColumnFormat escaping = ParsedTemplateFormatString::stringToFormat(settings.escaping_rule);
     ParsedTemplateFormatString row_format;
-    row_format.delimiters.emplace_back(settings.format_custom_row_before_delimiter);
+    row_format.delimiters.emplace_back(settings.row_before_delimiter);
     for (size_t i = 0; i < sample.columns(); ++i)
     {
         row_format.formats.emplace_back(escaping);
         row_format.format_idx_to_column_idx.emplace_back(i);
         row_format.column_names.emplace_back(sample.getByPosition(i).name);
         bool last_column = i == sample.columns() - 1;
-        row_format.delimiters.emplace_back(last_column ? settings.format_custom_row_after_delimiter : settings.format_custom_field_delimiter);
+        row_format.delimiters.emplace_back(last_column ? settings.row_after_delimiter : settings.field_delimiter);
     }
     return row_format;
 }
