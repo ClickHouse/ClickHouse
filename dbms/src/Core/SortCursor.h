@@ -178,7 +178,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
         int direction = desc.direction;
         int nulls_direction = desc.nulls_direction;
         int res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
-        return (res > 0) ^ (direction > 0);
+        return (res > 0) == (direction > 0);
     }
 };
 
