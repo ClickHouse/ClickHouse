@@ -110,7 +110,12 @@ public:
     bool isDirectoryEmpty(const String & path);
 
     /// Move the file from `from_path` to `to_path`.
+    /// If a file with `to_path` path already exists, an exception will be thrown .
     virtual void moveFile(const String & from_path, const String & to_path) = 0;
+
+    /// Move the file from `from_path` to `to_path`.
+    /// If a file with `to_path` path already exists, it will be replaced.
+    virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
