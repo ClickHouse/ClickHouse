@@ -1263,7 +1263,7 @@ void MergeTreeData::rename(
     {
         auto new_table_path_parent = Poco::Path(new_table_path).makeParent().toString();
         disk->createDirectory(new_table_path_parent);
-        disk->moveFile(relative_data_path, new_table_path);
+        disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();

@@ -111,7 +111,7 @@ void DiskLocal::clearDirectory(const String & path)
     std::vector<Poco::File> files;
     Poco::File(disk_path + path).list(files);
     for (auto & file : files)
-        file.remove(true);
+        file.remove();
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
@@ -127,6 +127,21 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
     Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
+}
+
+void DiskLocal::replaceFile(const String & from_path, const String & to_path)
+{
+    Poco::File from_file(disk_path + from_path);
+    Poco::File to_file(disk_path + to_path);
+    if (to_file.exists())
+    {
+        Poco::File tmp_file(disk_path + to_path + ".old");
+        to_file.renameTo(tmp_file.path());
+        from_file.renameTo(disk_path + to_path);
+        tmp_file.remove();
+    }
+    else
+        from_file.renameTo(to_file.path());
 }
 
 void DiskLocal::copyFile(const String & from_path, const String & to_path)

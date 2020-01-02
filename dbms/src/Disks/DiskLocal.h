@@ -63,6 +63,8 @@ public:
 
     void moveFile(const String & from_path, const String & to_path) override;
 
+    void replaceFile(const String & from_path, const String & to_path) override;
+
     void copyFile(const String & from_path, const String & to_path) override;
 
     std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
