@@ -25,6 +25,51 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
+Exception::Exception()
+{
+}
+
+Exception::Exception(const std::string & msg, int code)
+    : Poco::Exception(msg, code)
+{
+}
+
+Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
+    : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
+{
+    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+}
+
+Exception::Exception(CreateFromSTDTag, const std::exception & exc)
+    : Poco::Exception(String(e.what()), ErrorCodes::STD_EXCEPTION)
+{
+    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+}
+
+
+std::string getExceptionStackTraceString(const std::exception & e)
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
+#else
+    if (const auto & db_exception = dynamic_cast<const Exception &>(e))
+        return db_exception.getStackTraceString();
+    return {};
+#endif
+}
+
+
+std::string Exception::getStackTraceString() const
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    return StackTrace::toString(get_stack_trace_frames(), 0, get_stack_trace_size());
+#else
+    return trace.toString();
+#endif
+}
+
+
 std::string errnoToString(int code, int e)
 {
     const size_t buf_size = 128;
@@ -141,6 +186,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
+                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL;
         }
@@ -157,8 +203,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                   << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                   << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
+                << (with_extra_info ? getExtraExceptionInfo(e) : "")
+                << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }
@@ -261,7 +308,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
         stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTrace().toString();
+            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
     catch (...) {}
 
