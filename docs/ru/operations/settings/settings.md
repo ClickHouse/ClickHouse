@@ -566,12 +566,6 @@ ClickHouse использует этот параметр при чтении д
 
 Как правило, не имеет смысла менять эту настройку.
 
-## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
-
-Если превышено значение параметра [mark_cache_size](../server_settings/settings.md#server-mark-cache-size), то будут удалены только записи старше чем значение этого параметра. Имеет смысл понижать данный параметр при малом количестве RAM на хост-системах.
-
-Default value: 10000 seconds.
-
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
