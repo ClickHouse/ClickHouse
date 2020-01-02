@@ -33,7 +33,9 @@ target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-m
 target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
 # Enable capturing stack traces for all exceptions.
-target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+if (USE_UNWIND)
+    target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
 
 install(
     TARGETS cxxabi
