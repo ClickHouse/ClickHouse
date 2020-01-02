@@ -138,7 +138,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         setIdentifierSpecial(ast);
 
     ClusterPtr cluster;
-    if (!cluster_name.empty() && name == "cluster")
+    if (!cluster_name.empty() && name != "clusterAllReplicas")
     {
         /// Use an existing cluster from the main config
         cluster = context.getCluster(cluster_name);
