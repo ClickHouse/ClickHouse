@@ -300,7 +300,7 @@ private:
                 && std::string::npos == embedded_stack_trace_pos)
             {
                 std::cerr << "Stack trace:" << std::endl
-                    << e.getStackTrace().toString();
+                    << e.getStackTraceString();
             }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -791,7 +791,7 @@ private:
 
                         if (config().getBool("stacktrace", false))
                             std::cerr << "Stack trace:" << std::endl
-                                      << e.getStackTrace().toString() << std::endl;
+                                      << e.getStackTraceString() << std::endl;
 
                         std::cerr << std::endl;
 
