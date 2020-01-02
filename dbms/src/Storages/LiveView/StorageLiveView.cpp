@@ -97,6 +97,11 @@ static void extractDependentTable(ASTPtr & query, String & select_database_name,
 
 BlocksPtrs StorageLiveView::collectMergeableBlocks(const Context & context)
 {
+    ASTPtr mergeable_query = inner_query;
+
+    if (inner_subquery)
+        mergeable_query = inner_subquery;
+
     BlocksPtrs new_mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
     BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
 
@@ -110,9 +115,11 @@ BlocksPtrs StorageLiveView::collectMergeableBlocks(const Context & context)
     new_mergeable_blocks->push_back(base_mergeable_blocks);
 
     mergeable_blocks = new_mergeable_blocks;
+
+    return mergeable_blocks;
 }
 
-BlockInputStreams blocksToInputStreams(BlocksPtrs blocks)
+BlockInputStreams StorageLiveView::blocksToInputStreams(BlocksPtrs blocks)
 {
     BlockInputStreams streams;
 
@@ -131,7 +138,7 @@ BlockInputStreams blocksToInputStreams(BlocksPtrs blocks)
 }
 
 /// Complete query using input streams from mergeable blocks
-BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams from)
+BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams & from)
 {
     auto block_context = std::make_unique<Context>(global_context);
     block_context->makeQueryContext();
@@ -224,7 +231,7 @@ void StorageLiveView::writeIntoLiveView(
         }
     }
 
-    BlockInputStreamPtr data = completeQuery(std::move(from));
+    BlockInputStreamPtr data = live_view.completeQuery(from);
     copyData(*data, *output);
 }
 
