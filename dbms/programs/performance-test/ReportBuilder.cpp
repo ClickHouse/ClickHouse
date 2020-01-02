@@ -17,7 +17,6 @@ namespace DB
 
 namespace
 {
-const std::regex QUOTE_REGEX{"\""};
 std::string getMainMetric(const PerformanceTestInfo & test_info)
 {
     std::string main_metric;
@@ -30,9 +29,17 @@ std::string getMainMetric(const PerformanceTestInfo & test_info)
         main_metric = test_info.main_metric;
     return main_metric;
 }
+
 bool isASCIIString(const std::string & str)
 {
     return std::all_of(str.begin(), str.end(), isASCII);
+}
+
+String jsonString(const String & str, FormatSettings & settings)
+{
+    WriteBufferFromOwnString buffer;
+    writeJSONString(str, buffer, settings);
+    return std::move(buffer.str());
 }
 }
 
@@ -55,6 +62,9 @@ std::string ReportBuilder::buildFullReport(
     std::vector<TestStats> & stats,
     const std::vector<std::size_t> & queries_to_run) const
 {
+    FormatSettings settings;
+
+
     JSONString json_output;
 
     json_output.set("hostname", hostname);
@@ -67,20 +77,17 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("path", test_info.path);
     json_output.set("main_metric", getMainMetric(test_info));
 
-    if (test_info.substitutions.size())
+    if (!test_info.substitutions.empty())
     {
         JSONString json_parameters(2); /// here, 2 is the size of \t padding
 
-        for (auto it = test_info.substitutions.begin(); it != test_info.substitutions.end(); ++it)
+        for (auto & [parameter, values] : test_info.substitutions)
         {
-            std::string parameter = it->first;
-            Strings values = it->second;
-
             std::ostringstream array_string;
             array_string << "[";
             for (size_t i = 0; i != values.size(); ++i)
             {
-                array_string << '"' << std::regex_replace(values[i], QUOTE_REGEX, "\\\"") << '"';
+                array_string << jsonString(values[i], settings);
                 if (i != values.size() - 1)
                 {
                     array_string << ", ";
@@ -110,13 +117,12 @@ std::string ReportBuilder::buildFullReport(
 
             JSONString runJSON;
 
-            auto query = std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\"");
-            runJSON.set("query", query);
+            runJSON.set("query", jsonString(test_info.queries[query_index], settings), false);
             runJSON.set("query_index", query_index);
             if (!statistics.exception.empty())
             {
                 if (isASCIIString(statistics.exception))
-                    runJSON.set("exception", std::regex_replace(statistics.exception, QUOTE_REGEX, "\\\""));
+                    runJSON.set("exception", jsonString(statistics.exception, settings), false);
                 else
                     runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
@@ -183,7 +189,7 @@ std::string ReportBuilder::buildCompactReport(
     std::vector<TestStats> & stats,
     const std::vector<std::size_t> & queries_to_run) const
 {
-
+    FormatSettings settings;
     std::ostringstream output;
 
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
@@ -194,7 +200,7 @@ std::string ReportBuilder::buildCompactReport(
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             if (test_info.queries.size() > 1)
-                output << "query \"" << test_info.queries[query_index] << "\", ";
+                output << "query " << jsonString(test_info.queries[query_index], settings) << ", ";
 
             output << "run " << std::to_string(number_of_launch + 1) << ": ";
 

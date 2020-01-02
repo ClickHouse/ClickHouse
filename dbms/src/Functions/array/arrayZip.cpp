@@ -5,7 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
