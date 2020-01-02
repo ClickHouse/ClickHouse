@@ -57,8 +57,8 @@ std::string getExceptionStackTraceString(const std::exception & e)
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
 #else
-    if (const auto & db_exception = dynamic_cast<const Exception &>(e))
-        return db_exception.getStackTraceString();
+    if (const auto * db_exception = dynamic_cast<const Exception *>(e))
+        return db_exception->getStackTraceString();
     return {};
 #endif
 }
