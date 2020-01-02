@@ -140,8 +140,12 @@ public:
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
+
     /// collect and set mergeable blocks. Must be called holding mutex
     BlocksPtrs collectMergeableBlocks(const Context & context);
+    /// Complete query using input streams from mergeable blocks
+    BlockInputStreamPtr completeQuery(BlockInputStreams & from);
+
     void setMergeableBlocks(BlocksPtrs blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
