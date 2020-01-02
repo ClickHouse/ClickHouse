@@ -241,20 +241,7 @@ public:
 
     size_t size() { return queue.size(); }
 
-    Cursor & nextChild()
-    {
-        if (next_idx)
-        {
-            return queue[next_idx];
-        }
-        else
-        {
-            next_idx = 1;
-            if (queue.size() > 2 && queue[1] < queue[2])
-                ++next_idx;
-            return queue[next_idx];
-        }
-    }
+    Cursor & nextChild() { return queue[nextChildIndex()]; }
 
     void next()
     {
@@ -279,6 +266,7 @@ public:
     {
         std::pop_heap(queue.begin(), queue.end());
         queue.pop_back();
+        next_idx = 0;
     }
 
     void push(SortCursorImpl & cursor)
@@ -295,6 +283,19 @@ private:
     /// Cache comparison between first and second child if the order in queue has not been changed.
     size_t next_idx = 0;
 
+    size_t nextChildIndex()
+    {
+        if (next_idx == 0)
+        {
+            next_idx = 1;
+
+            if (queue.size() > 2 && queue[1] < queue[2])
+                ++next_idx;
+        }
+
+        return next_idx;
+    }
+
     /// This is adapted version of the function __sift_down from libc++.
     /// Why cannot simply use std::priority_queue?
     /// - because it doesn't support updating the top element and requires pop and push instead.
@@ -306,30 +307,14 @@ private:
             return;
 
         auto begin = queue.begin();
-        typename Container::iterator child_it;
 
-        if (next_idx)
-        {
-            child_it = begin + next_idx;
-        }
-        else
-        {
-            next_idx = 1;
-            child_it = begin + next_idx;
-
-            /// Right child exists and is greater than left child.
-            if (size > 2 && *child_it < *(child_it + 1))
-            {
-                ++child_it;
-                ++next_idx;
-            }
-        }
+        size_t child_idx = nextChildIndex();
+        auto child_it = begin + child_idx;
 
         /// Check if we are in order.
         if (*child_it < *begin)
             return;
 
-        size_t child_idx = next_idx;
         next_idx = 0;
 
         auto curr_it = begin;
@@ -340,11 +325,12 @@ private:
             *curr_it = std::move(*child_it);
             curr_it = child_it;
 
-            if ((size - 2) / 2 < child_idx)
-                break;
-
             // recompute the child based off of the updated parent
             child_idx = 2 * child_idx + 1;
+
+            if (child_idx >= size)
+                break;
+
             child_it = begin + child_idx;
 
             if ((child_idx + 1) < size && *child_it < *(child_it + 1))
