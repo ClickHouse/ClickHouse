@@ -280,9 +280,9 @@ CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecDoubleDelta::getMethodByte() const
+uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::DoubleDelta);
+    return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
 String CompressionCodecDoubleDelta::getCodecDesc() const

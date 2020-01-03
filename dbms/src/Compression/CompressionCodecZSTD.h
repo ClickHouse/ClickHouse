@@ -15,7 +15,7 @@ public:
 
     CompressionCodecZSTD(int level_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 

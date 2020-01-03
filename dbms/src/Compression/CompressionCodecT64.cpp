@@ -566,7 +566,7 @@ void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)
     }
 }
 
-UInt8 CompressionCodecT64::getMethodByte() const
+uint8_t CompressionCodecT64::getMethodByte() const
 {
     return codecId();
 }

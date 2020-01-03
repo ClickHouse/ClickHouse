@@ -26,9 +26,9 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
 {
 }
 
-UInt8 CompressionCodecMultiple::getMethodByte() const
+uint8_t CompressionCodecMultiple::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Multiple);
+    return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
 String CompressionCodecMultiple::getCodecDesc() const
