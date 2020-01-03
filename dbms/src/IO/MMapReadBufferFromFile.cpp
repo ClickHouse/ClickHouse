@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-void MMapReadBufferFromFile::open(const std::string & file_name)
+void MMapReadBufferFromFile::open()
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -43,7 +43,7 @@ std::string MMapReadBufferFromFile::getFileName() const
 MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset, size_t length_)
     : file_name(file_name_)
 {
-    open(file_name);
+    open();
     init(fd, offset, length_);
 }
 
@@ -51,7 +51,7 @@ MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, s
 MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset)
     : file_name(file_name_)
 {
-    open(file_name);
+    open();
     init(fd, offset);
 }
 

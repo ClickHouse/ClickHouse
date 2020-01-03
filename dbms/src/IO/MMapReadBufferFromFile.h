@@ -33,7 +33,7 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
 
-    void open(const std::string & file_name);
+    void open();
 };
 
 }
