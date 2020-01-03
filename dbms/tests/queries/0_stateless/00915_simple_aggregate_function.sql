@@ -35,4 +35,6 @@ insert into simple values(10,'22222222222222222222222222222222222222222222222222
 select * from simple final;
 select toTypeName(nullable_str),toTypeName(low_str),toTypeName(ip),toTypeName(status) from simple limit 1;
 
+optimize table simple final;
+
 drop table simple;
