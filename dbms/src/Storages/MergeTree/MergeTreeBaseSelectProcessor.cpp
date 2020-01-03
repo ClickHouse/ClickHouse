@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
