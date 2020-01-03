@@ -15,9 +15,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-
+#include <IO/WriteBufferAIO.h>
 
 namespace DB
 {
@@ -31,9 +29,8 @@ public:
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
 
-    CachePartition(CacheStorage & storage, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
-
-    void appendBlock(const Block & block);
+    CachePartition(const std::vector<AttributeUnderlyingType> & structure, const std::string & dir_path,
+            const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -49,22 +46,55 @@ public:
     /// 2 -- expired
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const;
 
+    struct Attribute
+    {
+        template <typename T>
+        using Container = std::vector<T>;
+
+        AttributeUnderlyingType type;
+        std::variant<
+                Container<UInt8>,
+                Container<UInt16>,
+                Container<UInt32>,
+                Container<UInt64>,
+                Container<UInt128>,
+                Container<Int8>,
+                Container<Int16>,
+                Container<Int32>,
+                Container<Int64>,
+                Container<Decimal32>,
+                Container<Decimal64>,
+                Container<Decimal128>,
+                Container<Float32>,
+                Container<Float64>,
+                Container<String>> values;
+    };
+    using Attributes = std::vector<Attribute>;
+
+
+    // Key, (Metadata), attributes
+    void appendBlock(const Attributes & new_columns);
+
 private:
     void flush();
 
-
-    CacheStorage & storage;
+    void appendValuesToBufferAttribute(Attribute & to, const Attribute & from);
 
     size_t file_id;
     size_t max_size;
     size_t buffer_size;
+    std::string path;
 
     //mutable std::shared_mutex rw_lock;
-    int index_fd;
+    //int index_fd;
     int data_fd;
 
+    std::unique_ptr<WriteBufferAIO> write_data_buffer;
     std::unordered_map<UInt64, size_t> key_to_file_offset;
-    MutableColumns buffer;
+
+    Attributes buffer;
+    //MutableColumns buffer;
+    size_t bytes = 0;
 
     mutable std::atomic<size_t> element_count{0};
 };
@@ -74,6 +104,7 @@ using CachePartitionPtr = std::unique_ptr<CachePartition>;
 
 class CacheStorage
 {
+public:
     using Key = IDictionary::Key;
 
     CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_, const size_t partitions_count_, const size_t partition_max_size_)
@@ -83,17 +114,17 @@ class CacheStorage
         , log(&Poco::Logger::get("CacheStorage"))
     {
         for (size_t partition_id = 0; partition_id < partitions_count_; ++partition_id)
-            partitions.emplace_back(std::make_unique<CachePartition>(partition_id, partition_max_size));
+            partitions.emplace_back(std::make_unique<CachePartition>(*this, partition_id, partition_max_size, path_));
     }
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    template <typename Out, typename Key>
+    template <typename Out>
     void getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
     {
-        partitions[0]->getValue(attribute_name, ids, out, not_found);
+        partitions[0]->getValue<Out>(attribute_name, ids, out, not_found);
     }
 
     // getString();
@@ -106,11 +137,15 @@ class CacheStorage
 
     std::exception_ptr getLastException() const { return last_update_exception; }
 
+    const std::string & getPath() const { return path; }
+
 private:
+    CachePartition::Attributes createAttributesFromBlock(const Block & block);
+
     SSDCacheDictionary & dictionary;
 
-    /// Block structure: Key, (Default + TTL), Attr1, Attr2, ...
-    const Block header;
+    // Block structure: Key, (Default + TTL), Attr1, Attr2, ...
+    // const Block header;
     const std::string path;
     const size_t partition_max_size;
     std::vector<CachePartitionPtr> partitions;
@@ -164,7 +199,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, partition_max_size);
+        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path, partition_max_size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -253,7 +288,7 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
 
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    void has(const PaddedPODArray<Key> & /* ids */, PaddedPODArray<UInt8> & /* out */) const override {} // TODO
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override // TODO
     {
@@ -261,9 +296,6 @@ public:
         UNUSED(max_block_size);
         return nullptr;
     }
-
-private:
-    friend class CacheStorage;
 
     struct Attribute
     {
@@ -287,10 +319,12 @@ private:
     };
     using Attributes = std::vector<Attribute>;
 
+    const Attributes & getAttributes() const;
+
+private:
     size_t getAttributeIndex(const std::string & attr_name) const;
     Attribute & getAttribute(const std::string & attr_name);
     const Attribute & getAttribute(const std::string & attr_name) const;
-    const Attributes & getAttributes() const;
 
     template <typename T>
     Attribute createAttributeWithTypeImpl(const AttributeUnderlyingType type, const Field & null_value);
@@ -315,7 +349,7 @@ private:
     Logger * const log;
 
     std::map<std::string, size_t> attribute_index_by_name;
-    Attributes attributes;
+    Attributes attributes; // TODO: move to storage
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};
