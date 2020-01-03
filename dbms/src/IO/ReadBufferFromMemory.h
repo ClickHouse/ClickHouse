@@ -13,13 +13,8 @@ namespace DB
 class ReadBufferFromMemory : public ReadBuffer
 {
 public:
-    ReadBufferFromMemory(const char * buf, size_t size)
-        : ReadBuffer(const_cast<char *>(buf), size, 0) {}
-
-    ReadBufferFromMemory(const unsigned char * buf, size_t size)
-        : ReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
-
-    ReadBufferFromMemory(const signed char * buf, size_t size)
+    template <typename CharT>
+    ReadBufferFromMemory(const CharT * buf, size_t size)
         : ReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
 };
 
