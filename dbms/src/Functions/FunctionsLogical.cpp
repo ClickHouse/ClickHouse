@@ -275,11 +275,40 @@ private:
 };
 
 
+template <typename Op>
+class AssociativeGenericRuntimeApplierImpl
+{
+    using ResultValueType = typename Op::ResultType;
+
+public:
+    /// Remembers the last N columns from `in`.
+    AssociativeGenericRuntimeApplierImpl(const ColumnRawPtrs & _in)
+        : in{_in} {}
+
+    inline ResultValueType apply(const size_t i, const size_t column_counter) const
+    {
+        const auto a = ValueGetterBuilder::build(in[in.size() - column_counter])(i);
+        if (column_counter == 1)
+            return a;
+        if constexpr (Op::isSaturable())
+            return Op::isSaturatedValue(a) ? a : Op::apply(a, apply(i, column_counter - 1));
+        else
+            return Op::apply(a, apply(i, column_counter - 1));
+    }
+
+private:
+    const ColumnRawPtrs & in;
+};
+
+
+const size_t size_batch = 10;
+
+
 /// Apply target function by feeding it "batches" of N columns
 /// Combining 10 columns per pass is the fastest for large block sizes.
 /// For small block sizes - more columns is faster.
 template <
-    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
+    typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = size_batch>
 struct OperationApplier
 {
     template <typename Columns, typename ResultColumn>
@@ -305,10 +334,36 @@ struct OperationApplier
         size_t i = 0;
         for (auto & res : result_data)
             res = operationApplierImpl.apply(i++);
-
         in.erase(in.end() - N, in.end());
     }
 };
+
+
+template <
+    typename Op, template <typename> typename OperationApplierImpl>
+struct OperationApplierRuntime
+{
+    template <typename Columns, typename ResultColumn>
+    static void apply(Columns & in, ResultColumn & result)
+    {
+        while (in.size() > 1)
+        {
+            doBatchedApply(in, result->getData());
+            in.push_back(result.get());
+        }
+    }
+
+    template <typename Columns, typename ResultData>
+    static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
+    {
+        const OperationApplierImpl<Op> operationApplierImpl(in);
+        size_t i = 0;
+        for (auto & res : result_data)
+            res = operationApplierImpl.apply(i++, in.size());
+        in.clear();
+    }
+};
+
 
 template <
     typename Op, template <typename, size_t> typename OperationApplierImpl>
@@ -350,8 +405,10 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
         arguments.push_back(const_column_holder.get());
     }
 
-    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column);
-
+    if (arguments.size() <= size_batch)
+        OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column);
+    else
+        OperationApplierRuntime<Op, AssociativeGenericRuntimeApplierImpl>::apply(arguments, result_column);
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
 
