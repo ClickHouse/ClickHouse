@@ -85,7 +85,7 @@ WriteBufferAIO::~WriteBufferAIO()
         ::close(fd);
 }
 
-off_t WriteBufferAIO::getPositionInFile()
+off_t WriteBufferAIO::getPositionInFile() const
 {
     return seek(0, SEEK_CUR);
 }

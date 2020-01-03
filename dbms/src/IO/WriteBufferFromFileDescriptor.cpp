@@ -98,7 +98,7 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 }
 
 
-off_t WriteBufferFromFileDescriptor::getPositionInFile()
+off_t WriteBufferFromFileDescriptor::getPositionInFile() const
 {
     return seek(0, SEEK_CUR);
 }
