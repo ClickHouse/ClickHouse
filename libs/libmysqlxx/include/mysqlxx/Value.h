@@ -239,6 +239,7 @@ template <> inline bool                 Value::get<bool                 >() cons
 template <> inline char                 Value::get<char                 >() const { return getInt(); }
 template <> inline signed char          Value::get<signed char          >() const { return getInt(); }
 template <> inline unsigned char        Value::get<unsigned char        >() const { return getUInt(); }
+template <> inline char8_t              Value::get<char8_t              >() const { return getUInt(); }
 template <> inline short                Value::get<short                >() const { return getInt(); }
 template <> inline unsigned short       Value::get<unsigned short       >() const { return getUInt(); }
 template <> inline int                  Value::get<int                  >() const { return getInt(); }

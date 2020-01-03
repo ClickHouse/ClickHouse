@@ -25,7 +25,7 @@ public:
         DOUBLE_SHA1_PASSWORD,
     };
 
-    using Digest = std::vector<UInt8>;
+    using Digest = std::vector<uint8_t>;
 
     Authentication(Authentication::Type type = NO_PASSWORD);
     Authentication(const Authentication & src) = default;
