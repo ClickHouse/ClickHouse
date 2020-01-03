@@ -38,7 +38,7 @@ namespace
         hash.resize(32);
         SHA256_CTX ctx;
         SHA256_Init(&ctx);
-        SHA256_Update(&ctx, reinterpret_cast<const UInt8 *>(text.data), text.size);
+        SHA256_Update(&ctx, reinterpret_cast<const void *>(text.data), text.size);
         SHA256_Final(hash.data(), &ctx);
         return hash;
 #else

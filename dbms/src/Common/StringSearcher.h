@@ -78,8 +78,8 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size_)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size_}
+    StringSearcher(const UInt8 * needle_, const size_t needle_size_)
+        : needle{needle_}, needle_size{needle_size_}
     {
         if (0 == needle_size)
             return;
@@ -346,8 +346,8 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
+    StringSearcher(const UInt8 * needle_, const size_t needle_size)
+        : needle{needle_}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -543,8 +543,8 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
+    StringSearcher(const UInt8 * needle_, const size_t needle_size)
+        : needle{needle_}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -711,11 +711,11 @@ class TokenSearcher
     size_t needle_size;
 
 public:
-    TokenSearcher(const char * const needle_, const size_t needle_size_)
+    TokenSearcher(const UInt8 * needle_, const size_t needle_size_)
         : searcher{needle_, needle_size_},
           needle_size(needle_size_)
     {
-        if (std::any_of(reinterpret_cast<const UInt8 *>(needle_), reinterpret_cast<const UInt8 *>(needle_) + needle_size_, isTokenSeparator))
+        if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
         {
             throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
         }
