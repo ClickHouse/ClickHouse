@@ -40,7 +40,7 @@ public:
         return fd;
     }
 
-    off_t getPositionInFile() const override;
+    off_t getPositionInFile() override;
 
     void sync() override;
 
