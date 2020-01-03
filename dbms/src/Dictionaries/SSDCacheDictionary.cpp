@@ -1,5 +1,6 @@
 #include "SSDCacheDictionary.h"
 
+#include <algorithm>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
@@ -41,35 +42,66 @@ namespace ErrorCodes
     extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
-CachePartition::CachePartition(CacheStorage & storage_, const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
-    : storage(storage_), file_id(file_id_), max_size(max_size_), buffer_size(buffer_size_)
+namespace
 {
+    constexpr size_t INMEMORY = (1ULL << 63ULL);
+    const std::string BIN_FILE_EXT = ".bin";
+    const std::string IND_FILE_EXT = ".idx";
 }
 
-void CachePartition::appendBlock(const Block & block)
+CachePartition::CachePartition(const std::vector<AttributeUnderlyingType> & structure, const std::string & dir_path,
+        const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
+    : file_id(file_id_), max_size(max_size_), buffer_size(buffer_size_), path(dir_path + "/" + std::to_string(file_id))
 {
-    size_t bytes = 0;
-    const auto new_columns = block.getColumns();
-    if (new_columns.size() != header.columns())
+    for (const auto & type : structure)
     {
-        throw Exception("Wrong size of block in BlockFile::appendBlock(). It's a bug.", ErrorCodes::TYPE_MISMATCH);
-    }
+        switch (type)
+        {
+#define DISPATCH(TYPE) \
+    case AttributeUnderlyingType::ut##TYPE: \
+        buffer.emplace_back(type, std::vector<TYPE>()); \
+        break;
 
-    const auto id_column = typeid_cast<const ColumnUInt64 *>(new_columns.front().get());
-    if (!id_column)
-        throw Exception{"id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
+            DISPATCH(UInt8)
+            DISPATCH(UInt16)
+            DISPATCH(UInt32)
+            DISPATCH(UInt64)
+            DISPATCH(UInt128)
+            DISPATCH(Int8)
+            DISPATCH(Int16)
+            DISPATCH(Int32)
+            DISPATCH(Int64)
+            DISPATCH(Decimal32)
+            DISPATCH(Decimal64)
+            DISPATCH(Decimal128)
+            DISPATCH(Float32)
+            DISPATCH(Float64)
+#undef DISPATCH
+
+        case AttributeUnderlyingType::utString:
+            // TODO: string support
+            break;
+        }
+    }
+}
+
+void CachePartition::appendBlock(const Attributes & new_columns)
+{
+    if (new_columns.size() != buffer.size())
+        throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
+
+    const auto & id_column = std::get<Attribute::Container<UInt64>>(new_columns.front().values);
 
     size_t start_size = buffer.front()->size();
-    for (size_t i = 0; i < header.columns(); ++i)
+    for (size_t i = 0; i < buffer.size(); ++i)
     {
-        buffer[i]->insertRangeFrom(*new_columns[i], 0, new_columns[i]->size());
+        appendValuesToBufferAttribute(buffer[i], new_columns[i]);
         bytes += buffer[i]->byteSize();
     }
 
-    const auto & ids = id_column->getData();
-    for (size_t i = 0; i < new_columns.size(); ++i)
+    for (size_t i = 0; i < id_column.size(); ++i)
     {
-        key_to_file_offset[ids[i]] = start_size + i;
+        key_to_file_offset[id_column[i]] = (start_size + i) | INMEMORY;
     }
 
     if (bytes >= buffer_size)
@@ -78,14 +110,57 @@ void CachePartition::appendBlock(const Block & block)
     }
 }
 
+void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribute & from)
+{
+    switch (to.type)
+    {
+#define DISPATCH(TYPE) \
+    case AttributeUnderlyingType::ut##TYPE: \
+        { \
+            auto &to_values = std::get<Attribute::Container<TYPE>>(to.values); \
+            auto &from_values = std::get<Attribute::Container<TYPE>>(from.values); \
+            size_t prev_size = to_values.size(); \
+            to_values.resize(to_values.size() + from_values.size()); \
+            memcpy(to_values.data() + prev_size * sizeof(TYPE), from_values.data(), from_values.size() * sizeof(TYPE)); \
+        } \
+        break;
+
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
+
+    case AttributeUnderlyingType::utString:
+            // TODO: string support
+            break;
+    }
+}
+
 void CachePartition::flush()
 {
+    if (!write_data_buffer)
+    {
+        write_data_buffer = std::make_unique<WriteBufferAIO>(path + BIN_FILE_EXT, buffer_size, O_RDWR | O_CREAT | O_TRUNC);
+        // TODO: не перетирать + seek в конец файла
+    }
+
     const auto id_column = typeid_cast<const ColumnUInt64 *>(buffer.front().get());
     if (!id_column)
         throw Exception{"id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
     const auto & ids = id_column->getData();
 
-    key_to_file_offset[ids[0]] = out_file.getPositionInFile() + (1ULL << FILE_OFFSET_SIZE);
+    key_to_file_offset[ids[0]] = write_data_buffer->getPositionInFile();
     size_t prev_size = 0;
     for (size_t row = 0; row < buffer.front()->size(); ++row)
     {
@@ -95,7 +170,7 @@ void CachePartition::flush()
         {
             const auto & column = buffer[col];
             const auto & type = header.getByPosition(col).type;
-            type->serializeBinary(*column, row, out_file);
+            type->serializeBinary(*column, row, *write_data_buffer);
             if (type->getTypeId() != TypeIndex::String) {
                 prev_size += column->sizeOfValueIfFixed();
             } else {
@@ -104,11 +179,25 @@ void CachePartition::flush()
         }
     }
 
-    if (out_file.hasPendingData()) {
-        out_file.sync();
-    }
+    write_data_buffer->sync();
 
     buffer = header.cloneEmptyColumns();
+}
+
+template <typename Out, typename Key>
+void CachePartition::getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+              ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
+{
+    UNUSED(attribute_name);
+    UNUSED(ids);
+    UNUSED(out);
+    UNUSED(not_found);
+}
+
+void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const
+{
+    UNUSED(ids);
+    UNUSED(out);
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
@@ -143,28 +232,18 @@ std::exception_ptr CacheStorage::update(DictionarySourcePtr & source_ptr, const 
 
             while (const auto block = stream->read())
             {
-                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
-                if (!id_column)
-                    throw Exception{"Id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
-
-                const auto & ids = id_column->getData();
-
-                /// cache column pointers
-                const auto column_ptrs = ext::map<std::vector>(
-                        ext::range(0, dictionary.getAttributes().size()),
-                        [&block](size_t i) { return block.safeGetByPosition(i + 1).column.get(); });
+                const auto new_attributes = createAttributesFromBlock(block);
+                const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_attributes.front().values);
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
-                    const auto id = ids[i];
-
-                    on_updated(id, i, column_ptrs);
                     /// mark corresponding id as found
-                    remaining_ids[id] = 1;
+                    on_updated(ids[i], i, new_attributes);
+                    remaining_ids[ids[i]] = 1;
                 }
 
                 /// TODO: Add TTL to block
-                partitions[0]->appendBlock(block);
+                partitions[0]->appendBlock(new_attributes);
             }
 
             stream->readSuffix();
@@ -189,7 +268,40 @@ std::exception_ptr CacheStorage::update(DictionarySourcePtr & source_ptr, const 
     size_t not_found_num = 0, found_num = 0;
 
     /// Check which ids have not been found and require setting null_value
-    auto mutable_columns = header.cloneEmptyColumns();
+    CachePartition::Attributes new_attributes;
+    {
+        /// TODO: create attributes from structure
+        for (const auto & attribute : dictionary.getAttributes())
+        {
+            switch (attribute.type)
+            {
+#define DISPATCH(TYPE) \
+            case AttributeUnderlyingType::ut##TYPE: \
+                new_attributes.emplace_back(attribute.type, std::vector<TYPE>()); \
+                break;
+
+                DISPATCH(UInt8)
+                DISPATCH(UInt16)
+                DISPATCH(UInt32)
+                DISPATCH(UInt64)
+                DISPATCH(UInt128)
+                DISPATCH(Int8)
+                DISPATCH(Int16)
+                DISPATCH(Int32)
+                DISPATCH(Int64)
+                DISPATCH(Decimal32)
+                DISPATCH(Decimal64)
+                DISPATCH(Decimal128)
+                DISPATCH(Float32)
+                DISPATCH(Float64)
+#undef DISPATCH
+
+            case AttributeUnderlyingType::utString:
+                // TODO: string support
+                break;
+            }
+        }
+    }
     for (const auto & id_found_pair : remaining_ids)
     {
         if (id_found_pair.second)
@@ -216,17 +328,64 @@ std::exception_ptr CacheStorage::update(DictionarySourcePtr & source_ptr, const 
         for (size_t i = 0; i < attributes.size(); ++i)
         {
             const auto & attribute = attributes[i];
-            mutable_columns[i].insert(attribute.null_value);
+            // TODO : append null
+            (attribute.null_value);
         }
 
         /// inform caller that the cell has not been found
         on_id_not_found(id);
     }
-    partitions[0]->appendBlock(header.cloneWithColumns(std::move(mutable_columns)));
+    partitions[0]->appendBlock(new_attributes);
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+}
+
+CachePartition::Attributes CacheStorage::createAttributesFromBlock(const Block & block)
+{
+    CachePartition::Attributes attributes;
+
+    const auto & structure = dictionary.getAttributes();
+    const auto columns = block.getColumns();
+    for (size_t i = 0; i < structure.size(); ++i)
+    {
+        const auto & column = columns[i];
+        switch (structure[i].type)
+        {
+#define DISPATCH(TYPE) \
+        case AttributeUnderlyingType::ut##TYPE: \
+            { \
+                std::vector<TYPE> values(column->size()); \
+                const auto raw_data = column->getRawData(); \
+                memcpy(values.data(), raw_data.data, raw_data.size); \
+                attributes.emplace_back(structure[i].type, std::move(values)); \
+            } \
+            break;
+
+            DISPATCH(UInt8)
+            DISPATCH(UInt16)
+            DISPATCH(UInt32)
+            DISPATCH(UInt64)
+            DISPATCH(UInt128)
+            DISPATCH(Int8)
+            DISPATCH(Int16)
+            DISPATCH(Int32)
+            DISPATCH(Int64)
+            DISPATCH(Decimal32)
+            DISPATCH(Decimal64)
+            DISPATCH(Decimal128)
+            DISPATCH(Float32)
+            DISPATCH(Float64)
+#undef DISPATCH
+
+        case AttributeUnderlyingType::utString:
+            // TODO: string support
+            break;
+        }
+    }
+
+    return attributes;
 }
 
 SSDCacheDictionary::SSDCacheDictionary(
@@ -234,13 +393,16 @@ SSDCacheDictionary::SSDCacheDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    const std::string & path,
-    const size_t partition_max_size)
+    const std::string & path_,
+    const size_t partition_max_size_)
     : name(name_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
+    , path(path_)
+    , partition_max_size(partition_max_size_)
     , storage(*this, path, 1, partition_max_size)
+    , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
@@ -347,10 +509,10 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
-    const auto attribute_index = getAttributeIndex(attribute_index);
+    const auto attribute_index = getAttributeIndex(attribute_name);
 
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.getValue(attribute_name, ids, out, not_found_ids);
+    storage.getValue<OutputType>(attribute_name, ids, out, not_found_ids);
     if (not_found_ids.empty())
         return;
 
@@ -360,10 +522,15 @@ void SSDCacheDictionary::getItemsNumberImpl(
     storage.update(
             source_ptr,
             required_ids,
-            [&](const auto id, const auto row, const auto & attributes)
+            [&](const auto id, const auto row, const auto & new_attributes)
             {
-                for (const size_t row : not_found_ids[id])
-                    out[row] = static_cast<OutputType>(attributes[attribute_index][row]);
+                Field field;
+                for (const size_t out_row : not_found_ids[id])
+                {
+                    new_attributes[attribute_index]
+                    ->get(row, field);
+                    out[out_row] = field.get<OutputType>();
+                }
             },
             [&](const auto id)
             {
@@ -488,7 +655,7 @@ void SSDCacheDictionary::createAttributes()
         const auto & attribute = dict_struct.attributes[i];
 
         attribute_index_by_name.emplace(attribute.name, i);
-        attributes.push_back(createAttributeWithType(attribute.type, attribute.null_value));
+        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
             throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),

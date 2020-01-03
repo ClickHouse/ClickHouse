@@ -1,7 +1,7 @@
 #pragma once
 
 namespace DB {
-
+/*
 template<typename Out>
 void BlockFile::getValue(size_t column, const PaddedPODArray<UInt64> & ids, ResultArrayType<Out> & out, PaddedPODArray<UInt64> & not_found) const
 {
@@ -41,5 +41,5 @@ void BlockFile::getValue(size_t column, const PaddedPODArray<UInt64> & ids, Resu
         out[index] = DB::get<Out>(field);
     }
 }
-
+*/
 }
