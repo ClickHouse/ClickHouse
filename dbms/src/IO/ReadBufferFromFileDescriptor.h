@@ -32,7 +32,7 @@ public:
         return fd;
     }
 
-    off_t getPositionInFile() const override
+    off_t getPositionInFile() override
     {
         return pos_in_file - (working_buffer.end() - pos);
     }

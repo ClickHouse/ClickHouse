@@ -34,7 +34,7 @@ public:
     WriteBufferAIO(const WriteBufferAIO &) = delete;
     WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
-    off_t getPositionInFile() const override;
+    off_t getPositionInFile() override;
     void sync() override;
     std::string getFileName() const override { return filename; }
     int getFD() const override { return fd; }

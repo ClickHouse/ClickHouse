@@ -17,7 +17,7 @@ public:
 
     off_t seek(off_t off, int whence = SEEK_SET);
     void truncate(off_t length = 0);
-    virtual off_t getPositionInFile() const = 0;
+    virtual off_t getPositionInFile() = 0;
     void sync() override = 0;
     virtual std::string getFileName() const = 0;
     virtual int getFD() const = 0;
