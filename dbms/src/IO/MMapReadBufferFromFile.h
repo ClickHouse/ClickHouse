@@ -25,6 +25,8 @@ public:
 
     void close();
 
+    std::string getFileName() override;
+
 private:
     int fd = -1;
 
