@@ -941,22 +941,19 @@ void DDLWorker::runMainThread()
     {
         try
         {
-            try
-            {
-                auto zookeeper = getAndSetZooKeeper();
-                zookeeper->createAncestors(queue_dir + "/");
-                initialized = true;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (!Coordination::isHardwareError(e.code))
-                    throw;  /// A logical error.
+            auto zookeeper = getAndSetZooKeeper();
+            zookeeper->createAncestors(queue_dir + "/");
+            initialized = true;
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;  /// A logical error.
 
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Avoid busy loop when ZooKeeper is not available.
-                sleepForSeconds(1);
-            }
+            /// Avoid busy loop when ZooKeeper is not available.
+            sleepForSeconds(1);
         }
         catch (...)
         {

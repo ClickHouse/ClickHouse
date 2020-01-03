@@ -1,10 +1,10 @@
 #pragma once
+
 #include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/ISource.h>
-#include <queue>
 
 
 namespace DB
@@ -27,12 +27,12 @@ private:
     UInt64 limit;
     size_t total_merged_rows = 0;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
     bool has_collation = false;
 
     SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SimpleSortCursor> queue_simple;
     SortingHeap<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.

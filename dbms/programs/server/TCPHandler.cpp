@@ -112,7 +112,7 @@ void TCPHandler::runImpl()
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -158,7 +158,7 @@ void TCPHandler::runImpl()
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
-        std::unique_ptr<Exception> exception;
+        std::optional<DB::Exception> exception;
         bool network_error = false;
 
         bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
@@ -280,7 +280,7 @@ void TCPHandler::runImpl()
         catch (const Exception & e)
         {
             state.io.onException();
-            exception.reset(e.clone());
+            exception.emplace(e);
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -298,22 +298,22 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
+            exception.emplace(Exception::CreateFromSTD, e);
         }
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         try

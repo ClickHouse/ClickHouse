@@ -239,7 +239,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Multiple JOIN disabled or does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
