@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (key Int) Engine=Memory();
 CREATE TABLE t2 AS t1;
+DROP TABLE t2;
 
 -- live view
 SET allow_experimental_live_view=1;
