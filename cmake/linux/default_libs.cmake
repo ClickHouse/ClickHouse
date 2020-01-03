@@ -44,35 +44,17 @@ include (cmake/find/cxx.cmake)
 # (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
 # This is for x86_64. For other architectures we have separate toolchains.
 if (ARCH_AMD64)
-    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES
-        ${COMPILER_INCLUDE_DIRS}
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
-
     if (USE_INTERNAL_LIBCXX_LIBRARY)
         set (LIBCXX_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx/include)
     endif ()
-
-    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
-        ${LIBCXX_INCLUDE_DIR}
-        ${COMPILER_INCLUDE_DIRS}
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
-
-    # This is for various "check source compiles"
-    set(CMAKE_REQUIRED_INCLUDES
-        ${LIBCXX_INCLUDE_DIR}
-        ${COMPILER_INCLUDE_DIRS}
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu
-        ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
 
     # Disable unwanted includes to get more isolated build. The build should not depend on the percularities of the user environment.
     # NOTE It is very similar to using custom "toolchain". And using custom toolchain is more simple but is less convenient for users.
     # This is also very helpful to avoid mess with system libraries (e.g. using wrong version of zlib.h)
     # This will also help for further migration to musl-libc.
 
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -idirafter ${LIBCXX_INCLUDE_DIR} -idirafter ${COMPILER_INCLUDE_DIRS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -idirafter ${COMPILER_INCLUDE_DIRS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
 endif ()
 
 add_library(global-group INTERFACE)
