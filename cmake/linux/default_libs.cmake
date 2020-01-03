@@ -21,10 +21,10 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 if (COMPILER_GCC)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include-fixed OUTPUT_VARIABLE COMPILER_GCC_INCLUDE_FIXED_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_DIRS ${COMPILER_GCC_INCLUDE_DIR} ${COMPILER_GCC_INCLUDE_FIXED_DIR})
+    set (COMPILER_INCLUDE_FLAGS "-idirafter ${COMPILER_GCC_INCLUDE_DIR} -idirafter ${COMPILER_GCC_INCLUDE_FIXED_DIR}")
 elseif (COMPILER_CLANG)
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=include OUTPUT_VARIABLE COMPILER_CLANG_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-    set (COMPILER_INCLUDE_DIRS ${COMPILER_CLANG_INCLUDE_DIR})
+    set (COMPILER_INCLUDE_FLAGS "-idirafter ${COMPILER_CLANG_INCLUDE_DIR}")
 endif ()
 
 # Global libraries
@@ -54,7 +54,7 @@ if (ARCH_AMD64)
     # This will also help for further migration to musl-libc.
 
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -idirafter ${LIBCXX_INCLUDE_DIR} -idirafter ${COMPILER_INCLUDE_DIRS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -idirafter ${COMPILER_INCLUDE_DIRS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
 endif ()
 
 add_library(global-group INTERFACE)
