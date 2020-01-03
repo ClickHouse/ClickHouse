@@ -25,7 +25,7 @@ public:
 
     void close();
 
-    std::string getFileName() override;
+    std::string getFileName() const override;
 
 private:
     int fd = -1;

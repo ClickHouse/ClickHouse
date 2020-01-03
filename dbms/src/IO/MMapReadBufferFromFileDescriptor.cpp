@@ -90,7 +90,7 @@ void MMapReadBufferFromFileDescriptor::finish()
     length = 0;
 }
 
-std::string MMapReadBufferFromFileDescriptor::getFileName()
+std::string MMapReadBufferFromFileDescriptor::getFileName() const
 {
     return "(fd = " + toString(fd) + ")";
 }
@@ -100,7 +100,7 @@ int MMapReadBufferFromFileDescriptor::getFD() const
     return fd;
 }
 
-off_t MMapReadBufferFromFileDescriptor::getPositionInFile()
+off_t MMapReadBufferFromFileDescriptor::getPositionInFile() const
 {
     return count();
 }
