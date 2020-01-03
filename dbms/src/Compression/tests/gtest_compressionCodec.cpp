@@ -1170,7 +1170,7 @@ auto DDCompatibilityTestSequence()
     auto ret = generateSeq<ValueType>(G(SameValueGenerator(42)), 0, 3);
 
     // These values are from DoubleDelta paper (and implementation) and represent points at which DD encoded length is changed.
-    // DD value less that this point are encoded shorter (bigger -> longer) binary form.
+    // DD value less that this point is encoded in shorter binary form (bigger - longer binary).
     const Int64 dd_corner_points[] = {-63, 64, -255, 256, -2047, 2048, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max()};
     for (const auto & p : dd_corner_points)
     {
@@ -1179,8 +1179,8 @@ auto DDCompatibilityTestSequence()
             break;
         }
 
-        // - 4 is to allow DD value to settle before transitioning through important point, since DD depends on 2 previous values of data.
-        // + 2 is arbitrary.
+        // - 4 is to allow DD value to settle before transitioning through important point,
+        // since DD depends on 2 previous values of data, + 2 is arbitrary.
         ret.append(generateSeq<ValueType>(G(ddGenerator), p - 4, p + 2));
     }
 
