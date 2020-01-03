@@ -281,7 +281,6 @@ class AssociativeGenericRuntimeApplierImpl
     using ResultValueType = typename Op::ResultType;
 
 public:
-    /// Remembers the last N columns from `in`.
     AssociativeGenericRuntimeApplierImpl(const ColumnRawPtrs & _in)
         : in{_in} {}
 
@@ -334,6 +333,7 @@ struct OperationApplier
         size_t i = 0;
         for (auto & res : result_data)
             res = operationApplierImpl.apply(i++);
+
         in.erase(in.end() - N, in.end());
     }
 };
