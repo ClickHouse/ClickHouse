@@ -15,7 +15,7 @@ namespace Poco
 namespace DB
 {
 
-enum class TimerType : UInt8
+enum class TimerType : uint8_t
 {
     Real,
     Cpu,

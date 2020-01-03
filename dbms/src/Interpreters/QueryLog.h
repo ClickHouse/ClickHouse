@@ -22,7 +22,7 @@ namespace DB
 /// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
-    enum Type : UInt8 // Make it signed for compatibility with DataTypeEnum8
+    enum Type : int8_t // Make it signed for compatibility with DataTypeEnum8
     {
         QUERY_START = 1,
         QUERY_FINISH = 2,

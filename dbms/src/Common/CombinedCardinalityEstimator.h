@@ -12,11 +12,11 @@ namespace DB
 namespace details
 {
 
-enum class ContainerType : UInt8 { SMALL = 1, MEDIUM = 2, LARGE = 3 };
+enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {
-    UInt8 res = std::max(static_cast<UInt8>(lhs), static_cast<UInt8>(rhs));
+    uint8_t res = std::max(static_cast<uint8_t>(lhs), static_cast<uint8_t>(rhs));
     return static_cast<ContainerType>(res);
 }
 

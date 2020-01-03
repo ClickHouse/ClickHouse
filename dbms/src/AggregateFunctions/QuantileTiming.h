@@ -487,7 +487,7 @@ private:
         detail::QuantileTimingLarge * large;
     };
 
-    enum class Kind : UInt8
+    enum class Kind : uint8_t
     {
         Tiny = 1,
         Medium = 2,
