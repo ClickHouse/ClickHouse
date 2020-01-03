@@ -108,7 +108,7 @@ namespace DB
             {
                 if (!chunk.IsNull(offset_i) && buffer)
                 {
-                    const UInt8 * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                     column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
                 }
                 column_chars_t.emplace_back('\0');
