@@ -18,7 +18,6 @@
 #include <mutex>
 #include <filesystem>
 #include <unordered_map>
-#include "registerFunctions.h"
 
 
 namespace DB

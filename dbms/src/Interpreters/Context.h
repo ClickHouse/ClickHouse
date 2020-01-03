@@ -45,6 +45,7 @@ namespace DB
 struct ContextShared;
 class Context;
 class QuotaContext;
+class RowPolicyContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -140,6 +141,8 @@ private:
 
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
     bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
+    std::shared_ptr<RowPolicyContext> row_policy;
+    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -150,6 +153,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+    // TODO maybe replace with DatabaseMemory?
     TableAndCreateASTs external_tables;     /// Temporary tables.
     Scalars scalars;
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -209,6 +213,8 @@ public:
     const AccessControlManager & getAccessControlManager() const;
     std::shared_ptr<QuotaContext> getQuota() const { return quota; }
     void checkQuotaManagementIsAllowed();
+    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
+    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -216,10 +222,6 @@ public:
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
-
-    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
-    bool hasUserProperty(const String & database, const String & table, const String & name) const;
-    const String & getUserProperty(const String & database, const String & table, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -372,10 +374,7 @@ public:
     std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
-    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
-    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);

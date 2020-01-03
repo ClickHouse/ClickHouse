@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -60,7 +61,7 @@ struct FormatImpl
         UInt64 * index_positions_ptr,
         std::vector<String> & substrings)
     {
-        /// Is current position is after open curly brace.
+        /// Is current position after open curly brace.
         bool is_open_curly = false;
         /// The position of last open token.
         size_t last_open = -1;

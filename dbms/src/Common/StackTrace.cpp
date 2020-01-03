@@ -328,3 +328,13 @@ std::string StackTrace::toString() const
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
     return func_cached(frames, offset, size);
 }
+
+std::string StackTrace::toString(void ** frames_, size_t offset, size_t size)
+{
+    StackTrace::Frames frames_copy{};
+    for (size_t i = 0; i < size; ++i)
+        frames_copy[i] = frames_[i];
+
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frames_copy, offset, size);
+}
