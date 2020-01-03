@@ -325,7 +325,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
 {
     if (is_nullable)
     {
-        UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+        UInt8 val = unalignedLoad<UInt8>(pos);
         pos += sizeof(val);
 
         if (val)
