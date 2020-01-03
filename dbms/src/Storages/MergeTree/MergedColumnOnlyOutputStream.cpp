@@ -30,7 +30,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         const auto & col = header.getByName(column_name);
 
         const auto columns = storage.getColumns();
-        addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
+        addStreams(part_path, col.name, col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
         serialization_states.emplace_back(nullptr);
         settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
         col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
