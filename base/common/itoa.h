@@ -398,6 +398,12 @@ char * itoa(I i, char * p)
 }
 
 template <>
+char * itoa(char8_t i, char * p)
+{
+    return impl::convert::itoa(uint8_t(i), p);
+}
+
+template <>
 inline char * itoa<uint128_t>(uint128_t i, char * p)
 {
     return impl::writeUIntText(i, p);
