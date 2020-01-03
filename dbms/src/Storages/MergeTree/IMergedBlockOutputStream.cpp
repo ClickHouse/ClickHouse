@@ -170,6 +170,9 @@ void IMergedBlockOutputStream::writeSingleMark(
          if (is_offsets && offset_columns.count(stream_name))
              return;
 
+         if (!column_streams.count(stream_name))
+             throw Exception("Incorrect stream " + stream_name, ErrorCodes::LOGICAL_ERROR);
+
          ColumnStream & stream = *column_streams[stream_name];
 
          /// There could already be enough data to compress into the new block.
