@@ -53,7 +53,7 @@ if (ARCH_AMD64)
     # This is also very helpful to avoid mess with system libraries (e.g. using wrong version of zlib.h)
     # This will also help for further migration to musl-libc.
 
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -idirafter ${LIBCXX_INCLUDE_DIR} -idirafter ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc -nostdinc++ -idirafter ${LIBCXX_INCLUDE_DIR} ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc ${COMPILER_INCLUDE_FLAGS} -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu -idirafter ${ClickHouse_SOURCE_DIR}/contrib/libc-headers")
 endif ()
 
