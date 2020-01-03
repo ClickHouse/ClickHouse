@@ -34,16 +34,11 @@ macro(curl_internal_test CURL_TEST)
       set(CURL_TEST_ADD_LIBRARIES
         "-DLINK_LIBRARIES:STRING=${CMAKE_REQUIRED_LIBRARIES}")
     endif()
-    if(CMAKE_REQUIRED_INCLUDES)
-      set(CURL_TEST_ADD_INCLUDES
-        "-DINCLUDE_DIRECTORIES:STRING=${CMAKE_REQUIRED_INCLUDES}")
-    endif()
 
     try_compile(${CURL_TEST}
       ${CMAKE_BINARY_DIR}
       ${CMAKE_CURRENT_SOURCE_DIR}/CMake/CurlTests.c
       CMAKE_FLAGS -DCOMPILE_DEFINITIONS:STRING=${MACRO_CHECK_FUNCTION_DEFINITIONS}
-      "${CURL_TEST_ADD_INCLUDES}"
       "${CURL_TEST_ADD_LIBRARIES}"
       OUTPUT_VARIABLE OUTPUT)
     if(${CURL_TEST})
@@ -57,5 +52,33 @@ macro(curl_internal_test CURL_TEST)
         "Performing Curl Test ${CURL_TEST} failed with the following output:\n"
         "${OUTPUT}\n")
     endif()
+  endif()
+endmacro()
+
+macro(curl_nroff_check)
+  find_program(NROFF NAMES gnroff nroff)
+  if(NROFF)
+    # Need a way to write to stdin, this will do
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/nroff-input.txt" "test")
+    # Tests for a valid nroff option to generate a manpage
+    foreach(_MANOPT "-man" "-mandoc")
+      execute_process(COMMAND "${NROFF}" ${_MANOPT}
+        OUTPUT_VARIABLE NROFF_MANOPT_OUTPUT
+        INPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/nroff-input.txt"
+        ERROR_QUIET)
+      # Save the option if it was valid
+      if(NROFF_MANOPT_OUTPUT)
+        set(NROFF_MANOPT ${_MANOPT})
+        set(NROFF_USEFUL ON)
+        break()
+      endif()
+    endforeach()
+    # No need for the temporary file
+    file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/nroff-input.txt")
+    if(NOT NROFF_USEFUL)
+      message(WARNING "Found no *nroff option to get plaintext from man pages")
+    endif()
+  else()
+    message(WARNING "Found no *nroff program")
   endif()
 endmacro()
