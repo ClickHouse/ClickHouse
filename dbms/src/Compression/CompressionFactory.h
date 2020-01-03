@@ -29,7 +29,7 @@ protected:
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, DataTypePtr column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
     using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
-    using CompressionCodecsCodeDictionary = std::unordered_map<UInt8, CreatorWithType>;
+    using CompressionCodecsCodeDictionary = std::unordered_map<uint8_t, CreatorWithType>;
 public:
 
     static CompressionCodecFactory & instance();
@@ -43,18 +43,18 @@ public:
     CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type = nullptr) const;
 
     /// Get codec by method byte (no params available)
-    CompressionCodecPtr get(const UInt8 byte_code) const;
+    CompressionCodecPtr get(const uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
     /// Register codec with parameters and column type
-    void registerCompressionCodecWithType(const String & family_name, std::optional<UInt8> byte_code, CreatorWithType creator);
+    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters
-    void registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator);
+    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator);
 
     /// Register codec without parameters
-    void registerSimpleCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, SimpleCreator creator);
+    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const;
