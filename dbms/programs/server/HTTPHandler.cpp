@@ -341,7 +341,7 @@ void HTTPHandler::processQuery(
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         request, response, keep_alive_timeout,
-        client_supports_http_compression, http_response_compression_method, buffer_size_http);
+        client_supports_http_compression, http_response_compression_method);
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else
