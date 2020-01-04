@@ -31,6 +31,8 @@ public:
     void flushAllData();
 
     void shutdownAndDropAllData();
+
+    static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 private:
     void run();
     bool processFiles();

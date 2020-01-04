@@ -29,6 +29,7 @@
 
 #include <re2/re2.h>
 #include <filesystem>
+#include <Storages/Distributed/DirectoryMonitor.h>
 
 namespace fs = std::filesystem;
 
@@ -171,6 +172,17 @@ StorageFile::StorageFile(CommonArguments args)
 {
     setColumns(args.columns);
     setConstraints(args.constraints);
+
+    if (args.format_name == "Distributed")
+    {
+        if (!paths.empty())
+        {
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
+
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
+        }
+    }
 }
 
 class StorageFileBlockInputStream : public IBlockInputStream
@@ -179,8 +191,9 @@ public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
         const Context & context, UInt64 max_block_size,
         std::string file_path,
-        const CompressionMethod compression_method)
-        : storage(std::move(storage_))
+        const CompressionMethod compression_method,
+        BlockInputStreamPtr prepared_reader = nullptr)
+        : storage(std::move(storage_)), reader(std::move(prepared_reader))
     {
         if (storage->use_table_fd)
         {
@@ -208,7 +221,8 @@ public:
             read_buf = getReadBuffer<ReadBufferFromFile>(compression_method, file_path);
         }
 
-        reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+        if (!reader)
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -265,8 +279,14 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
+        BlockInputStreamPtr cur_block;
+
+        if (format_name == "Distributed")
+            cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
+        else
+            cur_block = std::make_shared<StorageFileBlockInputStream>(
                 std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
+
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return narrowBlockInputStreams(blocks_input, num_streams);
@@ -333,6 +353,9 @@ BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
     const Context & context)
 {
+    if (format_name == "Distributed")
+        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
+
     return std::make_shared<StorageFileBlockOutputStream>(*this,
         IStorage::chooseCompressionMethod(paths[0], compression_method), context);
 }
