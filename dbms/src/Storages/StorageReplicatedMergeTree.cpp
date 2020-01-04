@@ -524,7 +524,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         if (metadata_diff.ttl_table_changed)
         {
-            ParserTTLExpressionList parser;
+            ParserExpression parser;
             metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
         }
     }
