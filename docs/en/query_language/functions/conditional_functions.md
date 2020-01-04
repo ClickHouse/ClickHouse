@@ -42,7 +42,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 │    3 │     1 │ right is greater or equal than left │
 └──────┴───────┴─────────────────────────────────────┘
 ```
-Note: `NULL` values are not used in this example, check *`NULL` values in conditinals"* section below.
+Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
 
 ## Ternary operator 
 
@@ -111,7 +111,7 @@ FROM LEFT_RIGHT
 ```
 
 
-## `NULL` values in conditinals
+## NULL values in conditionals
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
