@@ -6,10 +6,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
 #include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
-#include <IO/BrotliWriteBuffer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <Common/NetException.h>
@@ -42,7 +40,7 @@ namespace DB
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHTTPServerResponse : public WriteBuffer
 {
 private:
     Poco::Net::HTTPServerRequest & request;
@@ -52,7 +50,7 @@ private:
     unsigned keep_alive_timeout = 0;
     bool compress = false;
     CompressionMethod compression_method;
-    int compression_level = Z_DEFAULT_COMPRESSION;
+    int compression_level = 1;
 
     std::ostream * response_body_ostr = nullptr;
 
@@ -60,13 +58,7 @@ private:
     std::ostream * response_header_ostr = nullptr;
 #endif
 
-    std::unique_ptr<WriteBufferFromOStream> out_raw;
-    std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
-#if USE_BROTLI
-    std::optional<BrotliWriteBuffer> brotli_buf;
-#endif
-
-    WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
+    std::unique_ptr<WriteBuffer> out;
 
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
@@ -99,8 +91,7 @@ public:
         Poco::Net::HTTPServerResponse & response_,
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
-        CompressionMethod compression_method_ = CompressionMethod::Gzip,
-        size_t size = DBMS_DEFAULT_BUFFER_SIZE);
+        CompressionMethod compression_method_ = CompressionMethod::Gzip);
 
     /// Writes progess in repeating HTTP headers.
     void onProgress(const Progress & progress);
