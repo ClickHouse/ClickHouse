@@ -50,10 +50,8 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Zlib;
     if (*method_str == "brotli" || *method_str == "br")
         return CompressionMethod::Brotli;
-    if (*method_str == "none" || *method_str == "auto")
+    if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
-    if (!file_extension.empty())
-        return CompressionMethod::None; /// Unrecognized file extension.
 
     throw Exception("Unknown compression method " + hint + ". Only 'auto', 'none', 'gzip', 'br' are supported as compression methods",
         ErrorCodes::NOT_IMPLEMENTED);
