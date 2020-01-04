@@ -6,7 +6,6 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
