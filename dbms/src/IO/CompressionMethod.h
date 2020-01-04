@@ -3,6 +3,8 @@
 #include <string>
 #include <memory>
 
+#include <Core/Defines.h>
+
 
 namespace DB
 {
@@ -17,14 +19,14 @@ class WriteBuffer;
 
 enum class CompressionMethod
 {
+    None,
     /// DEFLATE compression with gzip header and CRC32 checksum.
     /// This option corresponds to files produced by gzip(1) or HTTP Content-Encoding: gzip.
     Gzip,
     /// DEFLATE compression with zlib header and Adler32 checksum.
     /// This option corresponds to HTTP Content-Encoding: deflate.
     Zlib,
-    Brotli,
-    None
+    Brotli
 };
 
 /// How the compression method is named in HTTP.
@@ -37,7 +39,19 @@ std::string toContentEncodingName(CompressionMethod method);
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
 
-std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(std::unique_ptr<ReadBuffer> nested, CompressionMethod method);
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(std::unique_ptr<WriteBuffer> nested, CompressionMethod method, int level);
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
+    std::unique_ptr<ReadBuffer> nested,
+    CompressionMethod method,
+    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+    char * existing_memory = nullptr,
+    size_t alignment = 0);
+
+std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+    std::unique_ptr<WriteBuffer> nested,
+    CompressionMethod method,
+    int level,
+    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+    char * existing_memory = nullptr,
+    size_t alignment = 0);
 
 }

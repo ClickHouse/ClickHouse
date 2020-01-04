@@ -58,13 +58,18 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 }
 
 
-std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(std::unique_ptr<ReadBuffer> nested, CompressionMethod method)
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
+    std::unique_ptr<ReadBuffer> nested,
+    CompressionMethod method,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
-        return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method);
+        return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
 #if USE_BROTLI
     if (method == CompressionMethod::Brotli)
-        return std::make_unique<BrotliReadBuffer>(std::move(nested));
+        return std::make_unique<BrotliReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
 
     if (method == CompressionMethod::None)
@@ -74,14 +79,20 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(std::unique_ptr<
 }
 
 
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(std::unique_ptr<WriteBuffer> nested, CompressionMethod method, int level)
+std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+    std::unique_ptr<WriteBuffer> nested,
+    CompressionMethod method,
+    int level,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(nested), method, level);
+        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(nested), method, level, buf_size, existing_memory, alignment);
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
-        return std::make_unique<BrotliWriteBuffer>(std::move(nested), level);
+        return std::make_unique<BrotliWriteBuffer>(std::move(nested), level, buf_size, existing_memory, alignment);
 #endif
 
     if (method == CompressionMethod::None)

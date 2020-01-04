@@ -6,6 +6,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
 #include <IO/WriteBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
@@ -39,7 +40,7 @@ namespace DB
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse : public WriteBuffer
+class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::Net::HTTPServerRequest & request;
@@ -90,7 +91,7 @@ public:
         Poco::Net::HTTPServerResponse & response_,
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
-        CompressionMethod compression_method_ = CompressionMethod::Gzip);
+        CompressionMethod compression_method_ = CompressionMethod::None);
 
     /// Writes progess in repeating HTTP headers.
     void onProgress(const Progress & progress);
