@@ -21,7 +21,7 @@ struct ExpressionInfoMatcher
         bool is_array_join = false;
         bool is_stateful_function = false;
         bool is_aggregate_function = false;
-        std::unordered_set<size_t> unique_reference_tables_pos;
+        std::unordered_set<size_t> unique_reference_tables_pos = {};
     };
 
     static void visit(const ASTPtr & ast, Data & data);
@@ -33,7 +33,8 @@ struct ExpressionInfoMatcher
     static void visit(const ASTIdentifier & identifier, const ASTPtr &, Data & data);
 };
 
-
 using ExpressionInfoVisitor = ConstInDepthNodeVisitor<ExpressionInfoMatcher, true>;
+
+bool hasStatefulFunction(const ASTPtr & node, const Context & context);
 
 }

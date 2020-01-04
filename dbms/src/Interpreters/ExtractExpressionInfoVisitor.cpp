@@ -55,5 +55,19 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
     }
 }
 
+bool hasStatefulFunction(const ASTPtr & node, const Context & context)
+{
+    for (const auto & select_expression : node->children)
+    {
+        ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};
+        ExpressionInfoVisitor(expression_info).visit(select_expression);
+
+        if (expression_info.is_stateful_function)
+            return true;
+    }
+
+    return false;
+}
+
 }
 
