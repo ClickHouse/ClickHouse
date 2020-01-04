@@ -23,6 +23,27 @@ namespace DB
 class SSDCacheDictionary;
 class CacheStorage;
 
+/*class SimpleSerializer
+{
+public:
+    bool block() const { return false; }
+
+    template <typename T>
+    size_t estimateSizeNumber(T number) const;
+
+    size_t estimateSizeString(const String & str) const;
+
+    template <typename T>
+    ssize_t writeNumber(T number, WriteBuffer & buffer);
+
+    ssize_t writeString(const String & str, WriteBuffer & buffer);
+
+    template <typename T>
+    ssize_t readNumber(T number, WriteBuffer & buffer);
+
+    ssize_t readString(const String & str, WriteBuffer & buffer);
+};*/
+
 class CachePartition
 {
 public:
@@ -107,15 +128,8 @@ class CacheStorage
 public:
     using Key = IDictionary::Key;
 
-    CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_, const size_t partitions_count_, const size_t partition_max_size_)
-        : dictionary(dictionary_)
-        , path(path_)
-        , partition_max_size(partition_max_size_)
-        , log(&Poco::Logger::get("CacheStorage"))
-    {
-        for (size_t partition_id = 0; partition_id < partitions_count_; ++partition_id)
-            partitions.emplace_back(std::make_unique<CachePartition>(*this, partition_id, partition_max_size, path_));
-    }
+    CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_,
+            const size_t partitions_count_, const size_t partition_max_size_);
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -130,7 +144,7 @@ public:
     // getString();
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
-    std::exception_ptr update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
+    void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
             PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found);
 
     //BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const;
@@ -319,6 +333,7 @@ public:
     };
     using Attributes = std::vector<Attribute>;
 
+    /// переместить
     const Attributes & getAttributes() const;
 
 private:
