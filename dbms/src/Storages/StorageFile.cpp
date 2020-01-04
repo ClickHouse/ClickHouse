@@ -241,8 +241,8 @@ public:
     Block readImpl() override
     {
         auto res = reader->read();
-        if (res && file_path)
-            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value()), std::make_shared<DataTypeString>(), "_path"});
+        if (res && file_path)   /// construction with const is for generating less code
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(), "_path"});
         return res;
     }
 
