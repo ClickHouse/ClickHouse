@@ -181,7 +181,9 @@ StorageFile::StorageFile(CommonArguments args)
     : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
-    setColumns(args.columns);
+    if (args.format_name != "Distributed")
+        setColumns(args.columns);
+
     setConstraints(args.constraints);
 }
 
