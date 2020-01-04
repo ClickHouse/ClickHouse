@@ -147,7 +147,7 @@ SELECT
 FROM lineorder AS l
 INNER JOIN customer AS c ON c.C_CUSTKEY = l.LO_CUSTKEY
 INNER JOIN supplier AS s ON s.S_SUPPKEY = l.LO_SUPPKEY
-INNER JOIN part AS p ON p.P_PARTKEY = l.LO_PARTKEY
+INNER JOIN part AS p ON p.P_PARTKEY = l.LO_PARTKEY;
 
 ```
 
@@ -184,7 +184,7 @@ GROUP BY
     P_BRAND
 ORDER BY
     year ASC,
-    P_BRAND ASC
+    P_BRAND ASC;
 ```
 Q2.2
 ```sql
@@ -199,7 +199,7 @@ GROUP BY
     P_BRAND
 ORDER BY
     year ASC,
-    P_BRAND ASC
+    P_BRAND ASC;
 ```
 Q2.3
 ```sql
@@ -214,7 +214,7 @@ GROUP BY
     P_BRAND
 ORDER BY
     year ASC,
-    P_BRAND ASC
+    P_BRAND ASC;
 ```
 Q3.1
 ```sql
@@ -231,7 +231,7 @@ GROUP BY
     year
 ORDER BY
     year ASC,
-    revenue DESC
+    revenue DESC;
 ```
 Q3.2
 ```sql
@@ -248,7 +248,7 @@ GROUP BY
     year
 ORDER BY
     year ASC,
-    revenue DESC
+    revenue DESC;
 ```
 Q3.3
 ```sql
