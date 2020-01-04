@@ -50,7 +50,7 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Zlib;
     if (*method_str == "brotli" || *method_str == "br")
         return CompressionMethod::Brotli;
-    if (*method_str == "none")
+    if (*method_str == "none" || *method_str == "auto")
         return CompressionMethod::None;
     if (!file_extension.empty())
         return CompressionMethod::None; /// Unrecognized file extension.
