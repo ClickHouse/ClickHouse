@@ -182,7 +182,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}, {"_file", std::make_shared<DataTypeString>()}}, true))
     , table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
@@ -241,8 +241,15 @@ public:
     Block readImpl() override
     {
         auto res = reader->read();
-        if (res && file_path)   /// construction with const is for generating less code
-            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(), "_path"});
+        if (res && file_path)
+        {
+            /// construction with const is for probably generating less code
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(),
+                        std::make_shared<DataTypeString>(), "_path"});
+            size_t last_slash_pos = file_path.value().find_last_of('/');
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value().substr(last_slash_pos + 1))->convertToFullColumnIfConst(),
+                        std::make_shared<DataTypeString>(), "_file"});
+        }
         return res;
     }
 
@@ -250,7 +257,10 @@ public:
     {
         auto res = reader->getHeader();
         if (res && file_path)
+        {
             res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        }
         return res;
     }
 

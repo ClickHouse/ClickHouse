@@ -129,3 +129,5 @@ def test_table_function_and_virtual_columns(start_cluster):
     assert node.query("select * from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()== '1'
     assert "nonexist.csv" in node.query("select _path from file('nonexis?.csv', 'CSV', 'val1 UInt32')").rstrip()
     assert "nonexist.csv" in node.query("select _path from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" == node.query("select _file from file('nonexis?.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" == node.query("select _file from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()

@@ -43,7 +43,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}, {"_file", std::make_shared<DataTypeString>()}}, true))
     , uri(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
@@ -84,7 +84,14 @@ public:
     {
         auto res = reader->read();
         if (res)
-            res.insert({DataTypeString().createColumnConst(res.rows(), file_path), std::make_shared<DataTypeString>(), "_path"});
+        {
+            /// construction with const is for probably generating less code
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path)->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                        "_path"});
+            size_t last_slash_pos = file_path.find_last_of('/');
+            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.substr(last_slash_pos + 1))->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                        "_file"});
+        }
         return res;
     }
 
@@ -92,7 +99,10 @@ public:
     {
         auto res = reader->getHeader();
         if (res)
+        {
             res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        }
         return res;
     }
 
