@@ -298,29 +298,21 @@ void HTTPHandler::processQuery(
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
-    bool client_supports_http_compression = false;
-    CompressionMethod http_response_compression_method {};
+    CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
     {
         /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
         /// NOTE parsing of the list of methods is slightly incorrect.
         if (std::string::npos != http_response_compression_methods.find("gzip"))
-        {
-            client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Gzip;
-        }
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
-        {
-            client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Zlib;
-        }
         else if (http_response_compression_methods == "br")
-        {
-            client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Brotli;
-        }
     }
+
+    bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
@@ -340,8 +332,8 @@ void HTTPHandler::processQuery(
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        request, response, keep_alive_timeout,
-        client_supports_http_compression, http_response_compression_method);
+        request, response, keep_alive_timeout, client_supports_http_compression, http_response_compression_method);
+
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else

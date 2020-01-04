@@ -111,18 +111,19 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                 *response_header_ostr << "Content-Encoding: " << content_encoding_name << "\r\n";
 #else
                 response.set("Content-Encoding", content_encoding_name);
-                response_body_ostr = &(response.send());
+#endif
+            }
+
+#if !defined(POCO_CLICKHOUSE_PATCH)
+            response_body_ostr = &(response.send());
 #endif
 
-                out = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromOStream>(*response_body_ostr), compression_method, compression_level);
-            }
-            else
-            {
-#if !defined(POCO_CLICKHOUSE_PATCH)
-                response_body_ostr = &(response.send());
-#endif
-                out = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-            }
+            out = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
+                compress ? compression_method : CompressionMethod::None,
+                compression_level,
+                working_buffer.size(),
+                working_buffer.begin());
         }
 
         finishSendHeaders();
@@ -134,9 +135,6 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         out->position() = position();
         out->next();
     }
-
-    internal_buffer = out->internalBuffer();
-    working_buffer = out->buffer();
 }
 
 
@@ -146,7 +144,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     unsigned keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
-    : WriteBuffer(nullptr, 0)
+    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)
