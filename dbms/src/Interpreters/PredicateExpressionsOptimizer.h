@@ -7,18 +7,13 @@ namespace DB
 {
 
 class Context;
-class Settings;
+struct Settings;
 
-/** This class provides functions for Push-Down predicate expressions
- *
- *  The Example:
- *      - Query before optimization :
- *          SELECT id_1, name_1 FROM (SELECT id_1, name_1 FROM table_a UNION ALL SELECT id_2, name_2 FROM table_b)
- *              WHERE id_1 = 1
- *      - Query after optimization :
- *          SELECT id_1, name_1 FROM (SELECT id_1, name_1 FROM table_a WHERE id_1 = 1 UNION ALL SELECT id_2, name_2 FROM table_b WHERE id_2 = 1)
- *              WHERE id_1 = 1
+/** Predicate optimization based on rewriting ast rules
  *  For more details : https://github.com/ClickHouse/ClickHouse/pull/2015#issuecomment-374283452
+ *  The optimizer does two different optimizations
+ *      - Move predicates from having to where
+ *      - Push the predicate down from the current query to the having of the subquery
  */
 class PredicateExpressionsOptimizer
 {
@@ -51,6 +46,8 @@ private:
     bool tryRewritePredicatesToTables(ASTs & tables_element, const std::vector<ASTs> & tables_predicates);
 
     bool tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const Names & table_column) const;
+
+    bool tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query);
 };
 
 }

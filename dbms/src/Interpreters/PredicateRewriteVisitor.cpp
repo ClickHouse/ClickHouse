@@ -1,23 +1,23 @@
 #include <Interpreters/PredicateRewriteVisitor.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
 namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, const Names & colunm_names_, bool optimize_final_)
-    : context(context_), predicates(predicates_), column_names(colunm_names_), optimize_final(optimize_final_)
+    const Context & context_, const ASTs & predicates_, const Names & column_names_, bool optimize_final_)
+    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_)
 {
 }
 
@@ -44,9 +44,10 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     ASTSelectQuery * temp_select_query = temp_internal_select->as<ASTSelectQuery>();
 
     size_t alias_index = 0;
-    for (const auto ref_select : temp_select_query->refSelect()->children)
+    for (auto & ref_select : temp_select_query->refSelect()->children)
     {
-        if (!ref_select->as<ASTAsterisk>() && !ref_select->as<ASTQualifiedAsterisk>() && !ref_select->as<ASTColumnsMatcher>())
+        if (!ref_select->as<ASTAsterisk>() && !ref_select->as<ASTQualifiedAsterisk>() && !ref_select->as<ASTColumnsMatcher>() &&
+            !ref_select->as<ASTIdentifier>())
         {
             if (const auto & alias = ref_select->tryGetAlias(); alias.empty())
                 ref_select->setAlias("--predicate_optimizer_" + toString(alias_index++));
@@ -56,15 +57,11 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     const Names & internal_columns = InterpreterSelectQuery(
         temp_internal_select, context, SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
-    if ((is_rewrite |= rewriteSubquery(*temp_select_query, column_names, internal_columns)))
+    if (rewriteSubquery(*temp_select_query, column_names, internal_columns))
     {
+        is_rewrite |= true;
         select_query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(temp_select_query->refSelect()));
-
-        if (temp_select_query->where())
-            select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(temp_select_query->refWhere()));
-
-        if (temp_select_query->having())
-            select_query.setExpression(ASTSelectQuery::Expression::HAVING, std::move(temp_select_query->refHaving()));
+        select_query.setExpression(ASTSelectQuery::Expression::HAVING, std::move(temp_select_query->refHaving()));
     }
 }
 
@@ -80,32 +77,12 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
         identifiers.emplace_back(identifier);
 }
 
-bool PredicateRewriteVisitorData::allowPushDown(const ASTSelectQuery &subquery, NameSet & aggregate_column)
-{
-    if ((!optimize_final && subquery.final())
-        || subquery.limitBy() || subquery.limitLength()
-        || subquery.with() || subquery.withFill())
-        return false;
-
-    for (const auto & select_expression : subquery.select()->children)
-    {
-        ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};
-        ExpressionInfoVisitor(expression_info).visit(select_expression);
-
-        if (expression_info.is_stateful_function)
-            return false;
-        else if (expression_info.is_aggregate_function)
-            aggregate_column.emplace(select_expression->getAliasOrColumnName());
-    }
-
-    return true;
-}
-
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns)
 {
-    NameSet aggregate_columns;
-
-    if (!allowPushDown(subquery, aggregate_columns))
+    if ((!optimize_final && subquery.final())
+        || subquery.with() || subquery.withFill()
+        || subquery.limitBy() || subquery.limitLength()
+        || hasStatefulFunction(subquery.select(), context))
         return false;
 
     for (const auto & predicate : predicates)
@@ -114,27 +91,23 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         ASTPtr optimize_predicate = predicate->clone();
         cleanAliasAndCollectIdentifiers(optimize_predicate, identifiers);
 
-        ASTSelectQuery::Expression rewrite_to = ASTSelectQuery::Expression::WHERE;
-
         for (size_t index = 0; index < identifiers.size(); ++index)
         {
-            const auto & column_name = IdentifierSemantic::getColumnName(*identifiers[index]);
+            const auto & column_name = identifiers[index]->shortName();
+            const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
-            const auto & iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
+            if (outer_column_iterator == outer_columns.end())
+                throw Exception("LOGICAL ERROR: the column " + column_name + " does not exists.", ErrorCodes::LOGICAL_ERROR);
 
-            if (iterator == outer_columns.end())
-                throw Exception("", ErrorCodes::LOGICAL_ERROR);
-
-            if (aggregate_columns.count(*column_name))
-                rewrite_to = ASTSelectQuery::Expression::HAVING;
-
-            identifiers[index]->setShortName(inner_columns[iterator - outer_columns.begin()]);
+            identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
         }
 
-        ASTPtr optimize_expression = subquery.getExpression(rewrite_to, false);
-        subquery.setExpression(rewrite_to,
-            optimize_expression ? makeASTFunction("and", optimize_predicate, optimize_expression) : optimize_predicate);
+        /// We only need to push all the predicates to subquery having
+        /// The subquery optimizer will move the appropriate predicates from having to where
+        subquery.setExpression(ASTSelectQuery::Expression::HAVING,
+            subquery.having() ? makeASTFunction("and", optimize_predicate, subquery.having()) : optimize_predicate);
     }
+
     return true;
 }
 
