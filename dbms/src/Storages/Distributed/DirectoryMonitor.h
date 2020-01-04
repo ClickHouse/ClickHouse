@@ -71,7 +71,9 @@ private:
     ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
 
     /// Read insert query and insert settings for backward compatible.
-    void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, Logger * log);
+
+    friend class DirectoryMonitorBlockInputStream;
 };
 
 }
