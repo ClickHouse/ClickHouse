@@ -520,6 +520,46 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 };
 
+class DirectoryMonitorBlockInputStream : public IBlockInputStream
+{
+public:
+    explicit DirectoryMonitorBlockInputStream(const String & file_name)
+        : in(file_name)
+        , decompressing_in(in)
+        , block_in(decompressing_in, ClickHouseRevision::get())
+    {
+        block_in.readPrefix();
+        first_block = block_in.read();
+        header = first_block.cloneEmpty();
+    }
+
+    String getName() const override { return "DirectoryMonitor"; }
+
+protected:
+    Block getHeader() const override { return header; }
+    Block readImpl() override
+    {
+        if (first_block)
+            return std::move(first_block);
+
+        return block_in.read();
+    }
+
+    void readSuffix() override { block_in.readSuffix(); }
+
+private:
+    ReadBufferFromFile in;
+    CompressedReadBuffer decompressing_in;
+    NativeBlockInputStream block_in;
+
+    Block first_block;
+    Block header;
+};
+
+BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
+{
+    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
+}
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
