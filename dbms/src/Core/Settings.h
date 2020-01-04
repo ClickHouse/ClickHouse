@@ -127,6 +127,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3, "The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization ", 0) \
     \
     M(SettingUInt64, min_bytes_to_use_direct_io, 0, "The minimum number of bytes for reading the data with O_DIRECT option during SELECT queries execution. 0 - disabled.", 0) \
+    M(SettingUInt64, min_bytes_to_use_mmap_io, 0, "The minimum number of bytes for reading the data with mmap option during SELECT queries execution. 0 - disabled.", 0) \
     \
     M(SettingBool, force_index_by_date, 0, "Throw an exception if there is a partition key in a table, and it is not used.", 0) \
     M(SettingBool, force_primary_key, 0, "Throw an exception if there is primary key in a table, and it is not used.", 0) \
