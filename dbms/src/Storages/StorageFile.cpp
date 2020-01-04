@@ -153,6 +153,17 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
         paths = listFilesWithRegexpMatching("/", path);
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
+
+    if (args.format_name == "Distributed")
+    {
+        if (!paths.empty())
+        {
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
+
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
+        }
+    }
 }
 
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
@@ -170,19 +181,7 @@ StorageFile::StorageFile(CommonArguments args)
     : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
-    if (args.format_name == "Distributed")
-    {
-        if (!paths.empty())
-        {
-            auto & first_path = paths[0];
-            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
-
-            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
-        }
-    }
-    else
-        setColumns(args.columns);
-
+    setColumns(args.columns);
     setConstraints(args.constraints);
 }
 
