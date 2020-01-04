@@ -116,7 +116,9 @@ off_t MMapReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
         throw Exception("MMapReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
-        throwFromErrnoWithPath("Cannot seek through file " + getFileName() + " because seek offset is out of bounds", getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception("Cannot seek through file " + getFileName()
+            + " because seek position (" + toString(new_pos) + ") is out of bounds [0, " + toString(working_buffer.size()) + "]",
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     position() = working_buffer.begin() + new_pos;
     return new_pos;
