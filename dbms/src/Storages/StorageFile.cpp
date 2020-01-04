@@ -170,9 +170,6 @@ StorageFile::StorageFile(CommonArguments args)
     : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
-    setColumns(args.columns);
-    setConstraints(args.constraints);
-
     if (args.format_name == "Distributed")
     {
         if (!paths.empty())
@@ -183,6 +180,10 @@ StorageFile::StorageFile(CommonArguments args)
             setColumns(ColumnsDescription(header.getNamesAndTypesList()));
         }
     }
+    else
+        setColumns(args.columns);
+
+    setConstraints(args.constraints);
 }
 
 class StorageFileBlockInputStream : public IBlockInputStream
