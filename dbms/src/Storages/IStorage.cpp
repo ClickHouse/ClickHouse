@@ -425,21 +425,4 @@ BlockInputStreams IStorage::read(
     return res;
 }
 
-DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
-{
-    if (compression_method == "auto" || compression_method == "")
-    {
-        if (endsWith(uri, ".gz"))
-            return DB::CompressionMethod::Gzip;
-        else
-            return DB::CompressionMethod::None;
-    }
-    else if (compression_method == "gzip")
-        return DB::CompressionMethod::Gzip;
-    else if (compression_method == "none")
-        return DB::CompressionMethod::None;
-    else
-        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 }

@@ -105,58 +105,23 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         {
             if (compress)
             {
-                if (compression_method == CompressionMethod::Gzip)
-                {
+                auto content_encoding_name = toContentEncodingName(compression_method);
+
 #if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: gzip\r\n";
+                *response_header_ostr << "Content-Encoding: " << content_encoding_name << "\r\n";
 #else
-                    response.set("Content-Encoding", "gzip");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*deflating_buf;
-                }
-                else if (compression_method == CompressionMethod::Zlib)
-                {
-#if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: deflate\r\n";
-#else
-                    response.set("Content-Encoding", "deflate");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*deflating_buf;
-                }
-#if USE_BROTLI
-                else if (compression_method == CompressionMethod::Brotli)
-                {
-#if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: br\r\n";
-#else
-                    response.set("Content-Encoding", "br");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*brotli_buf;
-                }
+                response.set("Content-Encoding", content_encoding_name);
+                response_body_ostr = &(response.send());
 #endif
 
-                else
-                    throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-                                    ErrorCodes::LOGICAL_ERROR);
-                /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+                out = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromOStream>(*response_body_ostr), compression_method, compression_level);
             }
             else
             {
 #if !defined(POCO_CLICKHOUSE_PATCH)
                 response_body_ostr = &(response.send());
 #endif
-
-                out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-                out = &*out_raw;
+                out = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
             }
         }
 
@@ -169,6 +134,9 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         out->position() = position();
         out->next();
     }
+
+    internal_buffer = out->internalBuffer();
+    working_buffer = out->buffer();
 }
 
 
@@ -177,9 +145,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    CompressionMethod compression_method_,
-    size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size)
+    CompressionMethod compression_method_)
+    : WriteBuffer(nullptr, 0)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)

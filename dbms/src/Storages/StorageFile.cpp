@@ -200,12 +200,12 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = getReadBuffer<ReadBufferFromFileDescriptor>(compression_method, storage->table_fd);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
             shared_lock = std::shared_lock(storage->rwlock);
-            read_buf = getReadBuffer<ReadBufferFromFile>(compression_method, file_path);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
         }
 
         reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
@@ -266,7 +266,7 @@ BlockInputStreams StorageFile::read(
     for (const auto & file_path : paths)
     {
         BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return narrowBlockInputStreams(blocks_input, num_streams);
@@ -288,13 +288,15 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = getWriteBuffer<WriteBufferFromFileDescriptor>(compression_method, storage.table_fd);
+            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 1);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
+                compression_method, 1);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
@@ -333,8 +335,7 @@ BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
     const Context & context)
 {
-    return std::make_shared<StorageFileBlockOutputStream>(*this,
-        IStorage::chooseCompressionMethod(paths[0], compression_method), context);
+    return std::make_shared<StorageFileBlockOutputStream>(*this, chooseCompressionMethod(paths[0], compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const

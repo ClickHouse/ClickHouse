@@ -20,8 +20,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/BrotliReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -317,13 +315,11 @@ void HTTPHandler::processQuery(
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Zlib;
         }
-#if USE_BROTLI
         else if (http_response_compression_methods == "br")
         {
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Brotli;
         }
-#endif
     }
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
@@ -400,32 +396,9 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
-    std::unique_ptr<ReadBuffer> in_post;
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    if (!http_request_compression_method_str.empty())
-    {
-        if (http_request_compression_method_str == "gzip")
-        {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Gzip);
-        }
-        else if (http_request_compression_method_str == "deflate")
-        {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Zlib);
-        }
-#if USE_BROTLI
-        else if (http_request_compression_method_str == "br")
-        {
-            in_post = std::make_unique<BrotliReadBuffer>(std::move(in_post_raw));
-        }
-#endif
-        else
-        {
-            throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
-                    ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        }
-    }
-    else
-        in_post = std::move(in_post_raw);
+    std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
+        std::make_unique<ReadBufferFromIStream>(istr), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
