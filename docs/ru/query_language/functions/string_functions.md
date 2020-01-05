@@ -194,17 +194,7 @@ SELECT startsWith('Hello, world!', 'He');
 Удаляет все указанные символы с начала или окончания строки.
 По умолчанию удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с обоих концов строки.
 
-**Синтаксис** 
-
-```sql
-trim(input_string)
-```
-
-**Параметры**
-
-- `input_string` — строка для обрезки. [String](../../data_types/string.md).
-
-**Поддерживается альтернативный SQL синтаксис** 
+**Синтаксис** Z
 
 ```sql
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
