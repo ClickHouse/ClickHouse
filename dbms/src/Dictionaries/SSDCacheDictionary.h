@@ -50,14 +50,15 @@ public:
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
 
-    CachePartition(const std::vector<AttributeUnderlyingType> & structure, const std::string & dir_path,
-            const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
+    CachePartition(
+            const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
+            const std::string & dir_path, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out, typename Key>
-    void getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+    void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const;
 
     // TODO:: getString
@@ -94,7 +95,7 @@ public:
 
 
     // Key, (Metadata), attributes
-    void appendBlock(const Attributes & new_columns);
+    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes);
 
 private:
     void flush();
@@ -113,7 +114,8 @@ private:
     std::unique_ptr<WriteBufferAIO> write_data_buffer;
     std::unordered_map<UInt64, size_t> key_to_file_offset;
 
-    Attributes buffer;
+    Attribute keys_buffer;
+    Attributes attributes_buffer;
     //MutableColumns buffer;
     size_t bytes = 0;
 
@@ -135,10 +137,10 @@ public:
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out>
-    void getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
     {
-        partitions[0]->getValue<Out>(attribute_name, ids, out, not_found);
+        partitions[0]->getValue<Out>(attribute_index, ids, out, not_found);
     }
 
     // getString();
@@ -154,7 +156,7 @@ public:
     const std::string & getPath() const { return path; }
 
 private:
-    CachePartition::Attributes createAttributesFromBlock(const Block & block);
+    CachePartition::Attributes createAttributesFromBlock(const Block & block, const size_t begin = 0, size_t end = -1);
 
     SSDCacheDictionary & dictionary;
 
@@ -348,9 +350,9 @@ private:
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-            const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+            const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
     template <typename DefaultGetter>
-    void getItemsString(const std::string & attribute_name, const PaddedPODArray<Key> & ids,
+    void getItemsString(const size_t attribute_index, const PaddedPODArray<Key> & ids,
             ColumnString * out, DefaultGetter && get_default) const;
     
     const std::string name;

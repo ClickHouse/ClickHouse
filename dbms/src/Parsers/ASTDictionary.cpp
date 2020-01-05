@@ -66,10 +66,10 @@ ASTPtr ASTDictionaryLayout::clone() const
     auto res = std::make_shared<ASTDictionaryLayout>(*this);
     res->children.clear();
     res->layout_type = layout_type;
-    if (parameter.has_value())
+    for (const auto & parameter : parameters)
     {
-        res->parameter.emplace(parameter->first, nullptr);
-        res->set(res->parameter->second, parameter->second->clone());
+        res->parameters.emplace_back(parameter.first, nullptr);
+        res->set(res->parameters.back().second, parameter.second->clone());
     }
     return res;
 }
@@ -88,14 +88,18 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                   << (settings.hilite ? hilite_none : "");
 
     settings.ostr << "(";
-    if (parameter)
+    bool first = true;
+    for (const auto & parameter : parameters)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << Poco::toUpper(parameter->first)
+        settings.ostr << (first ? "" : " ")
+                      << (settings.hilite ? hilite_keyword : "")
+                      << Poco::toUpper(parameter.first)
                       << (settings.hilite ? hilite_none : "")
                       << " ";
 
-        parameter->second->formatImpl(settings, state, expected);
+        parameter.second->formatImpl(settings, state, expected);
+
+        first = false;
     }
     settings.ostr << ")";
     settings.ostr << ")";
