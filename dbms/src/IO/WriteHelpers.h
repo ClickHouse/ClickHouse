@@ -26,7 +26,6 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -953,17 +952,6 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
-}
-
-template <class TWriteBuffer, class... Types>
-std::unique_ptr<WriteBuffer> getWriteBuffer(const DB::CompressionMethod method, Types&&... args)
-{
-    if (method == DB::CompressionMethod::Gzip)
-    {
-        auto write_buf = std::make_unique<TWriteBuffer>(std::forward<Types>(args)...);
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
-    }
-    return std::make_unique<TWriteBuffer>(args...);
 }
 
 }
