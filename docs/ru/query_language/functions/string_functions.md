@@ -192,7 +192,7 @@ SELECT startsWith('Hello, world!', 'He');
 ## trim {#trim}
 
 Удаляет все указанные символы с начала или окончания строки.
-По умолчанию удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с начала и конца строки.
+По умолчанию удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с обоих концов строки.
 
 **Синтаксис** 
 
@@ -207,7 +207,7 @@ trim(input_string)
 **Поддерживается альтернативный SQL синтаксис** 
 
 ```sql
-trim(TRIM([[LEADING|TRAILING|BOTH] trim_character FROM ] input_string))
+trim(TRIM([[LEADING|TRAILING|BOTH] trim_character FROM] input_string))
 ```
 
 **Параметры**
