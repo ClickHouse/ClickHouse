@@ -46,7 +46,8 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr size_t INMEMORY = (1ULL << 63ULL);
+    constexpr size_t IN_MEMORY = (1ULL << 63ULL);
+    constexpr size_t NOT_FOUND = -1;
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
 }
@@ -99,7 +100,7 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
 
-    size_t start_size = ids.size();
+    const size_t start_size = std::visit([](const auto & values) { return values.size(); }, keys_buffer.values);
 
     appendValuesToBufferAttribute(keys_buffer, new_keys);
     for (size_t i = 0; i < attributes_buffer.size(); ++i)
@@ -109,14 +110,10 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
     }
 
     for (size_t i = 0; i < ids.size(); ++i)
-    {
-        key_to_file_offset[ids[i]] = (start_size + i) | INMEMORY;
-    }
+        key_to_file_offset[ids[i]] = (start_size + i) | IN_MEMORY;
 
     //if (bytes >= buffer_size)
-    {
         //flush();
-    }
 }
 
 void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribute & from)
@@ -223,21 +220,61 @@ void CachePartition::flush()
 }
 
 template <typename Out, typename Key>
-void CachePartition::getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
               ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
 {
-    UNUSED(attribute_index);
-    UNUSED(out);
+    PaddedPODArray<UInt64> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
-        not_found[ids[i]].push_back(i);
+        auto it = key_to_file_offset.find(ids[i]);
+        if (it != std::end(key_to_file_offset))
+        {
+            Poco::Logger::get("part:").information("HIT " + std::to_string(ids[i]));
+            indices[i] = it->second;
+        }
+        else
+        {
+            Poco::Logger::get("part:").information("NOT FOUND " + std::to_string(ids[i]));
+            indices[i] = NOT_FOUND;
+            not_found[ids[i]].push_back(i);
+        }
+
+
+        getValueFromMemory<Out>(attribute_index, indices, out);
+        getValueFromStorage<Out>(attribute_index, indices, out);
     }
+}
+
+template <typename Out>
+void CachePartition::getValueFromMemory(
+        const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const
+{
+    const auto & attribute = std::get<Attribute::Container<Out>>(attributes_buffer[attribute_index].values);
+    for (size_t i = 0; i < indices.size(); ++i)
+    {
+        const auto & index = indices[i];
+        if (index != NOT_FOUND && (index & IN_MEMORY))
+        {
+            out[i] = attribute[index ^ IN_MEMORY];
+            if constexpr (std::is_same_v<Int32, Out>)
+                Poco::Logger::get("part:").information("GET FROM MEMORY " + std::to_string(out[i]) + " --- " + std::to_string(index ^ IN_MEMORY));
+        }
+    }
+}
+
+template <typename Out>
+void CachePartition::getValueFromStorage(
+        const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const
+{
+    UNUSED(attribute_index);
+    UNUSED(indices);
+    UNUSED(out);
 }
 
 void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const
 {
-    UNUSED(ids);
-    UNUSED(out);
+    for (size_t i = 0; i < ids.size(); ++i)
+        out[i] = static_cast<UInt8>(key_to_file_offset.find(ids[i]) != std::end(key_to_file_offset));
 }
 
 CacheStorage::CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_, const size_t partitions_count_, const size_t partition_max_size_)
@@ -259,6 +296,7 @@ template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
         PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found)
 {
+    Poco::Logger::get("cachestorage").information("update");
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
 

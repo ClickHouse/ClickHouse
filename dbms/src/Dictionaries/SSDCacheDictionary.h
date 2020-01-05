@@ -54,11 +54,15 @@ public:
             const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
             const std::string & dir_path, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
 
+    ~CachePartition() {
+        Poco::Logger::get("cachepartition").information("DESTROY");
+    }
+
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out, typename Key>
-    void getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const;
 
     // TODO:: getString
@@ -101,6 +105,14 @@ private:
     void flush();
 
     void appendValuesToBufferAttribute(Attribute & to, const Attribute & from);
+
+    template <typename Out>
+    void getValueFromMemory(
+            const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const;
+
+    template <typename Out>
+    void getValueFromStorage(
+            const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const;
 
     size_t file_id;
     size_t max_size;
