@@ -7,7 +7,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
