@@ -67,7 +67,7 @@ public:
         UInt64 max_block_size,
         const CompressionMethod compression_method)
     {
-        auto read_buf = getReadBuffer<ReadBufferFromHDFS>(compression_method, uri);
+        auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri), compression_method);
 
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
@@ -112,7 +112,7 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = getWriteBuffer<WriteBufferFromHDFS>(compression_method, uri);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 3);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 
@@ -213,7 +213,7 @@ BlockInputStreams StorageHDFS::read(
     for (const auto & res_path : res_paths)
     {
         result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
-                                                               max_block_size, IStorage::chooseCompressionMethod(res_path, compression_method)));
+                                                               max_block_size, chooseCompressionMethod(res_path, compression_method)));
     }
 
     return narrowBlockInputStreams(result, num_streams);
@@ -231,7 +231,7 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context 
         format_name,
         getSampleBlock(),
         context,
-        IStorage::chooseCompressionMethod(uri, compression_method));
+        chooseCompressionMethod(uri, compression_method));
 }
 
 void registerStorageHDFS(StorageFactory & factory)
