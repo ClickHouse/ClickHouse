@@ -235,7 +235,7 @@ trim(input_string)
 **Supported alternative SQL syntax** 
 
 ```sql
-trim(TRIM([[LEADING|TRAILING|BOTH] trim_character FROM] input_string))
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
 **Parameters**
