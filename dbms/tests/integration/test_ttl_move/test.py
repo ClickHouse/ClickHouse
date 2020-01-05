@@ -540,6 +540,35 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
+@pytest.mark.parametrize("name,engine", [
+    ("mt_test_double_alter","MergeTree()"),
+    ("replicated_mt_test_double_alter","ReplicatedMergeTree('/clickhouse/replicated_test_double_alter', '1')"),
+])
+def test_double_alter(started_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO DISK 'external'
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("""
+            ALTER TABLE {name}
+            MODIFY TTL d1 TO DISK 'jbod1'
+        """.format(name=name, engine=engine))
+
+        node1.query("""
+            ALTER TABLE {name}
+            MODIFY TTL d1 TO DISK 'external'
+        """.format(name=name, engine=engine))
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
     ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
