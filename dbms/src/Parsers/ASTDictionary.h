@@ -32,7 +32,7 @@ public:
     /// flat, cache, hashed, etc.
     String layout_type;
     /// optional parameter (size_in_cells)
-    std::optional<KeyValue> parameter;
+    std::vector<KeyValue> parameters;
 
     String getID(char) const override { return "Dictionary layout"; }
 

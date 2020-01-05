@@ -6,6 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <DataStreams/IBlockInputStream.h>
+#include "DictionaryFactory.h"
 #include <IO/WriteHelpers.h>
 #include <ext/chrono_io.h>
 #include <ext/map.h>
@@ -50,35 +51,38 @@ namespace
     const std::string IND_FILE_EXT = ".idx";
 }
 
-CachePartition::CachePartition(const std::vector<AttributeUnderlyingType> & structure, const std::string & dir_path,
-        const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
+CachePartition::CachePartition(
+        const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure,
+        const std::string & dir_path, const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
     : file_id(file_id_), max_size(max_size_), buffer_size(buffer_size_), path(dir_path + "/" + std::to_string(file_id))
 {
-    for (const auto & type : structure)
+    keys_buffer.type = AttributeUnderlyingType::utUInt64;
+    keys_buffer.values = std::vector<UInt64>();
+    for (const auto & type : attributes_structure)
     {
         switch (type)
         {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        buffer.emplace_back(); \
-        buffer.back().type = type; \
-        buffer.back().values = std::vector<TYPE>(); \
+        attributes_buffer.emplace_back(); \
+        attributes_buffer.back().type = type; \
+        attributes_buffer.back().values = std::vector<TYPE>(); \
         break;
 
-            DISPATCH(UInt8)
-            DISPATCH(UInt16)
-            DISPATCH(UInt32)
-            DISPATCH(UInt64)
-            DISPATCH(UInt128)
-            DISPATCH(Int8)
-            DISPATCH(Int16)
-            DISPATCH(Int32)
-            DISPATCH(Int64)
-            DISPATCH(Decimal32)
-            DISPATCH(Decimal64)
-            DISPATCH(Decimal128)
-            DISPATCH(Float32)
-            DISPATCH(Float64)
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
 #undef DISPATCH
 
         case AttributeUnderlyingType::utString:
@@ -88,17 +92,19 @@ CachePartition::CachePartition(const std::vector<AttributeUnderlyingType> & stru
     }
 }
 
-void CachePartition::appendBlock(const Attributes & new_columns)
+void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes)
 {
-    if (new_columns.size() != buffer.size())
+    if (new_attributes.size() != attributes_buffer.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
-    const auto & ids = std::get<Attribute::Container<UInt64>>(new_columns.front().values);
+    const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
 
     size_t start_size = ids.size();
-    for (size_t i = 0; i < buffer.size(); ++i)
+
+    appendValuesToBufferAttribute(keys_buffer, new_keys);
+    for (size_t i = 0; i < attributes_buffer.size(); ++i)
     {
-        appendValuesToBufferAttribute(buffer[i], new_columns[i]);
+        appendValuesToBufferAttribute(attributes_buffer[i], new_attributes[i]);
         //bytes += buffer[i]->byteSize();
     }
 
@@ -158,7 +164,7 @@ void CachePartition::flush()
         // TODO: не перетирать + seek в конец файла
     }
 
-    const auto & ids = std::get<Attribute::Container<UInt64>>(buffer.front().values);
+    const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
 
     std::vector<size_t> offsets;
 
@@ -168,9 +174,9 @@ void CachePartition::flush()
         offsets.push_back((offsets.empty() ? write_data_buffer->getPositionInFile() : offsets.back()) + prev_size);
         prev_size = 0;
 
-        for (size_t col = 0; col < buffer.size(); ++col)
+        for (size_t col = 0; col < attributes_buffer.size(); ++col)
         {
-            const auto & attribute = buffer[col];
+            const auto & attribute = attributes_buffer[col];
 
             switch (attribute.type)
             {
@@ -208,24 +214,19 @@ void CachePartition::flush()
 
     /// commit changes in index
     for (size_t row = 0; row < ids.size(); ++row)
-    {
         key_to_file_offset[ids[row]] = offsets[row];
-    }
 
     /// clear buffer
-    for (auto & attribute : buffer)
-    {
-        std::visit([](auto & attr) {
-            attr.clear();
-        }, attribute.values);
-    }
+    std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
+    for (auto & attribute : attributes_buffer)
+        std::visit([](auto & attr) { attr.clear(); }, attribute.values);
 }
 
 template <typename Out, typename Key>
-void CachePartition::getValue(const std::string & attribute_name, const PaddedPODArray<UInt64> & ids,
+void CachePartition::getValue(size_t attribute_index, const PaddedPODArray<UInt64> & ids,
               ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
 {
-    UNUSED(attribute_name);
+    UNUSED(attribute_index);
     UNUSED(ids);
     UNUSED(out);
     UNUSED(not_found);
@@ -249,7 +250,7 @@ CacheStorage::CacheStorage(SSDCacheDictionary & dictionary_, const std::string &
         structure.push_back(item.underlying_type);
     }
     for (size_t partition_id = 0; partition_id < partitions_count_; ++partition_id)
-        partitions.emplace_back(std::make_unique<CachePartition>(structure, path_, partition_id, partition_max_size));
+        partitions.emplace_back(std::make_unique<CachePartition>(AttributeUnderlyingType::utUInt64, structure, path_, partition_id, partition_max_size));
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
@@ -284,8 +285,9 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
             while (const auto block = stream->read())
             {
-                const auto new_attributes = createAttributesFromBlock(block);
-                const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_attributes.front().values);
+                const auto new_keys = createAttributesFromBlock(block, 0, 1).front();
+                const auto new_attributes = createAttributesFromBlock(block, 1);
+                const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
@@ -295,7 +297,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                 }
 
                 /// TODO: Add TTL to block
-                partitions[0]->appendBlock(new_attributes);
+                partitions[0]->appendBlock(new_keys, new_attributes);
             }
 
             stream->readSuffix();
@@ -320,6 +322,9 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     size_t not_found_num = 0, found_num = 0;
 
     /// Check which ids have not been found and require setting null_value
+    CachePartition::Attribute new_keys;
+    new_keys.type = AttributeUnderlyingType::utUInt64;
+    new_keys.values = std::vector<UInt64>();
     CachePartition::Attributes new_attributes;
     {
         /// TODO: create attributes from structure
@@ -377,6 +382,9 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
         /// TODO: Add TTL
 
+        // Set key
+        std::get<std::vector<UInt64>>(new_keys.values).push_back(id);
+
         /// Set null_value for each attribute
         const auto & attributes = dictionary.getAttributes();
         for (size_t i = 0; i < attributes.size(); ++i)
@@ -419,20 +427,23 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         /// inform caller that the cell has not been found
         on_id_not_found(id);
     }
-    partitions[0]->appendBlock(new_attributes);
+    partitions[0]->appendBlock(new_keys, new_attributes);
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
-CachePartition::Attributes CacheStorage::createAttributesFromBlock(const Block & block)
+CachePartition::Attributes CacheStorage::createAttributesFromBlock(const Block & block, const size_t begin, size_t end)
 {
     CachePartition::Attributes attributes;
 
     const auto & structure = dictionary.getAttributes();
+    if (end == static_cast<decltype(end)>(-1))
+        end = structure.size();
+
     const auto columns = block.getColumns();
-    for (size_t i = 0; i < structure.size(); ++i)
+    for (size_t i = begin; i < end; ++i)
     {
         const auto & column = columns[i];
         switch (structure[i].type)
@@ -504,11 +515,12 @@ SSDCacheDictionary::SSDCacheDictionary(
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(attributes[index].null_value); \
         getItemsNumberImpl<TYPE, TYPE>( \
-                attribute_name, \
+                index, \
                 ids, \
                 out, \
                 [&](const size_t) { return null_value; }); \
     }
+
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -535,7 +547,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
-            attribute_name, \
+            index, \
             ids, \
             out, \
             [&](const size_t row) { return def[row]; }); \
@@ -565,9 +577,8 @@ SSDCacheDictionary::SSDCacheDictionary(
     { \
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-\
         getItemsNumberImpl<TYPE, TYPE>( \
-            attribute_name, \
+            index, \
             ids, \
             out, \
             [&](const size_t) { return def; }); \
@@ -590,17 +601,15 @@ SSDCacheDictionary::SSDCacheDictionary(
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void SSDCacheDictionary::getItemsNumberImpl(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+        const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
-    const auto attribute_index = getAttributeIndex(attribute_name);
-
     std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.getValue<OutputType>(attribute_name, ids, out, not_found_ids);
+    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids);
     if (not_found_ids.empty())
         return;
 
     std::vector<Key> required_ids(not_found_ids.size());
-    std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](auto & pair) { return pair.first; });
+    std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
 
     storage.update(
             source_ptr,
@@ -609,7 +618,7 @@ void SSDCacheDictionary::getItemsNumberImpl(
                 for (const size_t out_row : not_found_ids[id])
                     out[out_row] = std::get<std::vector<OutputType>>(new_attributes[attribute_index].values)[row];
             },
-            [&](const auto id)
+            [&](const size_t id)
             {
                 for (const size_t row : not_found_ids[id])
                     out[row] = get_default(row);
@@ -618,37 +627,37 @@ void SSDCacheDictionary::getItemsNumberImpl(
 
 void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto index = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, attributes[index].type, AttributeUnderlyingType::utString);
 
-    const auto null_value = StringRef{std::get<String>(attribute.null_value)};
+    const auto null_value = StringRef{std::get<String>(attributes[index].null_value)};
 
-    getItemsString(attribute_name, ids, out, [&](const size_t) { return null_value; });
+    getItemsString(index, ids, out, [&](const size_t) { return null_value; });
 }
 
 void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto index = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, attributes[index].type, AttributeUnderlyingType::utString);
 
-    getItemsString(attribute_name, ids, out, [&](const size_t row) { return def->getDataAt(row); });
+    getItemsString(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
 
 void SSDCacheDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
-    auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto index = getAttributeIndex(attribute_name);
+    checkAttributeType(name, attribute_name, attributes[index].type, AttributeUnderlyingType::utString);
 
-    getItemsString(attribute_name, ids, out, [&](const size_t) { return StringRef{def}; });
+    getItemsString(index, ids, out, [&](const size_t) { return StringRef{def}; });
 }
 
 template <typename DefaultGetter>
-void SSDCacheDictionary::getItemsString(const std::string & attribute_name, const PaddedPODArray<Key> & ids,
+void SSDCacheDictionary::getItemsString(const size_t attribute_index, const PaddedPODArray<Key> & ids,
         ColumnString * out, DefaultGetter && get_default) const
 {
-    UNUSED(attribute_name);
+    UNUSED(attribute_index);
     UNUSED(ids);
     UNUSED(out);
     UNUSED(get_default);
@@ -727,7 +736,7 @@ case AttributeUnderlyingType::ut##TYPE: \
 
 void SSDCacheDictionary::createAttributes()
 {
-    attributes.resize(dict_struct.attributes.size());
+    attributes.reserve(dict_struct.attributes.size());
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
     {
         const auto & attribute = dict_struct.attributes[i];
@@ -739,6 +748,38 @@ void SSDCacheDictionary::createAttributes()
             throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
                             ErrorCodes::TYPE_MISMATCH};
     }
+}
+
+void registerDictionarySSDCache(DictionaryFactory & factory)
+{
+    auto create_layout = [=](const std::string & name,
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
+        if (dict_struct.key)
+            throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
+
+        if (dict_struct.range_min || dict_struct.range_max)
+            throw Exception{name
+                            + ": elements .structure.range_min and .structure.range_max should be defined only "
+                              "for a dictionary of layout 'range_hashed'",
+                            ErrorCodes::BAD_ARGUMENTS};
+        const auto & layout_prefix = config_prefix + ".layout";
+        const auto max_partition_size = config.getInt(layout_prefix + ".ssd.max_partition_size");
+        if (max_partition_size == 0)
+            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+        const auto path = config.getString(layout_prefix + ".ssd.path");
+        if (path.empty())
+            throw Exception{name + ": dictionary of layout 'cache' cannot have empty path",
+                            ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
+        return std::make_unique<SSDCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, path, max_partition_size);
+    };
+    factory.registerLayout("ssd", create_layout, false);
 }
 
 }

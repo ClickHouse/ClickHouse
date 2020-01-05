@@ -14,6 +14,7 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Poco/LogStream.h>
 
 namespace DB
 {
@@ -95,13 +96,22 @@ void buildLayoutConfiguration(
     root->appendChild(layout_element);
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-    if (layout->parameter.has_value())
+    for (const auto & param : layout->parameters)
     {
-        const auto & param = layout->parameter;
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param->first));
-        const ASTLiteral & literal = param->second->as<const ASTLiteral &>();
-        AutoPtr<Text> value(doc->createTextNode(toString(literal.value.get<UInt64>())));
-        layout_type_parameter_element->appendChild(value);
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param.first));
+        const ASTLiteral & literal = param.second->as<const ASTLiteral &>();
+        Field::dispatch([&](auto & value)
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, UInt64> || std::is_same_v<std::decay_t<decltype(value)>, String>)
+            {
+                AutoPtr<Text> value_to_append(doc->createTextNode(toString(value)));
+                layout_type_parameter_element->appendChild(value_to_append);
+            }
+            else
+            {
+                throw DB::Exception{"Wrong type of layout argument.", ErrorCodes::BAD_ARGUMENTS};
+            }
+        }, literal.value);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
 }
@@ -458,6 +468,10 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
 
     conf->load(xml_document);
+
+    std::ostringstream ss;
+    conf->save(ss);
+    Poco::Logger::get("xml config:").information(ss.str());
     return conf;
 }
 
