@@ -108,12 +108,13 @@ void checkCreationIsAllowed(Context & context_global, const std::string & db_dir
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    if (!startsWith(table_path, db_dir_path))
-        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+    /// "/dev/null" is allowed for perf testing
+    if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
+        throw Exception("File path is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
     if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
-        throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
 
