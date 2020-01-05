@@ -291,7 +291,7 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 1);
+            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
         }
         else
         {
@@ -299,7 +299,7 @@ public:
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-                compression_method, 1);
+                compression_method, 3);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);

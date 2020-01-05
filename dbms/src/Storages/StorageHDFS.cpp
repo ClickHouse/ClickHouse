@@ -112,7 +112,7 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 1);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri), compression_method, 3);
         writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
     }
 

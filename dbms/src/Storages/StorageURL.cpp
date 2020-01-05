@@ -120,7 +120,7 @@ namespace
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
-                compression_method, 1);
+                compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
