@@ -118,20 +118,28 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
             response_body_ostr = &(response.send());
 #endif
 
-            out = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
-                compress ? compression_method : CompressionMethod::None,
-                compression_level,
-                working_buffer.size(),
-                working_buffer.begin());
+            /// We reuse our buffer in "out" to avoid extra allocations and copies.
+
+            if (compress)
+                out = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
+                    compress ? compression_method : CompressionMethod::None,
+                    compression_level,
+                    working_buffer.size(),
+                    working_buffer.begin());
+            else
+                out = std::make_unique<WriteBufferFromOStream>(
+                    *response_body_ostr,
+                    working_buffer.size(),
+                    working_buffer.begin());
         }
 
         finishSendHeaders();
-
     }
 
     if (out)
     {
+        out->buffer() = buffer();
         out->position() = position();
         out->next();
     }
