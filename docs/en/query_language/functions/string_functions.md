@@ -222,17 +222,7 @@ Result:
 Removes all specified characters from the start or end of a string.
 By default removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string.
 
-**Syntax** 
-
-```sql
-trim(input_string)
-```
-
-**Parameters** 
-
-- `input_string` — string to trim. [String](../../data_types/string.md).
-
-**Supported alternative SQL syntax** 
+**Syntax**
 
 ```sql
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
