@@ -369,6 +369,8 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
 
 void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
 {
+    /// NOTE: It will throw exception if the file is not created yet.
+
     if (paths.size() != 1)
         throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
