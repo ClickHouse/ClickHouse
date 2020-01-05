@@ -115,7 +115,7 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
 
     //if (bytes >= buffer_size)
     {
-        flush();
+        //flush();
     }
 }
 
@@ -227,9 +227,11 @@ void CachePartition::getValue(size_t attribute_index, const PaddedPODArray<UInt6
               ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
 {
     UNUSED(attribute_index);
-    UNUSED(ids);
     UNUSED(out);
-    UNUSED(not_found);
+    for (size_t i = 0; i < ids.size(); ++i)
+    {
+        not_found[ids[i]].push_back(i);
+    }
 }
 
 void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const
@@ -285,8 +287,9 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
             while (const auto block = stream->read())
             {
-                const auto new_keys = createAttributesFromBlock(block, 0, 1).front();
-                const auto new_attributes = createAttributesFromBlock(block, 1);
+                const auto new_keys = createAttributesFromBlock(block, { AttributeUnderlyingType::utUInt64 }).front();
+                const auto new_attributes = createAttributesFromBlock(
+                        block, ext::map<std::vector>(dictionary.getAttributes(), [](const auto & attribute) { return attribute.type; }));
                 const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
 
                 for (const auto i : ext::range(0, ids.size()))
@@ -434,19 +437,16 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
-CachePartition::Attributes CacheStorage::createAttributesFromBlock(const Block & block, const size_t begin, size_t end)
+CachePartition::Attributes CacheStorage::createAttributesFromBlock(
+        const Block & block, const std::vector<AttributeUnderlyingType> & structure)
 {
     CachePartition::Attributes attributes;
 
-    const auto & structure = dictionary.getAttributes();
-    if (end == static_cast<decltype(end)>(-1))
-        end = structure.size();
-
     const auto columns = block.getColumns();
-    for (size_t i = begin; i < end; ++i)
+    for (size_t i = 0; i < structure.size(); ++i)
     {
         const auto & column = columns[i];
-        switch (structure[i].type)
+        switch (structure[i])
         {
 #define DISPATCH(TYPE) \
         case AttributeUnderlyingType::ut##TYPE: \
@@ -455,7 +455,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(const Block &
                 const auto raw_data = column->getRawData(); \
                 memcpy(values.data(), raw_data.data, raw_data.size); \
                 attributes.emplace_back(); \
-                attributes.back().type = structure[i].type; \
+                attributes.back().type = structure[i]; \
                 attributes.back().values = std::move(values); \
             } \
             break;
@@ -615,6 +615,7 @@ void SSDCacheDictionary::getItemsNumberImpl(
             source_ptr,
             required_ids,
             [&](const auto id, const auto row, const auto & new_attributes) {
+                Poco::Logger::get("update:").information(std::to_string(id) + " " + std::to_string(row));
                 for (const size_t out_row : not_found_ids[id])
                     out[out_row] = std::get<std::vector<OutputType>>(new_attributes[attribute_index].values)[row];
             },

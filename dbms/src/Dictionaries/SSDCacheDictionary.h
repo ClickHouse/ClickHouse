@@ -156,7 +156,8 @@ public:
     const std::string & getPath() const { return path; }
 
 private:
-    CachePartition::Attributes createAttributesFromBlock(const Block & block, const size_t begin = 0, size_t end = -1);
+    CachePartition::Attributes createAttributesFromBlock(
+            const Block & block, const std::vector<AttributeUnderlyingType> & structure);
 
     SSDCacheDictionary & dictionary;
 
