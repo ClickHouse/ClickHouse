@@ -207,7 +207,7 @@ trim(input_string)
 **Поддерживается альтернативный SQL синтаксис** 
 
 ```sql
-trim(TRIM([[LEADING|TRAILING|BOTH] trim_character FROM] input_string))
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
 **Параметры**
