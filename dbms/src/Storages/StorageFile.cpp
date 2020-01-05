@@ -269,7 +269,7 @@ BlockInputStreams StorageFile::read(
     for (const auto & file_path : paths)
     {
         BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+            std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return narrowBlockInputStreams(blocks_input, num_streams);
