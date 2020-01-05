@@ -302,14 +302,16 @@ void HTTPHandler::processQuery(
 
     if (!http_response_compression_methods.empty())
     {
+        /// If client supports brotli - it's preferred.
         /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
         /// NOTE parsing of the list of methods is slightly incorrect.
-        if (std::string::npos != http_response_compression_methods.find("gzip"))
+
+        if (http_response_compression_methods == "br")
+            http_response_compression_method = CompressionMethod::Brotli;
+        else if (std::string::npos != http_response_compression_methods.find("gzip"))
             http_response_compression_method = CompressionMethod::Gzip;
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             http_response_compression_method = CompressionMethod::Zlib;
-        else if (http_response_compression_methods == "br")
-            http_response_compression_method = CompressionMethod::Brotli;
     }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
