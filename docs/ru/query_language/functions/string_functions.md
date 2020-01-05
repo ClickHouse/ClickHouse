@@ -189,6 +189,53 @@ SELECT startsWith('Hello, world!', 'He');
 └───────────────────────────────────┘
 ```
 
+## trim {#trim}
+
+Удаляет все указанные символы с начала или окончания строки.
+
+**Синтаксис** 
+
+```sql
+trim(input_string)
+```
+
+**Параметры**
+
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+
+**Поддерживается альтернативный SQL синтаксис** 
+
+```sql
+trim(TRIM([[LEADING|TRAILING|BOTH] trim_character FROM ] input_string))
+```
+
+**Параметры**
+
+- `trim_character` — один или несколько символов, подлежащие удалению. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+
+**Возвращаемое значение**
+
+Исходную строку без общих пробельных символов слева.
+
+Тип: `String`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+```
+
+Ответ:
+
+```text
+┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
+│ Hello, world!                                 │
+└───────────────────────────────────────────────┘
+```
+
 ## trimLeft {#trimleft}
 
 Удаляет все последовательные вхождения обычных пробелов (32 символ ASCII) с левого конца строки. Не удаляет другие виды пробелов (табуляция, пробел без разрыва и т. д.).
@@ -196,14 +243,14 @@ SELECT startsWith('Hello, world!', 'He');
 **Синтаксис** 
 
 ```sql
-trimLeft()
+trimLeft(input_string)
 ```
 
-Алиас: `ltrim`.
+Алиас: `ltrim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -234,14 +281,14 @@ SELECT trimLeft('     Hello, world!     ')
 **Синтаксис** 
 
 ```sql
-trimRight()
+trimRight(input_string)
 ```
 
-Алиас: `rtrim`.
+Алиас: `rtrim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -272,14 +319,14 @@ SELECT trimRight('     Hello, world!     ')
 **Синтаксис** 
 
 ```sql
-trimBoth()
+trimBoth(input_string)
 ```
 
-Алиас: `trim`.
+Алиас: `trim(input_string)`.
 
 **Параметры**
 
-- `string` — строка для обрезки. [String](../../data_types/string.md).
+- `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
