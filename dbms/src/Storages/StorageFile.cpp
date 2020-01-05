@@ -23,6 +23,8 @@
 #include <Common/parseGlobs.h>
 
 #include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -39,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -362,6 +365,25 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     paths[0] = std::move(path_new);
     table_name = new_table_name;
     database_name = new_database_name;
+}
+
+void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+{
+    if (paths.size() != 1)
+        throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
+    if (use_table_fd)
+    {
+        if (0 != ::ftruncate(table_fd, 0))
+            throwFromErrno("Cannot truncate file at fd " + toString(table_fd), ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
+    else
+    {
+        if (0 != ::truncate(paths[0].c_str(), 0))
+            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
 }
 
 
