@@ -235,7 +235,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Returned value**
 
-A string without specified characters.
+A string without leading and (or) trailing specified characters.
 
 Type: `String`.
 
