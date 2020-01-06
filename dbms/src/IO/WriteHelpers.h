@@ -132,7 +132,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// Ryu library cannot automatically decide between plain and exponential representation.
         /// We have to do it by ourself.
 
-        uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111111110000) >> 4;
+        uint16_t exponent = (unalignedLoad<uint64_t>(&x) & 0b0111111111110000000000000000000000000000000000000000000000000000ul) >> 52;
         if (exponent >= 0x3FF - 10 && exponent <= 0x3FF + 64)
         {
             result = d2fixed_buffered_n(x, 16, buffer);
@@ -170,7 +170,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
     else
     {
-        uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111110000000) >> 7;
+        uint16_t exponent = (unalignedLoad<uint32_t>(&x) & 0b01111111100000000000000000000000u) >> 23;
         if (exponent >= 0x7F - 10 && exponent <= 0x7F + 64)
         {
             result = d2fixed_buffered_n(x, 8, buffer);
