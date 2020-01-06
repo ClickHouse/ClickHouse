@@ -120,11 +120,86 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
+    if (x == 0)
+    {
+        buffer[0] = '0';
+        return 1;
+    }
+
     int result = 0;
     if constexpr (std::is_same_v<T, double>)
-        result = d2s_buffered_n(x, buffer);
+    {
+        /// Ryu library cannot automatically decide between plain and exponential representation.
+        /// We have to do it by ourself.
+
+        uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111111110000) >> 4;
+        if (exponent >= 0x3F - 10 && exponent <= 0x3F + 64)
+        {
+            result = d2fixed_buffered_n(x, 16, buffer);
+        }
+        else if (unlikely(exponent == 0xFFF))
+        {
+            /// Ryu library prints inf/nans in slightly different way (as Infinity and NaN).
+            /// This is technically Ok and we can parse these representation back,
+            ///  but to maintain compatibility and save space, better to write as inf and nan.
+
+            uint64_t mantissa = unalignedLoad<uint64_t>(&x) & 0b0000000000001111111111111111111111111111111111111111111111111111ul;
+            if (mantissa == 0)
+            {
+                if (x > 0)
+                {
+                    memcpy(buffer, "inf", 3);
+                    return 3;
+                }
+                else
+                {
+                    memcpy(buffer, "-inf", 4);
+                    return 4;
+                }
+            }
+            else
+            {
+                memcpy(buffer, "nan", 3);
+                return 3;
+            }
+        }
+        else
+        {
+            result = d2s_buffered_n(x, buffer);
+        }
+    }
     else
-        result = f2s_buffered_n(x, buffer);
+    {
+        uint16_t exponent = (unalignedLoad<uint16_t>(x) & 0b0111111110000000) >> 7;
+        if (exponent >= 0x3F - 10 && exponent <= 0x3F + 64)
+        {
+            result = f2fixed_buffered_n(x, 8, buffer);
+        }
+        else if (unlikely(exponent == 0xFF))
+        {
+            uint64_t mantissa = unalignedLoad<uint32_t>(x) & 0b00000000011111111111111111111111u;
+            if (mantissa == 0)
+            {
+                if (x > 0)
+                {
+                    memcpy(buffer, "inf", 3);
+                    return 3;
+                }
+                else
+                {
+                    memcpy(buffer, "-inf", 4);
+                    return 4;
+                }
+            }
+            else
+            {
+                memcpy(buffer, "nan", 3);
+                return 3;
+            }
+        }
+        else
+            result = f2s_buffered_n(x, buffer);
+    }
 
     if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
