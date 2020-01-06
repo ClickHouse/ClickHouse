@@ -68,12 +68,13 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
 
 static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTIdentifier *> & identifiers)
 {
-    for (auto & children : predicate->children)
+    /// skip WHERE x in (SELECT ...) AND arrayMap(x -> x, [column_a])
+    const auto & function = predicate->as<ASTFunction>();
+    if (!predicate->as<ASTSubquery>() && !(function && function->name == "lambda"))
     {
-        if (!children->as<ASTSubquery>())   /// skip where x in (SELECT ...)
+        for (auto & children : predicate->children)
             cleanAliasAndCollectIdentifiers(children, identifiers);
     }
-
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
         predicate->setAlias("");
@@ -102,10 +103,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
             if (outer_column_iterator != outer_columns.end())
-            {
-                /// Some temporary identifiers may be included in the predicate, for example: WHERE arrayMap(x -> x, [column_a]) = [column_a]
                 identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
-            }
         }
 
         /// We only need to push all the predicates to subquery having
