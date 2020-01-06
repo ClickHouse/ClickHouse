@@ -6,8 +6,8 @@ SET enable_optimize_predicate_expression = 1;
 ANALYZE SELECT count() FROM (SELECT a, runningDifference(a) rd FROM (   SELECT * FROM ( SELECT 1 a UNION ALL SELECT 2 a ) ORDER BY a DESC ) WHERE rd=-1 );
 SELECT count() FROM (SELECT a, runningDifference(a) rd FROM (   SELECT * FROM ( SELECT 1 a UNION ALL SELECT 2 a ) ORDER BY a DESC ) WHERE rd=-1 );
 
-ANALYZE SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(xxHash32(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
-SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(xxHash32(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
+ANALYZE SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(cityHash64(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
+SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(cityHash64(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/5682
 ANALYZE SELECT co,co2,co3,num FROM ( SELECT co,co2,co3,count() AS num FROM ( SELECT 1 AS co,2 AS co2 ,3 AS co3 ) GROUP BY cube (co,co2,co3) ) WHERE co!=0 AND co2 !=2;
