@@ -529,7 +529,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -568,7 +568,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 void registerDataTypeNested(DataTypeFactory & factory)
 {
     /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
+    factory.registerDataType("Nested", [&factory](const String & /*type_name*/, const ASTPtr & arguments)
     {
         return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
     });

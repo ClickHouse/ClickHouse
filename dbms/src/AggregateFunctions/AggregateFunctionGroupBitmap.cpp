@@ -2,6 +2,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "registerAggregateFunctions.h"
 
 // TODO include this last because of a broken roaring header. See the comment
 // inside.

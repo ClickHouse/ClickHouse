@@ -16,6 +16,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
@@ -1410,6 +1411,42 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
     function->elements = expr_list_args;
     function->children.push_back(function->elements);
     node = function;
+
+    return true;
+}
+
+bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_to_disk("TO DISK");
+    ParserKeyword s_to_volume("TO VOLUME");
+    ParserKeyword s_delete("DELETE");
+    ParserStringLiteral parser_string_literal;
+    ParserExpression parser_exp;
+
+    ASTPtr expr_elem;
+    if (!parser_exp.parse(pos, expr_elem, expected))
+        return false;
+
+    PartDestinationType destination_type = PartDestinationType::DELETE;
+    String destination_name;
+    if (s_to_disk.ignore(pos))
+        destination_type = PartDestinationType::DISK;
+    else if (s_to_volume.ignore(pos))
+        destination_type = PartDestinationType::VOLUME;
+    else
+        s_delete.ignore(pos);
+
+    if (destination_type == PartDestinationType::DISK || destination_type == PartDestinationType::VOLUME)
+    {
+        ASTPtr ast_space_name;
+        if (!parser_string_literal.parse(pos, ast_space_name, expected))
+            return false;
+
+        destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
+    }
+
+    node = std::make_shared<ASTTTLElement>(destination_type, destination_name);
+    node->children.push_back(expr_elem);
 
     return true;
 }

@@ -45,6 +45,9 @@ def build_for_lang(lang, args):
     os.environ['SINGLE_PAGE'] = '0'
 
     config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
+    if args.is_stable_release and not os.path.exists(config_path):
+        logging.warn('Skipping %s docs, because %s does not exist' % (lang, config_path))
+        return
 
     try:
         theme_cfg = {
@@ -249,6 +252,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
     arg_parser.add_argument('--version-prefix', type=str, default='')
+    arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
@@ -260,8 +264,6 @@ if __name__ == '__main__':
     
     from github import choose_latest_releases
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
-    
-    
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

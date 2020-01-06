@@ -80,8 +80,15 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_)
-    : storage(storage_), pool{pool_}, path{storage.path + name_ + '/'}
+    StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
+    /// It's important to initialize members before `thread` to avoid race.
+    : storage(storage_)
+    , pool(std::move(pool_))
+    , name(std::move(name_))
+    , path{storage.path + name + '/'}
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
@@ -89,10 +96,6 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
 {
-    const Settings & settings = storage.global_context.getSettingsRef();
-    should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
-    min_batched_block_size_rows = settings.min_insert_block_size_rows;
-    min_batched_block_size_bytes = settings.min_insert_block_size_bytes;
 }
 
 
@@ -266,7 +269,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         Settings insert_settings;
         std::string insert_query;
-        readQueryAndSettings(in, insert_settings, insert_query);
+        readHeader(in, insert_settings, insert_query);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
 
@@ -285,30 +288,28 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
-void StorageDistributedDirectoryMonitor::readQueryAndSettings(
+void StorageDistributedDirectoryMonitor::readHeader(
     ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_EXTRA_INFO)
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
     {
+        /// Read the header as a string.
+        String header;
+        readStringBinary(header, in);
+
+        /// Check the checksum of the header.
+        CityHash_v1_0_2::uint128 checksum;
+        readPODBinary(checksum, in);
+        assertChecksum(checksum, CityHash_v1_0_2::CityHash128(header.data(), header.size()));
+
+        /// Read the parts of the header.
+        ReadBufferFromString header_buf(header);
+
         UInt64 initiator_revision;
-        CityHash_v1_0_2::uint128 expected;
-        CityHash_v1_0_2::uint128 calculated;
-
-        /// Read extra information.
-        String extra_info_as_string;
-        readStringBinary(extra_info_as_string, in);
-        /// To avoid out-of-bound, other cases will be checked in read*() helpers.
-        if (extra_info_as_string.size() < sizeof(expected))
-            throw Exception("Not enough data", ErrorCodes::CORRUPTED_DATA);
-
-        StringRef extra_info_ref(extra_info_as_string.data(), extra_info_as_string.size() - sizeof(expected));
-        ReadBufferFromMemory extra_info(extra_info_ref.data, extra_info_ref.size);
-        ReadBuffer checksum(extra_info_as_string.data(), sizeof(expected), extra_info_ref.size);
-
-        readVarUInt(initiator_revision, extra_info);
+        readVarUInt(initiator_revision, header_buf);
         if (ClickHouseRevision::get() < initiator_revision)
         {
             LOG_WARNING(
@@ -317,32 +318,21 @@ void StorageDistributedDirectoryMonitor::readQueryAndSettings(
                     << "It may lack support for new features.");
         }
 
-        /// Extra checksum (all data except itself -- this checksum)
-        readPODBinary(expected, checksum);
-        calculated = CityHash_v1_0_2::CityHash128(extra_info_ref.data, extra_info_ref.size);
-        assertChecksum(expected, calculated);
-
-        insert_settings.deserialize(extra_info);
-
-        /// Read query
-        readStringBinary(insert_query, in);
-
-        /// Query checksum
-        readPODBinary(expected, extra_info);
-        calculated = CityHash_v1_0_2::CityHash128(insert_query.data(), insert_query.size());
-        assertChecksum(expected, calculated);
+        readStringBinary(insert_query, header_buf);
+        insert_settings.deserialize(header_buf);
 
         /// Add handling new data here, for example:
         /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
-        ///    readVarUInt(my_new_data, extra_info);
+        ///    readVarUInt(my_new_data, header_buf);
 
         return;
     }
 
-    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_SETTINGS_OLD_FORMAT)
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
     {
         insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
-        readVarUInt(query_size, in);
+        readStringBinary(insert_query, in);
+        return;
     }
 
     insert_query.resize(query_size);
@@ -459,7 +449,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                parent.readQueryAndSettings(in, insert_settings, insert_query);
+                parent.readHeader(in, insert_settings, insert_query);
 
                 if (first)
                 {
@@ -567,7 +557,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readQueryAndSettings(in, insert_settings, insert_query);
+            readHeader(in, insert_settings, insert_query);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -653,6 +643,13 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
     return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
+}
+
+void StorageDistributedDirectoryMonitor::updatePath()
+{
+    std::lock_guard lock{mutex};
+    path = storage.path + name + '/';
+    current_batch_file_path = path + "current_batch.txt";
 }
 
 }

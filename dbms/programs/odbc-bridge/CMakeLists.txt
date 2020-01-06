@@ -30,11 +30,6 @@ if (Poco_Data_FOUND)
     set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_Data_LIBRARY})
     set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
 endif ()
-if (USE_JEMALLOC)
-    # We need to link jemalloc directly to odbc-bridge-library, because in other case
-    # we will build it with default malloc.
-    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${JEMALLOC_LIBRARIES})
-endif()
 
 clickhouse_program_add_library(odbc-bridge)
 

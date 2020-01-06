@@ -64,8 +64,6 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    void checkSettingCanBeChanged(const String & setting_name) const override;
-
 protected:
     StorageKafka(
         const std::string & table_name_,
@@ -82,6 +80,7 @@ private:
     String table_name;
     String database_name;
     Context global_context;
+    Context kafka_context;
     Names topics;
     const String brokers;
     const String group;

@@ -271,7 +271,6 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
     factory.registerInputFormatProcessor("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
@@ -279,7 +278,7 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
     });
 }
 
-bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     skipWhitespaceIfAny(in);
 

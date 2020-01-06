@@ -16,7 +16,7 @@ class Context;
 class ParquetBlockInputFormat: public IInputFormat
 {
 public:
-    ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
+    ParquetBlockInputFormat(ReadBuffer & in_, Block header_);
 
     void resetParser() override;
 
@@ -29,8 +29,6 @@ protected:
 private:
 
     // TODO: check that this class implements every part of its parent
-
-    const Context & context;
 
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
     std::string file_data;
