@@ -24,3 +24,5 @@ SELECT \n    ts AS `--a.ts`, \n    id AS `--a.id`, \n    id_b AS `--a.id_b`, \n 
 4	0
 2	3
 4	5
+SELECT dummy\nFROM \n(\n    SELECT dummy\n    FROM system.one\n    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]\n)\nWHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+0

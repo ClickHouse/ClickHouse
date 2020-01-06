@@ -101,10 +101,11 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
             const auto & column_name = identifiers[index]->shortName();
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
-            if (outer_column_iterator == outer_columns.end())
-                throw Exception("LOGICAL ERROR: the column " + column_name + " does not exists.", ErrorCodes::LOGICAL_ERROR);
-
-            identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
+            if (outer_column_iterator != outer_columns.end())
+            {
+                /// Some temporary identifiers may be included in the predicate, for example: WHERE arrayMap(x -> x, [column_a]) = [column_a]
+                identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
+            }
         }
 
         /// We only need to push all the predicates to subquery having

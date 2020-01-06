@@ -26,7 +26,7 @@ struct ExpressionInfoMatcher
 
     static void visit(const ASTPtr & ast, Data & data);
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &);
 
     static void visit(const ASTFunction & ast_function, const ASTPtr &, Data & data);
 

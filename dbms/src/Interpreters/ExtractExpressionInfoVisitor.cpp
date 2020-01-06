@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Parsers/ASTSubquery.h>
 
 
 namespace DB
@@ -53,6 +54,11 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
         if (IdentifierSemantic::chooseTable(identifier, data.tables, best_table_pos))
             data.unique_reference_tables_pos.emplace(best_table_pos);
     }
+}
+
+bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
+{
+    return !node->as<ASTSubquery>();
 }
 
 bool hasStatefulFunction(const ASTPtr & node, const Context & context)
