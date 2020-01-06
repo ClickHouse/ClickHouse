@@ -27,7 +27,10 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <ryu/ryu.h>
+
 #include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
@@ -115,20 +118,17 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    using Converter = DoubleConverter<false>;
-    double_conversion::StringBuilder builder{buffer, len};
-
-    bool result = false;
+    int result = 0;
     if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
+        result = d2s_buffered_n(x, buffer);
     else
-        result = Converter::instance().ToShortestSingle(x, &builder);
+        result = f2s_buffered_n(x, buffer);
 
-    if (!result)
+    if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-    return builder.position();
+    return result;
 }
 
 template <typename T>
@@ -139,23 +139,13 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        buf.position() += writeFloatTextFastPath(x, buf.position());
         return;
     }
 
     Converter::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    bool result = false;
-    if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
-    buf.write(buffer, builder.position());
+    size_t result = writeFloatTextFastPath(x, buffer);
+    buf.write(buffer, result);
 }
 
 
