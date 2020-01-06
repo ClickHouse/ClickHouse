@@ -774,7 +774,7 @@ std::unique_ptr<Exception> Connection::receiveException()
 {
     //LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
-    return std::make_unique<Exception>{ readException(*in, "Received from " + getDescription()) };
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 
