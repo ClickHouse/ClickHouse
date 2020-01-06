@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -68,7 +69,11 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
 static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTIdentifier *> & identifiers)
 {
     for (auto & children : predicate->children)
-        cleanAliasAndCollectIdentifiers(children, identifiers);
+    {
+        if (!children->as<ASTSubquery>())   /// skip where x in (SELECT ...)
+            cleanAliasAndCollectIdentifiers(children, identifiers);
+    }
+
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
         predicate->setAlias("");
