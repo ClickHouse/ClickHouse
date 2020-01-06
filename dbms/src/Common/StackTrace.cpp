@@ -227,7 +227,7 @@ void StackTrace::tryCapture()
     size = 0;
 #if USE_UNWIND
     size = unw_backtrace(frames.data(), capacity);
-    __msan_unpoison(frames, size * sizeof(*frames));
+    __msan_unpoison(frames.data(), size * sizeof(frames[0]));
 #endif
 }
 
