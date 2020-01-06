@@ -18,6 +18,11 @@ ANALYZE SELECT alias AS name FROM ( SELECT name AS alias FROM system.settings ) 
 SELECT alias AS name FROM ( SELECT name AS alias FROM system.settings ) ANY INNER JOIN ( SELECT name FROM system.settings ) USING (name) WHERE name = 'enable_optimize_predicate_expression';
 
 -- https://github.com/ClickHouse/ClickHouse/issues/6767
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS view1;
+
 CREATE TABLE t1 (id UInt32, value1 String ) ENGINE ReplacingMergeTree() ORDER BY id;
 CREATE TABLE t2 (id UInt32, value2 String ) ENGINE ReplacingMergeTree() ORDER BY id;
 CREATE TABLE t3 (id UInt32, value3 String ) ENGINE ReplacingMergeTree() ORDER BY id;
@@ -29,6 +34,11 @@ INSERT INTO t3 (id, value3) VALUES (1, 'val31');
 CREATE VIEW IF NOT EXISTS view1 AS SELECT t1.id AS id, t1.value1 AS value1, t2.value2 AS value2, t3.value3 AS value3 FROM t1 LEFT JOIN t2 ON t1.id = t2.id LEFT JOIN t3 ON t1.id = t3.id WHERE t1.id > 0;
 SELECT * FROM view1 WHERE id = 1;
 
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS view1;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/7136
 ANALYZE SELECT ccc FROM ( SELECT 1 AS ccc UNION ALL SELECT * FROM ( SELECT 2 AS ccc ) ANY INNER JOIN ( SELECT 2 AS ccc ) USING (ccc) ) WHERE ccc > 1;
 SELECT ccc FROM ( SELECT 1 AS ccc UNION ALL SELECT * FROM ( SELECT 2 AS ccc ) ANY INNER JOIN ( SELECT 2 AS ccc ) USING (ccc) ) WHERE ccc > 1;
@@ -36,10 +46,29 @@ SELECT ccc FROM ( SELECT 1 AS ccc UNION ALL SELECT * FROM ( SELECT 2 AS ccc ) AN
 -- https://github.com/ClickHouse/ClickHouse/issues/5674
 -- https://github.com/ClickHouse/ClickHouse/issues/4731
 -- https://github.com/ClickHouse/ClickHouse/issues/4904
+DROP TABLE IF EXISTS A;
+DROP TABLE IF EXISTS B;
+
 CREATE TABLE A (ts DateTime, id String, id_b String) ENGINE = MergeTree PARTITION BY toStartOfHour(ts) ORDER BY (ts,id);
 CREATE TABLE B (ts DateTime, id String, id_c String) ENGINE = MergeTree PARTITION BY toStartOfHour(ts) ORDER BY (ts,id);
 
 ANALYZE SELECT ts, id, id_b, b.ts, b.id, id_c FROM (SELECT ts, id, id_b FROM A) AS a ALL LEFT JOIN B AS b ON b.id = a.id_b WHERE a.ts <= toDateTime('1970-01-01 03:00:00');
 ANALYZE SELECT ts AS `--a.ts`, id AS `--a.id`, id_b AS `--a.id_b`, b.ts AS `--b.ts`, b.id AS `--b.id`, id_c AS `--b.id_c` FROM (SELECT ts, id, id_b FROM A) AS a ALL LEFT JOIN B AS b ON `--b.id` = `--a.id_b` WHERE `--a.ts` <= toDateTime('1970-01-01 03:00:00');
+
+DROP TABLE IF EXISTS A;
+DROP TABLE IF EXISTS B;
+
+-- https://github.com/ClickHouse/ClickHouse/issues/7802
+DROP TABLE IF EXISTS test;
+
+CREATE TABLE test ( A Int32, B Int32 ) ENGINE = Memory();
+
+INSERT INTO test VALUES(1, 2)(0, 3)(1, 4)(0, 5);
+
+SELECT B, neighbor(B, 1) AS next_B FROM (SELECT * FROM test ORDER BY B);
+SELECT B, neighbor(B, 1) AS next_B FROM (SELECT * FROM test ORDER BY B) WHERE A == 1;
+SELECT B, next_B FROM (SELECT A, B, neighbor(B, 1) AS next_B FROM (SELECT * FROM test ORDER BY B)) WHERE A == 1;
+
+DROP TABLE IF EXISTS test;
 
 
