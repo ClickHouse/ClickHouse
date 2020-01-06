@@ -223,7 +223,7 @@ private:
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
@@ -241,7 +241,7 @@ private:
     void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     /// Add ConvertingBlockInputStream to specified header.

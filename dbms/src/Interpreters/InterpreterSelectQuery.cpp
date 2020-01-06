@@ -969,7 +969,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     /// Now we will compose block streams that perform the necessary actions.
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
-    auto & expressions = analysis_result;
+    const auto & expressions = analysis_result;
 
     if (options.only_analyze)
     {
@@ -1020,9 +1020,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 pipeline.streams.push_back(prepared_input);
         }
 
-        if (from_stage == QueryProcessingStage::WithMergeableState &&
-            options.to_stage == QueryProcessingStage::WithMergeableState)
-            throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        // if (from_stage == QueryProcessingStage::WithMergeableState &&
+        //     options.to_stage == QueryProcessingStage::WithMergeableState)
+        //     throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -1044,7 +1044,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
         /// Do I need to immediately finalize the aggregate functions after the aggregation?
-        bool aggregate_final =
+        const bool aggregate_final =
             expressions.need_aggregate &&
             options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
@@ -2771,7 +2771,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 }
 
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
     if (query_info.input_sorting_info)
@@ -2787,7 +2787,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
         pipeline.firstStream(), subqueries_for_sets, *context);
 }
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_sorting_info)
     {
