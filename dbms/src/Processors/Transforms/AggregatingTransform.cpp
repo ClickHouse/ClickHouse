@@ -179,6 +179,7 @@ public:
             auto & out = source->getOutputs().front();
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
+            inputs.back().setNeeded();
         }
 
         return std::move(processors);
