@@ -1,6 +1,6 @@
 SELECT count()\nFROM \n(\n    SELECT \n        a, \n        runningDifference(a) AS rd\n    FROM \n    (\n        SELECT a\n        FROM \n        (\n            SELECT 1 AS a\n            UNION ALL\n            SELECT 2 AS a\n        )\n        ORDER BY a DESC\n    )\n    WHERE rd = -1\n)
 1
-SELECT \n    k, \n    v, \n    d, \n    i\nFROM \n(\n    SELECT \n        t.1 AS k, \n        t.2 AS v, \n        runningDifference(v) AS d, \n        runningDifference(xxHash32(t.1)) AS i\n    FROM \n    (\n        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t\n    )\n)\nWHERE i = 0
+SELECT \n    k, \n    v, \n    d, \n    i\nFROM \n(\n    SELECT \n        t.1 AS k, \n        t.2 AS v, \n        runningDifference(v) AS d, \n        runningDifference(cityHash64(t.1)) AS i\n    FROM \n    (\n        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t\n    )\n)\nWHERE i = 0
 a	1	0	0
 a	2	1	0
 a	3	1	0
