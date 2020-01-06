@@ -33,6 +33,8 @@
                <value>toFloat32(number % 10)</value>
                <value>toFloat32(rand())</value>
                <value>toFloat32(rand64())</value>
+               <value>reinterpretAsFloat32(reinterpretAsString(rand()))</value>
+               <value>reinterpretAsFloat64(reinterpretAsString(rand64()))</value>
            </values>
        </substitution>
     </substitutions>
