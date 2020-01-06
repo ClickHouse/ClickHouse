@@ -133,7 +133,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// We have to do it by ourself.
 
         uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111111110000) >> 4;
-        if (exponent >= 0x3F - 10 && exponent <= 0x3F + 64)
+        if (exponent >= 0x3FF - 10 && exponent <= 0x3FF + 64)
         {
             result = d2fixed_buffered_n(x, 16, buffer);
         }
@@ -171,9 +171,9 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     else
     {
         uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111110000000) >> 7;
-        if (exponent >= 0x3F - 10 && exponent <= 0x3F + 64)
+        if (exponent >= 0x7F - 10 && exponent <= 0x7F + 64)
         {
-            result = f2fixed_buffered_n(x, 8, buffer);
+            result = d2fixed_buffered_n(x, 8, buffer);
         }
         else if (unlikely(exponent == 0xFF))
         {
