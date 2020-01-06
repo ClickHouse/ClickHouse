@@ -7,11 +7,14 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <DataStreams/IBlockInputStream.h>
 #include "DictionaryFactory.h"
+#include <IO/AIO.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <ext/chrono_io.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
+#include <ext/bit_cast.h>
 
 namespace ProfileEvents
 {
@@ -25,6 +28,7 @@ namespace ProfileEvents
     extern const Event DictCacheRequests;
     extern const Event DictCacheLockWriteNs;
     extern const Event DictCacheLockReadNs;
+    extern const Event FileOpen;
 }
 
 namespace CurrentMetrics
@@ -42,14 +46,91 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int TOO_SMALL_BUFFER_SIZE;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_IO_SUBMIT;
+    extern const int CANNOT_IO_GETEVENTS;
 }
 
 namespace
 {
-    constexpr size_t IN_MEMORY = (1ULL << 63ULL);
+    constexpr size_t MAX_KEYS_TO_READ_ONCE = 128;
+    constexpr size_t SSD_BLOCK_SIZE = 4096;
+    constexpr size_t READ_BUFFER_ALIGNMENT = 0;
+    constexpr size_t MAX_ATTRIBUTES_SIZE = 1024;
+
+    static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
+    static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
+
+    constexpr size_t KEY_IN_MEMORY_BIT = 63;
+    constexpr size_t KEY_IN_MEMORY = (1ULL << KEY_IN_MEMORY_BIT);
+    constexpr size_t BLOCK_INDEX_BITS = 32;
+    constexpr size_t INDEX_IN_BLOCK_BITS = 16;
+    constexpr size_t INDEX_IN_BLOCK_MASK = (1ULL << INDEX_IN_BLOCK_BITS) - 1;
+    constexpr size_t BLOCK_INDEX_MASK = ((1ULL << (BLOCK_INDEX_BITS + INDEX_IN_BLOCK_BITS)) - 1) ^ INDEX_IN_BLOCK_MASK;
+
     constexpr size_t NOT_FOUND = -1;
+
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
+}
+
+CachePartition::KeyMetadata::time_point_t CachePartition::KeyMetadata::expiresAt() const
+{
+    return ext::safe_bit_cast<time_point_t>(data & KEY_METADATA_EXPIRES_AT_MASK);
+}
+void CachePartition::KeyMetadata::setExpiresAt(const time_point_t & t)
+{
+    data = ext::safe_bit_cast<time_point_urep_t>(t);
+}
+
+bool CachePartition::KeyMetadata::isDefault() const
+{
+    return (data & KEY_METADATA_IS_DEFAULT_MASK) == KEY_METADATA_IS_DEFAULT_MASK;
+}
+void CachePartition::KeyMetadata::setDefault()
+{
+    data |= KEY_METADATA_IS_DEFAULT_MASK;
+}
+
+bool CachePartition::Index::inMemory() const
+{
+    return (index & KEY_IN_MEMORY) == KEY_IN_MEMORY;
+}
+
+bool CachePartition::Index::exists() const
+{
+    return index != NOT_FOUND;
+}
+
+void CachePartition::Index::setNotExists()
+{
+    index = NOT_FOUND;
+}
+
+void CachePartition::Index::setInMemory(const bool in_memory)
+{
+    index = (index & ~KEY_IN_MEMORY) | (static_cast<size_t>(in_memory) << KEY_IN_MEMORY_BIT);
+}
+
+size_t CachePartition::Index::getAddressInBlock() const
+{
+    return index & INDEX_IN_BLOCK_MASK;
+}
+
+void CachePartition::Index::setAddressInBlock(const size_t address_in_block)
+{
+    index = (index & ~INDEX_IN_BLOCK_MASK) | address_in_block;
+}
+
+size_t CachePartition::Index::getBlockId() const
+{
+    return (index & BLOCK_INDEX_MASK) >> INDEX_IN_BLOCK_BITS;
+}
+
+void CachePartition::Index::setBlockId(const size_t block_id)
+{
+    index = (index & ~BLOCK_INDEX_MASK) | (block_id << INDEX_IN_BLOCK_BITS);
 }
 
 CachePartition::CachePartition(
@@ -91,6 +172,22 @@ CachePartition::CachePartition(
             break;
         }
     }
+
+    {
+        ProfileEvents::increment(ProfileEvents::FileOpen);
+
+        const std::string filename = path + BIN_FILE_EXT;
+        read_fd = ::open(filename.c_str(), O_RDONLY | O_DIRECT);
+        if (read_fd == -1)
+        {
+            auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
+            throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
+        }
+    }
+}
+
+CachePartition::~CachePartition() {
+    ::close(read_fd);
 }
 
 void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes)
@@ -110,10 +207,12 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
     }
 
     for (size_t i = 0; i < ids.size(); ++i)
-        key_to_file_offset[ids[i]] = (start_size + i) | IN_MEMORY;
-
+    {
+        key_to_metadata[ids[i]].index.setInMemory(true);
+        key_to_metadata[ids[i]].index.setAddressInBlock(start_size + i);
+    }
     //if (bytes >= buffer_size)
-        //flush();
+    //flush();
 }
 
 void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribute & from)
@@ -127,7 +226,7 @@ void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribu
             auto &from_values = std::get<Attribute::Container<TYPE>>(from.values); \
             size_t prev_size = to_values.size(); \
             to_values.resize(to_values.size() + from_values.size()); \
-            memcpy(to_values.data() + prev_size * sizeof(TYPE), from_values.data(), from_values.size() * sizeof(TYPE)); \
+            memcpy(&to_values[prev_size], &from_values[0], from_values.size() * sizeof(TYPE)); \
         } \
         break;
 
@@ -162,6 +261,10 @@ void CachePartition::flush()
     }
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
+    if (ids.empty())
+        return;
+
+    Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!!");
 
     std::vector<size_t> offsets;
 
@@ -211,7 +314,12 @@ void CachePartition::flush()
 
     /// commit changes in index
     for (size_t row = 0; row < ids.size(); ++row)
-        key_to_file_offset[ids[row]] = offsets[row];
+    {
+        key_to_metadata[ids[row]].index.setInMemory(false);
+        key_to_metadata[ids[row]].index.setBlockId(current_block_id);
+        key_to_metadata[ids[row]].index.setAddressInBlock(offsets[row]);
+        Poco::Logger::get("INDEX:").information("NEW MAP: " + std::to_string(ids[row]) + " -> " + std::to_string(key_to_metadata[ids[row]].index.index));
+    }
 
     /// clear buffer
     std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
@@ -223,20 +331,20 @@ template <typename Out, typename Key>
 void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
               ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
 {
-    PaddedPODArray<UInt64> indices(ids.size());
+    PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
-        auto it = key_to_file_offset.find(ids[i]);
-        if (it != std::end(key_to_file_offset))
+        auto it = key_to_metadata.find(ids[i]);
+        if (it == std::end(key_to_metadata)) // TODO: check expired
         {
-            Poco::Logger::get("part:").information("HIT " + std::to_string(ids[i]));
-            indices[i] = it->second;
+            Poco::Logger::get("part:").information("NOT FOUND " + std::to_string(ids[i]));
+            indices[i].setNotExists();
+            not_found[ids[i]].push_back(i);
         }
         else
         {
-            Poco::Logger::get("part:").information("NOT FOUND " + std::to_string(ids[i]));
-            indices[i] = NOT_FOUND;
-            not_found[ids[i]].push_back(i);
+            Poco::Logger::get("part:").information("HIT " + std::to_string(ids[i]));
+            indices[i] = it->second.index;
         }
 
 
@@ -247,34 +355,184 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
 
 template <typename Out>
 void CachePartition::getValueFromMemory(
-        const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const
+        const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const
 {
     const auto & attribute = std::get<Attribute::Container<Out>>(attributes_buffer[attribute_index].values);
     for (size_t i = 0; i < indices.size(); ++i)
     {
         const auto & index = indices[i];
-        if (index != NOT_FOUND && (index & IN_MEMORY))
+        if (index.exists() && index.inMemory())
         {
-            out[i] = attribute[index ^ IN_MEMORY];
+            out[i] = attribute[index.getAddressInBlock()];
             if constexpr (std::is_same_v<Int32, Out>)
-                Poco::Logger::get("part:").information("GET FROM MEMORY " + std::to_string(out[i]) + " --- " + std::to_string(index ^ IN_MEMORY));
+                Poco::Logger::get("part:").information("GET FROM MEMORY " + std::to_string(out[i]) + " --- " + std::to_string(index.getAddressInBlock()));
         }
     }
 }
 
 template <typename Out>
 void CachePartition::getValueFromStorage(
-        const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const
+        const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const
 {
-    UNUSED(attribute_index);
-    UNUSED(indices);
-    UNUSED(out);
+    std::vector<std::pair<UInt64, size_t>> index_to_out;
+    for (size_t i = 0; i < indices.size(); ++i)
+    {
+        const auto & index = indices[i];
+        if (index.exists() && !index.inMemory())
+            index_to_out.emplace_back(index.getAddressInBlock(), i);
+    }
+    if (index_to_out.empty())
+        return;
+
+    std::sort(std::begin(index_to_out), std::end(index_to_out));
+
+    DB::Memory read_buffer(MAX_ATTRIBUTES_SIZE * index_to_out.size(), READ_BUFFER_ALIGNMENT);
+
+    std::vector<iocb> requests(index_to_out.size());
+    memset(requests.data(), 0, requests.size() * sizeof(requests.front()));
+    std::vector<iocb*> pointers(index_to_out.size());
+    for (size_t i = 0; i < index_to_out.size(); ++i)
+    {
+#if defined(__FreeBSD__)
+        request.aio.aio_lio_opcode = LIO_READ;
+        request.aio.aio_fildes = read_fd;
+        request.aio.aio_buf = reinterpret_cast<volatile void *>(read_buffer.data() + i * MAX_ATTRIBUTES_SIZE);
+        request.aio.aio_nbytes = MAX_ATTRIBUTES_SIZE;
+        request.aio.aio_offset = index_to_out[i].first;
+        request.aio_data = i;
+#else
+        requests[i].aio_lio_opcode = IOCB_CMD_PREAD;
+        requests[i].aio_fildes = read_fd;
+        requests[i].aio_buf = reinterpret_cast<UInt64>(read_buffer.data()) + i * MAX_ATTRIBUTES_SIZE;
+        requests[i].aio_nbytes = MAX_ATTRIBUTES_SIZE;
+        requests[i].aio_offset = index_to_out[i].first;
+        requests[i].aio_data = i;
+#endif
+
+        Poco::Logger::get("requests:").information();
+        pointers[i] = &requests[i];
+    }
+    Poco::Logger::get("requests:").information(std::to_string(requests.size()));
+
+    //const auto pointers = ext::map<std::vector>(
+    //        std::begin(requests), std::end(requests), [](const iocb & request) { return &request; });
+
+    AIOContext context(MAX_KEYS_TO_READ_ONCE);
+
+    std::vector<io_event> events(index_to_out.size());
+
+    for (size_t i = 0; i < index_to_out.size(); i += MAX_KEYS_TO_READ_ONCE)
+    {
+        size_t to_push = std::min(MAX_KEYS_TO_READ_ONCE, index_to_out.size() - i);
+        size_t push_index = i;
+        int pushed = 0;
+        while (to_push > 0 && (pushed = io_submit(context.ctx, to_push, pointers.data() + push_index)) < 0)
+        {
+            if (errno != EINTR)
+                throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
+            to_push -= pushed;
+            push_index += pushed;
+            pushed = 0;
+        }
+
+        size_t to_get = std::min(MAX_KEYS_TO_READ_ONCE, index_to_out.size() - i);
+        size_t got_index = i;
+        int got = 0;
+        while (to_get > 0 && (got = io_getevents(context.ctx, to_get, to_get, events.data() + got_index, NULL)) < 0)
+        {
+            if (errno != EINTR)
+                throwFromErrno("io_getevents: Failed to get an event from asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
+            to_get -= got;
+            got_index += got;
+            got = 0;
+        }
+    }
+
+    //std::sort(std::begin(events), std::end(events), [](const auto & lhs, const auto & rhs) { return lhs.data < rhs.data; });
+    for (const auto & event : events)
+    {
+        Poco::Logger::get("Read:").information("ito: f:" + std::to_string(index_to_out[event.data].first) + " s:" + std::to_string(index_to_out[event.data].second));
+        Poco::Logger::get("Read:").information("data: " + std::to_string(event.data) + " res: " + std::to_string(event.res));
+        DB::ReadBufferFromMemory buf(read_buffer.data() + event.data * MAX_ATTRIBUTES_SIZE, event.res);
+
+        for (size_t i = 0; i < attribute_index; ++i)
+        {
+            switch (attributes_buffer[i].type)
+            {
+        #define DISPATCH(TYPE) \
+                case AttributeUnderlyingType::ut##TYPE: \
+                    { \
+                        TYPE tmp; \
+                        readBinary(tmp, buf); \
+                    } \
+                    break;
+
+                DISPATCH(UInt8)
+                DISPATCH(UInt16)
+                DISPATCH(UInt32)
+                DISPATCH(UInt64)
+                DISPATCH(UInt128)
+                DISPATCH(Int8)
+                DISPATCH(Int16)
+                DISPATCH(Int32)
+                DISPATCH(Int64)
+                DISPATCH(Decimal32)
+                DISPATCH(Decimal64)
+                DISPATCH(Decimal128)
+                DISPATCH(Float32)
+                DISPATCH(Float64)
+        #undef DISPATCH
+
+                case AttributeUnderlyingType::utString:
+                    // TODO: string support
+                    break;
+            }
+        }
+
+        switch (attributes_buffer[attribute_index].type)
+        {
+#define DISPATCH(TYPE) \
+                case AttributeUnderlyingType::ut##TYPE: \
+                    readBinary(out[index_to_out[event.data].second], buf); \
+                    break;
+
+            DISPATCH(UInt8)
+            DISPATCH(UInt16)
+            DISPATCH(UInt32)
+            DISPATCH(UInt64)
+            DISPATCH(UInt128)
+            DISPATCH(Int8)
+            DISPATCH(Int16)
+            DISPATCH(Int32)
+            DISPATCH(Int64)
+            DISPATCH(Decimal32)
+            DISPATCH(Decimal64)
+            DISPATCH(Decimal128)
+            DISPATCH(Float32)
+            DISPATCH(Float64)
+#undef DISPATCH
+
+            case AttributeUnderlyingType::utString:
+                // TODO: string support
+                break;
+        }
+    }
 }
 
 void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const
 {
     for (size_t i = 0; i < ids.size(); ++i)
-        out[i] = static_cast<UInt8>(key_to_file_offset.find(ids[i]) != std::end(key_to_file_offset));
+    {
+        auto it = key_to_metadata.find(ids[i]);
+        if (it == std::end(key_to_metadata))
+        {
+            out[i] = 0;
+        }
+        else
+        {
+            out[i] = it->second.isDefault();
+        }
+    }
 }
 
 CacheStorage::CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_, const size_t partitions_count_, const size_t partition_max_size_)
@@ -325,9 +583,10 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
             while (const auto block = stream->read())
             {
-                const auto new_keys = createAttributesFromBlock(block, { AttributeUnderlyingType::utUInt64 }).front();
+                const auto new_keys = createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front();
                 const auto new_attributes = createAttributesFromBlock(
-                        block, ext::map<std::vector>(dictionary.getAttributes(), [](const auto & attribute) { return attribute.type; }));
+                        block, 1, ext::map<std::vector>(dictionary.getAttributes(), [](const auto & attribute) { return attribute.type; }));
+
                 const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
 
                 for (const auto i : ext::range(0, ids.size()))
@@ -468,7 +727,8 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         /// inform caller that the cell has not been found
         on_id_not_found(id);
     }
-    partitions[0]->appendBlock(new_keys, new_attributes);
+    if (not_found_num)
+        partitions[0]->appendBlock(new_keys, new_attributes);
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
@@ -476,14 +736,14 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 }
 
 CachePartition::Attributes CacheStorage::createAttributesFromBlock(
-        const Block & block, const std::vector<AttributeUnderlyingType> & structure)
+        const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure)
 {
     CachePartition::Attributes attributes;
 
     const auto columns = block.getColumns();
     for (size_t i = 0; i < structure.size(); ++i)
     {
-        const auto & column = columns[i];
+        const auto & column = columns[i + begin_column];
         switch (structure[i])
         {
 #define DISPATCH(TYPE) \
@@ -491,7 +751,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(
             { \
                 std::vector<TYPE> values(column->size()); \
                 const auto raw_data = column->getRawData(); \
-                memcpy(values.data(), raw_data.data, raw_data.size); \
+                memcpy(&values[0], raw_data.data, raw_data.size * sizeof(TYPE)); \
                 attributes.emplace_back(); \
                 attributes.back().type = structure[i]; \
                 attributes.back().values = std::move(values); \
@@ -653,7 +913,6 @@ void SSDCacheDictionary::getItemsNumberImpl(
             source_ptr,
             required_ids,
             [&](const auto id, const auto row, const auto & new_attributes) {
-                Poco::Logger::get("update:").information(std::to_string(id) + " " + std::to_string(row));
                 for (const size_t out_row : not_found_ids[id])
                     out[out_row] = std::get<std::vector<OutputType>>(new_attributes[attribute_index].values)[row];
             },
