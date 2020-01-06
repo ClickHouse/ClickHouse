@@ -4,6 +4,7 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/config.h>
+#include <Common/MemorySanitizer.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 #include <Core/Defines.h>
@@ -226,6 +227,7 @@ void StackTrace::tryCapture()
     size = 0;
 #if USE_UNWIND
     size = unw_backtrace(frames.data(), capacity);
+    __msan_unpoison(frames.data(), size * sizeof(frames[0]));
 #endif
 }
 
@@ -331,6 +333,8 @@ std::string StackTrace::toString() const
 
 std::string StackTrace::toString(void ** frames_, size_t offset, size_t size)
 {
+    __msan_unpoison(frames_, size * sizeof(*frames_));
+
     StackTrace::Frames frames_copy{};
     for (size_t i = 0; i < size; ++i)
         frames_copy[i] = frames_[i];
