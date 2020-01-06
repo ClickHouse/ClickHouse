@@ -1,13 +1,12 @@
+#include "StorageXDBC.h"
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageXDBC.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
-
-#include <IO/CompressionMethod.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
@@ -15,6 +14,7 @@
 #include <Poco/Path.h>
 #include <Common/ShellCommand.h>
 #include <ext/range.h>
+
 namespace DB
 {
 namespace ErrorCodes

@@ -295,7 +295,7 @@ namespace DB
 
     void writeFieldText(const Field & x, WriteBuffer & buf)
     {
-        DB::String res = applyVisitor(DB::FieldVisitorToString(), x);
+        DB::String res = Field::dispatch(DB::FieldVisitorToString(), x);
         buf.write(res.data(), res.size());
     }
 

@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/CpuId.h>
+#include <Common/quoteString.h>
 #include <common/getMemoryAmount.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -142,7 +143,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (!exist)
             {
-                LOG_WARNING(log, "Table " << table_to_check << " doesn't exist");
+                LOG_WARNING(log, "Table " << backQuote(table_to_check) << " doesn't exist");
                 return false;
             }
         }
@@ -336,7 +337,7 @@ void PerformanceTest::runQueries(
         {
             statistics.exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
         }
 
         if (!statistics.got_SIGINT)

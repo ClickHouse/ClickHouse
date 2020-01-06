@@ -201,6 +201,7 @@ SELECT * FROM system.events LIMIT 5
 Содержит информацию о том, какие параметры [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
 
 Столбцы:
+
 - `config_name`     (String) - Имя параметра, используемого для `graphite_rollup`.
 - `regexp`          (String) - Шаблон имени метрики.
 - `function`        (String) - Имя агрегирующей функции.

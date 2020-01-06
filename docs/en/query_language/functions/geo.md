@@ -152,15 +152,21 @@ SELECT geohashDecode('ezs42') AS res
 └─────────────────────────────────┘
 ```
 
-## geoToH3
+## geoToH3 {#geotoh3}
 
-Calculates [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
+Returns [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
+
+[H3](https://uber.github.io/h3/#/documentation/overview/introduction) is a geographical indexing system where Earth's surface divided into even hexagonal tiles. This system is hierarchical, i. e. each hexagon on the top level can be splitted into seven even but smaller ones and so on.
+
+This index is used primarily for bucketing locations and other geospatial manipulations.
+
+**Syntax** 
 
 ```sql
 geoToH3(lon, lat, resolution)
 ```
 
-**Input values**
+**Parameters** 
 
 - `lon` — Longitude. Type: [Float64](../../data_types/float.md).
 - `lat` — Latitude. Type: [Float64](../../data_types/float.md).
@@ -171,13 +177,18 @@ geoToH3(lon, lat, resolution)
 - Hexagon index number.
 - 0 in case of error.
 
-Type: [UInt64](../../data_types/int_uint.md).
+Type: `UInt64`.
 
 **Example**
+
+Query:
 
 ```sql
 SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ```
+
+Result:
+
 ```text
 ┌────────────h3Index─┐
 │ 644325524701193974 │

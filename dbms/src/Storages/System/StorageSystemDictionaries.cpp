@@ -48,22 +48,34 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
-    for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
+    for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
     {
-        size_t i = 0;
+        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
-        res_columns[i++]->insert(load_result.repository_name);
-        if (!load_result.repository_name.empty())
-            res_columns[i++]->insert(dict_name.substr(load_result.repository_name.length() + 1));
+        String database, short_name;
+        if (dict_ptr)
+        {
+            database = dict_ptr->getDatabase();
+            short_name = dict_ptr->getName();
+        }
         else
-            res_columns[i++]->insert(dict_name);
+        {
+            short_name = load_result.name;
+            if (!load_result.repository_name.empty() && startsWith(short_name, load_result.repository_name + "."))
+            {
+                database = load_result.repository_name;
+                short_name = short_name.substr(database.length() + 1);
+            }
+        }
 
+        size_t i = 0;
+        res_columns[i++]->insert(database);
+        res_columns[i++]->insert(short_name);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.origin);
 
         std::exception_ptr last_exception = load_result.exception;
 
-        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
         if (dict_ptr)
         {
             res_columns[i++]->insert(dict_ptr->getTypeName());

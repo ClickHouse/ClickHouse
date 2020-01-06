@@ -15,13 +15,13 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-            const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
-            const MarkRanges & all_mark_ranges,
-            MarkCache * mark_cache, bool save_marks_in_cache,
-            UncompressedCache * uncompressed_cache,
-            size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
-            const MergeTreeIndexGranularityInfo * index_granularity_info_,
-            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        const MarkRanges & all_mark_ranges,
+        MarkCache * mark_cache, bool save_marks_in_cache,
+        UncompressedCache * uncompressed_cache,
+        size_t file_size, size_t aio_threshold, size_t mmap_threshold, size_t max_read_buffer_size,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
 

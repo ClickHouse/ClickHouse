@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cassert>
+#include <vector>
+#include <algorithm>
+
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Core/SortDescription.h>
@@ -18,8 +22,8 @@ namespace DB
   */
 struct SortCursorImpl
 {
-    ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
+    ColumnRawPtrs all_columns;
     SortDescription desc;
     size_t sort_columns_size = 0;
     size_t pos = 0;
@@ -98,26 +102,60 @@ struct SortCursorImpl
 
     bool isFirst() const { return pos == 0; }
     bool isLast() const { return pos + 1 >= rows; }
+    bool isValid() const { return pos < rows; }
     void next() { ++pos; }
 };
 
+using SortCursorImpls = std::vector<SortCursorImpl>;
+
 
 /// For easy copying.
-struct SortCursor
+template <typename Derived>
+struct SortCursorHelper
 {
     SortCursorImpl * impl;
 
-    SortCursor(SortCursorImpl * impl_) : impl(impl_) {}
+    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+
+    SortCursorHelper(SortCursorImpl * impl_) : impl(impl_) {}
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
+
+    bool greater(const SortCursorHelper & rhs) const
+    {
+        return derived().greaterAt(rhs.derived(), impl->pos, rhs.impl->pos);
+    }
+
+    /// Inverted so that the priority queue elements are removed in ascending order.
+    bool operator< (const SortCursorHelper & rhs) const
+    {
+        return derived().greater(rhs.derived());
+    }
+
+    /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
+    bool totallyLessOrEquals(const SortCursorHelper & rhs) const
+    {
+        if (impl->rows == 0 || rhs.impl->rows == 0)
+            return false;
+
+        /// The last row of this cursor is no larger than the first row of the another cursor.
+        return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
+    }
+};
+
+
+struct SortCursor : SortCursorHelper<SortCursor>
+{
+    using SortCursorHelper<SortCursor>::SortCursorHelper;
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
     bool greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
-            int direction = impl->desc[i].direction;
-            int nulls_direction = impl->desc[i].nulls_direction;
+            const auto & desc = impl->desc[i];
+            int direction = desc.direction;
+            int nulls_direction = desc.nulls_direction;
             int res = direction * impl->sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction);
             if (res > 0)
                 return true;
@@ -126,45 +164,37 @@ struct SortCursor
         }
         return impl->order > rhs.impl->order;
     }
+};
 
-    /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
-    bool totallyLessOrEquals(const SortCursor & rhs) const
+
+/// For the case with a single column and when there is no order between different cursors.
+struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
+{
+    using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
+
+    bool greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
-        if (impl->rows == 0 || rhs.impl->rows == 0)
-            return false;
-
-        /// The last row of this cursor is no larger than the first row of the another cursor.
-        return !greaterAt(rhs, impl->rows - 1, 0);
-    }
-
-    bool greater(const SortCursor & rhs) const
-    {
-        return greaterAt(rhs, impl->pos, rhs.impl->pos);
-    }
-
-    /// Inverted so that the priority queue elements are removed in ascending order.
-    bool operator< (const SortCursor & rhs) const
-    {
-        return greater(rhs);
+        const auto & desc = impl->desc[0];
+        int direction = desc.direction;
+        int nulls_direction = desc.nulls_direction;
+        int res = impl->sort_columns[0]->compareAt(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[0]), nulls_direction);
+        return res != 0 && ((res > 0) == (direction > 0));
     }
 };
 
 
 /// Separate comparator for locale-sensitive string comparisons
-struct SortCursorWithCollation
+struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
 {
-    SortCursorImpl * impl;
-
-    SortCursorWithCollation(SortCursorImpl * impl_) : impl(impl_) {}
-    SortCursorImpl * operator-> () { return impl; }
-    const SortCursorImpl * operator-> () const { return impl; }
+    using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
     bool greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
-            int direction = impl->desc[i].direction;
-            int nulls_direction = impl->desc[i].nulls_direction;
+            const auto & desc = impl->desc[i];
+            int direction = desc.direction;
+            int nulls_direction = desc.nulls_direction;
             int res;
             if (impl->need_collation[i])
             {
@@ -182,24 +212,137 @@ struct SortCursorWithCollation
         }
         return impl->order > rhs.impl->order;
     }
+};
 
-    bool totallyLessOrEquals(const SortCursorWithCollation & rhs) const
+
+/** Allows to fetch data from multiple sort cursors in sorted order (merging sorted data streams).
+  * TODO: Replace with "Loser Tree", see https://en.wikipedia.org/wiki/K-way_merge_algorithm
+  */
+template <typename Cursor>
+class SortingHeap
+{
+public:
+    SortingHeap() = default;
+
+    template <typename Cursors>
+    SortingHeap(Cursors & cursors)
     {
-        if (impl->rows == 0 || rhs.impl->rows == 0)
-            return false;
-
-        /// The last row of this cursor is no larger than the first row of the another cursor.
-        return !greaterAt(rhs, impl->rows - 1, 0);
+        size_t size = cursors.size();
+        queue.reserve(size);
+        for (size_t i = 0; i < size; ++i)
+            if (!cursors[i].empty())
+                queue.emplace_back(&cursors[i]);
+        std::make_heap(queue.begin(), queue.end());
     }
 
-    bool greater(const SortCursorWithCollation & rhs) const
+    bool isValid() const { return !queue.empty(); }
+
+    Cursor & current() { return queue.front(); }
+
+    size_t size() { return queue.size(); }
+
+    Cursor & nextChild() { return queue[nextChildIndex()]; }
+
+    void next()
     {
-        return greaterAt(rhs, impl->pos, rhs.impl->pos);
+        assert(isValid());
+
+        if (!current()->isLast())
+        {
+            current()->next();
+            updateTop();
+        }
+        else
+            removeTop();
     }
 
-    bool operator< (const SortCursorWithCollation & rhs) const
+    void replaceTop(Cursor new_top)
     {
-        return greater(rhs);
+        current() = new_top;
+        updateTop();
+    }
+
+    void removeTop()
+    {
+        std::pop_heap(queue.begin(), queue.end());
+        queue.pop_back();
+        next_idx = 0;
+    }
+
+    void push(SortCursorImpl & cursor)
+    {
+        queue.emplace_back(&cursor);
+        std::push_heap(queue.begin(), queue.end());
+        next_idx = 0;
+    }
+
+private:
+    using Container = std::vector<Cursor>;
+    Container queue;
+
+    /// Cache comparison between first and second child if the order in queue has not been changed.
+    size_t next_idx = 0;
+
+    size_t nextChildIndex()
+    {
+        if (next_idx == 0)
+        {
+            next_idx = 1;
+
+            if (queue.size() > 2 && queue[1] < queue[2])
+                ++next_idx;
+        }
+
+        return next_idx;
+    }
+
+    /// This is adapted version of the function __sift_down from libc++.
+    /// Why cannot simply use std::priority_queue?
+    /// - because it doesn't support updating the top element and requires pop and push instead.
+    /// Also look at "Boost.Heap" library.
+    void updateTop()
+    {
+        size_t size = queue.size();
+        if (size < 2)
+            return;
+
+        auto begin = queue.begin();
+
+        size_t child_idx = nextChildIndex();
+        auto child_it = begin + child_idx;
+
+        /// Check if we are in order.
+        if (*child_it < *begin)
+            return;
+
+        next_idx = 0;
+
+        auto curr_it = begin;
+        auto top(std::move(*begin));
+        do
+        {
+            /// We are not in heap-order, swap the parent with it's largest child.
+            *curr_it = std::move(*child_it);
+            curr_it = child_it;
+
+            // recompute the child based off of the updated parent
+            child_idx = 2 * child_idx + 1;
+
+            if (child_idx >= size)
+                break;
+
+            child_it = begin + child_idx;
+
+            if ((child_idx + 1) < size && *child_it < *(child_it + 1))
+            {
+                /// Right child exists and is greater than left child.
+                ++child_it;
+                ++child_idx;
+            }
+
+            /// Check if we are in order.
+        } while (!(*child_it < top));
+        *curr_it = std::move(top);
     }
 };
 

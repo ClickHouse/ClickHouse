@@ -162,11 +162,6 @@ public:
             result_column.push_back(position_of_max_intersections);
         }
     }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
 };
 
 }

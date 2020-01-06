@@ -28,12 +28,11 @@
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/QuotaContext.h>
+#include <Access/RowPolicyContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -67,6 +66,8 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric MemoryTrackingForMerges;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
 }
 
 
@@ -125,6 +126,7 @@ struct ContextShared
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
+    String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
@@ -150,9 +152,9 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser
-    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
+    mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser
-    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -330,6 +332,7 @@ Context Context::createGlobal()
 {
     Context res;
     res.quota = std::make_shared<QuotaContext>();
+    res.row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -542,6 +545,12 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+String Context::getDictionariesLibPath() const
+{
+    auto lock = getLock();
+    return shared->dictionaries_lib_path;
+}
+
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
@@ -556,6 +565,9 @@ void Context::setPath(const String & path)
 
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
+
+    if (shared->dictionaries_lib_path.empty())
+        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
 void Context::setTemporaryPath(const String & path)
@@ -574,6 +586,12 @@ void Context::setUserFilesPath(const String & path)
 {
     auto lock = getLock();
     shared->user_files_path = path;
+}
+
+void Context::setDictionariesLibPath(const String & path)
+{
+    auto lock = getLock();
+    shared->dictionaries_lib_path = path;
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -607,6 +625,13 @@ void Context::checkQuotaManagementIsAllowed()
             "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
+void Context::checkRowPolicyManagementIsAllowed()
+{
+    if (!is_row_policy_management_allowed)
+        throw Exception(
+            "User " + client_info.current_user + " doesn't have enough privileges to manage row policies", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -619,34 +644,6 @@ ConfigurationPtr Context::getUsersConfig()
 {
     auto lock = getLock();
     return shared->users_config;
-}
-
-bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
-{
-    auto lock = getLock();
-
-    // No user - no properties.
-    if (client_info.current_user.empty())
-        return false;
-
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-
-    auto db = props.find(database);
-    if (db == props.end())
-        return false;
-
-    auto table_props = db->second.find(table);
-    if (table_props == db->second.end())
-        return false;
-
-    return !!table_props->second.count(name);
-}
-
-const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
-{
-    auto lock = getLock();
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(database).at(table).at(name);
 }
 
 void Context::calculateUserSettings()
@@ -673,6 +670,8 @@ void Context::calculateUserSettings()
     quota = getAccessControlManager().createQuotaContext(
         client_info.current_user, client_info.current_address.host(), client_info.quota_key);
     is_quota_management_allowed = user->is_quota_management_allowed;
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
+    is_row_policy_management_allowed = user->is_row_policy_management_allowed;
 }
 
 
@@ -1087,33 +1086,11 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
     auto res = getDatabase(database_name);
-    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
 
     return res;
 }
 
-
-ASTPtr Context::getCreateTableQuery(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateTableQuery(*this, table_name);
-}
-
-
-ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
-}
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
 {
@@ -1122,16 +1099,6 @@ ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
     return jt->second.second;
-}
-
-ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-
-    return shared->databases[db]->getCreateDatabaseQuery(*this);
 }
 
 Settings Context::getSettings() const
@@ -1466,7 +1433,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 
@@ -1508,7 +1475,20 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
 {
     auto lock = getLock();
     if (!shared->background_move_pool)
-        shared->background_move_pool.emplace(settings.background_move_pool_size, "BackgroundMovePool", "BgMoveProcPool");
+    {
+        BackgroundProcessingPool::PoolSettings pool_settings;
+        auto & config = getConfigRef();
+        pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
+        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
+        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        pool_settings.tasks_metric = CurrentMetrics::BackgroundMovePoolTask;
+        pool_settings.memory_metric = CurrentMetrics::MemoryTrackingInBackgroundMoveProcessingPool;
+        shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
+    }
     return *shared->background_move_pool;
 }
 
@@ -1815,7 +1795,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+const DiskPtr & Context::getDisk(const String & name) const
 {
     auto lock = getLock();
 
@@ -1825,7 +1805,7 @@ const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
 }
 
 
-DiskSpace::DiskSelector & Context::getDiskSelector() const
+DiskSelector & Context::getDiskSelector() const
 {
     auto lock = getLock();
 
@@ -1834,13 +1814,13 @@ DiskSpace::DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, *this);
     }
     return *shared->merge_tree_disk_selector;
 }
 
 
-const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+const StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
 {
     auto lock = getLock();
 
@@ -1850,7 +1830,7 @@ const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & nam
 }
 
 
-DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+StoragePolicySelector & Context::getStoragePolicySelector() const
 {
     auto lock = getLock();
 
@@ -1859,7 +1839,7 @@ DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
         constexpr auto config_name = "storage_configuration.policies";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_unique<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
     return *shared->merge_tree_storage_policy_selector;
 }
