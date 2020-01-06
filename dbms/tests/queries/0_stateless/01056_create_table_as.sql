@@ -5,12 +5,14 @@ DROP TABLE t2;
 
 -- live view
 SET allow_experimental_live_view=1;
-CREATE LIVE VIEW v AS SELECT * FROM t1;
-CREATE TABLE t3 AS v; -- { serverError 80; }
+CREATE LIVE VIEW lv AS SELECT * FROM t1;
+CREATE TABLE t3 AS lv; -- { serverError 80; }
+DROP TABLE lv;
 
 -- view
-CREATE VIEW lv AS SELECT * FROM t1;
-CREATE TABLE t3 AS lv; -- { serverError 80; }
+CREATE VIEW v AS SELECT * FROM t1;
+CREATE TABLE t3 AS v; -- { serverError 80; }
+DROP TABLE v;
 
 -- dictionary
 DROP DATABASE if exists test_01056_dict_data;

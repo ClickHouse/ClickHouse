@@ -105,67 +105,41 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         {
             if (compress)
             {
-                if (compression_method == CompressionMethod::Gzip)
-                {
-#if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: gzip\r\n";
-#else
-                    response.set("Content-Encoding", "gzip");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*deflating_buf;
-                }
-                else if (compression_method == CompressionMethod::Zlib)
-                {
-#if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: deflate\r\n";
-#else
-                    response.set("Content-Encoding", "deflate");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*deflating_buf;
-                }
-#if USE_BROTLI
-                else if (compression_method == CompressionMethod::Brotli)
-                {
-#if defined(POCO_CLICKHOUSE_PATCH)
-                    *response_header_ostr << "Content-Encoding: br\r\n";
-#else
-                    response.set("Content-Encoding", "br");
-                    response_body_ostr = &(response.send());
-#endif
-                    out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
-                    brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*brotli_buf;
-                }
-#endif
+                auto content_encoding_name = toContentEncodingName(compression_method);
 
-                else
-                    throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-                                    ErrorCodes::LOGICAL_ERROR);
-                /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+#if defined(POCO_CLICKHOUSE_PATCH)
+                *response_header_ostr << "Content-Encoding: " << content_encoding_name << "\r\n";
+#else
+                response.set("Content-Encoding", content_encoding_name);
+#endif
             }
-            else
-            {
+
 #if !defined(POCO_CLICKHOUSE_PATCH)
-                response_body_ostr = &(response.send());
+            response_body_ostr = &(response.send());
 #endif
 
-                out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-                out = &*out_raw;
-            }
+            /// We reuse our buffer in "out" to avoid extra allocations and copies.
+
+            if (compress)
+                out = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
+                    compress ? compression_method : CompressionMethod::None,
+                    compression_level,
+                    working_buffer.size(),
+                    working_buffer.begin());
+            else
+                out = std::make_unique<WriteBufferFromOStream>(
+                    *response_body_ostr,
+                    working_buffer.size(),
+                    working_buffer.begin());
         }
 
         finishSendHeaders();
-
     }
 
     if (out)
     {
+        out->buffer() = buffer();
         out->position() = position();
         out->next();
     }
@@ -177,9 +151,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    CompressionMethod compression_method_,
-    size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size)
+    CompressionMethod compression_method_)
+    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)
