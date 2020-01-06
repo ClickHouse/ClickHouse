@@ -52,11 +52,9 @@ public:
 
     CachePartition(
             const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
-            const std::string & dir_path, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024 * 1024);
+            const std::string & dir_path, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024);
 
-    ~CachePartition() {
-        Poco::Logger::get("cachepartition").information("DESTROY");
-    }
+    ~CachePartition();
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -97,22 +95,41 @@ public:
     };
     using Attributes = std::vector<Attribute>;
 
-
     // Key, (Metadata), attributes
     void appendBlock(const Attribute & new_keys, const Attributes & new_attributes);
 
 private:
+    struct Index final
+    {
+        bool inMemory() const;
+        void setInMemory(const bool in_memory);
+
+        bool exists() const;
+        void setNotExists();
+
+        size_t getAddressInBlock() const;
+        void setAddressInBlock(const size_t address_in_block);
+
+        size_t getBlockId() const;
+        void setBlockId(const size_t block_id);
+
+        bool operator< (const Index & rhs) const { return index < rhs.index; }
+
+        /// Stores `is_in_memory` flag, block id, address in uncompressed block
+        size_t index = 0;
+    };
+
     void flush();
 
     void appendValuesToBufferAttribute(Attribute & to, const Attribute & from);
 
     template <typename Out>
     void getValueFromMemory(
-            const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const;
+            const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
 
     template <typename Out>
     void getValueFromStorage(
-            const size_t attribute_index, const PaddedPODArray<UInt64> & indices, ResultArrayType<Out> & out) const;
+            const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
 
     size_t file_id;
     size_t max_size;
@@ -121,15 +138,35 @@ private:
 
     //mutable std::shared_mutex rw_lock;
     //int index_fd;
-    int data_fd;
+    mutable int read_fd = -1;
 
     std::unique_ptr<WriteBufferAIO> write_data_buffer;
-    std::unordered_map<UInt64, size_t> key_to_file_offset;
+
+    struct KeyMetadata final
+    {
+        using time_point_t = std::chrono::system_clock::time_point;
+        using time_point_rep_t = time_point_t::rep;
+        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+
+        time_point_t expiresAt() const;
+        void setExpiresAt(const time_point_t & t);
+
+        bool isDefault() const;
+        void setDefault();
+
+        Index index{};
+        /// Stores both expiration time and `is_default` flag in the most significant bit
+        time_point_urep_t data = 0;
+    };
+
+    std::unordered_map<UInt64, KeyMetadata> key_to_metadata;
 
     Attribute keys_buffer;
     Attributes attributes_buffer;
     //MutableColumns buffer;
     size_t bytes = 0;
+    size_t current_block_id = 0;
+    size_t current_address_in_block = 0;
 
     mutable std::atomic<size_t> element_count{0};
 };
@@ -169,7 +206,7 @@ public:
 
 private:
     CachePartition::Attributes createAttributesFromBlock(
-            const Block & block, const std::vector<AttributeUnderlyingType> & structure);
+            const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
 
     SSDCacheDictionary & dictionary;
 
@@ -224,7 +261,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / partition_max_size; } // TODO: fix
 
-    bool supportUpdates() const override { return true; }
+    bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
