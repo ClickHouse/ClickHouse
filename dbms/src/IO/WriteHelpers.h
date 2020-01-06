@@ -170,14 +170,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
     else
     {
-        uint16_t exponent = (unalignedLoad<uint16_t>(x) & 0b0111111110000000) >> 7;
+        uint16_t exponent = (unalignedLoad<uint16_t>(&x) & 0b0111111110000000) >> 7;
         if (exponent >= 0x3F - 10 && exponent <= 0x3F + 64)
         {
             result = f2fixed_buffered_n(x, 8, buffer);
         }
         else if (unlikely(exponent == 0xFF))
         {
-            uint64_t mantissa = unalignedLoad<uint32_t>(x) & 0b00000000011111111111111111111111u;
+            uint64_t mantissa = unalignedLoad<uint32_t>(&x) & 0b00000000011111111111111111111111u;
             if (mantissa == 0)
             {
                 if (x > 0)
