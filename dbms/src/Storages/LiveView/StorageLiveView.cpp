@@ -200,7 +200,7 @@ void StorageLiveView::writeIntoLiveView(
         if (live_view.getInnerSubQuery())
             mergeable_query = live_view.getInnerSubQuery();
 
-    	BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
+        BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
 
         auto blocks_storage = StorageBlocks::createStorage(live_view.database_name, live_view.table_name,
             live_view.getParentStorage()->getColumns(), std::move(streams), QueryProcessingStage::FetchColumns);
