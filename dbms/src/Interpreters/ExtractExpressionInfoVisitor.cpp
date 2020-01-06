@@ -58,6 +58,9 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
 
 bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
+    if (const auto & function = node->as<ASTFunction>(); function && function->name == "lambda")
+        return false;
+
     return !node->as<ASTSubquery>();
 }
 
