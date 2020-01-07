@@ -2235,7 +2235,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
     if (!can_skip_offset)
         offset = 0;
 
-    bool parallel_merge_sort = settings.enable_parallel_merge_sort && limit - offset < settings.min_rows_to_parallel_merge_sort;
+    bool parallel_merge_sort = settings.enable_parallel_merge_sort && limit - offset > settings.min_rows_to_parallel_merge_sort;
 
     if (input_sorting_info)
     {
