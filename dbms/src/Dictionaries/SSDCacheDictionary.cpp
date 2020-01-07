@@ -204,8 +204,9 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
+    auto & ids_buffer = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
 
-    appendValuesToAttribute(keys_buffer, new_keys);
+    //appendValuesToAttribute(keys_buffer, new_keys);
 
     if (!write_buffer)
         write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
@@ -216,6 +217,8 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
         key_index.setInMemory(true);
         key_index.setBlockId(current_memory_block_id);
         key_index.setAddressInBlock(write_buffer->offset());
+
+        bool flushed = false;
 
         for (const auto & attribute : new_attributes)
         {
@@ -228,7 +231,7 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
                     if (sizeof(TYPE) > write_buffer->available()) \
                     { \
                         flush(); \
-                        write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE); \
+                        flushed = true; \
                         continue; \
                     } \
                     else \
@@ -261,7 +264,13 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
             }
         }
 
-        ++index;
+        if (!flushed)
+        {
+            ids_buffer.push_back(ids[index]);
+            ++index;
+        }
+        else
+            write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
     }
 }
 
@@ -388,26 +397,26 @@ template <typename Out, typename Key>
 void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
               ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
 {
+    Poco::Logger::get("IDS:").information(std::to_string(ids.size()));
     PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
         auto it = key_to_metadata.find(ids[i]);
         if (it == std::end(key_to_metadata)) // TODO: check expired
         {
-            Poco::Logger::get("part:").information("NOT FOUND " + std::to_string(ids[i]));
             indices[i].setNotExists();
             not_found[ids[i]].push_back(i);
+            Poco::Logger::get("part:").information("NOT FOUND " + std::to_string(ids[i]) + " " + std::to_string(indices[i].index));
         }
         else
         {
-            Poco::Logger::get("part:").information("HIT " + std::to_string(ids[i]));
             indices[i] = it->second.index;
+            Poco::Logger::get("part:").information("HIT " + std::to_string(ids[i]) + " " + std::to_string(indices[i].index));
         }
-
-
-        getValueFromMemory<Out>(attribute_index, indices, out);
-        getValueFromStorage<Out>(attribute_index, indices, out);
     }
+
+    getValueFromMemory<Out>(attribute_index, indices, out);
+    getValueFromStorage<Out>(attribute_index, indices, out);
 }
 
 template <typename Out>
@@ -442,6 +451,8 @@ void CachePartition::getValueFromStorage(
     }
     if (index_to_out.empty())
         return;
+    for (const auto & [index1, index2] : index_to_out)
+        Poco::Logger::get("FROM STORAGE:").information(std::to_string(index2) + " ## " + std::to_string(index1.getBlockId()) +  " " + std::to_string(index1.getAddressInBlock()));
 
     /// sort by (block_id, offset_in_block)
     std::sort(std::begin(index_to_out), std::end(index_to_out));
@@ -478,7 +489,7 @@ void CachePartition::getValueFromStorage(
         request.aio_buf = reinterpret_cast<UInt64>(read_buffer.data()) + SSD_BLOCK_SIZE * (i % MAX_BLOCKS_TO_KEEP_IN_MEMORY);
         request.aio_nbytes = SSD_BLOCK_SIZE;
         request.aio_offset = index_to_out[i].first.getBlockId() * SSD_BLOCK_SIZE;
-        request.aio_data = i;
+        request.aio_data = requests.size();
 #endif
         requests.push_back(request);
         pointers.push_back(&requests.back());
