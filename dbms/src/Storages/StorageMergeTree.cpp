@@ -328,10 +328,14 @@ public:
         else
         {
             MergeTreeDataPart::TTLInfos ttl_infos;
+            size_t max_volume_index = 0;
             for (auto & part_ptr : future_part_.parts)
+            {
                 ttl_infos.update(part_ptr->ttl_infos);
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+            }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
