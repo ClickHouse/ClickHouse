@@ -26,3 +26,5 @@ SELECT \n    ts AS `--a.ts`, \n    id AS `--a.id`, \n    id_b AS `--a.id_b`, \n 
 4	5
 SELECT dummy\nFROM \n(\n    SELECT dummy\n    FROM system.one\n    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]\n)\nWHERE arrayMap(x -> (x + 1), [dummy]) = [1]
 0
+SELECT \n    id, \n    value, \n    value_1\nFROM \n(\n    SELECT \n        1 AS id, \n        2 AS value\n)\nALL INNER JOIN \n(\n    SELECT \n        1 AS id, \n        3 AS value_1\n) USING (id)\nWHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
+1	2	3

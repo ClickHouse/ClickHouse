@@ -68,9 +68,8 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
 
 static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTIdentifier *> & identifiers)
 {
-    /// skip WHERE x in (SELECT ...) AND arrayMap(x -> x, [column_a])
-    const auto & function = predicate->as<ASTFunction>();
-    if (!predicate->as<ASTSubquery>() && !(function && function->name == "lambda"))
+    /// Skip WHERE x in (SELECT ...)
+    if (!predicate->as<ASTSubquery>())
     {
         for (auto & children : predicate->children)
             cleanAliasAndCollectIdentifiers(children, identifiers);
@@ -102,6 +101,8 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
             const auto & column_name = identifiers[index]->shortName();
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
+            /// For lambda functions, we can't always find them in the list of columns
+            /// For example: SELECT * FROM system.one WHERE arrayMap(x -> x, [dummy]) = [0]
             if (outer_column_iterator != outer_columns.end())
                 identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
         }
