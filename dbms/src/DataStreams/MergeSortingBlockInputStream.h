@@ -25,13 +25,15 @@ struct TemporaryFileStream;
 
 /** Part of implementation. Merging array of ready (already read from somewhere) blocks.
   * Returns result of merge as stream of blocks, not more than 'max_merged_block_size' rows in each.
+  *
+  * offset - it's permitted to output first offet rows with arbitrary implementation specific data as they will be ignored.
   */
 class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlocksBlockInputStream(Blocks & blocks_, const SortDescription & description_,
-        size_t max_merged_block_size_, UInt64 limit_ = 0);
+        size_t max_merged_block_size_, UInt64 limit_ = 0, UInt64 offset_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
 
@@ -49,7 +51,9 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
+    UInt64 offset;
     size_t total_merged_rows = 0;
+    size_t total_rows_in_blocks = 0;
 
     SortCursorImpls cursors;
 
@@ -72,7 +76,7 @@ class MergeSortingBlockInputStream : public IBlockInputStream
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
-        size_t max_merged_block_size_, UInt64 limit_,
+        size_t max_merged_block_size_, UInt64 limit_, UInt64 offset_,
         size_t max_bytes_before_remerge_,
         size_t max_bytes_before_external_sort_, const std::string & tmp_path_,
         size_t min_free_disk_space_);
@@ -91,6 +95,7 @@ private:
     SortDescription description;
     size_t max_merged_block_size;
     UInt64 limit;
+    UInt64 offset;
 
     size_t max_bytes_before_remerge;
     size_t max_bytes_before_external_sort;

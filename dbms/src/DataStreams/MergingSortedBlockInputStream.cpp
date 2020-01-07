@@ -243,7 +243,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
 //                std::cerr << "Fast-forward " << num_rows_to_skip << " rows.\n";
 
                 for (size_t i = 0; i < num_columns; ++i)
-                    merged_columns[i] = header.getByPosition(i).column->cloneResized(num_rows_to_skip);
+                    merged_columns[i] = merged_columns[i]->cloneResized(num_rows_to_skip);
 
                 skipBlock(smallest_cursor, queue);
                 total_merged_rows += num_rows_to_skip;

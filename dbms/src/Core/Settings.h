@@ -273,6 +273,8 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingOverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
     M(SettingUInt64, max_bytes_before_external_sort, 0, "", 0) \
     M(SettingUInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.", 0) \
+    M(SettingBool, enable_parallel_merge_sort, 1, "Perform preliminary merging of sorted streams in multiple threads. This speed up queries with heavy sorting significantly.", 0) \
+    M(SettingUInt64, min_rows_to_parallel_merge_sort, 10000, "Apply parallel merge sorting only if the query has large enough LIMIT (regardless to offset).", 0) \
     \
     M(SettingUInt64, max_result_rows, 0, "Limit on result size in rows. Also checked for intermediate data sent from remote servers.", 0) \
     M(SettingUInt64, max_result_bytes, 0, "Limit on result size in bytes (uncompressed). Also checked for intermediate data sent from remote servers.", 0) \

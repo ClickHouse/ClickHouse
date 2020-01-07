@@ -26,9 +26,9 @@ namespace ErrorCodes
 
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
-    size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
+    size_t max_merged_block_size_, UInt64 limit_, UInt64 offset_, size_t max_bytes_before_remerge_,
     size_t max_bytes_before_external_sort_, const std::string & tmp_path_, size_t min_free_disk_space_)
-    : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), offset(offset_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
     max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_),
     min_free_disk_space(min_free_disk_space_)
@@ -89,7 +89,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
                 temporary_files.emplace_back(createTemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
-                MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
+                MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit, 0);
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
@@ -107,7 +107,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
         if (temporary_files.empty())
         {
-            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit);
+            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit, offset);
         }
         else
         {
@@ -125,10 +125,10 @@ Block MergeSortingBlockInputStream::readImpl()
 
             /// Rest of blocks in memory.
             if (!blocks.empty())
-                inputs_to_merge.emplace_back(std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit));
+                inputs_to_merge.emplace_back(std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, description, max_merged_block_size, limit, 0));
 
             /// Will merge that sorted streams.
-            impl = std::make_unique<MergingSortedBlockInputStream>(inputs_to_merge, description, max_merged_block_size, limit);
+            impl = std::make_unique<MergingSortedBlockInputStream>(inputs_to_merge, description, max_merged_block_size, limit, offset);
         }
     }
 
@@ -140,15 +140,18 @@ Block MergeSortingBlockInputStream::readImpl()
 
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
-    Blocks & blocks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
+    Blocks & blocks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_, UInt64 offset_)
+    : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_),
+    max_merged_block_size(max_merged_block_size_), limit(limit_), offset(offset_)
 {
     Blocks nonempty_blocks;
     for (const auto & block : blocks)
     {
-        if (block.rows() == 0)
+        auto rows = block.rows();
+        if (rows == 0)
             continue;
 
+        total_rows_in_blocks += rows;
         nonempty_blocks.push_back(block);
         cursors.emplace_back(block, description);
         has_collation |= cursors.back().has_collation;
@@ -207,7 +210,69 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
     size_t merged_rows = 0;
     while (queue.isValid())
     {
+        /** "Fast Forward" optimization for LIMIT with OFFSET.
+          *
+          * If there is offset to skip and if current blocks in all cursors have less or equal number of rows in total than the offset,
+          * we can select the block that is "smallest" according to it's last row than other blocks
+          * (it means - if we iterate 'offset' number of rows, this block will be processed earlier than other blocks)
+          * and just skip it, yielding a block with the same size and default values.
+          *
+          * This allows to avoid tons of comparisons.
+          *
+          * Note that 'out_row_sources_buf' is not filled in this branch because it cannot be used with non-zero 'offset'.
+          */
+        if (offset && !merged_rows && total_merged_rows + total_rows_in_blocks < offset)
+        {
+            auto smallest_cursor = std::min_element(
+                queue.container().begin(), queue.container().end(),
+                [](const auto & a, const auto & b){ return a.willBeFinishedEarlier(b); });
+
+            size_t num_rows_to_skip = (*smallest_cursor)->rows;
+
+            for (size_t i = 0; i < num_columns; ++i)
+                merged_columns[i] = merged_columns[i]->cloneResized(num_rows_to_skip);
+
+            queue.container().erase(smallest_cursor);
+            queue.rebuild();    /// NOTE It can be better.
+
+            total_merged_rows += num_rows_to_skip;
+            total_rows_in_blocks -= num_rows_to_skip;
+
+            break;
+        }
+
         auto current = queue.current();
+
+        /** And what if the block is totally less or equal than the rest for the current cursor?
+          * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
+          */
+        if (current->isFirst()
+            && (queue.size() == 1
+                || (queue.size() >= 2 && current.totallyLessOrEquals(queue.nextChild()))))
+        {
+            /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
+            if (merged_rows != 0)
+                break;
+
+            for (size_t i = 0; i < num_columns; ++i)
+                merged_columns[i] = (std::move(*current->all_columns[i])).mutate();
+
+            merged_rows = merged_columns.at(0)->size();
+
+            /// Limit output
+            if (limit && total_merged_rows + merged_rows > limit)
+            {
+                merged_rows = limit - total_merged_rows;
+                for (size_t i = 0; i < num_columns; ++i)
+                {
+                    auto & column = merged_columns[i];
+                    column = (*column->cut(0, merged_rows)).mutate();
+                }
+            }
+
+            total_merged_rows += merged_rows;
+            break;
+        }
 
         /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
@@ -245,7 +310,7 @@ void MergeSortingBlockInputStream::remerge()
     LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
+    MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit, 0);
 
     Blocks new_blocks;
     size_t new_sum_rows_in_blocks = 0;
