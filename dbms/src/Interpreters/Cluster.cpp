@@ -467,6 +467,7 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 
 Cluster::Cluster(const Settings & settings, const Cluster & from) : shards_info{}, addresses_with_failover{}
 {
+    std::set<std::tuple<String, int>> hosts;
     if (!from.addresses_with_failover.empty())
     {
         for (size_t shard_index : ext::range(0, from.shards_info.size()))
@@ -475,27 +476,36 @@ Cluster::Cluster(const Settings & settings, const Cluster & from) : shards_info{
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
                 ShardInfo info;
-                Address address;
-                address = replicas[replica_index];
-                if (address.is_local)
-                    info.local_addresses.push_back(replicas[replica_index]);
+                Address address = replicas[replica_index];
+                auto position = find_if(hosts.begin(), hosts.end(), [=](auto item) {
+                    return std::get<0>(item) == address.host_name && std::get<1>(item) == address.port;
+                });
+                if (position == hosts.end())
+                {
+                    if (address.is_local)
+                        info.local_addresses.push_back(replicas[replica_index]);
+                    hosts.insert(std::tuple<String , int> (address.host_name, address.port));
+                    ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+                        settings.distributed_connections_pool_size,
+                        address.host_name,
+                        address.port,
+                        address.default_database,
+                        address.user,
+                        address.password,
+                        "server",
+                        address.compression,
+                        address.secure);
 
-                ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
-                    settings.distributed_connections_pool_size,
-                    address.host_name,
-                    address.port,
-                    address.default_database,
-                    address.user,
-                    address.password,
-                    "server",
-                    address.compression,
-                    address.secure);
-
-                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
-                info.per_replica_pools = {std::move(pool)};
-                std ::vector<Cluster::Address> newAddress = {address};
-                addresses_with_failover.emplace_back(newAddress);
-                shards_info.emplace_back(std::move(info));
+                    info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+                    info.per_replica_pools = {std::move(pool)};
+                    std ::vector<Cluster::Address> newAddress = {address};
+                    addresses_with_failover.emplace_back(newAddress);
+                    shards_info.emplace_back(std::move(info));
+                }
+                else
+                {
+                    continue;
+                }
             }
         }
     }
