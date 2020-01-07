@@ -942,15 +942,15 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 }
 
 
-static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
+static std::pair<UInt64, UInt64> getLimitsForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        return limit_length + limit_offset;
+        return { limit_length + limit_offset, limit_offset };
     }
-    return 0;
+    return { 0, 0 };
 }
 
 
@@ -1157,7 +1157,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.input_sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info, false);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -1228,9 +1228,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                   */
 
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-                    executeMergeSorted(pipeline);
+                    executeMergeSorted(pipeline, true);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline, query_info.input_sorting_info);
+                    executeOrder(pipeline, query_info.input_sorting_info, true);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -2220,12 +2220,20 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
     });
 }
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info)
+/** can_skip_offset is true if this will output the last stream before actual LIMIT limit, offset
+  * and we can ask to skip first offset rows.
+  */
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info, bool can_skip_offset)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
     const Settings & settings = context->getSettingsRef();
-    UInt64 limit = getLimitForSorting(query, *context);
+    UInt64 limit;
+    UInt64 offset;
+    std::tie(limit, offset) = getLimitsForSorting(query, *context);
+
+    if (!can_skip_offset)
+        offset = 0;
 
     if (input_sorting_info)
     {
@@ -2241,7 +2249,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
         bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
 
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        executeMergeSorted(pipeline, input_sorting_info->order_key_prefix_descr, limit_for_merging);
+        UInt64 offset_for_merging = (need_finish_sorting ? 0 : offset);
+        executeMergeSorted(pipeline, input_sorting_info->order_key_prefix_descr, limit_for_merging, offset_for_merging);
 
         if (need_finish_sorting)
         {
@@ -2277,15 +2286,20 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
         });
 
         /// If there are several streams, we merge them into one
-        executeMergeSorted(pipeline, output_order_descr, limit);
+        executeMergeSorted(pipeline, output_order_descr, limit, offset);
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info, bool can_skip_offset)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
-    UInt64 limit = getLimitForSorting(query, *context);
+    UInt64 limit;
+    UInt64 offset;
+    std::tie(limit, offset) = getLimitsForSorting(query, *context);
+
+    if (!can_skip_offset)
+        offset = 0;
 
     const Settings & settings = context->getSettingsRef();
 
@@ -2359,22 +2373,25 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 }
 
 
-void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
+void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, bool can_skip_offset)
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, *context);
-    UInt64 limit = getLimitForSorting(query, *context);
+    auto [limit, offset] = getLimitsForSorting(query, *context);
+
+    if (!can_skip_offset)
+        offset = 0;
 
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
         unifyStreams(pipeline, pipeline.firstStream()->getHeader());
-        executeMergeSorted(pipeline, order_descr, limit);
+        executeMergeSorted(pipeline, order_descr, limit, offset);
     }
 }
 
 
-void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit, UInt64 offset)
 {
     if (pipeline.hasMoreThanOneStream())
     {
@@ -2389,21 +2406,24 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortD
         });
 
         pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
-            pipeline.streams, sort_description, settings.max_block_size, limit);
+            pipeline.streams, sort_description, settings.max_block_size, limit, offset);
         pipeline.streams.resize(1);
     }
 }
 
-void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, bool can_skip_offset)
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, *context);
-    UInt64 limit = getLimitForSorting(query, *context);
+    auto [limit, offset] = getLimitsForSorting(query, *context);
 
-    executeMergeSorted(pipeline, order_descr, limit);
+    if (!can_skip_offset)
+        offset = 0;
+
+    executeMergeSorted(pipeline, order_descr, limit, offset);
 }
 
-void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit, UInt64 offset)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
@@ -2414,7 +2434,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
             pipeline.getHeader(),
             pipeline.getNumStreams(),
             sort_description,
-            settings.max_block_size, limit);
+            settings.max_block_size, limit, offset);
 
         pipeline.addPipe({ std::move(transform) });
     }
@@ -2782,7 +2802,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
     {
         if (pipeline.stream_with_non_joined_data)
             throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0, 0);
     }
     else
         executeUnion(pipeline, {});
@@ -2797,7 +2817,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
     {
         if (pipeline.hasDelayedStream())
             throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0, 0);
     }
 
     const Settings & settings = context->getSettingsRef();

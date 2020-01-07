@@ -79,7 +79,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     EXPECT_EQ(streams.size(), 3);
 
-    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, nullptr, false, true);
 
     size_t total_rows = 0;
     auto block1 = stream.read();
@@ -116,7 +116,7 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 
     EXPECT_EQ(streams.size(), 3);
 
-    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, nullptr, false, true);
 
     auto block1 = stream.read();
     auto block2 = stream.read();

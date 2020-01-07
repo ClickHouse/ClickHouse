@@ -141,6 +141,18 @@ struct SortCursorHelper
         /// The last row of this cursor is no larger than the first row of the another cursor.
         return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
     }
+
+    /// Chacks that the last row in the current block is less that the last row in the block of another cursor.
+    bool willBeFinishedEarlier(const SortCursorHelper & rhs) const
+    {
+        if (impl->rows == 0)
+            return true;    /// NOTE This is not a strict order.
+        if (rhs.impl->rows == 0)
+            return false;
+
+        /// The last row of this cursor is no larger than the last row of the another cursor.
+        return !derived().greaterAt(rhs.derived(), impl->rows - 1, rhs.impl->rows - 1);
+    }
 };
 
 
@@ -274,6 +286,11 @@ public:
         queue.emplace_back(&cursor);
         std::push_heap(queue.begin(), queue.end());
         next_idx = 0;
+    }
+
+    auto & container()
+    {
+        return queue;
     }
 
 private:

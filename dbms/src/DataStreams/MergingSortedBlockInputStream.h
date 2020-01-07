@@ -29,12 +29,13 @@ class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
+      * offset - it's permitted to output first offet rows with arbitrary implementation specific data as they will be ignored.
       * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
+        UInt64 limit_ = 0, UInt64 offset_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -93,6 +94,7 @@ protected:
     const SortDescription description;
     const size_t max_block_size;
     UInt64 limit;
+    UInt64 offset;
     UInt64 total_merged_rows = 0;
 
     bool first = true;

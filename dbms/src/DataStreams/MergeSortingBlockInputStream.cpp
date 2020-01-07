@@ -18,6 +18,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
+
+
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,

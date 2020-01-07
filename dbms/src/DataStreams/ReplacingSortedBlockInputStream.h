@@ -20,7 +20,7 @@ public:
         const BlockInputStreams & inputs_, const SortDescription & description_,
         const String & version_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr,
         bool average_block_sizes_ = false)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_, false, average_block_sizes_)
+        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, 0, out_row_sources_buf_, false, average_block_sizes_)
     {
         if (!version_column.empty())
             version_column_number = header.getPositionByName(version_column);

@@ -18,7 +18,7 @@ VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputSt
     const BlockInputStreams & inputs_, const SortDescription & description_,
     const String & sign_column_, size_t max_block_size_,
     WriteBuffer * out_row_sources_buf_, bool average_block_sizes_)
-    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_, false, average_block_sizes_)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, 0, out_row_sources_buf_, false, average_block_sizes_)
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 2)
     , current_keys(max_rows_in_queue + 1)
 {

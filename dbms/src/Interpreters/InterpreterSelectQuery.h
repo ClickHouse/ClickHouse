@@ -213,9 +213,9 @@ private:
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info, bool can_skip_offset);
     void executeWithFill(Pipeline & pipeline);
-    void executeMergeSorted(Pipeline & pipeline);
+    void executeMergeSorted(Pipeline & pipeline, bool can_skip_offset);
     void executePreLimit(Pipeline & pipeline);
     void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
@@ -224,7 +224,7 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit, UInt64 offset);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -232,9 +232,9 @@ private:
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info, bool can_skip_offset);
     void executeWithFill(QueryPipeline & pipeline);
-    void executeMergeSorted(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline, bool can_skip_offset);
     void executePreLimit(QueryPipeline & pipeline);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
@@ -242,7 +242,7 @@ private:
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit, UInt64 offset);
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);

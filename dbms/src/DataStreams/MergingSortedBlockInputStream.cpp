@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
-    : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    size_t max_block_size_, UInt64 limit_, UInt64 offset_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
+    : description(description_), max_block_size(max_block_size_), limit(limit_), offset(offset_), quiet(quiet_)
     , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
@@ -182,6 +182,45 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
         auto current = queue.current();
         size_t current_block_granularity = current->rows;
 
+        /** "Fast Forward" optimization for LIMIT with OFFSET.
+          *
+          * If there is offset to skip and if current blocks in all cursors have less or equal number of rows in total than the offset,
+          * we can select the block that is "smallest" according to it's last row than other blocks
+          * (it means - if we iterate 'offset' number of rows, this block will be processed earlier than other blocks)
+          * and just skip it, yielding a block with the same size and default values.
+          *
+          * This allows to avoid tons of comparisons.
+          *
+          * Note that 'out_row_sources_buf' is not filled in this branch because it cannot be used with non-zero 'offset'.
+          */
+        if (!merged_rows && total_merged_rows < offset)
+        {
+            size_t total_rows_under_cursors = 0;
+            for (size_t i = 0, size = queue.size(); i < size; ++i)
+                total_rows_under_cursors += queue.container()[i]->rows;
+
+            if (total_merged_rows + total_rows_under_cursors < offset)
+            {
+                auto smallest_cursor = *std::min_element(
+                    queue.container().begin(), queue.container().end(),
+                    [](const auto & a, const auto & b){ return a.willBeFinishedEarlier(b); });
+
+                size_t num_rows_to_skip = smallest_cursor->rows;
+
+                for (size_t i = 0; i < num_columns; ++i)
+                    merged_columns[i] = header.getByPosition(i).column->cloneResized(num_rows_to_skip);
+
+                fetchNextBlock(smallest_cursor, queue);
+                total_merged_rows += num_rows_to_skip;
+                return;
+            }
+            else
+            {
+                /// Stop "fast forward".
+                offset = 0;
+            }
+        }
+
         /** And what if the block is totally less or equal than the rest for the current cursor?
           * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
           */
@@ -205,7 +244,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                 throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
             for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i] = (*std::move(source_blocks[source_num]->getByPosition(i).column)).mutate();
+                merged_columns[i] = (std::move(*current->all_columns[i])).mutate();
 
 //            std::cerr << "copied columns\n";
 
