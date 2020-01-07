@@ -151,7 +151,7 @@ struct DecomposedFloat64
     {
         return x_uint == 0
             || (normalized_exponent() >= 0 && normalized_exponent() <= 52
-                && ((mantissa() & (1ULL << (52 - normalized_exponent()))) == 0));
+                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
     }
 };
 
@@ -188,7 +188,7 @@ struct DecomposedFloat32
     {
         return x_uint == 0
             || (normalized_exponent() >= 0 && normalized_exponent() <= 23
-                && ((mantissa() & (1ULL << (23 - normalized_exponent()))) == 0));
+                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
     }
 };
 
