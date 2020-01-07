@@ -981,7 +981,7 @@ Default value: 0.
 - Type: seconds
 - Default value: 60 seconds
 
-Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+Controls how fast errors in distributed tables are zeroed. If a replica is unavailabe for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
 ** See also **
 
@@ -994,7 +994,7 @@ Controls how fast errors of distributed tables are zeroed. Given that currently 
 - Type: unsigned int
 - Default value: 1000
 
-Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
 ** See also **
 
@@ -1004,7 +1004,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
+Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
 Possible values:
 
@@ -1015,7 +1015,7 @@ Default value: 100 milliseconds.
 
 ## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
 Possible values:
 
@@ -1027,14 +1027,14 @@ Default value: 30000 milliseconds (30 seconds).
 
 Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
+When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better utilizing server and network resources.
 
 Possible values:
 
 - 1 — Enabled.
 - 0 — Disabled.
 
-Defaule value: 0.
+Default value: 0.
 
 ## os_thread_priority {#setting-os_thread_priority}
 
