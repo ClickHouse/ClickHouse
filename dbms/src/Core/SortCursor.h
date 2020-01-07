@@ -142,7 +142,7 @@ struct SortCursorHelper
         return !derived().greaterAt(rhs.derived(), impl->rows - 1, 0);
     }
 
-    /// Chacks that the last row in the current block is less that the last row in the block of another cursor.
+    /// Checks that the last row in the current block is less that the last row in the block of another cursor.
     bool willBeFinishedEarlier(const SortCursorHelper & rhs) const
     {
         if (impl->rows == 0)
