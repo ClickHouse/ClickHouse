@@ -52,7 +52,7 @@ public:
 
     CachePartition(
             const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
-            const std::string & dir_path, const size_t file_id, const size_t max_size, const size_t buffer_size = 4 * 1024);
+            const std::string & dir_path, const size_t file_id, const size_t max_size);
 
     ~CachePartition();
 
@@ -121,7 +121,7 @@ private:
 
     void flush();
 
-    void appendValuesToBufferAttribute(Attribute & to, const Attribute & from);
+    size_t appendValuesToAttribute(Attribute & to, const Attribute & from);
 
     template <typename Out>
     void getValueFromMemory(
@@ -131,9 +131,12 @@ private:
     void getValueFromStorage(
             const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
 
+    template <typename Out>
+    void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
+
     size_t file_id;
     size_t max_size;
-    size_t buffer_size;
+    //size_t buffer_size;
     std::string path;
 
     //mutable std::shared_mutex rw_lock;
@@ -164,9 +167,12 @@ private:
     Attribute keys_buffer;
     Attributes attributes_buffer;
     //MutableColumns buffer;
-    size_t bytes = 0;
-    size_t current_block_id = 0;
-    size_t current_address_in_block = 0;
+
+    DB::Memory<> memory;
+    std::optional<DB::WriteBuffer> write_buffer;
+
+    size_t current_memory_block_id = 0;
+    size_t current_file_block_id = 0;
 
     mutable std::atomic<size_t> element_count{0};
 };

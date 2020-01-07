@@ -55,8 +55,8 @@ namespace ErrorCodes
 namespace
 {
     constexpr size_t MAX_KEYS_TO_READ_ONCE = 128;
-    constexpr size_t SSD_BLOCK_SIZE = 4096;
-    constexpr size_t READ_BUFFER_ALIGNMENT = 0;
+    constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE;
+    constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
     constexpr size_t MAX_ATTRIBUTES_SIZE = 1024;
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
@@ -135,8 +135,8 @@ void CachePartition::Index::setBlockId(const size_t block_id)
 
 CachePartition::CachePartition(
         const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure,
-        const std::string & dir_path, const size_t file_id_, const size_t max_size_, const size_t buffer_size_)
-    : file_id(file_id_), max_size(max_size_), buffer_size(buffer_size_), path(dir_path + "/" + std::to_string(file_id))
+        const std::string & dir_path, const size_t file_id_, const size_t max_size_)
+    : file_id(file_id_), max_size(max_size_), path(dir_path + "/" + std::to_string(file_id)), memory(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
     keys_buffer.values = std::vector<UInt64>();
@@ -186,7 +186,8 @@ CachePartition::CachePartition(
     }
 }
 
-CachePartition::~CachePartition() {
+CachePartition::~CachePartition()
+{
     ::close(read_fd);
 }
 
@@ -197,25 +198,64 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
 
-    const size_t start_size = std::visit([](const auto & values) { return values.size(); }, keys_buffer.values);
+    appendValuesToAttribute(keys_buffer, new_keys);
 
-    appendValuesToBufferAttribute(keys_buffer, new_keys);
-    for (size_t i = 0; i < attributes_buffer.size(); ++i)
-    {
-        appendValuesToBufferAttribute(attributes_buffer[i], new_attributes[i]);
-        //bytes += buffer[i]->byteSize();
-    }
+    if (!write_buffer)
+        write_buffer.emplace(memory.data(), memory.size());
 
-    for (size_t i = 0; i < ids.size(); ++i)
+    for (size_t index = 0; index < ids.size();)
     {
-        key_to_metadata[ids[i]].index.setInMemory(true);
-        key_to_metadata[ids[i]].index.setAddressInBlock(start_size + i);
+        auto & key_index = key_to_metadata[ids[index]].index;
+        key_index.setInMemory(true);
+        key_index.setBlockId(current_memory_block_id);
+        key_index.setAddressInBlock(write_buffer->offset());
+
+        for (const auto & attribute : new_attributes)
+        {
+            // TODO:: переделать через столбцы + getDataAt
+            switch (attribute.type) {
+#define DISPATCH(TYPE) \
+            case AttributeUnderlyingType::ut##TYPE: \
+                { \
+                    if (sizeof(TYPE) > write_buffer->available()) \
+                    { \
+                        flush(); \
+                        continue; \
+                    } \
+                    else \
+                    { \
+                        const auto & values = std::get<Attribute::Container<TYPE>>(attribute.values); \
+                        writeBinary(values[index], *write_buffer); \
+                    } \
+                } \
+                break;
+
+                DISPATCH(UInt8)
+                DISPATCH(UInt16)
+                DISPATCH(UInt32)
+                DISPATCH(UInt64)
+                DISPATCH(UInt128)
+                DISPATCH(Int8)
+                DISPATCH(Int16)
+                DISPATCH(Int32)
+                DISPATCH(Int64)
+                DISPATCH(Decimal32)
+                DISPATCH(Decimal64)
+                DISPATCH(Decimal128)
+                DISPATCH(Float32)
+                DISPATCH(Float64)
+#undef DISPATCH
+
+                case AttributeUnderlyingType::utString:
+                    // TODO: string support
+                    break;
+            }
+        }
+        ++index;
     }
-    //if (bytes >= buffer_size)
-    //flush();
 }
 
-void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribute & from)
+size_t CachePartition::appendValuesToAttribute(Attribute & to, const Attribute & from)
 {
     switch (to.type)
     {
@@ -227,6 +267,7 @@ void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribu
             size_t prev_size = to_values.size(); \
             to_values.resize(to_values.size() + from_values.size()); \
             memcpy(&to_values[prev_size], &from_values[0], from_values.size() * sizeof(TYPE)); \
+            return from_values.size() * sizeof(TYPE); \
         } \
         break;
 
@@ -250,13 +291,14 @@ void CachePartition::appendValuesToBufferAttribute(Attribute & to, const Attribu
             // TODO: string support
             break;
     }
+    throw Exception{"Unknown attribute type: " + std::to_string(static_cast<int>(to.type)), ErrorCodes::TYPE_MISMATCH};
 }
 
 void CachePartition::flush()
 {
     if (!write_data_buffer)
     {
-        write_data_buffer = std::make_unique<WriteBufferAIO>(path + BIN_FILE_EXT, buffer_size, O_RDWR | O_CREAT | O_TRUNC);
+        //write_data_buffer = std::make_unique<WriteBufferAIO>(path + BIN_FILE_EXT, buffer_size, O_RDWR | O_CREAT | O_TRUNC);
         // TODO: не перетирать + seek в конец файла
     }
 
@@ -316,7 +358,7 @@ void CachePartition::flush()
     for (size_t row = 0; row < ids.size(); ++row)
     {
         key_to_metadata[ids[row]].index.setInMemory(false);
-        key_to_metadata[ids[row]].index.setBlockId(current_block_id);
+        key_to_metadata[ids[row]].index.setBlockId(current_file_block_id);
         key_to_metadata[ids[row]].index.setAddressInBlock(offsets[row]);
         Poco::Logger::get("INDEX:").information("NEW MAP: " + std::to_string(ids[row]) + " -> " + std::to_string(key_to_metadata[ids[row]].index.index));
     }
@@ -357,15 +399,18 @@ template <typename Out>
 void CachePartition::getValueFromMemory(
         const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const
 {
-    const auto & attribute = std::get<Attribute::Container<Out>>(attributes_buffer[attribute_index].values);
+    //const auto & attribute = std::get<Attribute::Container<Out>>(attributes_buffer[attribute_index].values);
     for (size_t i = 0; i < indices.size(); ++i)
     {
         const auto & index = indices[i];
         if (index.exists() && index.inMemory())
         {
-            out[i] = attribute[index.getAddressInBlock()];
-            if constexpr (std::is_same_v<Int32, Out>)
-                Poco::Logger::get("part:").information("GET FROM MEMORY " + std::to_string(out[i]) + " --- " + std::to_string(index.getAddressInBlock()));
+            const size_t offset = index.getAddressInBlock();
+
+            Poco::Logger::get("part:").information("GET FROM MEMORY " + std::to_string(i) + " --- " + std::to_string(offset));
+
+            ReadBufferFromMemory read_buffer(memory.data() + offset, memory.size() - offset);
+            readValueFromBuffer(attribute_index, out[i], read_buffer);
         }
     }
 }
@@ -386,7 +431,7 @@ void CachePartition::getValueFromStorage(
 
     std::sort(std::begin(index_to_out), std::end(index_to_out));
 
-    DB::Memory read_buffer(MAX_ATTRIBUTES_SIZE * index_to_out.size(), READ_BUFFER_ALIGNMENT);
+    DB::Memory read_buffer(MAX_ATTRIBUTES_SIZE * index_to_out.size(), BUFFER_ALIGNMENT);
 
     std::vector<iocb> requests(index_to_out.size());
     memset(requests.data(), 0, requests.size() * sizeof(requests.front()));
@@ -453,47 +498,24 @@ void CachePartition::getValueFromStorage(
     {
         Poco::Logger::get("Read:").information("ito: f:" + std::to_string(index_to_out[event.data].first) + " s:" + std::to_string(index_to_out[event.data].second));
         Poco::Logger::get("Read:").information("data: " + std::to_string(event.data) + " res: " + std::to_string(event.res));
+
         DB::ReadBufferFromMemory buf(read_buffer.data() + event.data * MAX_ATTRIBUTES_SIZE, event.res);
+        readValueFromBuffer(attribute_index, out[index_to_out[event.data].second], buf);
+    }
+}
 
-        for (size_t i = 0; i < attribute_index; ++i)
-        {
-            switch (attributes_buffer[i].type)
-            {
-        #define DISPATCH(TYPE) \
-                case AttributeUnderlyingType::ut##TYPE: \
-                    { \
-                        TYPE tmp; \
-                        readBinary(tmp, buf); \
-                    } \
-                    break;
-
-                DISPATCH(UInt8)
-                DISPATCH(UInt16)
-                DISPATCH(UInt32)
-                DISPATCH(UInt64)
-                DISPATCH(UInt128)
-                DISPATCH(Int8)
-                DISPATCH(Int16)
-                DISPATCH(Int32)
-                DISPATCH(Int64)
-                DISPATCH(Decimal32)
-                DISPATCH(Decimal64)
-                DISPATCH(Decimal128)
-                DISPATCH(Float32)
-                DISPATCH(Float64)
-        #undef DISPATCH
-
-                case AttributeUnderlyingType::utString:
-                    // TODO: string support
-                    break;
-            }
-        }
-
-        switch (attributes_buffer[attribute_index].type)
+template <typename Out>
+void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const
+{
+    for (size_t i = 0; i < attribute_index; ++i)
+    {
+        switch (attributes_buffer[i].type)
         {
 #define DISPATCH(TYPE) \
                 case AttributeUnderlyingType::ut##TYPE: \
-                    readBinary(out[index_to_out[event.data].second], buf); \
+                    { \
+                        buf.ignore(sizeof(TYPE)); \
+                    } \
                     break;
 
             DISPATCH(UInt8)
@@ -516,6 +538,34 @@ void CachePartition::getValueFromStorage(
                 // TODO: string support
                 break;
         }
+    }
+
+    switch (attributes_buffer[attribute_index].type)
+    {
+#define DISPATCH(TYPE) \
+                case AttributeUnderlyingType::ut##TYPE: \
+                    readBinary(dst, buf); \
+                    break;
+
+        DISPATCH(UInt8)
+        DISPATCH(UInt16)
+        DISPATCH(UInt32)
+        DISPATCH(UInt64)
+        DISPATCH(UInt128)
+        DISPATCH(Int8)
+        DISPATCH(Int16)
+        DISPATCH(Int32)
+        DISPATCH(Int64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
+        DISPATCH(Float32)
+        DISPATCH(Float64)
+#undef DISPATCH
+
+        case AttributeUnderlyingType::utString:
+            // TODO: string support
+            break;
     }
 }
 
