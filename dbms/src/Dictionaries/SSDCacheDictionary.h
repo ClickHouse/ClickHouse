@@ -140,8 +140,7 @@ private:
     std::string path;
 
     //mutable std::shared_mutex rw_lock;
-    //int index_fd;
-    mutable int read_fd = -1;
+    int fd = -1;
 
     struct KeyMetadata final
     {
@@ -164,7 +163,6 @@ private:
 
     Attribute keys_buffer;
     Attributes attributes_buffer;
-    //MutableColumns buffer;
 
     DB::Memory<> memory;
     std::optional<DB::WriteBuffer> write_buffer;
