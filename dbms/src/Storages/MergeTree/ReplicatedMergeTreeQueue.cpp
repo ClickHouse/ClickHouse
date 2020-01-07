@@ -974,9 +974,19 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
         const auto data_settings = data.getSettings();
-        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
+        bool ignore_max_size_for_merge  = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
+        bool ignore_max_size_for_mutate = (entry.type == LogEntry::MUTATE_PART) && (max_source_parts_size == data_settings->max_bytes_to_mutate_at_max_space_in_pool);
 
-        if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
+        if ((entry.type == LogEntry::MERGE_PARTS) && !ignore_max_size_for_merge && sum_parts_size_in_bytes > max_source_parts_size)
+        {
+            String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
+                + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
+                + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
+            LOG_DEBUG(log, reason);
+            out_postpone_reason = reason;
+            return false;
+        }
+        if ((entry.type == LogEntry::MUTATE_PART) && !ignore_max_size_for_mutate && sum_parts_size_in_bytes > max_source_parts_size)
         {
             String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
                 + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
