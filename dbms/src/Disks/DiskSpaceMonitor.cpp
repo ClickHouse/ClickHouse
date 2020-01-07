@@ -288,6 +288,19 @@ ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_in
 }
 
 
+ReservationPtr StoragePolicy::reserveSlowest(UInt64 expected_size) const
+{
+    for (auto it = volumes.rbegin(); it != volumes.rend(); ++it)
+    {
+        const auto & volume = *it;
+        auto reservation = volume->reserve(expected_size);
+        if (reservation)
+            return reservation;
+    }
+    return {};
+}
+
+
 ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
 {
     return reserve(expected_size, 0);
