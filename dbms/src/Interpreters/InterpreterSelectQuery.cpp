@@ -2405,6 +2405,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
 {
+    pipeline.resize(pipeline.getNumMainStreams());
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
