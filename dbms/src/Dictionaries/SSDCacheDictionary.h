@@ -143,8 +143,6 @@ private:
     //int index_fd;
     mutable int read_fd = -1;
 
-    std::unique_ptr<WriteBufferAIO> write_data_buffer;
-
     struct KeyMetadata final
     {
         using time_point_t = std::chrono::system_clock::time_point;
