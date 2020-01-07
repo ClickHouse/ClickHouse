@@ -6,7 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.src;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.dst;"
 
