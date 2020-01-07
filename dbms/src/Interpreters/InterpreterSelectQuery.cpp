@@ -2267,17 +2267,17 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
             limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
             sorting_stream->setLimits(limits);
 
-            stream = sorting_stream;
+            auto merging_stream = std::make_shared<MergeSortingBlockInputStream>(
+                sorting_stream, output_order_descr, settings.max_block_size, limit,
+                settings.max_bytes_before_remerge_sort,
+                settings.max_bytes_before_external_sort / pipeline.streams.size(),
+                context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+
+            stream = merging_stream;
         });
 
         /// If there are several streams, we merge them into one
-        executeUnion(pipeline, {});
-
-        /// Merge the sorted blocks.
-        pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-            pipeline.firstStream(), output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
-            settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+        executeMergeSorted(pipeline, output_order_descr, limit);
     }
 }
 
