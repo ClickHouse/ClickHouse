@@ -14,9 +14,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <settings>
         <output_format_pretty_max_rows>1000000</output_format_pretty_max_rows>

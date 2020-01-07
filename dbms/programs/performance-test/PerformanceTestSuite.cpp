@@ -64,7 +64,6 @@ public:
         const std::string & password_,
         const Settings & cmd_settings,
         const bool lite_output_,
-        const std::string & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
         Strings && skip_tags_,
@@ -86,7 +85,6 @@ public:
         , skip_names_regexp(std::move(skip_names_regexp_))
         , query_indexes(query_indexes_)
         , lite_output(lite_output_)
-        , profiles_file(profiles_file_)
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
@@ -139,7 +137,6 @@ private:
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 
     bool lite_output;
-    std::string profiles_file;
 
     Strings input_files;
     std::vector<XMLConfigurationPtr> tests_configurations;
@@ -197,7 +194,7 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
+        PerformanceTestInfo info(test_config, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
 
