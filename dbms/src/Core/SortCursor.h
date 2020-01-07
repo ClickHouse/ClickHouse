@@ -244,7 +244,7 @@ public:
         for (size_t i = 0; i < size; ++i)
             if (!cursors[i].empty())
                 queue.emplace_back(&cursors[i]);
-        std::make_heap(queue.begin(), queue.end());
+        rebuild();
     }
 
     bool isValid() const { return !queue.empty(); }
@@ -293,8 +293,14 @@ public:
         return queue;
     }
 
-private:
+    void rebuild()
+    {
+        std::make_heap(queue.begin(), queue.end());
+    }
+
     using Container = std::vector<Cursor>;
+
+private:
     Container queue;
 
     /// Cache comparison between first and second child if the order in queue has not been changed.

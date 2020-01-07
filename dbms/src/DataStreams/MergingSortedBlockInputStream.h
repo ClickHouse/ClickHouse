@@ -88,6 +88,10 @@ protected:
     template <typename TSortCursor>
     void fetchNextBlock(const TSortCursor & current, SortingHeap<TSortCursor> & queue);
 
+    /// Skip to next block in one of cursors.
+    template <typename TSortCursor>
+    void skipBlock(typename SortingHeap<TSortCursor>::Container::iterator it, SortingHeap<TSortCursor> & queue);
+
 
     Block header;
 

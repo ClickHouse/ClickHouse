@@ -137,6 +137,40 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 }
 
 
+template <typename TSortCursor>
+void MergingSortedBlockInputStream::skipBlock(typename SortingHeap<TSortCursor>::Container::iterator it, SortingHeap<TSortCursor> & queue)
+{
+    size_t order = (*it)->order;
+    size_t size = cursors.size();
+
+    if (order >= size || &cursors[order] != it->impl)
+        throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+
+    while (true)
+    {
+        source_blocks[order] = new detail::SharedBlock(children[order]->read());    /// intrusive ptr
+
+        if (!*source_blocks[order])
+        {
+            queue.container().erase(it);
+            break;
+        }
+
+        if (source_blocks[order]->rows())
+        {
+            cursors[order].reset(*source_blocks[order]);
+            *it = TSortCursor(&cursors[order]);
+
+            source_blocks[order]->all_columns = cursors[order].all_columns;
+            source_blocks[order]->sort_columns = cursors[order].sort_columns;
+            break;
+        }
+    }
+
+    queue.rebuild();
+}
+
+
 bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
 {
     if (!count_average)
@@ -165,7 +199,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
         {
-    //        std::cerr << "Limit reached\n";
+//            std::cerr << "Limit reached\n";
             cancel(false);
             finished = true;
             return true;
@@ -179,9 +213,6 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
     /// Take rows in required order and put them into `merged_columns`, while the number of rows are no more than `max_block_size`
     while (queue.isValid())
     {
-        auto current = queue.current();
-        size_t current_block_granularity = current->rows;
-
         /** "Fast Forward" optimization for LIMIT with OFFSET.
           *
           * If there is offset to skip and if current blocks in all cursors have less or equal number of rows in total than the offset,
@@ -199,27 +230,36 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
             for (size_t i = 0, size = queue.size(); i < size; ++i)
                 total_rows_under_cursors += queue.container()[i]->rows;
 
+//            std::cerr << total_merged_rows << ", " << offset << ", " << total_rows_under_cursors << ", " << queue.size() << "\n";
+
             if (total_merged_rows + total_rows_under_cursors < offset)
             {
-                auto smallest_cursor = *std::min_element(
+                auto smallest_cursor = std::min_element(
                     queue.container().begin(), queue.container().end(),
                     [](const auto & a, const auto & b){ return a.willBeFinishedEarlier(b); });
 
-                size_t num_rows_to_skip = smallest_cursor->rows;
+                size_t num_rows_to_skip = (*smallest_cursor)->rows;
+
+//                std::cerr << "Fast-forward " << num_rows_to_skip << " rows.\n";
 
                 for (size_t i = 0; i < num_columns; ++i)
                     merged_columns[i] = header.getByPosition(i).column->cloneResized(num_rows_to_skip);
 
-                fetchNextBlock(smallest_cursor, queue);
+                skipBlock(smallest_cursor, queue);
                 total_merged_rows += num_rows_to_skip;
                 return;
             }
             else
             {
+//                std::cerr << "Stop fast forward.\n";
+
                 /// Stop "fast forward".
                 offset = 0;
             }
         }
+
+        auto current = queue.current();
+        size_t current_block_granularity = current->rows;
 
         /** And what if the block is totally less or equal than the rest for the current cursor?
           * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
@@ -273,7 +313,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                     out_row_sources_buf->write(row_source.data);
             }
 
-            //std::cerr << "fetching next block\n";
+//            std::cerr << "fetching next block\n";
 
             total_merged_rows += merged_rows;
             fetchNextBlock(current, queue);
