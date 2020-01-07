@@ -65,7 +65,6 @@ static std::vector<std::string> listFilesWithRegexpMatching(const std::string & 
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
     auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
-    std::cerr << regexp << "\n";
     re2::RE2 matcher(regexp);
 
     std::vector<std::string> result;
