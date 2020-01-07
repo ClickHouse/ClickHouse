@@ -11,9 +11,6 @@
         </all_of>
     </stop_conditions>
 
-    <main_metric>
-        <rows_per_second />
-    </main_metric>
 
     <query>SELECT min(d32), max(d32), argMin(x, d32), argMax(x, d32) FROM t</query>
     <query>SELECT min(d64), max(d64), argMin(x, d64), argMax(x, d64) FROM t</query>

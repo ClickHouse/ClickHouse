@@ -8,9 +8,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <max_rows_per_second />
-    </main_metric>
 
     <query><![CDATA[ WITH number AS x SELECT sum(x < 1 ? 1 : (x < 5 ? 2 : 3)) FROM system.numbers ]]></query>
     <query><![CDATA[ WITH number AS x SELECT sum(x < 1 ? '1' : (x < 5 ? '2' : '3')) FROM system.numbers ]]></query>
