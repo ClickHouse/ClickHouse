@@ -138,37 +138,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         setIdentifierSpecial(ast);
 
     ClusterPtr cluster;
-    if (!cluster_name.empty() && name != "clusterAllReplicas")
+    if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
-        cluster = context.getCluster(cluster_name);
-    }
-    else if (!cluster_name.empty() && name == "clusterAllReplicas")
-    {
-        std::vector<std::vector<String>> clusterNodes;
-        cluster = context.getCluster(cluster_name);
-        // creating a new topology for clusterAllReplicas
-        const auto & addresses_with_failovers = cluster->getShardsAddresses();
-        const auto & shards_info = cluster->getShardsInfo();
-        auto maybe_secure_port = context.getTCPPortSecure();
-
-        for (size_t shard_index : ext::range(0, shards_info.size()))
-        {
-            const auto & replicas = addresses_with_failovers[shard_index];
-            for (size_t replica_index : ext::range(0, replicas.size()))
-            {
-                std::vector<String> newNode = {replicas[replica_index].host_name};
-                clusterNodes.push_back(newNode);
-            }
-        }
-        cluster = std::make_shared<Cluster>(
-            context.getSettings(),
-            clusterNodes,
-            username,
-            password,
-            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
-            false,
-            secure);
+        if (name != "clusterAllReplicas")
+            cluster = context.getCluster(cluster_name);
+        else
+            cluster = context.getCluster(cluster_name)->getClusterWithReplicasAsShards(context.getSettings());
     }
     else
     {
@@ -192,13 +168,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                    context.getRemoteHostFilter().checkHostAndPort(
+                        host,
+                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
                 else
                     context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
+        cluster = std::make_shared<Cluster>(
+            context.getSettings(),
+            names,
+            username,
+            password,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
+            false,
+            secure);
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
