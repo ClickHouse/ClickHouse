@@ -329,7 +329,6 @@ try
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")
-        ("profiles-file", value<std::string>()->default_value(""), "Specify a file with global profiles")
         ("host,h", value<std::string>()->default_value("localhost"), "")
         ("port", value<UInt16>()->default_value(9000), "")
         ("secure,s", "Use TLS connection")
@@ -398,7 +397,6 @@ try
         options["password"].as<std::string>(),
         cmd_settings,
         options.count("lite") > 0,
-        options["profiles-file"].as<std::string>(),
         std::move(input_files),
         std::move(tests_tags),
         std::move(skip_tags),
