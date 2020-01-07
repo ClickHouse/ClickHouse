@@ -159,7 +159,7 @@ struct ColumnAliasesMatcher
                         aliases[alias] = long_name;
                         rev_aliases[long_name].push_back(alias);
 
-                        identifier->setShortName(alias);
+                        IdentifierSemantic::coverName(*identifier, alias);
                         if (is_public)
                         {
                             identifier->setAlias(long_name);
@@ -177,7 +177,7 @@ struct ColumnAliasesMatcher
                     if (is_public && allowed_long_names.count(long_name))
                         ; /// leave original name unchanged for correct output
                     else
-                        identifier->setShortName(it->second[0]);
+                        IdentifierSemantic::coverName(*identifier, it->second[0]);
                 }
             }
         }
@@ -229,7 +229,7 @@ struct ColumnAliasesMatcher
 
             if (!last_table)
             {
-                node.setShortName(alias);
+                IdentifierSemantic::coverName(node, alias);
                 node.setAlias("");
             }
         }

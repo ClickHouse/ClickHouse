@@ -1,4 +1,4 @@
-configure_file(config_functions.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_functions.h)
+configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions .)
@@ -62,7 +62,6 @@ if (ENABLE_TESTS)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
     target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()

@@ -21,7 +21,6 @@ void registerOutputFormatProcessorNull(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Null", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings &)
     {

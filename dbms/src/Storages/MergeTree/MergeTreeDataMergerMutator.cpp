@@ -816,7 +816,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
                 + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0);
+        CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0, 0);
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
@@ -938,7 +938,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
-    context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_for_reading.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_for_reading.getSettingsRef().max_threads = 1;
 
     std::vector<MutationCommand> commands_for_part;

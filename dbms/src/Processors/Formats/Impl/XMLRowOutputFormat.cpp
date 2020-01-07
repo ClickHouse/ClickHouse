@@ -245,7 +245,6 @@ void registerOutputFormatProcessorXML(FormatFactory & factory)
     factory.registerOutputFormatProcessor("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {

@@ -1,6 +1,5 @@
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
-#include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
@@ -11,7 +10,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
-
+#include "registerDictionaries.h"
 
 namespace DB
 {
@@ -143,7 +142,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     if (!Poco::File(path).exists())
         throw Exception(
-            "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+            "LibraryDictionarySource: Can't load library " + Poco::File(path).path() + ": file doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
 
     description.init(sample_block);

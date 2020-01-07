@@ -26,10 +26,10 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 #### ADD COLUMN {#alter_add-column}
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Добавляет в таблицу новый столбец с именем `name`, типом `type` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)).
+Добавляет в таблицу новый столбец с именем `name`, типом `type`, [кодеком](create.md#codecs) `codec` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)).
 
 Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Обратите внимание, ClickHouse не позволяет добавлять столбцы в начало таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
 

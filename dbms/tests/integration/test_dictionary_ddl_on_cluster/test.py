@@ -1,3 +1,4 @@
+import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
@@ -54,6 +55,15 @@ def test_dictionary_ddl_on_cluster(started_cluster):
     for num, node in enumerate([ch1, ch2, ch3, ch4]):
         assert node.query("SELECT count() from sometbl") == "1\n"
         assert node.query("SELECT dictGetString('default.somedict', 'value', toUInt64({}))".format(num)) == node.name + '\n'
+
+
+    for num, node in enumerate([ch1, ch2, ch3, ch4]):
+        node.query("ALTER TABLE sometbl UPDATE value = 'new_key' WHERE 1")
+
+    ch1.query("SYSTEM RELOAD DICTIONARY ON CLUSTER 'cluster' `default.somedict`")
+
+    for num, node in enumerate([ch1, ch2, ch3, ch4]):
+        assert node.query("SELECT dictGetString('default.somedict', 'value', toUInt64({}))".format(num)) == 'new_key' + '\n'
 
     ch1.query("DROP DICTIONARY default.somedict ON CLUSTER 'cluster'")
 

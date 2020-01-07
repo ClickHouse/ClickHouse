@@ -234,7 +234,7 @@ public:
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_) {}
         const DataPartPtr & getDataPart() const { return data_part; }
         bool isValid() const;
 
@@ -244,9 +244,7 @@ public:
 
         bool valid = true;
 
-        //don't interchange order of data_part & alter_lock
         DataPartPtr data_part;
-        DataPartsLock alter_lock;
 
         DataPart::Checksums new_checksums;
         NamesAndTypesList new_columns;
@@ -333,22 +331,18 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const ColumnsDescription & columns_,
-                  const IndicesDescription & indices_,
-                  const ConstraintsDescription & constraints_,
+                  const String & relative_data_path_,
+                  const StorageInMemoryMetadata & metadata,
                   Context & context_,
                   const String & date_column_name,
-                  const ASTPtr & partition_by_ast_,
-                  const ASTPtr & order_by_ast_,
-                  const ASTPtr & primary_key_ast_,
-                  const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-                  const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+
+    StorageInMemoryMetadata getInMemoryMetadata() const override;
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
@@ -538,7 +532,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path_to_db, const String & new_database_name,
+    void rename(const String & new_path_to_table_data, const String & new_database_name,
         const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     /// Check if the ALTER can be performed:
@@ -546,7 +540,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlter(const AlterCommands & commands, const Context & context);
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) override;
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
@@ -560,11 +554,8 @@ public:
 
     /// Change MergeTreeSettings
     void changeSettings(
-           const SettingsChanges & new_changes,
+           const ASTPtr & new_changes,
            TableStructureWriteLockHolder & table_lock_holder);
-
-    /// All MergeTreeData children have settings.
-    void checkSettingCanBeChanged(const String & setting_name) const override;
 
     /// Remove columns, that have been marked as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
@@ -789,11 +780,13 @@ protected:
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
+    ASTPtr settings_ast;
 
     bool require_part_metadata;
 
     String database_name;
     String table_name;
+    String relative_data_path;
 
 
     /// Current column sizes in compressed and uncompressed form.
@@ -900,10 +893,7 @@ protected:
     std::mutex clear_old_temporary_directories_mutex;
     /// Mutex for settings usage
 
-    void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
-                                        const ColumnsDescription & new_columns,
-                                        const IndicesDescription & indices_description,
-                                        const ConstraintsDescription & constraints_description, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
 
     void initPartitionKey();
 
