@@ -3255,10 +3255,25 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
                 return reservation;
+            else
+                if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                    LOG_WARNING(log, "Would like to reserve space on volume '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
+                else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                    LOG_WARNING(log, "Would like to reserve space on disk '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
         }
     }
 
     reservation = storage_policy->reserve(expected_size, min_volume_index);
+
+    if (!reservation && min_volume_index > 0)
+    {
+        LOG_WARNING(log, "Could not reserve " << expected_size << " bytes on volume with index starting from " << min_volume_index << ", falling back to volumes with lesser index");
+        reservation = storage_policy->reserveSlowest(expected_size);
+    }
 
     return reservation;
 }
