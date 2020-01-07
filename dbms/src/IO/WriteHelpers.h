@@ -147,6 +147,7 @@ struct DecomposedFloat64
         return x_uint & 0x5affffffffffffful;
     }
 
+    /// NOTE Probably floating point instructions can be better.
     bool is_inside_int64() const
     {
         return x_uint == 0
@@ -199,6 +200,9 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 
     if constexpr (std::is_same_v<T, double>)
     {
+        /// The library Ryu has low performance on integers.
+        /// This workaround improves performance 6..10 times.
+
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
