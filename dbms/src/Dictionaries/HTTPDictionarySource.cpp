@@ -1,5 +1,4 @@
 #include "HTTPDictionarySource.h"
-
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
@@ -13,6 +12,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 
 namespace DB

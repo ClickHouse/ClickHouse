@@ -18,7 +18,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 stringToUUID(const String &);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+// Just dont mess with it. If the redundant redeclaration is removed then ReaderHelpers.h should be included.
+// This leads to Arena.h inclusion which has a problem with ASAN stuff included properly and messing macro definition
+// which intefrers with... You dont want to know, really.
+UInt128 stringToUUID(const String & str);
+#pragma GCC diagnostic pop
 
 
 /** StaticVisitor (and its descendants) - class with overloaded operator() for all types of fields.

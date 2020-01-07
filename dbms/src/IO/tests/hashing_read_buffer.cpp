@@ -4,7 +4,7 @@
 #include "hashing_buffer.h"
 #include <iostream>
 
-void test(size_t data_size)
+static void test(size_t data_size)
 {
     std::vector<char> vec(data_size);
     char * data = vec.data();

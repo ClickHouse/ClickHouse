@@ -1,11 +1,11 @@
 #include "FileDictionarySource.h"
-
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 namespace DB
 {

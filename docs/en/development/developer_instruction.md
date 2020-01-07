@@ -98,11 +98,11 @@ Next, check the version of CMake: `cmake --version`. If it is below 3.3, you sho
 
 ClickHouse uses several external libraries for building. Most of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
 
-There is a couple of libraries that are not built from sources but are supplied by the system: ICU and Readline, and thus are recommended to be installed.
+There is one library that is not built from sources but is supplied by the system: Readline, and thus is recommended to be installed.
 
-Ubuntu: `sudo apt install libicu-dev libreadline-dev`
+Ubuntu: `sudo apt install libreadline-dev`
 
-Mac OS X: `brew install icu4c readline`
+Mac OS X: `brew install readline`
 
 However, these libraries are optional and ClickHouse can well be built without them. ICU is used for support of `COLLATE` in `ORDER BY` (i.e. for sorting in turkish alphabet). Readline is used for more convenient command input in clickhouse-client.
 
@@ -117,7 +117,7 @@ To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
 Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.yandex/docs/en/development/build/#install-gcc-9.
 
-To install GCC on Mac OS X run: `brew install gcc`.
+Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
 If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
@@ -132,10 +132,19 @@ cd build
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
 While inside the `build` directory, configure your build by running CMake. Before the first run you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+
+Linux:
 ```
 export CC=gcc-9 CXX=g++-9
 cmake ..
 ```
+
+Mac OS X:
+```
+export CC=clang CXX=clang++
+cmake ..
+```
+
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
 For a faster build you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
