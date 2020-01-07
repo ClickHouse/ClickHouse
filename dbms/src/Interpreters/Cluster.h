@@ -26,11 +26,8 @@ public:
             const String & username, const String & password,
             UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
-    Cluster(const Settings & settings, const Cluster &);
-
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
-
 
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
@@ -166,6 +163,9 @@ private:
 
     /// For getClusterWithMultipleShards implementation.
     Cluster(const Cluster & from, const std::vector<size_t> & indices);
+
+    /// For getClusterWithReplicasAsShards implementation
+    Cluster(const Settings & settings, const Cluster &);
 
     String hash_of_addresses;
     /// Description of the cluster shards.
