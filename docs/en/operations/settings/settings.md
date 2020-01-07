@@ -80,7 +80,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
 
-It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
+It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
 ## enable_http_compression {#settings-enable_http_compression}
 
