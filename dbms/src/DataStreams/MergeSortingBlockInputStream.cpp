@@ -81,6 +81,8 @@ Block MergeSortingBlockInputStream::readImpl()
             /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
               * NOTE. It's possible to check free space in filesystem.
+              * TODO. Write several independent streams in parallel.
+              * Also we can split data to several streams by selecting "pivot" values by sampling.
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
@@ -173,6 +175,9 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     if (blocks.empty())
         return Block();
 
+    if (total_rows_in_blocks <= offset)
+        return Block();
+
     if (blocks.size() == 1)
     {
         Block res = blocks[0];
@@ -204,42 +209,11 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
             column->reserve(size_to_reserve);
     }
 
-    /// TODO: Optimization when a single block left.
-
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
     while (queue.isValid())
     {
-        /** "Fast Forward" optimization for LIMIT with OFFSET.
-          *
-          * If there is offset to skip and if current blocks in all cursors have less or equal number of rows in total than the offset,
-          * we can select the block that is "smallest" according to it's last row than other blocks
-          * (it means - if we iterate 'offset' number of rows, this block will be processed earlier than other blocks)
-          * and just skip it, yielding a block with the same size and default values.
-          *
-          * This allows to avoid tons of comparisons.
-          *
-          * Note that 'out_row_sources_buf' is not filled in this branch because it cannot be used with non-zero 'offset'.
-          */
-        if (offset && !merged_rows && total_merged_rows + total_rows_in_blocks < offset)
-        {
-            auto smallest_cursor = std::min_element(
-                queue.container().begin(), queue.container().end(),
-                [](const auto & a, const auto & b){ return a.willBeFinishedEarlier(b); });
-
-            size_t num_rows_to_skip = (*smallest_cursor)->rows;
-
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i] = merged_columns[i]->cloneResized(num_rows_to_skip);
-
-            queue.container().erase(smallest_cursor);
-            queue.rebuild();    /// NOTE It can be better.
-
-            total_merged_rows += num_rows_to_skip;
-            total_rows_in_blocks -= num_rows_to_skip;
-
-            break;
-        }
+        /// TODO Implement "Fast Forward" optimization that works on parts of blocks.
 
         auto current = queue.current();
 

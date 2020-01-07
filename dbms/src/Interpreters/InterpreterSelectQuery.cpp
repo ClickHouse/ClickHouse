@@ -2235,8 +2235,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
     if (!can_skip_offset)
         offset = 0;
 
-    bool parallel_merge_sort = settings.enable_parallel_merge_sort && limit - offset > settings.min_rows_to_parallel_merge_sort;
-
     if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
@@ -2280,7 +2278,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
 
             stream = sorting_stream;
 
-            if (parallel_merge_sort)
+            if (settings.enable_parallel_merge_sort)
             {
                 auto merging_stream = std::make_shared<MergeSortingBlockInputStream>(
                     stream, output_order_descr, settings.max_block_size, limit, 0,
@@ -2292,7 +2290,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
             }
         });
 
-        if (parallel_merge_sort)
+        if (settings.enable_parallel_merge_sort)
         {
             executeMergeSorted(pipeline, output_order_descr, limit, offset);
         }
