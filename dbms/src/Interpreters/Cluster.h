@@ -26,8 +26,11 @@ public:
             const String & username, const String & password,
             UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
-    Cluster(const Cluster &) = delete;
+    Cluster(const Settings & settings, const Cluster &);
+
+    Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
+
 
     /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
@@ -147,6 +150,9 @@ public:
 
     /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
+
+    /// Get a new Cluster From the existing cluster
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
 
 private:
     using SlotToShard = std::vector<UInt64>;
