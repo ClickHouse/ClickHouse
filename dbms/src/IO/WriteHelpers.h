@@ -117,15 +117,100 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
+
+struct DecomposedFloat64
+{
+    DecomposedFloat64(double x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    uint64_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 63;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 52) & 0x7FF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 1023;
+    }
+
+    uint64_t mantissa() const
+    {
+        return x_uint & 0x5affffffffffffful;
+    }
+
+    bool is_inside_int64() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
+                && ((mantissa() & (1ULL << (52 - normalized_exponent()))) == 0));
+    }
+};
+
+struct DecomposedFloat32
+{
+    DecomposedFloat32(float x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    uint32_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 31;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 23) & 0xFF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 127;
+    }
+
+    uint32_t mantissa() const
+    {
+        return x_uint & 0x7fffff;
+    }
+
+    bool is_inside_int32() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
+                && ((mantissa() & (1ULL << (23 - normalized_exponent()))) == 0));
+    }
+};
+
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     int result = 0;
 
     if constexpr (std::is_same_v<T, double>)
-        result = d2s_buffered_n(x, buffer);
+    {
+        if (DecomposedFloat64(x).is_inside_int64())
+            result = itoa(Int64(x), buffer) - buffer;
+        else
+            result = d2s_buffered_n(x, buffer);
+    }
     else
-        result = f2s_buffered_n(x, buffer);
+    {
+        if (DecomposedFloat32(x).is_inside_int32())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = f2s_buffered_n(x, buffer);
+    }
 
     if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
