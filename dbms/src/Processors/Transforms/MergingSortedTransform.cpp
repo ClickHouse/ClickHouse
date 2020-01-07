@@ -149,8 +149,10 @@ IProcessor::Status MergingSortedTransform::prepare()
 
         if (has_collation)
             queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
-        else
+        else if (description.size() > 1)
             queue_without_collation = SortingHeap<SortCursor>(cursors);
+        else
+            queue_simple = SortingHeap<SimpleSortCursor>(cursors);
 
         is_initialized = true;
         return Status::Ready;
@@ -185,8 +187,10 @@ IProcessor::Status MergingSortedTransform::prepare()
 
                 if (has_collation)
                     queue_with_collation.push(cursors[next_input_to_read]);
-                else
+                else if (description.size() > 1)
                     queue_without_collation.push(cursors[next_input_to_read]);
+                else
+                    queue_simple.push(cursors[next_input_to_read]);
             }
 
             need_data = false;
@@ -200,8 +204,10 @@ void MergingSortedTransform::work()
 {
     if (has_collation)
         merge(queue_with_collation);
-    else
+    else if (description.size() > 1)
         merge(queue_without_collation);
+    else
+        merge(queue_simple);
 }
 
 template <typename TSortingHeap>
