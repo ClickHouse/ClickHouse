@@ -68,6 +68,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
+    format_settings.avro.schema_registry_url = settings.input_format_avro_schema_registry_url;
 
     return format_settings;
 }
@@ -325,6 +326,8 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorAvro(*this);
+    registerOutputFormatProcessorAvro(*this);
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
 
