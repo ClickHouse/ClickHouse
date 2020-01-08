@@ -44,6 +44,23 @@ public:
     ssize_t readString(const String & str, WriteBuffer & buffer);
 };*/
 
+using AttributeValueVariant = std::variant<
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+        UInt128,
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+        Decimal32,
+        Decimal64,
+        Decimal128,
+        Float32,
+        Float64,
+        String>;
+
 class CachePartition
 {
 public:
@@ -186,9 +203,10 @@ using CachePartitionPtr = std::unique_ptr<CachePartition>;
 class CacheStorage
 {
 public:
+    using Attributes = std::vector<AttributeUnderlyingType>;
     using Key = IDictionary::Key;
 
-    CacheStorage(SSDCacheDictionary & dictionary_, const std::string & path_,
+    CacheStorage(const Attributes & attributes_structure_, const std::string & path_,
             const size_t partitions_count_, const size_t partition_max_size_);
 
     template <typename T>
@@ -213,7 +231,8 @@ public:
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
-            PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found);
+            PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
+            const DictionaryLifetime lifetime, const std::vector<AttributeValueVariant> & null_values);
 
     //BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const;
 
@@ -225,10 +244,8 @@ private:
     CachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
 
-    SSDCacheDictionary & dictionary;
+    const Attributes attributes_structure;
 
-    // Block structure: Key, (Default + TTL), Attr1, Attr2, ...
-    // const Block header;
     const std::string path;
     const size_t partition_max_size;
     std::vector<CachePartitionPtr> partitions;
@@ -244,6 +261,8 @@ private:
     mutable std::chrono::system_clock::time_point backoff_end_time;
 
     // stats
+    mutable size_t bytes_allocated = 0;
+
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
@@ -380,39 +399,18 @@ public:
         return nullptr;
     }
 
+private:
+    size_t getAttributeIndex(const std::string & attr_name) const;
+
     struct Attribute
     {
         AttributeUnderlyingType type;
-        std::variant<
-                UInt8,
-                UInt16,
-                UInt32,
-                UInt64,
-                UInt128,
-                Int8,
-                Int16,
-                Int32,
-                Int64,
-                Decimal32,
-                Decimal64,
-                Decimal128,
-                Float32,
-                Float64,
-                String> null_value;
+        AttributeValueVariant null_value;
     };
-    using Attributes = std::vector<Attribute>;
-
-    /// переместить
-    const Attributes & getAttributes() const;
-
-private:
-    size_t getAttributeIndex(const std::string & attr_name) const;
-    Attribute & getAttribute(const std::string & attr_name);
-    const Attribute & getAttribute(const std::string & attr_name) const;
 
     template <typename T>
-    Attribute createAttributeWithTypeImpl(const AttributeUnderlyingType type, const Field & null_value);
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    AttributeValueVariant createAttributeNullValueWithTypeImpl(const Field & null_value);
+    AttributeValueVariant createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value);
     void createAttributes();
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
@@ -429,11 +427,11 @@ private:
 
     const std::string path;
     const size_t partition_max_size;
-    mutable CacheStorage storage;
-    Logger * const log;
 
     std::map<std::string, size_t> attribute_index_by_name;
-    Attributes attributes; // TODO: move to storage
+    std::vector<AttributeValueVariant> null_values;
+    mutable CacheStorage storage;
+    Logger * const log;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};
