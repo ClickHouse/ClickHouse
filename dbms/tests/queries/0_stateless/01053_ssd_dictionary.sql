@@ -71,6 +71,26 @@ SELECT arrayJoin([1, 2, 3, 3, 2, 1]) AS id, dictGetInt32('database_for_dict.ssd_
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
+DROP TABLE IF EXISTS database_for_dict.keys_table;
+
+CREATE TABLE database_for_dict.keys_table
+(
+  id UInt64
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+INSERT INTO database_for_dict.keys_table VALUES (1);
+INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 370;
+INSERT INTO database_for_dict.keys_table VALUES (2);
+INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 370, 370;
+INSERT INTO database_for_dict.keys_table VALUES (5);
+INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 700, 370;
+INSERT INTO database_for_dict.keys_table VALUES (10);
+
+-- one block
+OPTIMIZE TABLE database_for_dict.keys_table;
+
 CREATE DICTIONARY database_for_dict.ssd_dict
 (
     id UInt64,
@@ -82,13 +102,13 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dic
 LIFETIME(MIN 1000 MAX 2000)
 LAYOUT(SSD(MAX_PARTITION_SIZE 1000 PATH '/mnt/disk4/clickhouse_dicts/1'));
 
-SELECT 'UPDATE DICTIONARY (max_threads=1)';
+SELECT 'UPDATE DICTIONARY (MT)';
 -- 118
-SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table SETTINGS max_threads=1;
+SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table;
 
-SELECT 'VALUES FROM DISK AND RAM BUFFER (max_threads=1)';
+SELECT 'VALUES FROM DISK AND RAM BUFFER (MT)';
 -- 118
-SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table SETTINGS max_threads=1;
+SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table;
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
