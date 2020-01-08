@@ -47,6 +47,22 @@ public:
 class CachePartition
 {
 public:
+    struct Metadata final
+    {
+        using time_point_t = std::chrono::system_clock::time_point;
+        using time_point_rep_t = time_point_t::rep;
+        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+
+        time_point_t expiresAt() const;
+        void setExpiresAt(const time_point_t & t);
+
+        bool isDefault() const;
+        void setDefault();
+
+        /// Stores both expiration time and `is_default` flag in the most significant bit
+        time_point_urep_t data = 0;
+    };
+
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
 
@@ -61,14 +77,14 @@ public:
 
     template <typename Out, typename Key>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const;
+            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+            std::chrono::system_clock::time_point now) const;
 
     // TODO:: getString
 
-    /// 0 -- not found
-    /// 1 -- good
-    /// 2 -- expired
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out) const;
+    template <typename Key>
+    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
 
     struct Attribute
     {
@@ -96,7 +112,7 @@ public:
     using Attributes = std::vector<Attribute>;
 
     // Key, (Metadata), attributes
-    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes);
+    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata);
 
 private:
     struct Index final
@@ -134,6 +150,9 @@ private:
     template <typename Out>
     void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
 
+    template <typename Iterator>
+    void markExpired(const Iterator & it) const;
+
     size_t file_id;
     size_t max_size;
     //size_t buffer_size;
@@ -142,24 +161,13 @@ private:
     //mutable std::shared_mutex rw_lock;
     int fd = -1;
 
-    struct KeyMetadata final
+    struct IndexAndMetadata final
     {
-        using time_point_t = std::chrono::system_clock::time_point;
-        using time_point_rep_t = time_point_t::rep;
-        using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
-
-        time_point_t expiresAt() const;
-        void setExpiresAt(const time_point_t & t);
-
-        bool isDefault() const;
-        void setDefault();
-
         Index index{};
-        /// Stores both expiration time and `is_default` flag in the most significant bit
-        time_point_urep_t data = 0;
+        Metadata metadata{};
     };
 
-    std::unordered_map<UInt64, KeyMetadata> key_to_metadata;
+    mutable std::unordered_map<UInt64, IndexAndMetadata> key_to_index_and_metadata;
 
     Attribute keys_buffer;
     Attributes attributes_buffer;
@@ -189,12 +197,20 @@ public:
 
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found) const
+            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+            std::chrono::system_clock::time_point now) const
     {
-        partitions[0]->getValue<Out>(attribute_index, ids, out, not_found);
+        partitions[0]->getValue<Out>(attribute_index, ids, out, not_found, now);
     }
 
     // getString();
+
+    template <typename Key>
+    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
+    {
+        partitions[0]->has(ids, out, not_found, now);
+    }
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
@@ -356,7 +372,7 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
 
-    void has(const PaddedPODArray<Key> & /* ids */, PaddedPODArray<UInt8> & /* out */) const override {} // TODO
+    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override // TODO
     {
