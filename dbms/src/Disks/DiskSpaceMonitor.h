@@ -126,9 +126,6 @@ public:
     /// Reserve space on any volume with index > min_volume_index
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
 
-    /// Reserve space on any volume iterating them in reverse order
-    ReservationPtr reserveSlowest(UInt64 bytes) const;
-
     /// Find volume index, which contains disk
     size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const;
 

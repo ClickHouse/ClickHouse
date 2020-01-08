@@ -3269,12 +3269,6 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
 
     reservation = storage_policy->reserve(expected_size, min_volume_index);
 
-    if (!reservation && min_volume_index > 0)
-    {
-        LOG_WARNING(log, "Could not reserve " << expected_size << " bytes on volume with index starting from " << min_volume_index << ", falling back to volumes with lesser index");
-        reservation = storage_policy->reserveSlowest(expected_size);
-    }
-
     return reservation;
 }
 
