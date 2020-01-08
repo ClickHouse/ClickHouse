@@ -33,45 +33,64 @@ struct BloomFilterHash
         15033938188484401405ULL, 18286745649494826751ULL, 6852245486148412312ULL, 8886056245089344681ULL, 10151472371158292780ULL
     };
 
-    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    template <typename FieldGetType, typename FieldType>
+    static UInt64 getNumberTypeHash(const Field & field)
     {
-        WhichDataType which(data_type);
-        UInt64 hash = 0;
-        bool unexpected_type = false;
+        /// For negative, we should convert the type to make sure the symbol is in right place
+        return field.isNull() ? intHash64(0) : intHash64(ext::bit_cast<UInt64>(FieldType(field.safeGet<FieldGetType>())));
+    }
 
-        if (field.isNull())
-        {
-            if (which.isInt() || which.isUInt() || which.isEnum() || which.isDateOrDateTime() || which.isFloat())
-                hash = intHash64(0);
-            else if (which.isString())
-                hash = CityHash_v1_0_2::CityHash64("", 0);
-            else if (which.isFixedString())
-            {
-                const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
-                const std::vector<char> value(fixed_string_type->getN(), 0);
-                hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
-            }
-            else
-                unexpected_type = true;
-        }
-        else if (which.isUInt() || which.isDateOrDateTime())
-            hash = intHash64(field.safeGet<UInt64>());
-        else if (which.isInt() || which.isEnum())
-            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()));
-        else if (which.isFloat32() || which.isFloat64())
-            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()));
-        else if (which.isString() || which.isFixedString())
+    static UInt64 getStringTypeHash(const Field & field)
+    {
+        if (!field.isNull())
         {
             const auto & value = field.safeGet<String>();
-            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
         }
-        else
-            unexpected_type = true;
 
-        if (unexpected_type)
-            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        return CityHash_v1_0_2::CityHash64("", 0);
+    }
 
-        return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
+    static UInt64 getFixedStringTypeHash(const Field & field, const IDataType * type)
+    {
+        if (!field.isNull())
+        {
+            const auto & value = field.safeGet<String>();
+            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+        }
+
+        const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type);
+        const std::vector<char> value(fixed_string_type->getN(), 0);
+        return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+    }
+
+    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    {
+        const auto & build_hash_column = [&](const UInt64 & hash) -> ColumnPtr
+        {
+            return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
+        };
+
+
+        WhichDataType which(data_type);
+
+        if (which.isUInt8()) return build_hash_column(getNumberTypeHash<UInt64, UInt8>(field));
+        else if (which.isUInt16()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        else if (which.isUInt32()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        else if (which.isUInt64()) return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
+        else if (which.isInt8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        else if (which.isInt16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        else if (which.isInt32()) return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
+        else if (which.isInt64()) return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
+        else if (which.isEnum8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        else if (which.isEnum16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isString()) return build_hash_column(getStringTypeHash(field));
+        else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
