@@ -88,9 +88,6 @@ INSERT INTO database_for_dict.keys_table VALUES (5);
 INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 700, 370;
 INSERT INTO database_for_dict.keys_table VALUES (10);
 
--- one block
-OPTIMIZE TABLE database_for_dict.keys_table;
-
 CREATE DICTIONARY database_for_dict.ssd_dict
 (
     id UInt64,
