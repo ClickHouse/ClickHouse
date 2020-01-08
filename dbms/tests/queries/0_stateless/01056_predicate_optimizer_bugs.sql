@@ -3,9 +3,6 @@ SET enable_optimize_predicate_expression = 1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/3885
 -- https://github.com/ClickHouse/ClickHouse/issues/5485
-ANALYZE SELECT count() FROM (SELECT a, runningDifference(a) rd FROM (   SELECT * FROM ( SELECT 1 a UNION ALL SELECT 2 a ) ORDER BY a DESC ) WHERE rd=-1 );
-SELECT count() FROM (SELECT a, runningDifference(a) rd FROM (   SELECT * FROM ( SELECT 1 a UNION ALL SELECT 2 a ) ORDER BY a DESC ) WHERE rd=-1 );
-
 ANALYZE SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(cityHash64(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
 SELECT k, v, d, i FROM (SELECT t.1 AS k, t.2 AS v, runningDifference(v) AS d, runningDifference(cityHash64(t.1)) AS i FROM (   SELECT arrayJoin([('a', 1), ('a', 2), ('a', 3), ('b', 11), ('b', 13), ('b', 15)]) AS t)) WHERE i = 0;
 
