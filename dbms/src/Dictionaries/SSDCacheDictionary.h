@@ -155,7 +155,6 @@ private:
 
     size_t file_id;
     size_t max_size;
-    //size_t buffer_size;
     std::string path;
 
     //mutable std::shared_mutex rw_lock;
@@ -170,7 +169,7 @@ private:
     mutable std::unordered_map<UInt64, IndexAndMetadata> key_to_index_and_metadata;
 
     Attribute keys_buffer;
-    Attributes attributes_buffer;
+    const std::vector<AttributeUnderlyingType> attributes_structure;
 
     DB::Memory<> memory;
     std::optional<DB::WriteBuffer> write_buffer;
@@ -178,7 +177,7 @@ private:
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
 
-    mutable std::atomic<size_t> element_count{0};
+    // mutable std::atomic<size_t> element_count{0};
 };
 
 using CachePartitionPtr = std::unique_ptr<CachePartition>;
