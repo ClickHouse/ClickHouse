@@ -5,7 +5,6 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
-#include <IO/CompressionMethod.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
@@ -439,8 +438,6 @@ public:
     {
         return {};
     }
-
-    static DB::CompressionMethod chooseCompressionMethod(const String & uri, const String & compression_method);
 
 private:
     /// You always need to take the next three locks in this order.

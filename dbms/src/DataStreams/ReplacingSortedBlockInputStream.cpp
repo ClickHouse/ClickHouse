@@ -48,13 +48,14 @@ Block ReplacingSortedBlockInputStream::readImpl()
 }
 
 
-void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     MergeStopCondition stop_condition(average_block_sizes, max_block_size);
+
     /// Take the rows in needed order and put them into `merged_columns` until rows no more than `max_block_size`
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
         size_t current_block_granularity = current->rows;
 
         if (current_key.empty())
@@ -67,8 +68,6 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
         /// if there are enough rows and the last one is calculated completely
         if (key_differs && stop_condition.checkStop())
             return;
-
-        queue.pop();
 
         if (key_differs)
         {
@@ -98,8 +97,7 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
 
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {

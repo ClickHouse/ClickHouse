@@ -49,8 +49,19 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
+    ASTPtr getInnerSubQuery() const
+    {
+        if (inner_subquery)
+            return inner_subquery->clone();
+        return nullptr;
+    }
+    ASTPtr getInnerBlocksQuery() const
+    {
+        if (inner_blocks_query)
+            return inner_blocks_query->clone();
+        return nullptr;
+    }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -146,8 +157,12 @@ private:
     String select_table_name;
     String table_name;
     String database_name;
-    ASTPtr inner_query;
+    ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
+    ASTPtr inner_subquery; /// stored query's innermost subquery if any
+    ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
+    std::unique_ptr<Context> live_view_context;
+
     bool is_temporary = false;
     /// Mutex to protect access to sample block
     mutable std::mutex sample_block_lock;
