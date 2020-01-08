@@ -524,7 +524,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         if (metadata_diff.ttl_table_changed)
         {
-            ParserExpression parser;
+            ParserTTLExpressionList parser;
             metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
         }
     }
@@ -3197,9 +3197,6 @@ void StorageReplicatedMergeTree::alter(
 
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
-
-
-    checkAlterIsPossible(params, query_context.getSettingsRef());
 
     /// We cannot check this alter commands with method isModifyingData()
     /// because ReplicatedMergeTree stores both columns and metadata for

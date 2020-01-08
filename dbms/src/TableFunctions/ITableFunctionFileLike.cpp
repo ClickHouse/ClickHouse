@@ -42,12 +42,10 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     std::string filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     std::string structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    std::string compression_method;
+    std::string compression_method = "auto";
 
     if (args.size() == 4)
-    {
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    } else compression_method = "auto";
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 

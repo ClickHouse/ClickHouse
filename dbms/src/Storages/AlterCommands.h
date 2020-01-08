@@ -96,32 +96,45 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData() const;
 
-    /// checks that only settings changed by alter
+    /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
 
+    /// Checks that only comment changed by alter
     bool isCommentAlter() const;
 };
 
+/// Return string representation of AlterCommand::Type
 String alterTypeToString(const AlterCommand::Type type);
 
 class Context;
 
+/// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
 public:
-    void apply(StorageInMemoryMetadata & metadata) const;
-
-
-    void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
-
+    /// Validate that commands can be applied to metadata.
+    /// Checks that all columns exist and dependecies between them.
+    /// This check is lightweight and base only on metadata.
+    /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
 
+    /// Prepare alter commands. Set ignore flag to some of them
+    /// and additional commands for dependent columns.
+    void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
+
+    /// Apply all alter command in sequential order to storage metadata.
+    /// Commands have to be prepared before apply.
+    void apply(StorageInMemoryMetadata & metadata) const;
+
+    /// At least one command modify data on disk.
     bool isModifyingData() const;
 
+    /// At least one command modify settings.
     bool isSettingsAlter() const;
 
+    /// At least one command modify comments.
     bool isCommentAlter() const;
 };
 
