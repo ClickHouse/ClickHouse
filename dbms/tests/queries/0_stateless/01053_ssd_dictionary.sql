@@ -66,9 +66,29 @@ SELECT 'VALUES NOT FROM TABLE';
 -- 0 -1
 SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(1000000)), dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1000000));
 
-
 SELECT 'DUPLICATE KEYS';
 SELECT arrayJoin([1, 2, 3, 3, 2, 1]) AS id, dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(id));
+
+DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
+
+CREATE DICTIONARY database_for_dict.ssd_dict
+(
+    id UInt64,
+    a UInt64 DEFAULT 0,
+    b Int32 DEFAULT -1
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+LIFETIME(MIN 1000 MAX 2000)
+LAYOUT(SSD(MAX_PARTITION_SIZE 1000 PATH '/mnt/disk4/clickhouse_dicts/1'));
+
+SELECT 'UPDATE DICTIONARY (max_threads=1)';
+-- 118
+SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table SETTINGS max_threads=1;
+
+SELECT 'VALUES FROM DISK AND RAM BUFFER (max_threads=1)';
+-- 118
+SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table SETTINGS max_threads=1;
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
