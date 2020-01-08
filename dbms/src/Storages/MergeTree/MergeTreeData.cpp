@@ -705,11 +705,24 @@ void MergeTreeData::setStoragePolicy(const String & new_storage_policy_name, boo
                 throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
     }
 
+    std::unordered_set<String> all_diff_disk_names;
+    for (const auto & disk : new_storage_policy->getDisks())
+        all_diff_disk_names.insert(disk->getName());
+    for (const auto & disk : old_storage_policy->getDisks())
+        all_diff_disk_names.erase(disk->getName());
+
+    for (const String & disk_name : all_diff_disk_names)
+    {
+        const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+        if (Poco::File(path).exists())
+            throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
+    }
+
     if (!only_check)
     {
-        for (const auto & disk : new_storage_policy->getDisks())
+        for (const String & disk_name : all_diff_disk_names)
         {
-            const auto & path = getFullPathOnDisk(disk);
+            const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
             Poco::File(path).createDirectories();
             Poco::File(path + "detached").createDirectory();
         }
