@@ -12,9 +12,6 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <create_query>DROP TABLE IF EXISTS test_model</create_query>
     <create_query>CREATE TABLE test_model engine = Memory as select stochasticLinearRegressionState(0.0001)(Age, Income, ParamPrice, Robotness, RefererHash) as state from test.hits</create_query>

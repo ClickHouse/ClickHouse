@@ -330,6 +330,7 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
+    ryu
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
