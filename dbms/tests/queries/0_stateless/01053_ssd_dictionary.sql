@@ -23,8 +23,7 @@ CREATE TABLE database_for_dict.keys_table
 (
   id UInt64
 )
-ENGINE = MergeTree()
-ORDER BY id;
+ENGINE = StripeLog();
 
 INSERT INTO database_for_dict.keys_table VALUES (1);
 INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 370;
