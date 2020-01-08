@@ -1213,7 +1213,10 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (!dest_table_storage)
         throw Exception("Table " + this->getTableName() + " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
-
+    if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
+        throw Exception("Destination table " + dest_table_storage->getTableName() + " should have the same storage policy of source table " + this->getTableName() + ". " +
+                        this->getTableName() + ": " + this->getStoragePolicy()->getName() +
+                        ", " + dest_table_storage->getTableName() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
     Stopwatch watch;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(this);

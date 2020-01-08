@@ -298,6 +298,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
 - Both tables must be the same engine family. (replicated or non-replicated)
+- Both tables must have the same storage policy.
 
 
 
