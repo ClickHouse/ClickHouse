@@ -110,6 +110,12 @@ struct FormatSettings
     };
 
     Custom custom;
+
+    struct Avro
+    {
+        String schema_registry_url;
+    } avro;
+
 };
 
 }

@@ -46,7 +46,7 @@
 	url = https://github.com/ClickHouse-Extras/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
-	url = https://github.com/ClickHouse-Extras/boost.git
+	url = https://github.com/oandrew/clickhouse-boost
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/aklomp/base64.git
@@ -137,3 +137,7 @@
 [submodule "contrib/ryu"]
 	path = contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
+[submodule "contrib/avro"]
+	path = contrib/avro
+	url = https://github.com/apache/avro.git
+	ignore = untracked

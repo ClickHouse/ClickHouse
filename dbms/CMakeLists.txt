@@ -483,6 +483,11 @@ if (USE_PARQUET)
     endif ()
 endif ()
 
+if (USE_AVRO)
+    dbms_target_link_libraries(PRIVATE ${AVROCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${AVROCPP_INCLUDE_DIR})
+endif ()
+
 if (OPENSSL_CRYPTO_LIBRARY)
     dbms_target_link_libraries (PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
     target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
