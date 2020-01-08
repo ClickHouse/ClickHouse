@@ -61,10 +61,11 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE;
-    constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
+    constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
+    constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
 
-    constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16;
+    constexpr size_t AIO_MAX_SIMULTANIOUS_REQUESTS = 32;
+    constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16; // TODO: в параметры
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
@@ -76,7 +77,7 @@ namespace
     constexpr size_t INDEX_IN_BLOCK_MASK = (1ULL << INDEX_IN_BLOCK_BITS) - 1;
     constexpr size_t BLOCK_INDEX_MASK = ((1ULL << (BLOCK_INDEX_BITS + INDEX_IN_BLOCK_BITS)) - 1) ^ INDEX_IN_BLOCK_MASK;
 
-    constexpr size_t NOT_FOUND = -1;
+    constexpr size_t NOT_EXISTS = -1;
 
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
@@ -107,12 +108,12 @@ bool CachePartition::Index::inMemory() const
 
 bool CachePartition::Index::exists() const
 {
-    return index != NOT_FOUND;
+    return index != NOT_EXISTS;
 }
 
 void CachePartition::Index::setNotExists()
 {
-    index = NOT_FOUND;
+    index = NOT_EXISTS;
 }
 
 void CachePartition::Index::setInMemory(const bool in_memory)
@@ -141,44 +142,13 @@ void CachePartition::Index::setBlockId(const size_t block_id)
 }
 
 CachePartition::CachePartition(
-        const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure,
+        const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure_,
         const std::string & dir_path, const size_t file_id_, const size_t max_size_)
-    : file_id(file_id_), max_size(max_size_), path(dir_path + "/" + std::to_string(file_id)), memory(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT)
+    : file_id(file_id_), max_size(max_size_), path(dir_path + "/" + std::to_string(file_id))
+    , attributes_structure(attributes_structure_), memory(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
     keys_buffer.values = std::vector<UInt64>();
-    for (const auto & type : attributes_structure)
-    {
-        switch (type)
-        {
-#define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
-        attributes_buffer.emplace_back(); \
-        attributes_buffer.back().type = type; \
-        attributes_buffer.back().values = std::vector<TYPE>(); \
-        break;
-
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-#undef DISPATCH
-
-        case AttributeUnderlyingType::utString:
-            // TODO: string support
-            break;
-        }
-    }
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -200,7 +170,7 @@ CachePartition::~CachePartition()
 
 void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata)
 {
-    if (new_attributes.size() != attributes_buffer.size())
+    if (new_attributes.size() != attributes_structure.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
@@ -387,8 +357,6 @@ void CachePartition::flush()
 
     /// clear buffer
     std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
-    for (auto & attribute : attributes_buffer)
-        std::visit([](auto & attr) { attr.clear(); }, attribute.values);
 }
 
 template <typename Out, typename Key>
@@ -556,7 +524,7 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
 {
     for (size_t i = 0; i < attribute_index; ++i)
     {
-        switch (attributes_buffer[i].type)
+        switch (attributes_structure[i])
         {
 #define DISPATCH(TYPE) \
                 case AttributeUnderlyingType::ut##TYPE: \
@@ -587,7 +555,7 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
         }
     }
 
-    switch (attributes_buffer[attribute_index].type)
+    switch (attributes_structure[attribute_index])
     {
 #define DISPATCH(TYPE) \
                 case AttributeUnderlyingType::ut##TYPE: \
