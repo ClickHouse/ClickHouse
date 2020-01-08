@@ -26,6 +26,7 @@ private:
     size_t buf_size;
     size_t estimated_size;
     size_t aio_threshold;
+    size_t mmap_threshold;
 
     std::unique_ptr<ReadBufferFromFileBase> file_in;
     size_t file_pos;
@@ -42,7 +43,8 @@ private:
 
 public:
     CachedCompressedReadBuffer(
-        const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_,
+        const std::string & path_, UncompressedCache * cache_,
+        size_t estimated_size_, size_t aio_threshold_, size_t mmap_threshold_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
 
