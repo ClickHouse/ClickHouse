@@ -381,12 +381,13 @@ StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 void IStorage::alter(
     const AlterCommands & params,
     const Context & context,
-    TableStructureWriteLockHolder & /*table_lock_holder*/)
+    TableStructureWriteLockHolder & table_lock_holder)
 {
-    checkAlterIsPossible(params, context.getSettingsRef());
-
     const String database_name = getDatabaseName();
     const String table_name = getTableName();
+
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
     context.getDatabase(database_name)->alterTable(context, table_name, metadata);
@@ -422,23 +423,6 @@ BlockInputStreams IStorage::read(
         res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
     return res;
-}
-
-DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
-{
-    if (compression_method == "auto" || compression_method == "")
-    {
-        if (endsWith(uri, ".gz"))
-            return DB::CompressionMethod::Gzip;
-        else
-            return DB::CompressionMethod::None;
-    }
-    else if (compression_method == "gzip")
-        return DB::CompressionMethod::Gzip;
-    else if (compression_method == "none")
-        return DB::CompressionMethod::None;
-    else
-        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

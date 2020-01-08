@@ -76,7 +76,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
     {
         // sensitive data rules are not used here
-        buildLoggers(config(), logger());
+        buildLoggers(config(), logger(), self.commandName());
     }
     else
     {
