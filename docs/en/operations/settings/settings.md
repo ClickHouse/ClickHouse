@@ -435,14 +435,13 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file from several threads.
+If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
 
-Possible values:
+Possible value:
 
-- Any positive integer.
+* Any positive integer.
 
-Default value: 240 ✕ 1024 ✕ 1024.
-
+Default value: 251658240.
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
@@ -494,11 +493,11 @@ If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-Possible values:
+Possible value:
 
 - Any positive integer.
 
-Default value: 1920 ✕ 1024 ✕ 1024.
+Default value: 2013265920.
 
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
