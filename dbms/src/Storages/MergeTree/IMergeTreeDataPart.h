@@ -291,16 +291,6 @@ public:
         */
     mutable std::shared_mutex columns_lock;
 
-    /** It is taken for the whole time ALTER a part: from the beginning of the recording of the temporary files to their renaming to permanent.
-        * It is taken with unlocked `columns_lock`.
-        *
-        * NOTE: "You can" do without this mutex if you could turn ReadRWLock into WriteRWLock without removing the lock.
-        * This transformation is impossible, because it would create a deadlock, if you do it from two threads at once.
-        * Taking this mutex means that we want to lock columns_lock on read with intention then, not
-        *  unblocking, block it for writing.
-        */
-    mutable std::mutex alter_mutex;
-
     ColumnSizeByName columns_sizes;
 
     /// For data in RAM ('index')

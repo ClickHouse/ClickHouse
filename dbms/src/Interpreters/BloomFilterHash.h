@@ -85,8 +85,16 @@ struct BloomFilterHash
                 throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
             const auto & offsets = array_col->getOffsets();
-            size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
-            limit = std::max(array_col->getData().size() - offset, limit);
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
+            pos = offsets[pos - 1];
+
+            if (limit == 0)
+            {
+                auto index_column = ColumnUInt64::create(1);
+                ColumnUInt64::Container & index_column_vec = index_column->getData();
+                index_column_vec[0] = 0;
+                return index_column;
+            }
         }
 
         const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);

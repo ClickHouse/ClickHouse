@@ -278,6 +278,12 @@ void QueryPipeline::resize(size_t num_streams, bool force)
     processors.emplace_back(std::move(resize));
 }
 
+void QueryPipeline::enableQuotaForCurrentStreams()
+{
+    for (auto & stream : streams)
+        stream->getProcessor().enableQuota();
+}
+
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
 {
     checkInitialized();
@@ -490,6 +496,8 @@ void QueryPipeline::unitePipelines(
         table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
         interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
         storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
+
+        max_threads = std::max(max_threads, pipeline.max_threads);
     }
 
     if (!extremes.empty())

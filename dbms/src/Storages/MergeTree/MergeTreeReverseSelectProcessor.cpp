@@ -105,7 +105,7 @@ try
         return false;
     }
 
-    /// We have some blocks to return in buffer. 
+    /// We have some blocks to return in buffer.
     /// Return true to continue reading, but actually don't create a task.
     if (all_mark_ranges.empty())
         return true;

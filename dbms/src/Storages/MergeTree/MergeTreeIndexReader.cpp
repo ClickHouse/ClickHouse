@@ -9,7 +9,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     : index(index_), stream(
         part_->getFullPath() + index->getFileName(), ".idx", marks_count_,
         all_mark_ranges_,
-        { 0, DBMS_DEFAULT_BUFFER_SIZE, false}, nullptr, nullptr,
+        MergeTreeReaderSettings{}, nullptr, nullptr,
         part_->getFileSizeOrZero(index->getFileName() + ".idx"),
         &part_->index_granularity_info,
         MergeTreeReaderStream::ReadingMode::INDEX,

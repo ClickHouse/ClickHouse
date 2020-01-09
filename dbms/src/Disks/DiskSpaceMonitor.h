@@ -103,6 +103,8 @@ public:
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
+    bool isDefaultPolicy() const;
+
     /// Returns disks ordered by volumes priority
     Disks getDisks() const;
 
