@@ -159,7 +159,7 @@ INSTANTIATE_TEST_CASE_P(data_type,
             {"Tuple(Int64,Int8) Tuple(UInt64)", nullptr},
             {"Array(Int64) Array(String)", nullptr},
         }
-    ),
+    )
 );
 
 INSTANTIATE_TEST_CASE_P(data_type,
@@ -210,5 +210,6 @@ INSTANTIATE_TEST_CASE_P(data_type,
             {"Int8 String", nullptr},
             {"Nothing", nullptr},
             {"FixedString(16) FixedString(8) String", nullptr},
-        }),
+        }
+    )
 );
