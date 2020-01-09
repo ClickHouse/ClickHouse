@@ -253,8 +253,7 @@ BlockInputStreams StorageStripeLog::read(
     if (!disk->exists(index_file))
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
-    CompressedReadBufferFromFile index_in(fullPath(disk, index_file), 0, 0, INDEX_BUFFER_SIZE);
-
+    CompressedReadBufferFromFile index_in(fullPath(disk, index_file), 0, 0, 0, INDEX_BUFFER_SIZE);
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     BlockInputStreams res;

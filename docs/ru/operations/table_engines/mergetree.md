@@ -491,21 +491,25 @@ ALTER TABLE example_table
 Структура конфигурации:
 
 ```xml
-<disks>
-    <disk_name_1> <!-- disk name -->
-        <path>/mnt/fast_ssd/clickhouse</path>
-    </disk_name_1>
-    <disk_name_2>
-        <path>/mnt/hdd1/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_2>
-    <disk_name_3>
-        <path>/mnt/hdd2/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_3>
+<storage_configuration>
+    <disks>
+        <disk_name_1> <!-- disk name -->
+            <path>/mnt/fast_ssd/clickhouse</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
 
+        ...
+    </disks>
+    
     ...
-</disks>
+</storage_configuration>
 ```
 
 Теги:
@@ -519,26 +523,30 @@ ALTER TABLE example_table
 Общий вид конфигурации политик хранения:
 
 ```xml
-<policies>
-    <policy_name_1>
-        <volumes>
-            <volume_name_1>
-                <disk>disk_name_from_disks_configuration</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </volume_name_1>
-            <volume_name_2>
-                <!-- configuration -->
-            </volume_name_2>
-            <!-- more volumes -->
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </policy_name_1>
-    <policy_name_2>
-        <!-- configuration -->
-    </policy_name_2>
+<storage_configuration>
+    ...
+    <policies>
+        <policy_name_1>
+            <volumes>
+                <volume_name_1>
+                    <disk>disk_name_from_disks_configuration</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </volume_name_1>
+                <volume_name_2>
+                    <!-- configuration -->
+                </volume_name_2>
+                <!-- more volumes -->
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </policy_name_1>
+        <policy_name_2>
+            <!-- configuration -->
+        </policy_name_2>
 
-    <!-- more policies -->
-</policies>
+        <!-- more policies -->
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 Тэги:
@@ -552,29 +560,33 @@ ALTER TABLE example_table
 Примеры конфигураций:
 
 ```xml
-<policies>
-    <hdd_in_order> <!-- policy name -->
-        <volumes>
-            <single> <!-- volume name -->
-                <disk>disk1</disk>
-                <disk>disk2</disk>
-            </single>
-        </volumes>
-    </hdd_in_order>
+<storage_configuration>
+    ...
+    <policies>
+        <hdd_in_order> <!-- policy name -->
+            <volumes>
+                <single> <!-- volume name -->
+                    <disk>disk1</disk>
+                    <disk>disk2</disk>
+                </single>
+            </volumes>
+        </hdd_in_order>
 
-    <moving_from_ssd_to_hdd>
-        <volumes>
-            <hot>
-                <disk>fast_ssd</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </hot>
-            <cold>
-                <disk>disk1</disk>
-            </cold>            
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </moving_from_ssd_to_hdd>
-</policies>
+        <moving_from_ssd_to_hdd>
+            <volumes>
+                <hot>
+                    <disk>fast_ssd</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </hot>
+                <cold>
+                    <disk>disk1</disk>
+                </cold>            
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </moving_from_ssd_to_hdd>
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 В приведенном примере, политика `hdd_in_order` реализует прицип [round-robin](https://ru.wikipedia.org/wiki/Round-robin_(%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC)). Так как в политике есть всего один том (`single`), то все записи производятся на его диски по круговому циклу. Такая политика может быть полезна при наличии в системе нескольких похожих дисков, но при этом не сконфигурирован RAID. Учтите, что каждый отдельный диск ненадёжен и чтобы не потерять важные данные это необходимо скомпенсировать за счет хранения данных в трёх копиях.

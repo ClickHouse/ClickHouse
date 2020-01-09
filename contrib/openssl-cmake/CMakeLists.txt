@@ -28,6 +28,8 @@ if (ARCH_AMD64)
     endif ()
 
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} ${OPENSSL_SYSTEM} ${FILE_OUT}
             # ASM code has broken unwind tables (CFI), strip them.
@@ -70,6 +72,8 @@ if (ARCH_AMD64)
 elseif (ARCH_AARCH64)
 
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
             # Hope that the ASM code for AArch64 doesn't have broken CFI. Otherwise, add the same sed as for x86_64.
