@@ -61,7 +61,7 @@ private:
 
 protected:
     StorageJoin(
-        const String & path_,
+        const String & relative_path_,
         const String & database_name_,
         const String & table_name_,
         const Names & key_names_,
@@ -70,7 +70,8 @@ protected:
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        bool overwrite);
+        bool overwrite,
+        const Context & context_);
 };
 
 }

@@ -150,10 +150,12 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
 
     blocks.swap(nonempty_blocks);
 
-    if (!has_collation)
+    if (has_collation)
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else if (description.size() > 1)
         queue_without_collation = SortingHeap<SortCursor>(cursors);
     else
-        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
 }
 
 
@@ -169,9 +171,12 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
         return res;
     }
 
-    return !has_collation
-        ? mergeImpl(queue_without_collation)
-        : mergeImpl(queue_with_collation);
+    if (has_collation)
+        return mergeImpl(queue_with_collation);
+    else if (description.size() > 1)
+        return mergeImpl(queue_without_collation);
+    else
+        return mergeImpl(queue_simple);
 }
 
 
@@ -179,9 +184,18 @@ template <typename TSortingHeap>
 Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 {
     size_t num_columns = header.columns();
-
     MutableColumns merged_columns = header.cloneEmptyColumns();
-    /// TODO: reserve (in each column)
+
+    /// Reserve
+    if (queue.isValid() && !blocks.empty())
+    {
+        /// The expected size of output block is the same as input block
+        size_t size_to_reserve = blocks[0].rows();
+        for (auto & column : merged_columns)
+            column->reserve(size_to_reserve);
+    }
+
+    /// TODO: Optimization when a single block left.
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
@@ -209,6 +223,9 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
         if (merged_rows == max_merged_block_size)
             break;
     }
+
+    if (!queue.isValid())
+        blocks.clear();
 
     if (merged_rows == 0)
         return {};

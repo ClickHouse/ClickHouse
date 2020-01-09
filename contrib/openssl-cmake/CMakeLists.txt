@@ -1,16 +1,6 @@
 set(OPENSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/openssl)
 set(OPENSSL_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/openssl)
 
-#file(READ ${CMAKE_CURRENT_SOURCE_DIR}/${OPENSSL_SOURCE_DIR}/ssl/VERSION SSL_VERSION)
-#string(STRIP ${SSL_VERSION} SSL_VERSION)
-#string(REPLACE ":" "." SSL_VERSION ${SSL_VERSION})
-#string(REGEX REPLACE "\\..*" "" SSL_MAJOR_VERSION ${SSL_VERSION})
-
-#file(READ ${CMAKE_CURRENT_SOURCE_DIR}/${OPENSSL_SOURCE_DIR}/crypto/VERSION CRYPTO_VERSION)
-#string(STRIP ${CRYPTO_VERSION} CRYPTO_VERSION)
-#string(REPLACE ":" "." CRYPTO_VERSION ${CRYPTO_VERSION})
-#string(REGEX REPLACE "\\..*" "" CRYPTO_MAJOR_VERSION ${CRYPTO_VERSION})
-
 set(OPENSSLDIR "/etc/ssl" CACHE PATH "Set the default openssl directory")
 set(OPENSSL_ENGINESDIR "/usr/lib/engines-3" CACHE PATH "Set the default openssl directory for engines")
 set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default openssl directory for modules")
@@ -27,19 +17,27 @@ elseif(ARCH_AARCH64)
 endif()
 
 enable_language(ASM)
+
 if (COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
 endif ()
 
 if (ARCH_AMD64)
+    if (OS_DARWIN)
+        set (OPENSSL_SYSTEM "macosx")
+    endif ()
+
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
-            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT}
+            COMMAND /usr/bin/env perl ${FILE_IN} ${OPENSSL_SYSTEM} ${FILE_OUT}
             # ASM code has broken unwind tables (CFI), strip them.
             # Otherwise asynchronous unwind (that we use for query profiler)
             #  will lead to segfault while trying to interpret wrong "CFA expression".
             COMMAND sed -i -e '/^\.cfi_/d' ${FILE_OUT})
     endmacro()
+
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-sha1-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-sha1-x86_64.s)
@@ -70,12 +68,17 @@ if (ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s)   # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
+
 elseif (ARCH_AARCH64)
+
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
             # Hope that the ASM code for AArch64 doesn't have broken CFI. Otherwise, add the same sed as for x86_64.
     endmacro()
+
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/armv8-mont.pl ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S)
@@ -88,6 +91,7 @@ elseif (ARCH_AARCH64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S)   # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
+
 endif ()
 
 set(CRYPTO_SRCS

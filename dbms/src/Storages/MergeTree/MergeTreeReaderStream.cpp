@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Poco/File.h>
 
 
@@ -83,7 +84,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, buffer_size);
+            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes,
+            settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -94,7 +96,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + data_file_extension, sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, buffer_size);
+            path_prefix + data_file_extension, sum_mark_range_bytes,
+            settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

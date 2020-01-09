@@ -43,8 +43,8 @@ TimezoneMixin::TimezoneMixin(const String & time_zone_name)
     utc_time_zone(DateLUT::instance("UTC"))
 {}
 
-DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
-    : TimezoneMixin(time_zone_name)
+DataTypeDateTime::DataTypeDateTime(const String & time_zone_name, const String & type_name_)
+    : TimezoneMixin(time_zone_name), type_name(type_name_)
 {
 }
 
@@ -55,10 +55,10 @@ DataTypeDateTime::DataTypeDateTime(const TimezoneMixin & time_zone_)
 String DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)
-        return "DateTime";
+        return type_name;
 
     WriteBufferFromOwnString out;
-    out << "DateTime(" << quote << time_zone.getTimeZone() << ")";
+    out << type_name << "(" << quote << time_zone.getTimeZone() << ")";
     return out.str();
 }
 
@@ -194,10 +194,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & type_name, const ASTPtr & arguments)
 {
     if (!arguments)
-        return std::make_shared<DataTypeDateTime>();
+        return std::make_shared<DataTypeDateTime>("", type_name);
 
     if (arguments->children.size() != 1)
         throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -206,7 +206,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arg || arg->value.getType() != Field::Types::String)
         throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
+    return std::make_shared<DataTypeDateTime>(arg->value.get<String>(), type_name);
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
