@@ -286,7 +286,7 @@ enum class SettingsBinaryFormat
   * {
   * #   define APPLY_FOR_MYSETTINGS(M) \
   *         M(SettingUInt64, a, 100, "Description of a", 0) \
-  *         M(SettingFloat, f, 3.11, "Description of f", IGNORABLE) // IGNORABLE - means the setting can be ignored by older versions) \
+  *         M(SettingFloat, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
   *         M(SettingString, s, "default", "Description of s", 0)
   *
   *     DECLARE_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
@@ -316,7 +316,7 @@ private:
 
         StringRef name;
         StringRef description;
-        bool is_ignorable;
+        bool is_important;
         IsChangedFunction is_changed;
         GetStringFunction get_string;
         GetFieldFunction get_field;

@@ -38,6 +38,7 @@ void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
 void registerFunctionBitWrapperFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
 
+
 void registerFunctionsArithmetic(FunctionFactory & factory)
 {
     registerFunctionPlus(factory);

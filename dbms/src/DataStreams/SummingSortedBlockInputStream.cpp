@@ -78,7 +78,9 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         else
         {
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
-            if (!column.type->isSummable() && !is_agg_func)
+
+            /// There are special const columns for example after prewere sections.
+            if ((!column.type->isSummable() && !is_agg_func) || isColumnConst(*column.column))
             {
                 column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -198,6 +200,10 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 
 void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns)
 {
+    /// We have nothing to aggregate. It means that it could be non-zero, because we have columns_not_to_aggregate.
+    if (columns_to_aggregate.empty())
+        current_row_is_zero = false;
+
     for (auto & desc : columns_to_aggregate)
     {
         // Do not insert if the aggregation state hasn't been created
@@ -308,14 +314,14 @@ Block SummingSortedBlockInputStream::readImpl()
 }
 
 
-void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     merged_rows = 0;
 
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -377,12 +383,9 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     current_row_is_zero = false;
         }
 
-        queue.pop();
-
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {

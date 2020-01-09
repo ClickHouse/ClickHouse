@@ -21,7 +21,7 @@ public:
 
     /// Set the quota. If you set a quota on the amount of raw data,
     /// then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
-    virtual void setQuota(QuotaForIntervals & quota_) = 0;
+    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_) = 0;
 
     /// Set the pointer to the process list item.
     /// General information about the resources spent on the request will be written into it.
@@ -49,7 +49,7 @@ public:
     using LimitsMode = IBlockInputStream::LimitsMode;
 
     void setLimits(const LocalLimits & limits_) final { limits = limits_; }
-    void setQuota(QuotaForIntervals & quota_) final { quota = &quota_; }
+    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
@@ -60,7 +60,7 @@ protected:
 
 private:
     LocalLimits limits;
-    QuotaForIntervals * quota = nullptr;
+    std::shared_ptr<QuotaContext> quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
 

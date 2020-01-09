@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Users.h>
 #include <common/logger_useful.h>
+#include <Poco/MD5Engine.h>
 
 
 namespace DB
@@ -49,7 +50,6 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     }
 
     profile = config.getString(config_elem + ".profile");
-    quota = config.getString(config_elem + ".quota");
 
     /// Fill list of allowed hosts.
     const auto config_networks = config_elem + ".networks";
@@ -75,14 +75,15 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_sub_elem = config_elem + ".allow_databases";
     if (config.has(config_sub_elem))
     {
+        databases = DatabaseSet();
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_sub_elem, config_keys);
 
-        databases.reserve(config_keys.size());
+        databases->reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
             const auto database_name = config.getString(config_sub_elem + "." + key);
-            databases.insert(database_name);
+            databases->insert(database_name);
         }
     }
 
@@ -90,45 +91,22 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     const auto config_dictionary_sub_elem = config_elem + ".allow_dictionaries";
     if (config.has(config_dictionary_sub_elem))
     {
+        dictionaries = DictionarySet();
         Poco::Util::AbstractConfiguration::Keys config_keys;
         config.keys(config_dictionary_sub_elem, config_keys);
 
-        dictionaries.reserve(config_keys.size());
+        dictionaries->reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
             const auto dictionary_name = config.getString(config_dictionary_sub_elem + "." + key);
-            dictionaries.insert(dictionary_name);
+            dictionaries->insert(dictionary_name);
         }
     }
 
-    /// Read properties per "database.table"
-    /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
-    const auto config_databases = config_elem + ".databases";
-    if (config.has(config_databases))
-    {
-        Poco::Util::AbstractConfiguration::Keys database_names;
-        config.keys(config_databases, database_names);
-
-        /// Read tables within databases
-        for (const auto & database : database_names)
-        {
-            const auto config_database = config_databases + "." + database;
-            Poco::Util::AbstractConfiguration::Keys table_names;
-            config.keys(config_database, table_names);
-
-            /// Read table properties
-            for (const auto & table : table_names)
-            {
-                const auto config_filter = config_database + "." + table + ".filter";
-                if (config.has(config_filter))
-                {
-                    const auto filter_query = config.getString(config_filter);
-                    table_props[database][table]["filter"] = filter_query;
-                }
-            }
-        }
-    }
+    if (config.has(config_elem + ".allow_quota_management"))
+        is_quota_management_allowed = config.getBool(config_elem + ".allow_quota_management");
+    if (config.has(config_elem + ".allow_row_policy_management"))
+        is_row_policy_management_allowed = config.getBool(config_elem + ".allow_row_policy_management");
 }
-
 
 }

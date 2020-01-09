@@ -254,7 +254,7 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf, SettingsBinaryFor
         {
             details::SettingsCollectionUtils::serializeName(member.name, buf);
             if (format >= SettingsBinaryFormat::STRINGS)
-                details::SettingsCollectionUtils::serializeFlag(member.is_ignorable, buf);
+                details::SettingsCollectionUtils::serializeFlag(member.is_important, buf);
             member.serialize(castToDerived(), buf, format);
         }
     }
@@ -272,18 +272,20 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         if (name.empty() /* empty string is a marker of the end of settings */)
             break;
         auto * member = the_members.find(name);
-        bool is_ignorable = (format >= SettingsBinaryFormat::STRINGS) ? details::SettingsCollectionUtils::deserializeFlag(buf) : false;
+        bool is_important = (format >= SettingsBinaryFormat::STRINGS) ? details::SettingsCollectionUtils::deserializeFlag(buf) : true;
         if (member)
         {
             member->deserialize(castToDerived(), buf, format);
         }
-        else if (is_ignorable)
+        else if (is_important)
+        {
+            details::SettingsCollectionUtils::throwNameNotFound(name);
+        }
+        else
         {
             details::SettingsCollectionUtils::warningNameNotFound(name);
             details::SettingsCollectionUtils::skipValue(buf);
         }
-        else
-            details::SettingsCollectionUtils::throwNameNotFound(name);
     }
 }
 
@@ -298,8 +300,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         { \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
-        constexpr int IGNORABLE = 1; \
-        UNUSED(IGNORABLE); \
+        constexpr int IMPORTANT = 1; \
+        UNUSED(IMPORTANT); \
         LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
     } \
     /** \
@@ -322,7 +324,7 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     add({StringRef(#NAME, strlen(#NAME)), StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
-         FLAGS & IGNORABLE, \
+         FLAGS & IMPORTANT, \
          [](const Derived & d) { return d.NAME.changed; }, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \

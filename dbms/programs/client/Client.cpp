@@ -97,8 +97,7 @@
 #define BRACK_PASTE_LAST '~'
 #define BRACK_PASTE_SLEN 6
 
-/// Make sure we don't get ^J for the enter character.
-/// This handler also bypasses some unused macro/event checkings.
+/// This handler bypasses some unused macro/event checkings.
 static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 {
     std::string buf;
@@ -106,10 +105,10 @@ static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
 
     RL_SETSTATE(RL_STATE_MOREINPUT);
     SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    char c;
+    int c;
     while ((c = rl_read_key()) >= 0)
     {
-        if (c == '\r' || c == '\n')
+        if (c == '\r')
             c = '\n';
         buf.push_back(c);
         if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
@@ -301,7 +300,7 @@ private:
                 && std::string::npos == embedded_stack_trace_pos)
             {
                 std::cerr << "Stack trace:" << std::endl
-                    << e.getStackTrace().toString();
+                    << e.getStackTraceString();
             }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -326,6 +325,78 @@ private:
         LocalDate now(current_time);
         return (now.month() == 12 && now.day() >= 20)
             || (now.month() == 1 && now.day() <= 5);
+    }
+
+    bool isChineseNewYearMode(const String & local_tz)
+    {
+        /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
+        static constexpr UInt16 chineseNewYearIndicators[]
+            = {18275, 18659, 19014, 19368, 19752, 20107, 20491, 20845, 21199, 21583, 21937, 22292, 22676, 23030, 23414, 23768, 24122, 24506,
+               24860, 25215, 25599, 25954, 26308, 26692, 27046, 27430, 27784, 28138, 28522, 28877, 29232, 29616, 29970, 30354, 30708, 31062,
+               31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
+               38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
+               44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
+        static constexpr size_t N = sizeof(chineseNewYearIndicators) / sizeof(chineseNewYearIndicators[0]);
+
+        /// All time zone names are acquired from https://www.iana.org/time-zones
+        static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
+            /// Time zones celebrating Chinese new year.
+            "Asia/Shanghai",
+            "Asia/Chongqing",
+            "Asia/Harbin",
+            "Asia/Urumqi",
+            "Asia/Hong_Kong",
+            "Asia/Chungking",
+            "Asia/Macao",
+            "Asia/Macau",
+            "Asia/Taipei",
+            "Asia/Singapore",
+
+            /// Time zones celebrating Chinese new year but with different festival names. Let's not print the message for now.
+            // "Asia/Brunei",
+            // "Asia/Ho_Chi_Minh",
+            // "Asia/Hovd",
+            // "Asia/Jakarta",
+            // "Asia/Jayapura",
+            // "Asia/Kashgar",
+            // "Asia/Kuala_Lumpur",
+            // "Asia/Kuching",
+            // "Asia/Makassar",
+            // "Asia/Pontianak",
+            // "Asia/Pyongyang",
+            // "Asia/Saigon",
+            // "Asia/Seoul",
+            // "Asia/Ujung_Pandang",
+            // "Asia/Ulaanbaatar",
+            // "Asia/Ulan_Bator",
+        };
+        static constexpr size_t M = sizeof(chineseNewYearTimeZoneIndicators) / sizeof(chineseNewYearTimeZoneIndicators[0]);
+
+        time_t current_time = time(nullptr);
+
+        if (chineseNewYearTimeZoneIndicators + M
+            == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz)
+            {
+                return tz == local_tz;
+            }))
+            return false;
+
+        /// It's bad to be intrusive.
+        if (current_time % 3 != 0)
+            return false;
+
+        auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
+        for (auto i = 0ul; i < N; ++i)
+        {
+            auto d = chineseNewYearIndicators[i];
+
+            /// Let's celebrate until Lantern Festival
+            if (d <= days && d + 25u >= days)
+                return true;
+            else if (d > days)
+                return false;
+        }
+        return false;
     }
 
     int mainImpl()
@@ -375,7 +446,7 @@ private:
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
-        DateLUT::instance();
+        const auto local_tz = DateLUT::instance().getTimeZone();
         if (!context.getSettingsRef().use_client_time_zone)
         {
             const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
@@ -541,7 +612,12 @@ private:
 
             loop();
 
-            std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
+            if (isNewYearMode())
+                std::cout << "Happy new year." << std::endl;
+            else if (isChineseNewYearMode(local_tz))
+                std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
+            else
+                std::cout << "Bye." << std::endl;
             return 0;
         }
         else
@@ -715,7 +791,7 @@ private:
 
                         if (config().getBool("stacktrace", false))
                             std::cerr << "Stack trace:" << std::endl
-                                      << e.getStackTrace().toString() << std::endl;
+                                      << e.getStackTraceString() << std::endl;
 
                         std::cerr << std::endl;
 
@@ -1112,7 +1188,14 @@ private:
             /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Exception)
+            {
+                /*
+                 * We're exiting with error, so it makes sense to kill the
+                 * input stream without waiting for it to complete.
+                 */
+                async_block_input->cancel(true);
                 return;
+            }
 
             connection->sendData(block);
             processed_rows += block.rows();
@@ -1935,6 +2018,9 @@ public:
 };
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

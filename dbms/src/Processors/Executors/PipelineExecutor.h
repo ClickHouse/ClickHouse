@@ -43,12 +43,23 @@ private:
 
     struct Edge
     {
+        Edge(UInt64 to_, bool backward_,
+             UInt64 input_port_number_, UInt64 output_port_number_, std::vector<void *> * update_list)
+            : to(to_), backward(backward_)
+            , input_port_number(input_port_number_), output_port_number(output_port_number_)
+        {
+            update_info.update_list = update_list;
+            update_info.id = this;
+        }
+
         UInt64 to = std::numeric_limits<UInt64>::max();
+        bool backward;
+        UInt64 input_port_number;
+        UInt64 output_port_number;
 
         /// Edge version is increased when port's state is changed (e.g. when data is pushed). See Port.h for details.
         /// To compare version with prev_version we can decide if neighbour processor need to be prepared.
-        UInt64 version = 0;
-        UInt64 prev_version = 0;
+        Port::UpdateInfo update_info;
     };
 
     /// Use std::list because new ports can be added to processor during execution.
@@ -58,7 +69,6 @@ private:
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
     enum class ExecStatus
     {
-        New,  /// prepare wasn't called yet. Initial state. Non-owning.
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
         Executing,  /// prepare returned Ready and task is executing. Owning.
@@ -74,6 +84,7 @@ private:
 
         IProcessor * processor = nullptr;
         UInt64 processors_id = 0;
+        bool has_quota = false;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -87,26 +98,32 @@ private:
         Edges directEdges;
         Edges backEdges;
 
-        std::atomic<ExecStatus> status;
-        /// This flag can be set by any executor.
-        /// When enabled, any executor can try to atomically set Preparing state to status.
-        std::atomic_bool need_to_be_prepared;
+        ExecStatus status;
+        std::mutex status_mutex;
+
+        std::vector<void *> post_updated_input_ports;
+        std::vector<void *> post_updated_output_ports;
+
         /// Last state for profiling.
         IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
 
         std::unique_ptr<ExecutionState> execution_state;
 
+        IProcessor::PortNumbers updated_input_ports;
+        IProcessor::PortNumbers updated_output_ports;
+
         Node(IProcessor * processor_, UInt64 processor_id)
-            : processor(processor_), status(ExecStatus::New), need_to_be_prepared(false)
+            : processor(processor_), status(ExecStatus::Idle)
         {
             execution_state = std::make_unique<ExecutionState>();
             execution_state->processor = processor;
             execution_state->processors_id = processor_id;
+            execution_state->has_quota = processor->hasQuota();
         }
 
         Node(Node && other) noexcept
-            : processor(other.processor), status(other.status.load())
-            , need_to_be_prepared(other.need_to_be_prepared.load()), execution_state(std::move(other.execution_state))
+            : processor(other.processor), status(other.status)
+            , execution_state(std::move(other.execution_state))
         {
         }
     };
@@ -117,7 +134,59 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    using TaskQueue = std::queue<ExecutionState *>;
+    class TaskQueue
+    {
+    public:
+        void init(size_t num_threads) { queues.resize(num_threads); }
+
+        void push(ExecutionState * state, size_t thread_num)
+        {
+            queues[thread_num].push(state);
+
+            ++size_;
+
+            if (state->has_quota)
+                ++quota_;
+        }
+
+        ExecutionState * pop(size_t thread_num)
+        {
+            if (size_ == 0)
+                throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+
+            for (size_t i = 0; i < queues.size(); ++i)
+            {
+                if (!queues[thread_num].empty())
+                {
+                    ExecutionState * state = queues[thread_num].front();
+                    queues[thread_num].pop();
+
+                    --size_;
+
+                    if (state->has_quota)
+                        ++quota_;
+
+                    return state;
+                }
+
+                ++thread_num;
+                if (thread_num >= queues.size())
+                    thread_num = 0;
+            }
+
+            throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+        size_t quota() const { return quota_; }
+
+    private:
+        using Queue = std::queue<ExecutionState *>;
+        std::vector<Queue> queues;
+        size_t size_ = 0;
+        size_t quota_ = 0;
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
@@ -158,7 +227,7 @@ private:
         std::mutex mutex;
         bool wake_flag = false;
 
-        std::queue<ExecutionState *> pinned_tasks;
+        /// std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
@@ -171,19 +240,21 @@ private:
     /// Graph related methods.
     bool addEdges(UInt64 node);
     void buildGraph();
-    void expandPipeline(Stack & stack, UInt64 pid);
+    bool expandPipeline(Stack & stack, UInt64 pid);
+
+    using Queue = std::queue<ExecutionState *>;
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
+    bool tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
-    void doExpandPipeline(ExpandPipelineTask * task, bool processing);
+    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
+    bool doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);

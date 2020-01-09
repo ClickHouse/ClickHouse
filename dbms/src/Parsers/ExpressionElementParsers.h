@@ -90,9 +90,12 @@ protected:
   */
 class ParserFunction : public IParserBase
 {
+public:
+    ParserFunction(bool allow_function_parameters_ = true) : allow_function_parameters(allow_function_parameters_) {}
 protected:
     const char * getName() const { return "function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    bool allow_function_parameters;
 };
 
 class ParserCodecDeclarationList : public IParserBase
@@ -314,6 +317,16 @@ class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
     const char * getName() const { return "identifier with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Element of TTL expression - same as expression element, but in addition,
+ *   TO DISK 'xxx' | TO VOLUME 'xxx' | DELETE could be specified
+  */
+class ParserTTLElement : public IParserBase
+{
+protected:
+    const char * getName() const { return "element of TTL expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
