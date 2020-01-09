@@ -612,7 +612,13 @@ bool StorageMergeTree::merge(
         if (!selected)
         {
             if (out_disable_reason)
-                *out_disable_reason = "Cannot select parts for optimization";
+            {
+                if (!out_disable_reason->empty())
+                {
+                    *out_disable_reason += ". ";
+                }
+                *out_disable_reason += "Cannot select parts for optimization";
+            }
             return false;
         }
 
