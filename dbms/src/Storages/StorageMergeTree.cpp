@@ -659,9 +659,6 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        /// DataPart can be store only at one disk. Get Max of free space at all disks
-        UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
-
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.empty())
@@ -677,7 +674,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            if (merger_mutator.getMaxSourcePartSizeForMutation() > disk_space)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
             size_t current_ast_elements = 0;
