@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+#include <port/unistd.h>
+
 namespace
 {
 
@@ -9,6 +11,17 @@ namespace
 void trim(String & s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+/// Check if multi-line query is inserted from the paste buffer.
+/// Allows delaying the start of query execution until the entirety of query is inserted.
+bool hasInputData()
+{
+    timeval timeout = {0, 0};
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
 }
@@ -73,7 +86,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         if (input.empty())
             continue;
 
-        is_multiline = (input.back() == extender) || (delimiter && input.back() != delimiter);
+        is_multiline = (input.back() == extender) || (delimiter && input.back() != delimiter) || hasInputData();
 
         if (input.back() == extender)
         {

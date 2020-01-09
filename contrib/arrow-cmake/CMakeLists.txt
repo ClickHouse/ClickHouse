@@ -1,5 +1,7 @@
 include(ExternalProject)
 
+set (CMAKE_CXX_STANDARD 17)
+
 # === thrift
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)

@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/Field.h>
-#include "registerFunctions.h"
+
 
 namespace DB
 {
