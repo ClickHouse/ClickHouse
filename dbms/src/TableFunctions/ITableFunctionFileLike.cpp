@@ -51,7 +51,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     ColumnsDescription columns;
-    std::string compression_method;
+    std::string compression_method = "auto";
 
     if (args.size() > 2)
     {
@@ -60,9 +60,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     }
 
     if (args.size() == 4)
-    {
         compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    } else compression_method = "auto";
 
     /// Create table
     StoragePtr storage = getStorage(filename, format, columns, const_cast<Context &>(context), table_name, compression_method);
