@@ -9,7 +9,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.indices_mutaions2;"
 
 
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices=1;
 CREATE TABLE test.indices_mutaions1
 (
     u64 UInt64,

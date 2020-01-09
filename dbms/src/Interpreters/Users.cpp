@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Users.h>
 #include <common/logger_useful.h>
+#include <Poco/MD5Engine.h>
 
 
 namespace DB
@@ -102,50 +103,10 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         }
     }
 
-    /// Read properties per "database.table"
-    /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
-    /// Also if there node inside "database" has name "table" and attribute "name", then it's taken as table name instead.
-    const auto config_databases = config_elem + ".databases";
-    if (config.has(config_databases))
-    {
-        Poco::Util::AbstractConfiguration::Keys database_names;
-        config.keys(config_databases, database_names);
-
-        /// Read tables within databases
-        for (const auto & database : database_names)
-        {
-            const auto config_database = config_databases + "." + database;
-            Poco::Util::AbstractConfiguration::Keys table_names;
-            config.keys(config_database, table_names);
-
-            /// Read table properties
-            for (const auto & table : table_names)
-            {
-                String table_name = table;
-                String config_filter = config_database + "." + table_name + ".filter";
-
-                /// FIXME: naming scheme can be spoiled by user.
-                if (table.rfind("table[", 0) == 0)
-                {
-                    const auto config_table_name = config_database + "." + table_name + "[@name]";
-                    if (config.has(config_table_name))
-                    {
-                        table_name = config.getString(config_table_name);
-                        config_filter = config_database + ".table[@name='" + table_name + "']";
-                    }
-                }
-
-                if (config.has(config_filter))
-                {
-                    const auto filter_query = config.getString(config_filter);
-                    table_props[database][table_name]["filter"] = filter_query;
-                }
-            }
-        }
-    }
-
     if (config.has(config_elem + ".allow_quota_management"))
         is_quota_management_allowed = config.getBool(config_elem + ".allow_quota_management");
+    if (config.has(config_elem + ".allow_row_policy_management"))
+        is_row_policy_management_allowed = config.getBool(config_elem + ".allow_row_policy_management");
 }
 
 }

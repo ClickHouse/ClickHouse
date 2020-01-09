@@ -33,7 +33,9 @@ public:
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
-        const String & data_path;
+        /// Path to table data.
+        /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
+        const String & relative_data_path;
         const String & table_name;
         const String & database_name;
         Context & local_context;
@@ -47,8 +49,8 @@ public:
     using Creator = std::function<StoragePtr(const Arguments & arguments)>;
 
     StoragePtr get(
-        ASTCreateQuery & query,
-        const String & data_path,
+        const ASTCreateQuery & query,
+        const String & relative_data_path,
         const String & table_name,
         const String & database_name,
         Context & local_context,

@@ -33,11 +33,6 @@ public:
         return "categoricalInformationValue";
     }
 
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
-    }
-
     void create(AggregateDataPtr place) const override
     {
         memset(place, 0, sizeOfData());
