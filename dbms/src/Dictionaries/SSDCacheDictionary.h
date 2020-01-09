@@ -23,27 +23,6 @@ namespace DB
 class SSDCacheDictionary;
 class CacheStorage;
 
-/*class SimpleSerializer
-{
-public:
-    bool block() const { return false; }
-
-    template <typename T>
-    size_t estimateSizeNumber(T number) const;
-
-    size_t estimateSizeString(const String & str) const;
-
-    template <typename T>
-    ssize_t writeNumber(T number, WriteBuffer & buffer);
-
-    ssize_t writeString(const String & str, WriteBuffer & buffer);
-
-    template <typename T>
-    ssize_t readNumber(T number, WriteBuffer & buffer);
-
-    ssize_t readString(const String & str, WriteBuffer & buffer);
-};*/
-
 using AttributeValueVariant = std::variant<
         UInt8,
         UInt16,
@@ -131,6 +110,7 @@ public:
     // Key, (Metadata), attributes
     void appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata);
 
+    void flush();
 private:
     struct Index final
     {
@@ -152,8 +132,6 @@ private:
         size_t index = 0;
     };
 
-    void flush();
-
     size_t appendValuesToAttribute(Attribute & to, const Attribute & from);
 
     template <typename Out>
@@ -167,14 +145,12 @@ private:
     template <typename Out>
     void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
 
-    template <typename Iterator>
-    void markExpired(const Iterator & it) const;
-
     size_t file_id;
     size_t max_size;
     std::string path;
 
-    //mutable std::shared_mutex rw_lock;
+    mutable std::shared_mutex rw_lock;
+
     int fd = -1;
 
     struct IndexAndMetadata final
@@ -197,7 +173,7 @@ private:
     // mutable std::atomic<size_t> element_count{0};
 };
 
-using CachePartitionPtr = std::unique_ptr<CachePartition>;
+using CachePartitionPtr = std::shared_ptr<CachePartition>;
 
 
 class CacheStorage
@@ -226,6 +202,7 @@ public:
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
     {
+        //for (auto & partition : partitions)
         partitions[0]->has(ids, out, not_found, now);
     }
 
@@ -248,13 +225,13 @@ private:
 
     const std::string path;
     const size_t partition_max_size;
+
+    mutable std::shared_mutex rw_lock;
     std::vector<CachePartitionPtr> partitions;
 
     Logger * const log;
 
     mutable pcg64 rnd_engine;
-
-    mutable std::shared_mutex rw_lock;
 
     mutable std::exception_ptr last_update_exception;
     mutable size_t update_error_count = 0;
