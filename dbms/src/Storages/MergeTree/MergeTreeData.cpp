@@ -634,7 +634,10 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
     if (new_ttl_table_ast)
     {
         if (!only_check)
+        {
             move_ttl_entries.clear();
+            ttl_table_ast = nullptr;
+        }
 
         bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
