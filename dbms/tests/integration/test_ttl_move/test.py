@@ -540,6 +540,63 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
+@pytest.mark.parametrize("name,engine", [
+    ("mt_test_syntax_empty_ttl_list","MergeTree()"),
+    ("replicated_mt_test_syntax_empty_ttl_list","ReplicatedMergeTree('/clickhouse/replicated_test_syntax_empty_ttl_list', '1')"),
+])
+def test_syntax_empty_ttl_list(started_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
+@pytest.mark.parametrize("name,engine,positive", [
+    ("mt_test_moves_after_alter_no_ttl_do_not_work","MergeTree()",0),
+    ("replicated_mt_test_moves_after_alter_no_ttl_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_no_ttl_do_not_work', '1')",0),
+    ("mt_test_moves_after_alter_no_ttl_work","MergeTree()",1),
+    ("replicated_mt_test_moves_after_alter_no_ttl_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_no_ttl_work', '1')",1),
+])
+def test_ttls_do_not_work_after_alter_no_ttl(started_cluster, name, engine, positive):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 TO DISK 'external'
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        if positive:
+            node1.query("""
+                ALTER TABLE {name}
+                    MODIFY TTL
+            """.format(name=name)) # That shall disable TTL.
+
+        data = [] # 10MB in total
+        for i in range(10):
+            data.append(("'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
+        node1.query("INSERT INTO {} (s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1" if positive else "external"}
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_alter_multiple_ttls_positive", "MergeTree()", True),
     ("mt_replicated_test_alter_multiple_ttls_positive", "ReplicatedMergeTree('/clickhouse/replicated_test_alter_multiple_ttls_positive', '1')", True),
