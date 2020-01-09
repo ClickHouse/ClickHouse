@@ -301,10 +301,6 @@ struct Codec
         : codec_statement(std::move(codec_statement_)),
           expected_compression_ratio(expected_compression_ratio_)
     {}
-
-    Codec()
-        : Codec(std::string())
-    {}
 };
 
 
@@ -314,22 +310,13 @@ struct CodecTestSequence
     std::vector<char> serialized_data;
     DataTypePtr data_type;
 
-    CodecTestSequence()
-        : name(),
-          serialized_data(),
-          data_type()
-    {}
+    CodecTestSequence() = default;
 
     CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
         : name(name_),
           serialized_data(serialized_data_),
           data_type(data_type_)
     {}
-
-    CodecTestSequence(const CodecTestSequence &) = default;
-    CodecTestSequence & operator=(const CodecTestSequence &) = default;
-    CodecTestSequence(CodecTestSequence &&) = default;
-    CodecTestSequence & operator=(CodecTestSequence &&) = default;
 
     CodecTestSequence & append(const CodecTestSequence & other)
     {
