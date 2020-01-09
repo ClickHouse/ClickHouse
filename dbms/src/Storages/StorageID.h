@@ -50,7 +50,7 @@ struct StorageID
     {
         assertNotEmpty();
         return (database_name.empty() ? "" : backQuoteIfNeed(database_name) + ".") + backQuoteIfNeed(table_name)
-               + (hasUUID() ? "" : " (UUID " + toString(uuid) + ")");
+               + (hasUUID() ? " (UUID " + toString(uuid) + ")" : "");
     }
 
     bool empty() const
