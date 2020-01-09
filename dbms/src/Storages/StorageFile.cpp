@@ -23,6 +23,8 @@
 #include <Common/parseGlobs.h>
 
 #include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -40,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -62,11 +65,12 @@ static std::vector<std::string> listFilesWithRegexpMatching(const std::string & 
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
-    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+    auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
+    re2::RE2 matcher(regexp);
 
     std::vector<std::string> result;
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-    if (!fs::exists(fs::path(prefix_without_globs.data())))
+    if (!fs::exists(fs::path(prefix_without_globs)))
     {
         return result;
     }
@@ -111,11 +115,11 @@ static void checkCreationIsAllowed(const Context & context_global, const std::st
 
     /// "/dev/null" is allowed for perf testing
     if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("File is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
     if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
-        throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
 
@@ -146,11 +150,10 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 
     const std::string path = poco_path.absolute().toString();
     if (path.find_first_of("*?{") == std::string::npos)
-    {
         paths.push_back(path);
-    }
     else
         paths = listFilesWithRegexpMatching("/", path);
+
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
 
@@ -215,12 +218,12 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = getReadBuffer<ReadBufferFromFileDescriptor>(compression_method, storage->table_fd);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
             shared_lock = std::shared_lock(storage->rwlock);
-            read_buf = getReadBuffer<ReadBufferFromFile>(compression_method, file_path);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
         }
 
         if (!reader)
@@ -287,7 +290,7 @@ BlockInputStreams StorageFile::read(
             cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
         else
             cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
 
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
@@ -310,13 +313,15 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = getWriteBuffer<WriteBufferFromFileDescriptor>(compression_method, storage.table_fd);
+            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
+                compression_method, 3);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
@@ -359,7 +364,7 @@ BlockOutputStreamPtr StorageFile::write(
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
     return std::make_shared<StorageFileBlockOutputStream>(*this,
-        IStorage::chooseCompressionMethod(paths[0], compression_method), context);
+        chooseCompressionMethod(paths[0], compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -386,6 +391,28 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     paths[0] = std::move(path_new);
     table_name = new_table_name;
     database_name = new_database_name;
+}
+
+void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+{
+    if (paths.size() != 1)
+        throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
+    if (use_table_fd)
+    {
+        if (0 != ::ftruncate(table_fd, 0))
+            throwFromErrno("Cannot truncate file at fd " + toString(table_fd), ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
+    else
+    {
+        if (!Poco::File(paths[0]).exists())
+            return;
+
+        if (0 != ::truncate(paths[0].c_str(), 0))
+            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
 }
 
 
