@@ -965,7 +965,7 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     String name;
     String message;
     String stack_trace;
-    bool has_nested = false;
+    bool has_nested = false;    /// Obsolete
 
     readBinary(code, buf);
     readBinary(name, buf);
@@ -986,14 +986,7 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    if (has_nested)
-    {
-        Exception nested;
-        readException(nested, buf);
-        e = Exception(out.str(), nested, code);
-    }
-    else
-        e = Exception(out.str(), code);
+    e = Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

@@ -13,7 +13,6 @@ if (CMAKE_CROSSCOMPILING)
     if (OS_DARWIN)
         # FIXME: broken dependencies
         set (USE_SNAPPY OFF CACHE INTERNAL "")
-        set (ENABLE_SSL OFF CACHE INTERNAL "")
         set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
         set (ENABLE_PARQUET OFF CACHE INTERNAL "")
         set (ENABLE_ICU OFF CACHE INTERNAL "")

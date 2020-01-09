@@ -57,7 +57,8 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create);
 
     /// name
-    EXPECT_EQ(config->getString("dictionary.name"), "test.dict1");
+    EXPECT_EQ(config->getString("dictionary.database"), "test");
+    EXPECT_EQ(config->getString("dictionary.name"), "dict1");
 
     /// lifetime
     EXPECT_EQ(config->getInt("dictionary.lifetime.min"), 1);
