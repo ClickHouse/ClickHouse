@@ -81,6 +81,9 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ] && [ -f "$CLICKHOUSE_CONFIG" ]; then
+        if [ -z "$SHELL" ]; then
+            SHELL="/bin/sh"
+        fi
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
         echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
     fi
