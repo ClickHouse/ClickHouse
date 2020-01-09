@@ -424,13 +424,13 @@ BlockInputStreams IStorage::read(
 
 StorageID IStorage::getStorageID() const
 {
-    std::unique_lock<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(id_mutex);
     return storage_id;
 }
 
 void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
-    std::unique_lock<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(id_mutex);
     storage_id.database_name = new_database_name;
     storage_id.table_name = new_table_name;
 }

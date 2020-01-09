@@ -350,7 +350,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
+            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
 
         iterator->next();
     }
