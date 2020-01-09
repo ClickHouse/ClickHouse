@@ -176,7 +176,9 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-set (CMAKE_CXX_STANDARD 17)
+# cmake < 3.12 doesn't supoprt 20. We'll set CMAKE_CXX_FLAGS for now
+# set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++2a")
 set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -222,7 +224,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause lot of warnings in includes.
+# Using system libs can cause lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
@@ -248,8 +250,16 @@ endif ()
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT MAKE_STATIC_LIBRARIES)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if (MAKE_STATIC_LIBRARIES)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    if (OS_LINUX)
+        # Slightly more efficient code can be generated
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
+    endif ()
+else ()
+    set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
 # Using "include-what-you-use" tool.
@@ -352,7 +362,6 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
@@ -362,18 +371,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
-    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
-    endif ()
-
-    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
-    else ()
-        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
-        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
-    endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
 elseif (OS_LINUX)

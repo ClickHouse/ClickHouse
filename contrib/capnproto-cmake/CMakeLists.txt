@@ -1,5 +1,7 @@
 set (CAPNPROTO_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src)
 
+set (CMAKE_CXX_STANDARD 17)
+
 set (KJ_SRCS
     ${CAPNPROTO_SOURCE_DIR}/kj/array.c++
     ${CAPNPROTO_SOURCE_DIR}/kj/common.c++
@@ -54,17 +56,6 @@ set_target_properties(capnp
                       )
 target_link_libraries(capnp PUBLIC kj)
 
-# The library has substandard code
-if (COMPILER_GCC)
-    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-maybe-uninitialized
-        -Wno-deprecated-declarations -Wno-class-memaccess)
-elseif (COMPILER_CLANG)
-    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-deprecated-declarations)
-endif ()
-
-target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS})
-target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS})
-
 set (CAPNPC_SRCS
     ${CAPNPROTO_SOURCE_DIR}/capnp/compiler/type-id.c++
     ${CAPNPROTO_SOURCE_DIR}/capnp/compiler/error-reporter.c++
@@ -80,3 +71,15 @@ set (CAPNPC_SRCS
 
 add_library(capnpc ${CAPNPC_SRCS})
 target_link_libraries(capnpc PUBLIC capnp)
+
+# The library has substandard code
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-maybe-uninitialized
+        -Wno-deprecated-declarations -Wno-class-memaccess)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor -Wno-sign-compare -Wno-strict-aliasing -Wno-deprecated-declarations)
+endif ()
+
+target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS})
+target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS})
+target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS})

@@ -180,8 +180,6 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 private:
     enum class PatternActionType
     {
