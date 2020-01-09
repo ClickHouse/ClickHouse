@@ -54,7 +54,7 @@ public:
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
 private:
-    const DB::ColumnsWithTypeAndName columns;
+    const DB::ColumnsWithTypeAndName header_columns;
 
     class SchemaRegistry;
     std::unique_ptr<SchemaRegistry> schema_registry;

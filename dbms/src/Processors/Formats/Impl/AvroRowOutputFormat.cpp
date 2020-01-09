@@ -63,7 +63,7 @@ public:
     virtual bool next(uint8_t ** data, size_t * len) override
     {
         out.nextIfAtEnd();
-        *data = (uint8_t *)out.position();
+        *data = reinterpret_cast<uint8_t *>(out.position());
         *len = out.available();
         out.position() += out.available();
 
@@ -302,10 +302,8 @@ void registerOutputFormatProcessorAvro(FormatFactory & factory)
         "Avro",
         [=](WriteBuffer & buf,
             const Block & sample,
-            const Context & context,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings) {
-            (void)(context);
             (void)(callback);
             return std::make_shared<AvroRowOutputFormat>(buf, sample, callback, settings);
         });

@@ -90,7 +90,7 @@ public:
             return false;
         }
 
-        *data = (const uint8_t *)in.position();
+        *data = reinterpret_cast<const uint8_t *>(in.position());
         *len = in.available();
 
         in.position() += in.available();
@@ -125,6 +125,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     column.insertData(tmp.c_str(), tmp.length());
                 };
             }
+            break;
         case avro::AVRO_BYTES:
             if (target.isString())
             {
@@ -472,7 +473,7 @@ public:
         }
         catch (Poco::SyntaxException & e)
         {
-            throw Exception("Invalid Schema Registry URL", Exception(Exception::CreateFromPoco, e), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Invalid Schema Registry URL: " + e.displayText(), ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -541,7 +542,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_.cloneEmpty(), in_, params_)
-    , columns(header_.getColumnsWithTypeAndName())
+    , header_columns(header_.getColumnsWithTypeAndName())
     , schema_registry(std::make_unique<SchemaRegistry>(format_settings_.avro.schema_registry_url))
     , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
     , decoder(avro::binaryDecoder())
@@ -570,7 +571,7 @@ AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(columns, schema);
+        AvroDeserializer deserializer(header_columns, schema);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
@@ -582,12 +583,10 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         "Avro",
         [=](ReadBuffer & buf,
             const Block & sample,
-            const Context & context,
             const RowInputFormatParams & params,
             const FormatSettings & settings) {
             (void)(params);
             (void)(settings);
-            (void)(context);
             return std::make_shared<AvroRowInputFormat>(sample, buf, params);
         });
 
@@ -595,12 +594,10 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         "AvroConfluent",
         [=](ReadBuffer & buf,
             const Block & sample,
-            const Context & context,
             const RowInputFormatParams & params,
             const FormatSettings & settings) {
             (void)(params);
             (void)(settings);
-            (void)(context);
             return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
         });
 }
