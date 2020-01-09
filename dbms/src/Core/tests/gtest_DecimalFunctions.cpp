@@ -168,5 +168,5 @@ INSTANTIATE_TEST_CASE_P(Basic,
                 89
             }
         }
-    }
-),);
+    })
+);

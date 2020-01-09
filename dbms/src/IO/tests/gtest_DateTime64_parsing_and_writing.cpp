@@ -130,7 +130,7 @@ INSTANTIATE_TEST_CASE_P(Basic,
             1568650817'1ULL,
             1
         }
-    }),
+    })
 );
 
 INSTANTIATE_TEST_CASE_P(BestEffort,
@@ -142,7 +142,7 @@ INSTANTIATE_TEST_CASE_P(BestEffort,
             1568650817'123456ULL,
             6
         }
-    }),
+    })
 );
 
 
@@ -181,6 +181,6 @@ INSTANTIATE_TEST_CASE_P(Basic,
             1568650817'001ULL,
             3
         }
-    }),
+    })
 );
 

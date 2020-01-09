@@ -221,7 +221,7 @@ INSTANTIATE_TEST_CASE_P(Simple,
             "10101001 10111010 11101111 10101111 10111010 11101011 10101001 00000000 " // 256
             "10101111 10111010 11101011 10101001 00001111 11110000 00001110 11111111 " // 320
         }
-    }),
+    })
 );
 
 TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
@@ -242,11 +242,12 @@ TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
 }
 
 INSTANTIATE_TEST_CASE_P(Primes,
-        BitIO,
-        ::testing::Values(
-            primes_case(11, 0xFFFFFFFFFFFFFFFFULL),
-            primes_case(11, BIT_PATTERN)
-),);
+    BitIO,
+    ::testing::Values(
+        primes_case(11, 0xFFFFFFFFFFFFFFFFULL),
+        primes_case(11, BIT_PATTERN)
+    )
+);
 
 TEST(BitHelpers, maskLowBits)
 {
