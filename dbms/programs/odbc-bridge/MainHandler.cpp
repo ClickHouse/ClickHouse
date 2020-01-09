@@ -115,7 +115,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         process_error("Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING(log, ex.getStackTrace().toString());
+        LOG_WARNING(log, ex.getStackTraceString());
         return;
     }
 

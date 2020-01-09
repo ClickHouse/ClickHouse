@@ -36,7 +36,7 @@ static inline String generateInnerTableName(const String & table_name)
     return ".inner." + table_name;
 }
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view /*= false*/, bool add_default_db /*= true*/)
+static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool add_default_db = true)
 {
     if (add_default_db)
     {
@@ -52,16 +52,16 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context &
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception(String("Logical error while creating Storage") + (is_live_view ? "Live" : "Materialized") +
-                            "View. Could not retrieve table name from select query.",
+            throw Exception("Logical error while creating StorageMaterializedView. "
+                            "Could not retrieve table name from select query.",
                             DB::ErrorCodes::LOGICAL_ERROR);
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception(String("UNION is not supported for ") + (is_live_view ? "LIVE VIEW" : "MATERIALIZED VIEW"),
-                  is_live_view ? ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW : ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+            throw Exception("UNION is not supported for MATERIALIZED VIEW",
+                  ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, is_live_view, false);
+        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
     }
     else
         return StorageID::createEmpty();

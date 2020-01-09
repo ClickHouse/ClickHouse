@@ -63,6 +63,8 @@ public:
 
     void resize(size_t num_streams, bool force = false);
 
+    void enableQuotaForCurrentStreams();
+
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
     PipelineExecutorPtr execute();
