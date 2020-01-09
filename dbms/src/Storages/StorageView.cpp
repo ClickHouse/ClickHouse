@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -23,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int ALIAS_REQUIRED;
 }
 
 
@@ -62,8 +64,23 @@ BlockInputStreams StorageView::read(
 
         replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
-        if (PredicateExpressionsOptimizer(new_outer_select, context.getSettings(), context).optimize())
-            current_inner_query = new_inner_query;
+        /// TODO: remove getTableExpressions and getTablesWithColumns
+        {
+            const auto & table_expressions = getTableExpressions(*new_outer_select);
+            const auto & tables_with_columns = getDatabaseAndTablesWithColumnNames(table_expressions, context);
+
+            auto & settings = context.getSettingsRef();
+            if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
+            {
+                for (auto & pr : tables_with_columns)
+                    if (pr.table.table.empty() && pr.table.alias.empty())
+                        throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
+                            ErrorCodes::ALIAS_REQUIRED);
+            }
+
+            if (PredicateExpressionsOptimizer(context, tables_with_columns, context.getSettings()).optimize(*new_outer_select))
+                current_inner_query = new_inner_query;
+        }
     }
 
     QueryPipeline pipeline;
