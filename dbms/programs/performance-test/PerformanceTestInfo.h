@@ -26,15 +26,13 @@ using StringToVector = std::map<std::string, Strings>;
 class PerformanceTestInfo
 {
 public:
-    PerformanceTestInfo(XMLConfigurationPtr config, const std::string & profiles_file_, const Settings & global_settings_);
+    PerformanceTestInfo(XMLConfigurationPtr config, const Settings & global_settings_);
 
     std::string test_name;
     std::string path;
-    std::string main_metric;
 
     Strings queries;
 
-    std::string profiles_file;
     Settings settings;
     ExecutionType exec_type;
     StringToVector substitutions;

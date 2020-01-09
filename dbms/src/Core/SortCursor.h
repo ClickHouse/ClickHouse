@@ -121,19 +121,19 @@ struct SortCursorHelper
     SortCursorImpl * operator-> () { return impl; }
     const SortCursorImpl * operator-> () const { return impl; }
 
-    bool greater(const SortCursorHelper & rhs) const
+    bool ALWAYS_INLINE greater(const SortCursorHelper & rhs) const
     {
         return derived().greaterAt(rhs.derived(), impl->pos, rhs.impl->pos);
     }
 
     /// Inverted so that the priority queue elements are removed in ascending order.
-    bool operator< (const SortCursorHelper & rhs) const
+    bool ALWAYS_INLINE operator< (const SortCursorHelper & rhs) const
     {
         return derived().greater(rhs.derived());
     }
 
     /// Checks that all rows in the current block of this cursor are less than or equal to all the rows of the current block of another cursor.
-    bool totallyLessOrEquals(const SortCursorHelper & rhs) const
+    bool ALWAYS_INLINE totallyLessOrEquals(const SortCursorHelper & rhs) const
     {
         if (impl->rows == 0 || rhs.impl->rows == 0)
             return false;
@@ -149,7 +149,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
     using SortCursorHelper<SortCursor>::SortCursorHelper;
 
     /// The specified row of this cursor is greater than the specified row of another cursor.
-    bool greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    bool ALWAYS_INLINE greaterAt(const SortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
@@ -172,7 +172,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 {
     using SortCursorHelper<SimpleSortCursor>::SortCursorHelper;
 
-    bool greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    bool ALWAYS_INLINE greaterAt(const SimpleSortCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         const auto & desc = impl->desc[0];
         int direction = desc.direction;
@@ -188,7 +188,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
 {
     using SortCursorHelper<SortCursorWithCollation>::SortCursorHelper;
 
-    bool greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
+    bool ALWAYS_INLINE greaterAt(const SortCursorWithCollation & rhs, size_t lhs_pos, size_t rhs_pos) const
     {
         for (size_t i = 0; i < impl->sort_columns_size; ++i)
         {
@@ -243,7 +243,7 @@ public:
 
     Cursor & nextChild() { return queue[nextChildIndex()]; }
 
-    void next()
+    void ALWAYS_INLINE next()
     {
         assert(isValid());
 
@@ -283,7 +283,7 @@ private:
     /// Cache comparison between first and second child if the order in queue has not been changed.
     size_t next_idx = 0;
 
-    size_t nextChildIndex()
+    size_t ALWAYS_INLINE nextChildIndex()
     {
         if (next_idx == 0)
         {
@@ -300,7 +300,7 @@ private:
     /// Why cannot simply use std::priority_queue?
     /// - because it doesn't support updating the top element and requires pop and push instead.
     /// Also look at "Boost.Heap" library.
-    void updateTop()
+    void ALWAYS_INLINE updateTop()
     {
         size_t size = queue.size();
         if (size < 2)
