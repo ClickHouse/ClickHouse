@@ -29,8 +29,6 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
     {
         if (!pair.is_finished)
         {
-            pair.input_port->close();
-
             pair.is_finished = true;
             ++num_finished;
         }
@@ -38,12 +36,14 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
 
     if (pair.output_port->isFinished())
     {
+        pair.input_port->close();
         finish();
         return false;
     }
 
     if (pair.input_port->isFinished())
     {
+        pair.output_port->finish();
         finish();
         return false;
     }
