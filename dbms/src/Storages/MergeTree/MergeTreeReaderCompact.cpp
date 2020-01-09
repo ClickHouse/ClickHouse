@@ -49,9 +49,24 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         data_buffer = non_cached_buffer.get();
     }
 
-    column_positions.reserve(columns.size());
-    for (const auto & column : columns)
-        column_positions.push_back(data_part->getColumnPosition(column.name));
+    size_t columns_num = columns.size();
+
+    column_positions.resize(columns_num);
+    read_only_offsets.resize(columns_num);
+    auto name_and_type = columns.begin();
+    for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
+    {
+        const auto & [name, type] = *name_and_type;
+        auto position = data_part->getColumnPosition(name);
+        if (!position && typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            position = findColumnForOffsets(name);
+            read_only_offsets[i] = (position != std::nullopt);
+        }
+
+        column_positions[i] = std::move(position);
+    }
+
 }
 
 size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
@@ -73,7 +88,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         {
             auto & [name, type] = *name_and_type;
 
-            if (!column_positions[pos] && !typeid_cast<const DataTypeArray *>(type.get()))
+            if (!column_positions[pos])
                 continue;
 
             bool append = res_columns[pos] != nullptr;
@@ -87,12 +102,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             {
                 size_t column_size_before_reading = column->size();
 
-                // If nested column is missing in current part, we need to read offsets anyway.
-                auto * array_column = typeid_cast<ColumnArray *>(column.get());
-                if (array_column && !column_positions[pos])
-                    readOffsets(name, *array_column, *type, from_mark, rows_to_read);
-                else
-                    readData(*column, *type, from_mark, *column_positions[pos], rows_to_read);
+                readData(*column, *type, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column < rows_to_read)
@@ -127,31 +137,20 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     return read_rows;
 }
 
-void MergeTreeReaderCompact::readOffsets(
-    String name, ColumnArray & column,
-    const IDataType & type, size_t from_mark, size_t rows_to_read)
+MergeTreeReaderCompact::ColumnPosition MergeTreeReaderCompact::findColumnForOffsets(const String & column_name)
 {
-    std::optional<size_t> column_position;
-    String table_name = Nested::extractTableName(name);
-    auto name_and_type = data_part->columns.begin();
-    for (size_t pos = 0; pos < data_part->columns.size(); ++pos, ++name_and_type)
+    String table_name = Nested::extractTableName(column_name);
+    for (const auto & part_column : data_part->columns)
     {
-        const auto & [name, type] = *name_and_type;
-        auto current_position = data_part->getColumnPosition(name);
-
-        if (typeid_cast<const DataTypeArray *>(type.get())
-            && current_position
-            && Nested::extractTableName(name) == table_name)
+        if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            column_position.emplace(*current_position);
-            break;
+            auto position = data_part->getColumnPosition(part_column.name);
+            if (position && Nested::extractTableName(part_column.name) == table_name)
+                return position;
         }
     }
 
-    if (!column_position)
-        return;
-
-    readData(column, type, from_mark, *column_position, rows_to_read, true);
+    return {};
 }
 
 
@@ -162,7 +161,7 @@ void MergeTreeReaderCompact::readData(
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
-    auto buffer_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
+    auto buffer_getter = [&](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
     {
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
             return nullptr;

@@ -38,7 +38,9 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
-    std::vector<std::optional<size_t>> column_positions;
+    using ColumnPosition = std::optional<size_t>;
+    std::vector<ColumnPosition> column_positions;
+    std::vector<bool> read_only_offsets;
 
     size_t next_mark = 0;
     std::optional<std::pair<size_t, size_t>> last_read_granule;
@@ -49,8 +51,7 @@ private:
     void readData(IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
 
-    void readOffsets(String name, ColumnArray & column, const IDataType & type,
-        size_t from_mark, size_t rows_to_read);
+    ColumnPosition findColumnForOffsets(const String & column_name);
 
     /// Columns that are read.
 
