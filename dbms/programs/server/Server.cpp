@@ -470,6 +470,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            global_context->updateStorageConfiguration(*config);
         },
         /* already_loaded = */ true);
 
