@@ -514,14 +514,21 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         ASTPtr as_create_ptr = context.getDatabase(as_database_name)->getCreateTableQuery(context, as_table_name);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
+        const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
         if (as_create.is_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
+                "Cannot CREATE a table AS " + qualified_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
         if (as_create.is_live_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Live View",
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_dictionary)
+            throw Exception(
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
                 ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());

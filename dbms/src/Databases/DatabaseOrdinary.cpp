@@ -36,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
@@ -66,13 +65,10 @@ namespace
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot attach table '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -87,13 +83,10 @@ namespace
         {
             database.attachDictionary(query.table, context);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot create dictionary '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_DICTIONARY_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -142,10 +135,10 @@ void DatabaseOrdinary::loadStoredObjects(
                 total_dictionaries += create_query->is_dictionary;
             }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
+            e.addMessage("Cannot parse definition from metadata file " + full_path);
+            throw;
         }
 
     });
