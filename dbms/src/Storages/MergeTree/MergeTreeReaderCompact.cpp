@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
 #include <Poco/File.h>
 
 namespace DB
@@ -69,10 +71,11 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            if (!column_positions[pos])
+            auto & [name, type] = *name_and_type;
+
+            if (!column_positions[pos] && !typeid_cast<const DataTypeArray *>(type.get()))
                 continue;
 
-            auto & [name, type] = *name_and_type;
             bool append = res_columns[pos] != nullptr;
             if (!append)
                 res_columns[pos] = name_and_type->type->createColumn();
@@ -83,9 +86,15 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             try
             {
                 size_t column_size_before_reading = column->size();
-                readData(*column, *type, from_mark, *column_positions[pos], rows_to_read);
-                size_t read_rows_in_column = column->size() - column_size_before_reading;
 
+                // If nested column is missing in current part, we need to read offsets anyway.
+                auto * array_column = typeid_cast<ColumnArray *>(column.get());
+                if (array_column && !column_positions[pos])
+                    readOffsets(name, *array_column, *type, from_mark, rows_to_read);
+                else
+                    readData(*column, *type, from_mark, *column_positions[pos], rows_to_read);
+
+                size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column < rows_to_read)
                     throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
                         ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -118,16 +127,51 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     return read_rows;
 }
 
+void MergeTreeReaderCompact::readOffsets(
+    String name, ColumnArray & column,
+    const IDataType & type, size_t from_mark, size_t rows_to_read)
+{
+    std::optional<size_t> column_position;
+    String table_name = Nested::extractTableName(name);
+    auto name_and_type = data_part->columns.begin();
+    for (size_t pos = 0; pos < data_part->columns.size(); ++pos, ++name_and_type)
+    {
+        const auto & [name, type] = *name_and_type;
+        auto current_position = data_part->getColumnPosition(name);
+
+        if (typeid_cast<const DataTypeArray *>(type.get())
+            && current_position
+            && Nested::extractTableName(name) == table_name)
+        {
+            column_position.emplace(*current_position);
+            break;
+        }
+    }
+
+    if (!column_position)
+        return;
+
+    readData(column, type, from_mark, *column_position, rows_to_read, true);
+}
+
 
 void MergeTreeReaderCompact::readData(
     IColumn & column, const IDataType & type,
-    size_t from_mark, size_t column_position, size_t rows_to_read)
+    size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
+    auto buffer_getter = [&, this](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
+    {
+        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != IDataType::Substream::ArraySizes))
+            return nullptr;
+
+        return data_buffer;
+    };
+
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
-    deserialize_settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return data_buffer; };
+    deserialize_settings.getter = buffer_getter;
     // deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
     deserialize_settings.position_independent_encoding = true;
 
