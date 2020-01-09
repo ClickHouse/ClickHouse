@@ -165,11 +165,13 @@ CachePartition::CachePartition(
 
 CachePartition::~CachePartition()
 {
+    std::unique_lock lock(rw_lock);
     ::close(fd);
 }
 
 void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata)
 {
+    std::unique_lock lock(rw_lock);
     if (new_attributes.size() != attributes_structure.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
@@ -364,6 +366,7 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
           ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
           std::chrono::system_clock::time_point now) const
 {
+    std::shared_lock lock(rw_lock);
     PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
@@ -377,7 +380,6 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         {
             indices[i].setNotExists();
             not_found[ids[i]].push_back(i);
-            markExpired(it);
         }
         else
         {
@@ -459,7 +461,6 @@ void CachePartition::getValueFromStorage(
 #endif
         requests.push_back(request);
         pointers.push_back(&requests.back());
-
         blocks_to_indices.emplace_back();
         blocks_to_indices.back().push_back(i);
     }
@@ -585,6 +586,7 @@ template <typename Key>
 void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
         std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
 {
+    std::shared_lock lock(rw_lock);
     for (size_t i = 0; i < ids.size(); ++i)
     {
         auto it = key_to_index_and_metadata.find(ids[i]);
@@ -596,19 +598,12 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
         else if (it->second.metadata.expiresAt() <= now)
         {
             not_found[ids[i]].push_back(i);
-            markExpired(it);
         }
         else
         {
             out[i] = !it->second.metadata.isDefault();
         }
     }
-}
-
-template <typename Iterator>
-void CachePartition::markExpired(const Iterator & it) const
-{
-    key_to_index_and_metadata.erase(it);
 }
 
 CacheStorage::CacheStorage(
@@ -673,7 +668,6 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                     remaining_ids[ids[i]] = 1;
                 }
 
-                /// TODO: Add TTL to block
                 partitions[0]->appendBlock(new_keys, new_attributes, metadata);
             }
 
@@ -759,8 +753,6 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
             /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
             std::rethrow_exception(last_update_exception);
         }
-
-        /// TODO: Add TTL
 
         // Set key
         std::get<std::vector<UInt64>>(new_keys.values).push_back(id);
