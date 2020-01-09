@@ -305,7 +305,7 @@ done
             tar -czf "${PACKAGE}-${VERSION_FULL}.tgz" "$PKGDIR"
         fi
 
-        #rm -r $PKGDIR
+        rm -r $PKGDIR
     done
 
 
