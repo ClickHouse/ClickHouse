@@ -58,6 +58,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     {
         const auto & [name, type] = *name_and_type;
         auto position = data_part->getColumnPosition(name);
+
+        /// If array of Nested column is missing in part,
+        ///  we have to read it's offsets if they exists.
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
             position = findColumnForOffsets(name);
@@ -178,7 +181,11 @@ void MergeTreeReaderCompact::readData(
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
 
-    last_read_granule.emplace(from_mark, column_position);
+    /// The buffer is left in inconsistent state after reading single offsets
+    if (only_offsets)
+        last_read_granule.reset();
+    else
+        last_read_granule.emplace(from_mark, column_position);
 }
 
 
