@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Columns/ColumnArray.h>
 #include <port/clock.h>
 
 
@@ -46,7 +47,10 @@ private:
     void seekToMark(size_t row_index, size_t column_index);
 
     void readData(IColumn & column, const IDataType & type,
-        size_t from_mark, size_t column_position, size_t rows_to_read);
+        size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
+
+    void readOffsets(String name, ColumnArray & column, const IDataType & type,
+        size_t from_mark, size_t rows_to_read);
 
     /// Columns that are read.
 

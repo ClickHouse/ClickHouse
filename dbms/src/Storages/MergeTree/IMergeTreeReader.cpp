@@ -16,7 +16,6 @@ namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
 }
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
