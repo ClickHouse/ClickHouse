@@ -502,14 +502,14 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
 
 
 @pytest.mark.parametrize("name,engine,positive,bar", [
-    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0,"DELETE"),
-    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0,"DELETE"),
-    ("mt_test_moves_after_merges_work","MergeTree()",1,"DELETE"),
-    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1,"DELETE"),
-    ("mt_test_moves_after_merges_do_not_work","MergeTree()",0,"TO DISK 'external'"),
-    ("replicated_mt_test_moves_after_merges_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_do_not_work', '1')",0,"TO DISK 'external'"),
-    ("mt_test_moves_after_merges_work","MergeTree()",1,"TO DISK 'external'"),
-    ("replicated_mt_test_moves_after_merges_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_merges_work', '1')",1,"TO DISK 'external'"),
+    ("mt_test_moves_after_alter_do_not_work","MergeTree()",0,"DELETE"),
+    ("replicated_mt_test_moves_after_alter_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')",0,"DELETE"),
+    ("mt_test_moves_after_alter_work","MergeTree()",1,"DELETE"),
+    ("replicated_mt_test_moves_after_alter_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')",1,"DELETE"),
+    ("mt_test_moves_after_alter_do_not_work","MergeTree()",0,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_alter_do_not_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_do_not_work', '1')",0,"TO DISK 'external'"),
+    ("mt_test_moves_after_alter_work","MergeTree()",1,"TO DISK 'external'"),
+    ("replicated_mt_test_moves_after_alter_work","ReplicatedMergeTree('/clickhouse/replicated_test_moves_after_alter_work', '1')",1,"TO DISK 'external'"),
 ])
 def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, bar):
     try:
