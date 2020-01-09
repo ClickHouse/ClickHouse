@@ -2350,7 +2350,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         return std::make_shared<MergeSortingTransform>(
                 header, output_order_descr, settings.max_block_size, limit,
-                settings.max_bytes_before_remerge_sort,
+                settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
                 settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
 
