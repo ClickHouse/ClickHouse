@@ -100,4 +100,13 @@ Create table with files named `file000`, `file001`, ... , `file999`:
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
+## Virtual Columns
+
+- `_path` — Path to the file.
+- `_file` — Name of the file.
+
+**See Also**
+
+- [Virtual columns](index.md#table_engines-virtual_columns)
+
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/hdfs/) <!--hide-->
