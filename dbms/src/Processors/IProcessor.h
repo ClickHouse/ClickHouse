@@ -171,7 +171,15 @@ public:
       * - method 'prepare' cannot be executed in parallel even for different objects,
       *   if they are connected (including indirectly) to each other by their ports;
       */
-    virtual Status prepare() = 0;
+    virtual Status prepare()
+    {
+        throw Exception("Method 'prepare' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    using PortNumbers = std::vector<UInt64>;
+
+    /// Optimization for prepare in case we know ports were updated.
+    virtual Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -181,11 +189,6 @@ public:
     virtual void work()
     {
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual void work(size_t /*thread_num*/)
-    {
-        work();
     }
 
     /** You may call this method if 'prepare' returned Async.
@@ -226,6 +229,34 @@ public:
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
+    UInt64 getInputPortNumber(const InputPort * input_port) const
+    {
+        UInt64 number = 0;
+        for (auto & port : inputs)
+        {
+            if (&port == input_port)
+                return number;
+
+            ++number;
+        }
+
+        throw Exception("Can't find input port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    UInt64 getOutputPortNumber(const OutputPort * output_port) const
+    {
+        UInt64 number = 0;
+        for (auto & port : outputs)
+        {
+            if (&port == output_port)
+                return number;
+
+            ++number;
+        }
+
+        throw Exception("Can't find output port for " + getName() + " processor", ErrorCodes::LOGICAL_ERROR);
+    }
+
     const auto & getInputs() const { return inputs; }
     const auto & getOutputs() const { return outputs; }
 
@@ -241,12 +272,17 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
+    void enableQuota() { has_quota = true; }
+    bool hasQuota() const { return has_quota; }
+
 private:
     std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
 
     size_t stream_number = NO_STREAM;
+
+    bool has_quota = false;
 };
 
 

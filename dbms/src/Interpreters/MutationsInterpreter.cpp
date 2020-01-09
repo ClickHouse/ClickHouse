@@ -139,7 +139,7 @@ bool isStorageTouchedByMutations(
             return true;
     }
 
-    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_copy.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_copy.getSettingsRef().max_threads = 1;
 
     ASTPtr select_query = prepareQueryAffectedAST(commands);
@@ -173,7 +173,7 @@ MutationsInterpreter::MutationsInterpreter(
     , can_execute(can_execute_)
 {
     mutation_ast = prepare(!can_execute);
-    auto limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
+    SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
 
@@ -339,6 +339,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         affected_materialized.emplace(mat_column);
                 }
 
+                /// Just to be sure, that we don't change type
+                /// after update expression execution.
                 const auto & update_expr = kv.second;
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
@@ -418,7 +420,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 

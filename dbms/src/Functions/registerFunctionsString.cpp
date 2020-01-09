@@ -2,6 +2,7 @@
 
 namespace DB
 {
+
 class FunctionFactory;
 
 void registerFunctionRepeat(FunctionFactory &);

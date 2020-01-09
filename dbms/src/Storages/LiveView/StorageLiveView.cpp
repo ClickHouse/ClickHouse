@@ -9,7 +9,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -32,13 +31,16 @@ limitations under the License. */
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
 #include <Storages/LiveView/LiveViewBlockOutputStream.h>
 #include <Storages/LiveView/LiveViewEventsBlockInputStream.h>
-#include <Storages/LiveView/ProxyStorage.h>
+#include <Storages/LiveView/StorageBlocks.h>
 
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+
 
 namespace DB
 {
@@ -52,13 +54,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ASTPtr & query, String & select_database_name, String & select_table_name, const String & table_name, ASTPtr & inner_subquery)
 {
-    auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = extractTableExpression(query, 0);
+    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);
+    auto db_and_table = getDatabaseAndTable(select_query, 0);
+    ASTPtr subquery = extractTableExpression(select_query, 0);
 
     if (!db_and_table && !subquery)
+    {
         return;
+    }
 
     if (db_and_table)
     {
@@ -68,19 +73,21 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         {
             db_and_table->database = select_database_name;
             AddDefaultDatabaseVisitor visitor(select_database_name);
-            visitor.visit(query);
+            visitor.visit(select_query);
         }
         else
             select_database_name = db_and_table->database;
+
+        select_query.replaceDatabaseAndTable("", table_name + "_blocks");
     }
     else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
-        auto & inner_query = ast_select->list_of_selects->children.at(0);
+        inner_subquery = ast_select->list_of_selects->children.at(0)->clone();
 
-        extractDependentTable(inner_query->as<ASTSelectQuery &>(), select_database_name, select_table_name);
+        extractDependentTable(ast_select->list_of_selects->children.at(0), select_database_name, select_table_name, table_name, inner_subquery);
     }
     else
         throw Exception("Logical error while creating StorageLiveView."
@@ -88,6 +95,66 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
             DB::ErrorCodes::LOGICAL_ERROR);
 }
 
+MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & context)
+{
+    ASTPtr mergeable_query = inner_query;
+
+    if (inner_subquery)
+        mergeable_query = inner_subquery;
+
+    MergeableBlocksPtr new_mergeable_blocks = std::make_shared<MergeableBlocks>();
+    BlocksPtrs new_blocks = std::make_shared<std::vector<BlocksPtr>>();
+    BlocksPtr base_blocks = std::make_shared<Blocks>();
+
+    InterpreterSelectQuery interpreter(mergeable_query->clone(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
+
+    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
+
+    while (Block this_block = view_mergeable_stream->read())
+        base_blocks->push_back(this_block);
+
+    new_blocks->push_back(base_blocks);
+
+    new_mergeable_blocks->blocks = new_blocks;
+    new_mergeable_blocks->sample_block = view_mergeable_stream->getHeader();
+
+    return new_mergeable_blocks;
+}
+
+BlockInputStreams StorageLiveView::blocksToInputStreams(BlocksPtrs blocks, Block & sample_block)
+{
+    BlockInputStreams streams;
+    for (auto & blocks_ : *blocks)
+    {
+        BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
+        streams.push_back(std::move(stream));
+    }
+    return streams;
+}
+
+/// Complete query using input streams from mergeable blocks
+BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams from)
+{
+    auto block_context = std::make_unique<Context>(global_context);
+    block_context->makeQueryContext();
+
+    auto blocks_storage = StorageBlocks::createStorage(database_name, table_name, parent_storage->getColumns(),
+        std::move(from), QueryProcessingStage::WithMergeableState);
+
+    block_context->addExternalTable(table_name + "_blocks", blocks_storage);
+
+    InterpreterSelectQuery select(inner_blocks_query->clone(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
+    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+
+    /// Squashing is needed here because the view query can generate a lot of blocks
+    /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+    /// and two-level aggregation is triggered).
+    data = std::make_shared<SquashingBlockInputStream>(
+        data, global_context.getSettingsRef().min_insert_block_size_rows,
+        global_context.getSettingsRef().min_insert_block_size_bytes);
+
+    return data;
+}
 
 void StorageLiveView::writeIntoLiveView(
     StorageLiveView & live_view,
@@ -110,49 +177,40 @@ void StorageLiveView::writeIntoLiveView(
 
     bool is_block_processed = false;
     BlockInputStreams from;
-    BlocksPtrs mergeable_blocks;
+    MergeableBlocksPtr mergeable_blocks;
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
     {
         std::lock_guard lock(live_view.mutex);
 
         mergeable_blocks = live_view.getMergeableBlocks();
-        if (!mergeable_blocks || mergeable_blocks->size() >= context.getGlobalContext().getSettingsRef().max_live_view_insert_blocks_before_refresh)
+        if (!mergeable_blocks || mergeable_blocks->blocks->size() >= context.getGlobalContext().getSettingsRef().max_live_view_insert_blocks_before_refresh)
         {
-            mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
-            BlocksPtr base_mergeable_blocks = std::make_shared<Blocks>();
-            InterpreterSelectQuery interpreter(live_view.getInnerQuery(), context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
-            auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-                interpreter.execute().in);
-            while (Block this_block = view_mergeable_stream->read())
-                base_mergeable_blocks->push_back(this_block);
-            mergeable_blocks->push_back(base_mergeable_blocks);
+            mergeable_blocks = live_view.collectMergeableBlocks(context);
             live_view.setMergeableBlocks(mergeable_blocks);
-
-            /// Create from streams
-            for (auto & blocks_ : *mergeable_blocks)
-            {
-                if (blocks_->empty())
-                    continue;
-                auto sample_block = blocks_->front().cloneEmpty();
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-                from.push_back(std::move(stream));
-            }
-
+            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
             is_block_processed = true;
         }
     }
 
     if (!is_block_processed)
     {
-        auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
+        ASTPtr mergeable_query = live_view.getInnerQuery();
+
+        if (live_view.getInnerSubQuery())
+            mergeable_query = live_view.getInnerSubQuery();
+
         BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
-        auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams), QueryProcessingStage::FetchColumns);
-        InterpreterSelectQuery select_block(live_view.getInnerQuery(),
-            context, proxy_storage,
+
+        auto blocks_storage = StorageBlocks::createStorage(live_view.database_name, live_view.table_name,
+            live_view.getParentStorage()->getColumns(), std::move(streams), QueryProcessingStage::FetchColumns);
+
+        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage,
             QueryProcessingStage::WithMergeableState);
+
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
             select_block.execute().in);
+
         while (Block this_block = data_mergeable_stream->read())
             new_mergeable_blocks->push_back(this_block);
 
@@ -163,31 +221,12 @@ void StorageLiveView::writeIntoLiveView(
             std::lock_guard lock(live_view.mutex);
 
             mergeable_blocks = live_view.getMergeableBlocks();
-            mergeable_blocks->push_back(new_mergeable_blocks);
-
-            /// Create from streams
-            for (auto & blocks_ : *mergeable_blocks)
-            {
-                if (blocks_->empty())
-                    continue;
-                auto sample_block = blocks_->front().cloneEmpty();
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-                from.push_back(std::move(stream));
-            }
+            mergeable_blocks->blocks->push_back(new_mergeable_blocks);
+            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
         }
     }
 
-    auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
-    auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(from), QueryProcessingStage::WithMergeableState);
-    InterpreterSelectQuery select(live_view.getInnerQuery(), context, proxy_storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-
-    /// Squashing is needed here because the view query can generate a lot of blocks
-    /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-    /// and two-level aggregation is triggered).
-    data = std::make_shared<SquashingBlockInputStream>(
-        data, context.getGlobalContext().getSettingsRef().min_insert_block_size_rows, context.getGlobalContext().getSettingsRef().min_insert_block_size_bytes);
-
+    BlockInputStreamPtr data = live_view.completeQuery(from);
     copyData(*data, *output);
 }
 
@@ -201,6 +240,9 @@ StorageLiveView::StorageLiveView(
     : table_name(table_name_),
     database_name(database_name_), global_context(local_context.getGlobalContext())
 {
+    live_view_context = std::make_unique<Context>(global_context);
+    live_view_context->makeQueryContext();
+
     setColumns(columns_);
 
     if (!query.select)
@@ -212,9 +254,11 @@ StorageLiveView::StorageLiveView(
         throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
     inner_query = query.select->list_of_selects->children.at(0);
+    inner_blocks_query = inner_query->clone();
 
-    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*inner_query);
-    extractDependentTable(select_query, select_database_name, select_table_name);
+    InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
+
+    extractDependentTable(inner_blocks_query, select_database_name, select_table_name, table_name, inner_subquery);
 
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
@@ -226,6 +270,8 @@ StorageLiveView::StorageLiveView(
     global_context.addDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
+
+    parent_storage = local_context.getTable(select_database_name, select_table_name);
 
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
@@ -257,9 +303,7 @@ Block StorageLiveView::getHeader() const
 
     if (!sample_block)
     {
-        auto storage = global_context.getTable(select_database_name, select_table_name);
-        sample_block = InterpreterSelectQuery(inner_query, global_context, storage,
-            SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
+        sample_block = InterpreterSelectQuery(inner_query->clone(), *live_view_context, SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         sample_block.insert({DataTypeUInt64().createColumnConst(
             sample_block.rows(), 0)->convertToFullColumnIfConst(),
             std::make_shared<DataTypeUInt64>(),
@@ -271,7 +315,6 @@ Block StorageLiveView::getHeader() const
             sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
         }
     }
-
     return sample_block;
 }
 
@@ -281,26 +324,10 @@ bool StorageLiveView::getNewBlocks()
     UInt128 key;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
-    BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
-    InterpreterSelectQuery interpreter(inner_query->clone(), global_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
-    auto mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
-
-    while (Block block = mergeable_stream->read())
-        new_mergeable_blocks->push_back(block);
-
-    mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
-    mergeable_blocks->push_back(new_mergeable_blocks);
-    BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(new_mergeable_blocks), mergeable_stream->getHeader());
-    auto proxy_storage = ProxyStorage::createProxyStorage(global_context.getTable(select_database_name, select_table_name), {from}, QueryProcessingStage::WithMergeableState);
-    InterpreterSelectQuery select(inner_query->clone(), global_context, proxy_storage, SelectQueryOptions(QueryProcessingStage::Complete));
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-
-    /// Squashing is needed here because the view query can generate a lot of blocks
-    /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-    /// and two-level aggregation is triggered).
-    data = std::make_shared<SquashingBlockInputStream>(
-        data, global_context.getSettingsRef().min_insert_block_size_rows, global_context.getSettingsRef().min_insert_block_size_bytes);
+    mergeable_blocks = collectMergeableBlocks(*live_view_context);
+    BlockInputStreams from = blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+    BlockInputStreamPtr data = completeQuery({from});
 
     while (Block block = data->read())
     {

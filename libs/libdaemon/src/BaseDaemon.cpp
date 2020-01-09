@@ -1,5 +1,5 @@
 #include <daemon/BaseDaemon.h>
-#include <Common/Config/ConfigProcessor.h>
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -12,19 +12,15 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <common/logger_useful.h>
-#include <common/ErrorHandlers.h>
-#include <common/Pipe.h>
-#include <Common/StackTrace.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <memory>
+
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
-#include <common/getThreadNumber.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/TaskManager.h>
 #include <Poco/File.h>
@@ -36,16 +32,25 @@
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
-#include <Common/Exception.h>
+
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/argsToConfig.h>
+#include <common/getThreadNumber.h>
+#include <common/coverage.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
+#include <Common/PipeFDs.h>
+#include <Common/StackTrace.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/config_version.h>
-#include <common/argsToConfig.h>
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
@@ -54,7 +59,7 @@
 #include <ucontext.h>
 
 
-Pipe signal_pipe;
+DB::PipeFDs signal_pipe;
 
 
 /** Reset signal handler to the default and send signal to itself.
@@ -67,8 +72,16 @@ static void call_default_signal_handler(int sig)
 }
 
 
-using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
+static constexpr size_t max_query_id_size = 127;
+
+static const size_t buf_size =
+    sizeof(int)
+    + sizeof(siginfo_t)
+    + sizeof(ucontext_t)
+    + sizeof(StackTrace)
+    + sizeof(UInt32)
+    + max_query_id_size + 1;    /// query_id + varint encoded length
+
 
 using signal_function = void(int, siginfo_t*, void*);
 
@@ -92,9 +105,9 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-/** Handler for "fault" signals. Send data about fault to separate thread to write into log.
+/** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
-static void faultSignalHandler(int sig, siginfo_t * info, void * context)
+static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
@@ -102,15 +115,19 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
 
+    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    query_id.size = std::min(query_id.size, max_query_id_size);
+
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
-    DB::writeBinary(getThreadNumber(), out);
+    DB::writeBinary(UInt32(getThreadNumber()), out);
+    DB::writeStringBinary(query_id, out);
 
     out.next();
 
-    if (sig != SIGPROF) /// This signal is used for debugging.
+    if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
         ::sleep(10);
@@ -162,7 +179,7 @@ public:
             }
             else if (sig == Signals::StdTerminate)
             {
-                ThreadNumber thread_num;
+                UInt32 thread_num;
                 std::string message;
 
                 DB::readBinary(thread_num, in);
@@ -181,16 +198,18 @@ public:
                 siginfo_t info;
                 ucontext_t context;
                 StackTrace stack_trace(NoCapture{});
-                ThreadNumber thread_num;
+                UInt32 thread_num;
+                std::string query_id;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
+                DB::readBinary(query_id, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
             }
         }
     }
@@ -200,16 +219,33 @@ private:
     BaseDaemon & daemon;
 
 private:
-    void onTerminate(const std::string & message, ThreadNumber thread_num) const
+    void onTerminate(const std::string & message, UInt32 thread_num) const
     {
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    void onFault(
+        int sig,
+        const siginfo_t & info,
+        const ucontext_t & context,
+        const StackTrace & stack_trace,
+        UInt32 thread_num,
+        const std::string & query_id) const
     {
         LOG_FATAL(log, "########################################");
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
-            << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
+
+        {
+            std::stringstream message;
+            message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+            message << " (from thread " << thread_num << ")";
+            if (query_id.empty())
+                message << " (no query)";
+            else
+                message << " (query_id: " << query_id << ")";
+            message << " Received signal " << strsignal(sig) << " (" << sig << ")" << ".";
+
+            LOG_FATAL(log, message.rdbuf());
+        }
 
         LOG_FATAL(log, signalToErrorMessage(sig, info, context));
 
@@ -264,7 +300,7 @@ static void terminate_handler()
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
-    DB::writeBinary(getThreadNumber(), out);
+    DB::writeBinary(UInt32(getThreadNumber()), out);
     DB::writeBinary(log_message, out);
     out.next();
 
@@ -461,6 +497,7 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
+    dumpCoverageReportIfPossible();
     pid.clear();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
@@ -649,7 +686,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     // sensitive data masking rules are not used here
-    buildLoggers(config(), logger());
+    buildLoggers(config(), logger(), self.commandName());
 
     if (is_daemon)
     {
@@ -719,9 +756,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             }
         };
 
-    /// SIGPROF is added for debugging purposes. To output a stack trace of any running thread at anytime.
+    /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
-    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGPROF}, faultSignalHandler);
+    add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
 
@@ -729,9 +766,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
+    signal_pipe.setNonBlocking();
+    signal_pipe.tryIncreaseSize(1 << 20);
+
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
-
 }
 
 void BaseDaemon::logRevision() const
@@ -891,4 +930,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-

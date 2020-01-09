@@ -71,6 +71,7 @@ bool callOnBasicType(TypeIndex number, F && f)
         {
             case TypeIndex::Date:         return f(TypePair<T, UInt16>());
             case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
+            case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
             default:
                 break;
         }
@@ -135,6 +136,7 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
         {
             case TypeIndex::Date: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::DateTime64: return callOnBasicType<Decimal64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;
         }
@@ -145,10 +147,11 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 
 
 class DataTypeDate;
-class DataTypeDateTime;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;
+class DataTypeDateTime;
+class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
 template <typename T> class DataTypeDecimal;
@@ -178,6 +181,7 @@ bool callOnIndexAndDataType(TypeIndex number, F && f)
 
         case TypeIndex::Date:           return f(TypePair<DataTypeDate, T>());
         case TypeIndex::DateTime:       return f(TypePair<DataTypeDateTime, T>());
+        case TypeIndex::DateTime64:     return f(TypePair<DataTypeDateTime64, T>());
 
         case TypeIndex::String:         return f(TypePair<DataTypeString, T>());
         case TypeIndex::FixedString:    return f(TypePair<DataTypeFixedString, T>());

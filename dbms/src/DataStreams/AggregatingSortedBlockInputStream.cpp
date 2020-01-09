@@ -138,14 +138,14 @@ Block AggregatingSortedBlockInputStream::readImpl()
 }
 
 
-void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     size_t merged_rows = 0;
 
     /// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -166,8 +166,6 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             insertSimpleAggregationResult(merged_columns);
             return;
         }
-
-        queue.pop();
 
         if (key_differs)
         {
@@ -202,8 +200,7 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
 
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {
@@ -213,7 +210,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
     }
 
     /// Write the simple aggregation result for the previous group.
-    insertSimpleAggregationResult(merged_columns);
+    if (merged_rows > 0)
+        insertSimpleAggregationResult(merged_columns);
 
     finished = true;
 }

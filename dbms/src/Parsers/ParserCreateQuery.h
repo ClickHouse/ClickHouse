@@ -250,7 +250,7 @@ protected:
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
-    const char * getName() const override { return "table propery (column, index, constraint) declaration"; }
+    const char * getName() const override { return "table property (column, index, constraint) declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

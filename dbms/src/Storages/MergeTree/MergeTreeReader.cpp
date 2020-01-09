@@ -1,7 +1,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
-#include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
@@ -40,6 +39,7 @@ MergeTreeReader::MergeTreeReader(
     const MergeTreeData & storage_,
     MarkRanges all_mark_ranges_,
     size_t aio_threshold_,
+    size_t mmap_threshold_,
     size_t max_read_buffer_size_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
@@ -53,6 +53,7 @@ MergeTreeReader::MergeTreeReader(
     , storage(storage_)
     , all_mark_ranges(std::move(all_mark_ranges_))
     , aio_threshold(aio_threshold_)
+    , mmap_threshold(mmap_threshold_)
     , max_read_buffer_size(max_read_buffer_size_)
 {
     try
@@ -198,7 +199,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            aio_threshold, max_read_buffer_size,
+            aio_threshold, mmap_threshold, max_read_buffer_size,
             &data_part->index_granularity_info,
             profile_callback, clock_type));
     };

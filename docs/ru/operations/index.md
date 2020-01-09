@@ -13,6 +13,7 @@
   - [Квоты](quotas.md)
   - [Системные таблицы](system_tables.md)
   - [Конфигурационные параметры сервера](server_settings/index.md)
+  - [Тестирование севреров с помощью ClickHouse](performance_test.md)
   - [Настройки](settings/index.md)
   - [Утилиты](utils/index.md)
 

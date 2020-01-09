@@ -64,13 +64,13 @@ Each element of the list can have one of the following forms:
 
 - `<host>` — Hostname.
 
-    Example: `server01.yandex.ru`.
+    Example: `example01.host.ru`.
 
     To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
 
 - `<host_regexp>` — Regular expression for hostnames.
 
-    Example, `^server\d\d-\d\d-\d\.yandex\.ru$`
+    Example, `^example\d\d-\d\d-\d\.host\.ru$`
 
     To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
 

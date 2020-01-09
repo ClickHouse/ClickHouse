@@ -62,7 +62,7 @@ Names ExpressionAction::getNeededColumns() const
 
 
 ExpressionAction ExpressionAction::applyFunction(
-    const FunctionBuilderPtr & function_,
+    const FunctionOverloadResolverPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
@@ -205,9 +205,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             size_t result_position = sample_block.columns();
             sample_block.insert({nullptr, result_type, result_name});
             function = function_base->prepare(sample_block, arguments, result_position);
-
-            if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
-                prepared_function->createLowCardinalityResultCache(settings.max_threads);
+            function->createLowCardinalityResultCache(settings.max_threads);
 
             bool compile_expressions = false;
 #if USE_EMBEDDED_COMPILER
