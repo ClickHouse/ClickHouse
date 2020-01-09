@@ -1,4 +1,4 @@
-# GraphiteMergeTree
+# GraphiteMergeTree {#graphitemergetree}
 
 Движок предназначен для прореживания и агрегирования/усреднения (rollup) данных [Graphite](http://graphite.readthedocs.io/en/latest/index.html). Он может быть интересен разработчикам, которые хотят использовать ClickHouse как хранилище данных для Graphite.
 
@@ -6,7 +6,7 @@
 
 Движок наследует свойства от [MergeTree](mergetree.md).
 
-## Создание таблицы
+## Создание таблицы {#creating-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -70,7 +70,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## Конфигурация rollup
+## Конфигурация rollup {#rollup-configuration}
 
 Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
@@ -81,14 +81,14 @@ required-columns
 patterns
 ```
 
-### Требуемые столбцы (required-columns)
+### Требуемые столбцы (required-columns) {#required-columns}
 
 - `path_column_name` — столбец, в котором хранится название метрики (сенсор Graphite). Значение по умолчанию: `Path`.
 - `time_column_name` — столбец, в котором хранится время измерения метрики. Значение по умолчанию: `Time`.
 - `value_column_name` — столбец со значением метрики в момент времени, установленный в `time_column_name`. Значение по умолчанию: `Value`.
 - `version_column_name` — столбец, в котором хранится версия метрики. Значение по умолчанию: `Timestamp`.
 
-### Правила (patterns)
+### Правила (patterns) {#patterns}
 
 Структура раздела `patterns`:
 
@@ -129,7 +129,7 @@ default
 - `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
 - `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
 
-### Пример конфигурации
+### Пример конфигурации {#configuration-example}
 
 ```xml
 <graphite_rollup>

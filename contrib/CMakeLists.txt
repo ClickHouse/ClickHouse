@@ -32,6 +32,8 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
     add_subdirectory (double-conversion-cmake)
 endif ()
 
+add_subdirectory (ryu-cmake)
+
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (cityhash102)
 endif ()

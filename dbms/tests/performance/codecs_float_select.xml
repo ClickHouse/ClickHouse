@@ -37,18 +37,24 @@
                 <value>rnd</value>
             </values>
         </substitution>
+        <substitution>
+            <name>num_rows</name>
+            <values>
+                <value>10000000</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();</create_query>
 
     <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->
-    <fill_query>INSERT INTO codec_seq_Float64_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</fill_query>
-    <fill_query>INSERT INTO codec_mon_Float64_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</fill_query>
-    <fill_query>INSERT INTO codec_rnd_Float64_{codec} (n) SELECT (rand() - 4294967295)/pi() FROM system.numbers LIMIT 100000 SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO codec_seq_Float64_{codec} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO codec_mon_Float64_{codec} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO codec_rnd_Float64_{codec} (n) SELECT (rand() - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
 
     <!-- INSERTs above will be run unspecified amount of times, hence size of table is unknown.
     To make test more reliable, we SELECT fixed number of rows. -->
-    <query>SELECT count(n) FROM codec_{seq_type}_{type}_{codec} WHERE ignore(n) LIMIT 100000 SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM codec_{seq_type}_{type}_{codec} WHERE ignore(n) LIMIT {num_rows} SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
 

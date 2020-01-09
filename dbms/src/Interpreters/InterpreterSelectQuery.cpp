@@ -488,8 +488,8 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams(QueryPipeli
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
-    query_pipeline.setMaxThreads(context->getSettingsRef().max_threads);
     executeImpl(query_pipeline, input, query_pipeline);
+    query_pipeline.setMaxThreads(max_streams);
     query_pipeline.addInterpreterContext(context);
     query_pipeline.addStorageHolder(storage);
     return query_pipeline;
@@ -1180,7 +1180,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (expressions.second_stage)
         {
             bool need_second_distinct_pass = false;
-            bool need_merge_streams = false;
 
             if (expressions.need_aggregate)
             {
@@ -1241,13 +1240,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executePreLimit(pipeline);
             }
 
-            if (need_second_distinct_pass
-                || query.limitLength()
-                || query.limitBy()
-                || pipeline.hasDelayedStream())
-            {
-                need_merge_streams = true;
-            }
+            bool need_merge_streams = need_second_distinct_pass || query.limitLength() || query.limitBy();
+
+            if constexpr (!pipeline_with_processors)
+                if (pipeline.hasDelayedStream())
+                    need_merge_streams = true;
 
             if (need_merge_streams)
             {
@@ -1793,6 +1790,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 //                    pipes[i].pinSources(i);
 //            }
 
+            for (auto & pipe : pipes)
+                pipe.enableQuota();
+
             pipeline.init(std::move(pipes));
         }
         else
@@ -1930,7 +1930,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-    bool allow_to_use_two_level_group_by = pipeline.getNumMainStreams() > 1 || settings.max_bytes_before_external_group_by != 0;
+    bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || settings.max_bytes_before_external_group_by != 0;
 
     Aggregator::Params params(header_before_aggregation, keys, aggregates,
                               overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
@@ -1944,12 +1944,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     pipeline.dropTotalsIfHas();
 
     /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumMainStreams() > 1)
+    if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        pipeline.resize(pipeline.getNumMainStreams(), true);
+        pipeline.resize(pipeline.getNumStreams(), true);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumMainStreams());
+        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                 : static_cast<size_t>(settings.max_threads);
@@ -1971,6 +1971,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2084,6 +2086,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
         pipeline.addPipe(std::move(pipe));
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2317,6 +2321,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
             pipeline.addPipe({ std::move(transform) });
         }
 
+        pipeline.enableQuotaForCurrentStreams();
+
         if (need_finish_sorting)
         {
             pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
@@ -2405,8 +2411,6 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
 {
-    pipeline.resize(pipeline.getNumMainStreams());
-
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
@@ -2419,6 +2423,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
             settings.max_block_size, limit);
 
         pipeline.addPipe({ std::move(transform) });
+
+        pipeline.enableQuotaForCurrentStreams();
     }
 }
 
@@ -2796,11 +2802,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
     if (query_info.input_sorting_info)
-    {
-        if (pipeline.hasDelayedStream())
-            throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
         executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
-    }
 
     const Settings & settings = context->getSettingsRef();
 
@@ -2817,7 +2819,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
 {
     /// Unify streams in case they have different headers.
 
-    /// TODO: remove previos addition of _dummy column.
+    /// TODO: remove previous addition of _dummy column.
     if (header.columns() > 1 && header.has("_dummy"))
         header.erase("_dummy");
 
