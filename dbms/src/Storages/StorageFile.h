@@ -36,6 +36,8 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
+    void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &) override;
+
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override;

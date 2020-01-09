@@ -41,6 +41,8 @@ public:
     const Frames & getFrames() const;
     std::string toString() const;
 
+    static std::string toString(void ** frames, size_t offset, size_t size);
+
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 
 protected:

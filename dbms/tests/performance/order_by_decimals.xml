@@ -24,7 +24,4 @@
     <query>SELECT toDecimal64(number, 8) AS n FROM numbers(1000000) ORDER BY n DESC</query>
     <query>SELECT toDecimal128(number, 10) AS n FROM numbers(1000000) ORDER BY n DESC</query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

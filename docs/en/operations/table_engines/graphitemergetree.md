@@ -1,5 +1,4 @@
-
-# GraphiteMergeTree
+# GraphiteMergeTree {#graphitemergetree}
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -7,7 +6,7 @@ You can use any ClickHouse table engine to store the Graphite data if you don't 
 
 The engine inherits properties from [MergeTree](mergetree.md).
 
-## Creating a Table
+## Creating a Table {#creating-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -67,7 +66,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 - `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 </details>
 
-## Rollup configuration
+## Rollup configuration {#rollup-configuration}
 
 The settings for rollup are defined by the [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
@@ -78,14 +77,14 @@ required-columns
 patterns
 ```
 
-### Required Columns
+### Required Columns {#required-columns}
 
 - `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 - `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 - `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 - `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
-### Patterns
+### Patterns {#patterns}
 
 Structure of the `patterns` section:
 
@@ -127,7 +126,7 @@ Fields for `pattern` and `default` sections:
 - `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 
-### Configuration Example
+### Configuration Example {#configuration-example}
 
 ```xml
 <graphite_rollup>

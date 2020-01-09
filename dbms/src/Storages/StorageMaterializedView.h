@@ -9,9 +9,6 @@
 namespace DB
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view = false, bool add_default_db = true);
-
-
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;

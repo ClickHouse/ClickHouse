@@ -217,6 +217,44 @@ Result:
 └───────────────────────────────────┘
 ```
 
+## trim {#trim}
+
+Removes all specified characters from the start or end of a string.
+By default removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string.
+
+**Syntax**
+
+```sql
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
+```
+
+**Parameters**
+
+- `trim_character` — specified characters for trim. [String](../../data_types/string.md).
+- `input_string` — string for trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and (or) trailing specified characters.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+```
+
+Result:
+
+```text
+┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
+│ Hello, world!                                 │
+└───────────────────────────────────────────────┘
+```
+
 ## trimLeft {#trimleft}
 
 Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
@@ -224,14 +262,14 @@ Removes all consecutive occurrences of common whitespace (ASCII character 32) fr
 **Syntax** 
 
 ```sql
-trimLeft()
+trimLeft(input_string)
 ```
 
-Alias: `ltrim`.
+Alias: `ltrim(input_string)`.
 
 **Parameters** 
 
-- `string` — string to trim. [String](../../data_types/string.md).
+- `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -262,14 +300,14 @@ Removes all consecutive occurrences of common whitespace (ASCII character 32) fr
 **Syntax** 
 
 ```sql
-trimRight()
+trimRight(input_string)
 ```
 
-Alias: `rtrim`.
+Alias: `rtrim(input_string)`.
 
 **Parameters**
 
-- `string` — string to trim. [String](../../data_types/string.md).
+- `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -300,14 +338,14 @@ Removes all consecutive occurrences of common whitespace (ASCII character 32) fr
 **Syntax** 
 
 ```sql
-trimBoth()
+trimBoth(input_string)
 ```
 
-Alias: `trim`.
+Alias: `trim(input_string)`.
 
 **Parameters**
 
-- `string` — string to trim. [String](../../data_types/string.md).
+- `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 

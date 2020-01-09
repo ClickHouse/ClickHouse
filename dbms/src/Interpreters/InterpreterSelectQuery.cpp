@@ -404,8 +404,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
+    if (query.prewhere() && query.where())
+    {
+        /// Filter block in WHERE instead to get better performance
+        query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+        need_analyze_again = true;
+    }
     if (need_analyze_again)
         analyze();
+
+    /// If there is no WHERE, filter blocks as usual
+    if (query.prewhere() && !query.where())
+        analysis_result.prewhere_info->need_filter = true;
 
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
@@ -477,8 +487,8 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams(QueryPipeli
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
-    query_pipeline.setMaxThreads(context->getSettingsRef().max_threads);
     executeImpl(query_pipeline, input, query_pipeline);
+    query_pipeline.setMaxThreads(max_streams);
     query_pipeline.addInterpreterContext(context);
     query_pipeline.addStorageHolder(storage);
     return query_pipeline;
@@ -1782,6 +1792,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 //                    pipes[i].pinSources(i);
 //            }
 
+            for (auto & pipe : pipes)
+                pipe.enableQuota();
+
             pipeline.init(std::move(pipes));
         }
         else
@@ -1960,6 +1973,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2073,6 +2088,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
         pipeline.addPipe(std::move(pipe));
     }
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2256,17 +2273,17 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
             limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
             sorting_stream->setLimits(limits);
 
-            stream = sorting_stream;
+            auto merging_stream = std::make_shared<MergeSortingBlockInputStream>(
+                sorting_stream, output_order_descr, settings.max_block_size, limit,
+                settings.max_bytes_before_remerge_sort,
+                settings.max_bytes_before_external_sort / pipeline.streams.size(),
+                context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+
+            stream = merging_stream;
         });
 
         /// If there are several streams, we merge them into one
-        executeUnion(pipeline, {});
-
-        /// Merge the sorted blocks.
-        pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-            pipeline.firstStream(), output_order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
-            settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
+        executeMergeSorted(pipeline, output_order_descr, limit);
     }
 }
 
@@ -2305,6 +2322,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
             pipeline.addPipe({ std::move(transform) });
         }
+
+        pipeline.enableQuotaForCurrentStreams();
 
         if (need_finish_sorting)
         {
@@ -2345,6 +2364,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
+
+    pipeline.enableQuotaForCurrentStreams();
 }
 
 
@@ -2406,6 +2427,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
             settings.max_block_size, limit);
 
         pipeline.addPipe({ std::move(transform) });
+
+        pipeline.enableQuotaForCurrentStreams();
     }
 }
 
