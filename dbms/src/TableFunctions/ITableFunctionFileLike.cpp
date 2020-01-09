@@ -35,6 +35,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     if (args.size() < 2)
         throw Exception("Table function '" + getName() + "' requires at least 2 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    for (size_t i = 0; i < args.size(); ++i)
+        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+
     std::string filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
@@ -46,9 +49,6 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     else if (args.size() != 3 && args.size() != 4)
         throw Exception("Table function '" + getName() + "' requires 3 or 4 arguments: filename, format, structure and compression method (default auto).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    for (size_t i = 0; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     ColumnsDescription columns;
     std::string compression_method = "auto";
