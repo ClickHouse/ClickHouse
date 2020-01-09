@@ -12,7 +12,7 @@ select substring(cast('abcdefgh' as FixedString(8)), materialize(2), materialize
 
 select '-';
 
-drop table t is exists;
+drop table if exists t;
 create table t (s String, l Int8, r Int8) engine = Memory;
 insert into t values ('abcdefgh', 2, -2), ('12345678', 3, -3);
 
@@ -23,7 +23,7 @@ select substring(s, l, r) from t;
 
 select '-';
 
-drop table t is exists;
+drop table if exists t;
 create table t (s FixedString(8), l Int8, r Int8) engine = Memory;
 insert into t values ('abcdefgh', 2, -2), ('12345678', 3, -3);
 
@@ -32,5 +32,5 @@ select substring(s, l, -2) from t;
 select substring(s, 2, r) from t;
 select substring(s, l, r) from t;
 
-drop table t is exists;
+drop table if exists t;
 
