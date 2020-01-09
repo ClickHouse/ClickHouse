@@ -27,9 +27,16 @@ struct BlocksMetadata
     UInt64 version;
 };
 
+struct MergeableBlocks
+{
+    BlocksPtrs blocks;
+    Block sample_block;
+};
+
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
+using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
@@ -46,6 +53,7 @@ public:
     {
         return StorageID("", getStorageID().table_name + "_blocks");
     }
+    StoragePtr getParentStorage() const { return parent_storage; }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -139,14 +147,23 @@ public:
         unsigned num_streams) override;
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
-    BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
-    void setMergeableBlocks(BlocksPtrs blocks) { mergeable_blocks = blocks; }
+    MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
+
+    /// Collect mergeable blocks and their sample. Must be called holding mutex
+    MergeableBlocksPtr collectMergeableBlocks(const Context & context);
+    /// Complete query using input streams from mergeable blocks
+    BlockInputStreamPtr completeQuery(BlockInputStreams from);
+
+    void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
     /// Read new data blocks that store query result
     bool getNewBlocks();
 
     Block getHeader() const;
+
+    /// convert blocks to input streams
+    static BlockInputStreams blocksToInputStreams(BlocksPtrs blocks, Block & sample_block);
 
     static void writeIntoLiveView(
         StorageLiveView & live_view,
@@ -160,6 +177,7 @@ private:
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
+    StoragePtr parent_storage;
 
     bool is_temporary = false;
     /// Mutex to protect access to sample block
@@ -178,7 +196,7 @@ private:
     std::shared_ptr<BlocksPtr> blocks_ptr;
     /// Current data blocks metadata
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
-    BlocksPtrs mergeable_blocks;
+    MergeableBlocksPtr mergeable_blocks;
 
     /// Background thread for temporary tables
     /// which drops this table if there are no users
