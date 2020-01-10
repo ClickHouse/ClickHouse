@@ -18,6 +18,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
+#include <ext/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
@@ -835,7 +836,7 @@ bool isPidRunning(pid_t pid)
     return 0;
 }
 
-void BaseDaemon::PID::PID(const std::string & file_)
+BaseDaemon::PID::PID(const std::string & file_)
 {
     file = Poco::Path(file_).absolute().toString();
     Poco::File poco_file(file);
@@ -875,7 +876,7 @@ void BaseDaemon::PID::PID(const std::string & file_)
         throw Poco::Exception("Cannot write to pid file.");
 }
 
-void BaseDaemon::PID::~PID()
+BaseDaemon::PID::~PID()
 {
     try
     {
