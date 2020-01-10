@@ -2,7 +2,7 @@ option (ENABLE_AVRO "Enable Avro" ${ENABLE_LIBRARIES})
 
 if (ENABLE_AVRO)
 
-option (USE_INTERNAL_AVRO_LIBRARY "Set to FALSE to use system avro library instead of bundled" ON)
+option (USE_INTERNAL_AVRO_LIBRARY "Set to FALSE to use system avro library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/avro/lang/c++/CMakeLists.txt")
     if(USE_INTERNAL_AVRO_LIBRARY)

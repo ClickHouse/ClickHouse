@@ -46,6 +46,7 @@ private:
     AvroDeserializer deserializer;
 };
 
+#ifdef USE_POCO_JSON
 class AvroConfluentRowInputFormat : public IRowInputFormat
 {
 public:
@@ -66,5 +67,7 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
 };
+#endif
+
 }
 #endif

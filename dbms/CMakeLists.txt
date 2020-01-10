@@ -465,6 +465,10 @@ if (USE_POCO_NETSSL)
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
+if (USE_POCO_JSON)
+    dbms_target_link_libraries (PRIVATE ${Poco_JSON_LIBRARY})
+endif()
+
 dbms_target_link_libraries (PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
