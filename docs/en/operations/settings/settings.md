@@ -80,7 +80,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
 
-It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
+It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
 ## enable_http_compression {#settings-enable_http_compression}
 
@@ -127,6 +127,17 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+
+Default value: 0.
+
+## max_http_get_redirects {#setting-max_http_get_redirects}
+
+Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
+
+Possible values:
+
+- Any positive integer number of hops.
+- 0 — No hops allowed.
 
 Default value: 0.
 
@@ -207,12 +218,12 @@ Ok.
 Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
 ```sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
-``` 
+```
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
  - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
-  
- This feature is experimental, disabled by default.
+
+Enabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
 This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
@@ -221,7 +232,7 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 (..., abs(3.141592654), ...),   -- Float64 literal
 (..., abs(-1), ...),            -- Int64 literal
 ```
-When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`. 
+When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`.
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 Enabled by default.
 
@@ -466,7 +477,7 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks. 
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks.
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
@@ -512,6 +523,16 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 **Example**:
 
     log_queries=1
+
+## log_query_threads {#settings-log-query-threads}
+
+Setting up query threads logging.
+
+Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+
+**Example**:
+
+    log_query_threads=1
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -570,12 +591,6 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn't any reason to change this setting.
 
-## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
-
-If the value of [mark_cache_size](../server_settings/settings.md#server-mark-cache-size) setting is exceeded, delete only records older than mark_cache_min_lifetime seconds. If your hosts have low amount of RAM, it makes sense to lower this parameter.
-
-Default value: 10000 seconds.
-
 ## max_query_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
@@ -594,6 +609,13 @@ Default value: 100,000 (checks for canceling and sends the progress ten times pe
 Timeouts in seconds on the socket used for communicating with the client.
 
 Default value: 10, 300, 300.
+
+## cancel_http_readonly_queries_on_client_close
+
+Cancels HTTP readonly queries (e.g. SELECT) when a client closes the connection without waiting for response.
+
+Default value: 0
+
 
 ## poll_interval
 
@@ -932,7 +954,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues.
 
 - 0 — skipping disabled.
 
@@ -959,7 +981,7 @@ Default value: 0.
 - Type: seconds
 - Default value: 60 seconds
 
-Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+Controls how fast errors in distributed tables are zeroed. If a replica is unavailabe for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
 ** See also **
 
@@ -972,12 +994,47 @@ Controls how fast errors of distributed tables are zeroed. Given that currently 
 - Type: unsigned int
 - Default value: 1000
 
-Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
 ** See also **
 
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
 - [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
+
+
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+
+Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 100 milliseconds.
+
+
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+
+Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+
+Possible values:
+
+- Positive integer number of milliseconds.
+
+Default value: 30000 milliseconds (30 seconds).
+
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+
+Enables/disables sending of inserted data in batches.
+
+When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better utilizing server and network resources.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: 0.
 
 ## os_thread_priority {#setting-os_thread_priority}
 
@@ -991,6 +1048,64 @@ Possible values:
 - You can set values in the range `[-20, 19]`.
 
 Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
+
+Default value: 0.
+
+
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
+
+Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
+
+Possible values:
+
+- Positive integer number, in nanoseconds.
+
+    Recommended values:
+
+        - 10000000 (100 times a second) nanoseconds and less for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds (once a second).
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
+
+Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
+
+Possible values:
+
+- Positive integer number of nanoseconds.
+
+    Recommended values:
+
+        - 10000000 (100 times a second) nanosecods and more for for single queries.
+        - 1000000000 (once a second) for cluster-wide profiling.
+
+- 0 for turning off the timer.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+Default value: 1000000000 nanoseconds.
+
+**See Also**
+
+- [system.trace_log](../system_tables.md#system_tables-trace_log)
+
+## allow_introspection_functions {#settings-allow_introspection_functions}
+
+Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+
+Possible values:
+
+- 1 — Introspection functions enabled.
+- 0 — Introspection functions disabled.
 
 Default value: 0.
 

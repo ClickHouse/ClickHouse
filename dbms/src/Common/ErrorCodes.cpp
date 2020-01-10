@@ -138,7 +138,6 @@ namespace ErrorCodes
     extern const int FUNCTION_IS_SPECIAL = 129;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT = 130;
     extern const int TOO_LARGE_STRING_SIZE = 131;
-    extern const int CANNOT_CREATE_TABLE_FROM_METADATA = 132;
     extern const int AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS = 133;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS = 134;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX = 135;
@@ -464,6 +463,19 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
     extern const int UNKNOWN_DICTIONARY = 488;
     extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int CANNOT_FORMAT_DATETIME = 490;
+    extern const int UNACCEPTABLE_URL = 491;
+    extern const int ACCESS_ENTITY_NOT_FOUND = 492;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
+    extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
+    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
+    extern const int NOT_ENOUGH_PRIVILEGES = 497;
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
+    extern const int S3_ERROR = 499;
+    extern const int CANNOT_CREATE_DATABASE = 501;
+    extern const int CANNOT_SIGQUEUE = 502;
+    extern const int AGGREGATE_FUNCTION_THROW = 503;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -439,6 +439,10 @@ void Connection::sendQuery(
 
 void Connection::sendCancel()
 {
+    /// If we already disconnected.
+    if (!out)
+        return;
+
     //LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
     writeVarUInt(Protocol::Client::Cancel, *out);
@@ -770,9 +774,7 @@ std::unique_ptr<Exception> Connection::receiveException()
 {
     //LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
-    Exception e;
-    readException(e, *in, "Received from " + getDescription());
-    return std::unique_ptr<Exception>{ e.clone() };
+    return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
 

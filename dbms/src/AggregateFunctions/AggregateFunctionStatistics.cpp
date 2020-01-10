@@ -2,6 +2,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionStatistics.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB

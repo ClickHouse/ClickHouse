@@ -69,18 +69,6 @@ ASTPtr buildWhereExpression(const ASTs & functions)
 namespace VirtualColumnUtils
 {
 
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
-{
-    auto & select = ast->as<ASTSelectQuery &>();
-    if (!select.with())
-        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
-
-    auto literal = std::make_shared<ASTLiteral>(value);
-    literal->alias = column_name;
-    literal->prefer_alias_to_column_name = true;
-    select.with()->children.push_back(literal);
-}
-
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func)
 {
     auto & select = ast->as<ASTSelectQuery &>();

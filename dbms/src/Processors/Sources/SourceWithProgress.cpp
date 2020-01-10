@@ -1,7 +1,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 
 namespace DB
 {
@@ -72,10 +72,8 @@ void SourceWithProgress::progress(const Progress & value)
         /// It is here for compatibility with IBlockInputsStream.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota != nullptr && limits.mode == LimitsMode::LIMITS_TOTAL)
-        {
-            quota->checkAndAddReadRowsBytes(time(nullptr), value.read_rows, value.read_bytes);
-        }
+        if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 }
 

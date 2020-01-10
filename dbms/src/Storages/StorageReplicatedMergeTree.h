@@ -119,7 +119,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -486,7 +486,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       */
-    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
+    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -532,6 +532,10 @@ private:
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
 
+    /// Wait for timeout seconds mutation is finished on replicas
+    void waitMutationToFinishOnReplicas(
+        const Strings & replicas, const String & mutation_id) const;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -540,16 +544,10 @@ protected:
         const String & replica_name_,
         bool attach,
         const String & database_name_, const String & name_,
-        const ColumnsDescription & columns_,
-        const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
         Context & context_,
         const String & date_column_name,
-        const ASTPtr & partition_by_ast_,
-        const ASTPtr & order_by_ast_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sample_by_ast_,
-        const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);

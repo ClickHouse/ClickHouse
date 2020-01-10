@@ -104,13 +104,13 @@ private:
     struct greater;
 
 public:
-    using value_type = T;
-    using Container = PaddedPODArray<value_type>;
+    using ValueType = T;
+    using Container = PaddedPODArray<ValueType>;
 
 private:
     ColumnVector() {}
     ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const value_type x) : data(n, x) {}
+    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
     /// Sugar constructor.
@@ -142,6 +142,11 @@ public:
     void insertDefault() override
     {
         data.push_back(T());
+    }
+
+    virtual void insertManyDefaults(size_t length) override
+    {
+        data.resize_fill(data.size() + length, T());
     }
 
     void popBack(size_t n) override
@@ -205,20 +210,23 @@ public:
     UInt64 get64(size_t n) const override;
 
     Float64 getFloat64(size_t n) const override;
+    Float32 getFloat32(size_t n) const override;
 
-    UInt64 getUInt(size_t n) const override
+    /// Out of range conversion is permitted.
+    UInt64 NO_SANITIZE_UNDEFINED getUInt(size_t n) const override
     {
         return UInt64(data[n]);
+    }
+
+    /// Out of range conversion is permitted.
+    Int64 NO_SANITIZE_UNDEFINED getInt(size_t n) const override
+    {
+        return Int64(data[n]);
     }
 
     bool getBool(size_t n) const override
     {
         return bool(data[n]);
-    }
-
-    Int64 getInt(size_t n) const override
-    {
-        return Int64(data[n]);
     }
 
     void insert(const Field & x) override

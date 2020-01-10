@@ -1,3 +1,6 @@
+set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${ConfigIncludePath})
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -42,45 +45,157 @@ endif ()
 
 option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpedantic -Wno-vla-extension -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types")
+if (COMPILER_CLANG)
+    add_warning(pedantic)
+    no_warning(gnu-anonymous-struct)
+    no_warning(nested-anon-types)
+    no_warning(vla-extension)
+    no_warning(zero-length-array)
 
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wshadow-uncaptured-local -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wcovered-switch-default -Wold-style-cast -Wrange-loop-analysis -Wunused-member-function -Wunreachable-code -Wunreachable-code-return -Wnewline-eof -Wembedded-directive -Wgnu-case-range -Wunused-macros -Wconditional-uninitialized -Wdeprecated -Wundef -Wreserved-id-macro -Wredundant-parens -Wzero-as-null-pointer-constant")
+    add_warning(comma)
+    add_warning(conditional-uninitialized)
+    add_warning(covered-switch-default)
+    add_warning(deprecated)
+    add_warning(embedded-directive)
+    add_warning(empty-init-stmt) # linux-only
+    add_warning(extra-semi-stmt) # linux-only
+    add_warning(extra-semi)
+    add_warning(gnu-case-range)
+    add_warning(inconsistent-missing-destructor-override)
+    add_warning(newline-eof)
+    add_warning(old-style-cast)
+    add_warning(range-loop-analysis)
+    add_warning(redundant-parens)
+    add_warning(reserved-id-macro)
+    add_warning(shadow-field) # clang 8+
+    add_warning(shadow-uncaptured-local)
+    add_warning(shadow)
+    add_warning(string-plus-int) # clang 8+
+    add_warning(undef)
+    add_warning(unreachable-code-return)
+    add_warning(unreachable-code)
+    add_warning(unused-exception-parameter)
+    add_warning(unused-macros)
+    add_warning(unused-member-function)
+    add_warning(zero-as-null-pointer-constant)
 
     if (WEVERYTHING)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded -Wno-switch-enum -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-vla-extension -Wno-vla -Wno-packed")
+        add_warning(everything)
+        no_warning(c++98-compat-pedantic)
+        no_warning(c++98-compat)
+        no_warning(c99-extensions)
+        no_warning(conversion)
+        no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
+        no_warning(deprecated-dynamic-exception-spec)
+        no_warning(disabled-macro-expansion)
+        no_warning(documentation-unknown-command)
+        no_warning(double-promotion)
+        no_warning(exit-time-destructors)
+        no_warning(float-equal)
+        no_warning(global-constructors)
+        no_warning(gnu-anonymous-struct)
+        no_warning(missing-prototypes)
+        no_warning(missing-variable-declarations)
+        no_warning(nested-anon-types)
+        no_warning(packed)
+        no_warning(padded)
+        no_warning(return-std-move-in-c++11) # clang 7+
+        no_warning(shift-sign-overflow)
+        no_warning(sign-conversion)
+        no_warning(switch-enum)
+        no_warning(undefined-func-template)
+        no_warning(unused-template)
+        no_warning(vla-extension)
+        no_warning(vla)
+        no_warning(weak-template-vtables)
+        no_warning(weak-vtables)
+        no_warning(zero-length-array)
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-        if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
-        endif ()
-    endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow-field -Wstring-plus-int")
-        if(NOT APPLE)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wempty-init-stmt")
-        endif()
-    endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-        if (WEVERYTHING AND NOT APPLE)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
-        endif ()
-    endif ()
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
-endif()
+elseif (COMPILER_GCC)
+    # Add compiler options only to c++ compiler
+    function(add_cxx_compile_options option)
+        add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
+    endfunction()
+    # Warn about boolean expression compared with an integer value different from true/false
+    add_cxx_compile_options(-Wbool-compare)
+    # Warn whenever a pointer is cast such that the required alignment of the target is increased.
+    add_cxx_compile_options(-Wcast-align)
+    # Warn whenever a pointer is cast so as to remove a type qualifier from the target type.
+    add_cxx_compile_options(-Wcast-qual)
+    # Warn when deleting a pointer to incomplete type, which may cause undefined behavior at runtime
+    add_cxx_compile_options(-Wdelete-incomplete)
+    # Warn if a requested optimization pass is disabled. Code is too big or too complex
+    add_cxx_compile_options(-Wdisabled-optimization)
+    # Warn about duplicated conditions in an if-else-if chain
+    add_cxx_compile_options(-Wduplicated-cond)
+    # Warn about a comparison between values of different enumerated types
+    add_cxx_compile_options(-Wenum-compare)
+    # Warn about uninitialized variables that are initialized with themselves
+    add_cxx_compile_options(-Winit-self)
+    # Warn about logical not used on the left hand side operand of a comparison
+    add_cxx_compile_options(-Wlogical-not-parentheses)
+    # Warn about suspicious uses of logical operators in expressions
+    add_cxx_compile_options(-Wlogical-op)
+    # Warn if there exists a path from the function entry to a use of the variable that is uninitialized.
+    add_cxx_compile_options(-Wmaybe-uninitialized)
+    # Warn when the indentation of the code does not reflect the block structure
+    add_cxx_compile_options(-Wmisleading-indentation)
+    # Warn if a global function is defined without a previous declaration
+    # add_cxx_compile_options(-Wmissing-declarations)
+    # Warn if a user-supplied include directory does not exist
+    # add_cxx_compile_options(-Wmissing-include-dirs)
+    # Obvious
+    add_cxx_compile_options(-Wnon-virtual-dtor)
+    # Obvious
+    add_cxx_compile_options(-Wno-return-local-addr)
+    # This warning is disabled due to false positives if compiled with libc++: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90037
+    #add_cxx_compile_options(-Wnull-dereference)
+    # Obvious
+    add_cxx_compile_options(-Wodr)
+    # Obvious
+    add_cxx_compile_options(-Wold-style-cast)
+    # Warn when a function declaration hides virtual functions from a base class
+    # add_cxx_compile_options(-Woverloaded-virtual)
+    # Warn about placement new expressions with undefined behavior
+    add_cxx_compile_options(-Wplacement-new=2)
+    # Warn about anything that depends on the “size of” a function type or of void
+    add_cxx_compile_options(-Wpointer-arith)
+    # Warn if anything is declared more than once in the same scope
+    add_cxx_compile_options(-Wredundant-decls)
+    # Member initialization reordering
+    add_cxx_compile_options(-Wreorder)
+    # Obvious
+    add_cxx_compile_options(-Wshadow)
+    # Warn if left shifting a negative value
+    add_cxx_compile_options(-Wshift-negative-value)
+    # Warn about a definition of an unsized deallocation function
+    add_cxx_compile_options(-Wsized-deallocation)
+    # Warn when the sizeof operator is applied to a parameter that is declared as an array in a function definition
+    add_cxx_compile_options(-Wsizeof-array-argument)
+    # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
+    add_cxx_compile_options(-Wsizeof-pointer-memaccess)
+    # Warn about overriding virtual functions that are not marked with the override keyword
+    # add_cxx_compile_options(-Wsuggest-override)
+    # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
+    add_cxx_compile_options(-Wswitch-bool)
+    # Warn if a self-comparison always evaluates to true or false
+    add_cxx_compile_options(-Wtautological-compare)
+    # Warn about trampolines generated for pointers to nested functions
+    add_cxx_compile_options(-Wtrampolines)
+    # Obvious
+    add_cxx_compile_options(-Wunused)
+    # Warn if vector operation is not implemented via SIMD capabilities of the architecture
+    add_cxx_compile_options(-Wvector-operation-performance)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
     # It leads to slow code. This is compiler bug. It looks like this:
     #
@@ -100,7 +215,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
-list (REMOVE_ITEM clickhouse_common_io_sources src/Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources src/Common/malloc.cpp src/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -110,8 +225,8 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp src/Functions/extractTimeZoneFromFunctionArguments.cpp)
+list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h src/Functions/extractTimeZoneFromFunctionArguments.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -139,6 +254,9 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
+set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
@@ -168,6 +286,7 @@ add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
 add_object_library(clickhouse_datatypes src/DataTypes)
 add_object_library(clickhouse_databases src/Databases)
+add_object_library(clickhouse_disks src/Disks)
 add_object_library(clickhouse_interpreters src/Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy src/Interpreters/ClusterProxy)
 add_object_library(clickhouse_columns src/Columns)
@@ -209,7 +328,6 @@ macro (dbms_target_link_libraries)
 endmacro ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
@@ -251,6 +369,7 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
+    ryu
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
@@ -376,6 +495,10 @@ if (USE_POCO_MONGODB)
     dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
+if (USE_POCO_REDIS)
+    dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
+endif()
+
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
@@ -417,6 +540,12 @@ if (USE_HDFS)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
+if (USE_AWS_S3)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_CORE_INCLUDE_DIR})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
+endif()
+
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
@@ -428,6 +557,8 @@ if (USE_JEMALLOC)
 
     if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
         # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        # Actually we link JEMALLOC to almost all libraries.
+        # This is just hotfix for some uninvestigated problem.
         target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
     endif()
 endif ()

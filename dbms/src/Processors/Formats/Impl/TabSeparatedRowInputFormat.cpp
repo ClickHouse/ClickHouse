@@ -341,6 +341,13 @@ void TabSeparatedRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+void TabSeparatedRowInputFormat::resetParser()
+{
+    RowInputFormatWithDiagnosticInfo::resetParser();
+    column_indexes_for_input_fields.clear();
+    read_columns.clear();
+    columns_to_fill_with_default_values.clear();
+}
 
 void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 {
@@ -349,7 +356,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -362,7 +368,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -375,7 +380,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -384,7 +388,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();

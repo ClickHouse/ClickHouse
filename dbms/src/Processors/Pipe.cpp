@@ -97,7 +97,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
     }
 }
 
-void Pipe::setQuota(QuotaForIntervals & quota)
+void Pipe::setQuota(const std::shared_ptr<QuotaContext> & quota)
 {
     for (auto & processor : processors)
     {
@@ -112,6 +112,15 @@ void Pipe::pinSources(size_t executor_number)
     {
         if (auto * source = dynamic_cast<ISource *>(processor.get()))
             source->setStream(executor_number);
+    }
+}
+
+void Pipe::enableQuota()
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            source->enableQuota();
     }
 }
 
