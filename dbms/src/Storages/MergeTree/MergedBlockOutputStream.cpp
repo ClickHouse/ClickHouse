@@ -38,7 +38,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     for (const auto & it : columns_list)
     {
         const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
     }
 }
 
@@ -74,7 +74,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     for (const auto & it : columns_list)
     {
         const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
     }
 }
 

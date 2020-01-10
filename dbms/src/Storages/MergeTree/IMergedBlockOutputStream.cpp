@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/createWriteBufferFromFileBase.h>
 
 namespace DB
@@ -49,7 +48,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 void IMergedBlockOutputStream::addStreams(
     const String & path,
     const String & name,
-    const DataTypePtr & type,
+    const IDataType & type,
     const CompressionCodecPtr & effective_codec,
     size_t estimated_size,
     bool skip_offsets)
@@ -76,12 +75,7 @@ void IMergedBlockOutputStream::addStreams(
     };
 
     IDataType::SubstreamPath stream_path;
-    type->enumerateStreams(callback, stream_path);
-
-    /// Same as AggregatingSortedBlockInputStream (via RemovingLowCardinalityBlockInputStream)
-    auto stripped_type = recursiveRemoveLowCardinality(type);
-    if (stripped_type != type)
-        stripped_type->enumerateStreams(callback, stream_path);
+    type.enumerateStreams(callback, stream_path);
 }
 
 
@@ -175,9 +169,6 @@ void IMergedBlockOutputStream::writeSingleMark(
          /// Don't write offsets more than one time for Nested type.
          if (is_offsets && offset_columns.count(stream_name))
              return;
-
-         if (!column_streams.count(stream_name))
-             throw Exception("Incorrect stream " + stream_name, ErrorCodes::LOGICAL_ERROR);
 
          ColumnStream & stream = *column_streams[stream_name];
 
