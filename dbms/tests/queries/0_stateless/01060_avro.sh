@@ -29,7 +29,9 @@ cat $DATA_DIR/logical_types.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --ou
 echo = compression
 cat $DATA_DIR/simple.null.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
 cat $DATA_DIR/simple.deflate.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
-cat $DATA_DIR/simple.snappy.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
+
+#snappy is optional
+#cat $DATA_DIR/simple.snappy.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
 
 echo = other
 #no data
