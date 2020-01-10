@@ -207,7 +207,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
 # List of unknown commits -> text description.
 def process_unknown_commits(commits, commits_info, users):
 
-    pattern = 'Commit: [{}]({})\nAuthor: {}\nMessage: {}'
+    pattern = u'Commit: [{}]({})\nAuthor: {}\nMessage: {}'
 
     texts = []
 
