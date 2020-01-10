@@ -925,7 +925,7 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
     std::optional<Exception> exc;
     auto res = getTableImpl(database_name, table_name, &exc);
     if (!res)
-        throw exc;
+        throw *exc;
     return res;
 }
 
