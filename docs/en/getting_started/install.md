@@ -64,7 +64,7 @@ You can also download and install packages manually from here: <https://repo.yan
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
 Required version can be dowloaded with `curl` or `wget` from repository <https://repo.yandex.ru/clickhouse/tgz/>.
-After that downloaded archieves should be unpacked and installed with installation scripts. Example for the latest version:
+After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
 ```bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
 curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
