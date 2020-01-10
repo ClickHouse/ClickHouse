@@ -1,5 +1,7 @@
 CREATE TABLE IF NOT EXISTS test Engine = MergeTree ORDER BY number AS SELECT number, toString(rand()) x from numbers(10000000);
 
+SELECT count() FROM test;
+
 ALTER TABLE test detach partition tuple();
 
 SELECT count() FROM test;
