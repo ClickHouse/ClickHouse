@@ -78,7 +78,6 @@ tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
 sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
 
 tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
-sudo clickhouse-server-$LATEST_VERSION/install/predoinst.sh
 sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
 sudo /etc/init.d/clickhouse-server start
 
