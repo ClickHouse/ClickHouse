@@ -4,14 +4,14 @@ Description.
 
 For switcher setting, use the typical phrase: "Enables or disables something ...".
 
-**Possible value(s)**
+Possible values:
 
-For switcher setting:
+*For switcher setting:*
 
 - 0 — Disabled.
 - 1 — Enabled.
 
-For another setting (typical phrases):
+*For another setting (typical phrases):*
 
 - Positive integer.
 - 0 — Disabled or unlimited or smth. else.
@@ -20,7 +20,7 @@ Default value: `value`.
 
 **Additional Info** (Optional)
 
-The name of additional section can be any.
+The name of additional section can be any, for example **Usage**.
 
 **See Also** (Optional)
 
