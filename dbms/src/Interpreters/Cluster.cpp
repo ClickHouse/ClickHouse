@@ -477,11 +477,7 @@ Cluster::Cluster(const Settings & settings, const Cluster & from) : shards_info{
             {
                 ShardInfo info;
                 Address address = replicas[replica_index];
-                auto position = find_if(hosts.begin(), hosts.end(),
-                                        [=](auto item) {
-                                            return std::get<0>(item) == address.host_name &&
-                                                   std::get<1>(item) == address.port;
-                                        });
+                auto position = find_if(hosts.begin(), hosts.end(), [=](auto item) {return std::get<0>(item) == address.host_name && std::get<1>(item) == address.port;});
                 if (position == hosts.end())
                 {
                     if (address.is_local)
