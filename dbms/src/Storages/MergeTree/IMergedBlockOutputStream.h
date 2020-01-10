@@ -69,7 +69,7 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStreams(const String & path, const String & name, const DataTypePtr & type,
+    void addStreams(const String & path, const String & name, const IDataType & type,
                     const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
 
 
