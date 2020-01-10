@@ -115,4 +115,13 @@ void Pipe::pinSources(size_t executor_number)
     }
 }
 
+void Pipe::enableQuota()
+{
+    for (auto & processor : processors)
+    {
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            source->enableQuota();
+    }
+}
+
 }
