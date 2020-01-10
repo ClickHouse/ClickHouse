@@ -484,7 +484,7 @@ Cluster::Cluster(const Settings & settings, const Cluster & from) : shards_info{
                 {
                     if (address.is_local)
                         info.local_addresses.push_back(replicas[replica_index]);
-                    hosts.insert(std::tuple<String , int> (address.host_name, address.port));
+                    hosts.insert(std::tuple<String, int>(address.host_name, address.port));
                     ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
                         settings.distributed_connections_pool_size,
                         address.host_name,
