@@ -85,7 +85,7 @@ public:
     struct Attribute
     {
         template <typename T>
-        using Container = std::vector<T>;
+        using Container = PaddedPODArray<T>;
 
         AttributeUnderlyingType type;
         std::variant<
@@ -108,7 +108,7 @@ public:
     using Attributes = std::vector<Attribute>;
 
     // Key, (Metadata), attributes
-    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata);
+    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata);
 
     void flush();
 private:
@@ -131,8 +131,6 @@ private:
         /// Stores `is_in_memory` flag, block id, address in uncompressed block
         size_t index = 0;
     };
-
-    size_t appendValuesToAttribute(Attribute & to, const Attribute & from);
 
     template <typename Out>
     void getValueFromMemory(
@@ -378,12 +376,6 @@ public:
 
 private:
     size_t getAttributeIndex(const std::string & attr_name) const;
-
-    struct Attribute
-    {
-        AttributeUnderlyingType type;
-        AttributeValueVariant null_value;
-    };
 
     template <typename T>
     AttributeValueVariant createAttributeNullValueWithTypeImpl(const Field & null_value);

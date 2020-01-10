@@ -148,7 +148,7 @@ CachePartition::CachePartition(
     , attributes_structure(attributes_structure_), memory(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
-    keys_buffer.values = std::vector<UInt64>();
+    keys_buffer.values = PaddedPODArray<UInt64>();
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -169,7 +169,7 @@ CachePartition::~CachePartition()
     ::close(fd);
 }
 
-void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const std::vector<Metadata> & metadata)
+void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata)
 {
     std::unique_lock lock(rw_lock);
     if (new_attributes.size() != attributes_structure.size())
@@ -243,45 +243,6 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
         else
             write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
     }
-}
-
-size_t CachePartition::appendValuesToAttribute(Attribute & to, const Attribute & from)
-{
-    switch (to.type)
-    {
-#define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
-        { \
-            auto &to_values = std::get<Attribute::Container<TYPE>>(to.values); \
-            auto &from_values = std::get<Attribute::Container<TYPE>>(from.values); \
-            size_t prev_size = to_values.size(); \
-            to_values.resize(to_values.size() + from_values.size()); \
-            memcpy(&to_values[prev_size], &from_values[0], from_values.size() * sizeof(TYPE)); \
-            return from_values.size() * sizeof(TYPE); \
-        } \
-        break;
-
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-#undef DISPATCH
-
-    case AttributeUnderlyingType::utString:
-            // TODO: string support
-            break;
-    }
-    throw Exception{"Unknown attribute type: " + std::to_string(static_cast<int>(to.type)), ErrorCodes::TYPE_MISMATCH};
 }
 
 void CachePartition::flush()
@@ -652,12 +613,12 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
             while (const auto block = stream->read())
             {
-                const auto new_keys = createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front();
+                const auto new_keys = std::move(createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front());
                 const auto new_attributes = createAttributesFromBlock(block, 1, attributes_structure);
 
                 const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
 
-                std::vector<CachePartition::Metadata> metadata(ids.size());
+                PaddedPODArray<CachePartition::Metadata> metadata(ids.size());
 
                 for (const auto i : ext::range(0, ids.size()))
                 {
@@ -695,7 +656,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     /// Check which ids have not been found and require setting null_value
     CachePartition::Attribute new_keys;
     new_keys.type = AttributeUnderlyingType::utUInt64;
-    new_keys.values = std::vector<UInt64>();
+    new_keys.values = PaddedPODArray<UInt64>();
     CachePartition::Attributes new_attributes;
     {
         /// TODO: create attributes from structure
@@ -707,7 +668,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
             case AttributeUnderlyingType::ut##TYPE: \
                 new_attributes.emplace_back(); \
                 new_attributes.back().type = attribute_type; \
-                new_attributes.back().values = std::vector<TYPE>(); \
+                new_attributes.back().values = PaddedPODArray<TYPE>(); \
                 break;
 
                 DISPATCH(UInt8)
@@ -733,7 +694,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         }
     }
 
-    std::vector<CachePartition::Metadata> metadata;
+    PaddedPODArray<CachePartition::Metadata> metadata;
 
     for (const auto & id_found_pair : remaining_ids)
     {
@@ -755,7 +716,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         }
 
         // Set key
-        std::get<std::vector<UInt64>>(new_keys.values).push_back(id);
+        std::get<PaddedPODArray<UInt64>>(new_keys.values).push_back(id);
 
         std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
         metadata.emplace_back();
@@ -772,7 +733,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 #define DISPATCH(TYPE) \
             case AttributeUnderlyingType::ut##TYPE: \
                 { \
-                    auto & to_values = std::get<std::vector<TYPE>>(new_attributes[i].values); \
+                    auto & to_values = std::get<PaddedPODArray<TYPE>>(new_attributes[i].values); \
                     auto & null_value = std::get<TYPE>(null_values[i]); \
                     to_values.push_back(null_value); \
                 } \
@@ -826,7 +787,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(
 #define DISPATCH(TYPE) \
         case AttributeUnderlyingType::ut##TYPE: \
             { \
-                std::vector<TYPE> values(column->size()); \
+                PaddedPODArray<TYPE> values(column->size()); \
                 const auto raw_data = column->getRawData(); \
                 memcpy(&values[0], raw_data.data, raw_data.size * sizeof(TYPE)); \
                 attributes.emplace_back(); \
@@ -994,7 +955,7 @@ void SSDCacheDictionary::getItemsNumberImpl(
             required_ids,
             [&](const auto id, const auto row, const auto & new_attributes) {
                 for (const size_t out_row : not_found_ids[id])
-                    out[out_row] = std::get<std::vector<OutputType>>(new_attributes[attribute_index].values)[row];
+                    out[out_row] = std::get<PaddedPODArray<OutputType>>(new_attributes[attribute_index].values)[row];
             },
             [&](const size_t id)
             {
