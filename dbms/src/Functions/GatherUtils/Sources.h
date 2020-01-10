@@ -236,7 +236,7 @@ struct StringSource
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset;
+        return offsets[row_num] - prev_offset - 1;
     }
 
     Slice getWhole() const
