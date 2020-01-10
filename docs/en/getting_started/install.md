@@ -59,6 +59,36 @@ sudo yum install clickhouse-server clickhouse-client
 
 You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
 
+### From tgz archives {#from-tgz-archives}
+
+It is recommended to use official pre-compiled `tgz` archieves for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
+
+Required version can be dowloaded with `curl` or `wget` from repository <https://repo.yandex.ru/clickhouse/tgz/>.
+After that downloaded archieves should be unpacked and installed with installation scripts. Example for the latest version:
+```bash
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/predoinst.sh
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+```
+
+For production environments it's recommended to use latest `stable`-version. You can find it's number on github page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+
 ### From Docker Image
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
