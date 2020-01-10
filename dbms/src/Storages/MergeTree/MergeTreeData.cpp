@@ -1130,7 +1130,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
+MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
     DataPartsVector res;
 
@@ -1153,8 +1153,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
-                part_remove_time < now &&
-                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
+                ((part_remove_time < now &&
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force))
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1229,9 +1229,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-void MergeTreeData::clearOldPartsFromFilesystem()
+void MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
-    DataPartsVector parts_to_remove = grabOldParts();
+    DataPartsVector parts_to_remove = grabOldParts(force);
     clearPartsFromFilesystem(parts_to_remove);
     removePartsFinally(parts_to_remove);
 }
