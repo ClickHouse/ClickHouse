@@ -142,7 +142,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
         merged_columns[pos] = (*recursiveTypeConversion(std::move(merged_columns[pos]), from_type, to_type)).mutate();
     }
 
-    return header.cloneWithColumns(std::move(merged_columns));
+    return result_header.cloneWithColumns(std::move(merged_columns));
 }
 
 
