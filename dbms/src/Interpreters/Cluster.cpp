@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -449,6 +450,10 @@ void Cluster::initMisc()
     }
 }
 
+std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings) const
+{
+    return std::unique_ptr<Cluster>{ new Cluster(settings, *this)};
+}
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 {
@@ -458,6 +463,55 @@ std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector<size_t> & indices) const
 {
     return std::unique_ptr<Cluster>{ new Cluster(*this, indices) };
+}
+
+Cluster::Cluster(const Settings & settings, const Cluster & from) : shards_info{}, addresses_with_failover{}
+{
+    std::set<std::tuple<String, int>> hosts;
+    if (!from.addresses_with_failover.empty())
+    {
+        for (size_t shard_index : ext::range(0, from.shards_info.size()))
+        {
+            const auto & replicas = from.addresses_with_failover[shard_index];
+            for (size_t replica_index : ext::range(0, replicas.size()))
+            {
+                ShardInfo info;
+                Address address = replicas[replica_index];
+                auto position = find_if(hosts.begin(), hosts.end(), [=](auto item) {return std::get<0>(item) == address.host_name && std::get<1>(item) == address.port;});
+                if (position == hosts.end())
+                {
+                    if (address.is_local)
+                        info.local_addresses.push_back(replicas[replica_index]);
+                    hosts.insert(std::tuple<String, int>(address.host_name, address.port));
+                    ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+                        settings.distributed_connections_pool_size,
+                        address.host_name,
+                        address.port,
+                        address.default_database,
+                        address.user,
+                        address.password,
+                        "server",
+                        address.compression,
+                        address.secure);
+
+                    info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+                    info.per_replica_pools = {std::move(pool)};
+                    std ::vector<Cluster::Address> newAddress = {address};
+                    addresses_with_failover.emplace_back(newAddress);
+                    shards_info.emplace_back(std::move(info));
+                }
+                else
+                {
+                    continue;
+                }
+            }
+        }
+    }
+    else
+    {
+        throw Exception("There must be either 'node' or 'shard' elements in the cluster", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+    }
+    initMisc();
 }
 
 Cluster::Cluster(const Cluster & from, const std::vector<size_t> & indices)
