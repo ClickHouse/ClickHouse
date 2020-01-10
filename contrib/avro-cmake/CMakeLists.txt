@@ -1,9 +1,8 @@
-# project and source dir
 set(AVROCPP_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/avro/lang/c++)
 set(AVROCPP_INCLUDE_DIR ${AVROCPP_ROOT_DIR}/api)
 set(AVROCPP_SOURCE_DIR ${AVROCPP_ROOT_DIR}/impl)
 
-#set(AVROCPP_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
+set (CMAKE_CXX_STANDARD 17)
 
 if (EXISTS ${AVROCPP_ROOT_DIR}/../../share/VERSION.txt)
     file(READ "${AVROCPP_ROOT_DIR}/../../share/VERSION.txt"
@@ -41,36 +40,31 @@ set (AVROCPP_SOURCE_FILES
     ${AVROCPP_SOURCE_DIR}/Validator.cc
     )
 
+add_library (avrocpp ${AVROCPP_SOURCE_FILES})
+set_target_properties (avrocpp PROPERTIES VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
 
-add_definitions(-std=c++17 -fPIC)
+target_include_directories(avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
 
-add_library (avrocpp SHARED ${AVROCPP_SOURCE_FILES})
+target_include_directories(avrocpp SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
+target_link_libraries (avrocpp ${Boost_IOSTREAMS_LIBRARY})
 
-set_property (TARGET avrocpp
-    APPEND PROPERTY COMPILE_DEFINITIONS AVRO_DYN_LINK)
+if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
+    target_compile_definitions (avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
+    target_include_directories (avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
+    target_link_libraries (avrocpp ${SNAPPY_LIBRARY})
+endif ()
 
-add_library (avrocpp_s STATIC ${AVROCPP_SOURCE_FILES})
+if (COMPILER_GCC)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+elseif (COMPILER_CLANG)
+    set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)
+endif ()
 
-set_property (TARGET avrocpp avrocpp_s
-    APPEND PROPERTY COMPILE_DEFINITIONS AVRO_SOURCE)
+target_compile_options(avrocpp PRIVATE ${SUPPRESS_WARNINGS})
 
-set_target_properties (avrocpp PROPERTIES
-    VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
-
-set_target_properties (avrocpp_s PROPERTIES
-    VERSION ${AVRO_VERSION_MAJOR}.${AVRO_VERSION_MINOR})
-
-target_link_libraries (avrocpp ${Boost_IOSTREAMS_LIBRARY} ${SNAPPY_LIBRARY})
-target_link_libraries (avrocpp_s ${Boost_IOSTREAMS_LIBRARY} ${SNAPPY_LIBRARY})
-
-target_compile_definitions (avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
-target_compile_definitions (avrocpp_s PUBLIC SNAPPY_CODEC_AVAILABLE)
-
-include_directories(${AVROCPP_INCLUDE_DIR})
-include_directories(${Boost_INCLUDE_DIRS})
-include_directories(${SNAPPY_INCLUDE_DIR})
-
-ADD_CUSTOM_TARGET(symlink_headers ALL
+# create a symlink to include headers with <avro/...>
+ADD_CUSTOM_TARGET(avro_symlink_headers ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${AVROCPP_ROOT_DIR}/include
     COMMAND ${CMAKE_COMMAND} -E create_symlink ${AVROCPP_ROOT_DIR}/api ${AVROCPP_ROOT_DIR}/include/avro
 )
+add_dependencies(avrocpp avro_symlink_headers)
