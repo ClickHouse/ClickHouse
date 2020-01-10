@@ -10,9 +10,9 @@ macro (add_warning flag)
     else ()
         message (WARNING "Flag -W${flag} is unsupported")
     endif ()
-endmacro (add_warning)
+endmacro ()
 
 # Try to add -Wno flag if compiler supports it
 macro (no_warning flag)
     add_warning(no-${flag})
-endmacro (add_warning)
+endmacro ()
