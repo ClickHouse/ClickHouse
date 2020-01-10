@@ -7,7 +7,8 @@ import argparse
 import pprint
 
 parser = argparse.ArgumentParser(description='Run performance test.')
-parser.add_argument('file', metavar='FILE', type=argparse.FileType('r'), nargs=1, help='test description file')
+# Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
+parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
 args = parser.parse_args()
 
 tree = et.parse(args.file[0])
@@ -88,7 +89,7 @@ for q in test_queries:
     for run in range(0, 7):
         for conn_index, c in enumerate(connections):
             res = c.execute(q)
-            print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+        print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]
