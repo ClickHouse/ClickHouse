@@ -2348,9 +2348,6 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
     });
 
-    /// If there are several streams, we merge them into one
-    pipeline.resize(1);
-
     /// Merge the sorted blocks.
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -2359,11 +2356,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         return std::make_shared<MergeSortingTransform>(
                 header, output_order_descr, settings.max_block_size, limit,
-                settings.max_bytes_before_remerge_sort,
+                settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
                 settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
 
-    pipeline.enableQuotaForCurrentStreams();
+    /// If there are several streams, we merge them into one
+    executeMergeSorted(pipeline, output_order_descr, limit);
 }
 
 
