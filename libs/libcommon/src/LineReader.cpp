@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include <port/unistd.h>
+#include <string.h>
 
 namespace
 {
