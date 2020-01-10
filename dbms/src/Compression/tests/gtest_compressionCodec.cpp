@@ -310,8 +310,6 @@ struct CodecTestSequence
     std::vector<char> serialized_data;
     DataTypePtr data_type;
 
-    CodecTestSequence() = default;
-
     CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
         : name(name_),
           serialized_data(serialized_data_),
@@ -806,24 +804,6 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     return sequences;
 };
 
-// Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
-template <typename T, typename Generator>
-CodecTestSequence generatePyramidSequence(const size_t sequences_count, Generator && generator, const char* generator_name)
-{
-    CodecTestSequence sequence;
-    sequence.data_type = makeDataType<T>();
-    sequence.serialized_data.reserve(sequences_count * sequences_count * sizeof(T));
-
-    for (size_t i = 1; i < sequences_count; ++i)
-    {
-        std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequence.append(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
-    }
-
-    return sequence;
-};
-
-
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator
 
@@ -1294,6 +1274,23 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
 // These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
 // also they require pretty big data to run agains and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
+
+// Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
+//template <typename T, typename Generator>
+//CodecTestSequence generatePyramidSequence(const size_t sequences_count, Generator && generator, const char* generator_name)
+//{
+//    CodecTestSequence sequence;
+//    sequence.data_type = makeDataType<T>();
+//    sequence.serialized_data.reserve(sequences_count * sequences_count * sizeof(T));
+//
+//    for (size_t i = 1; i < sequences_count; ++i)
+//    {
+//        std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
+//        sequence.append(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+//    }
+//
+//    return sequence;
+//};
 
 //INSTANTIATE_TEST_CASE_P(DoubleDelta,
 //    CodecTest_Performance,
