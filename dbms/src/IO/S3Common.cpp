@@ -29,7 +29,7 @@ const std::pair<LogsLevel, Message::Priority> & convertLogLevel(Aws::Utils::Logg
     return mapping.at(log_level);
 }
 
-class AWSLogger : public Aws::Utils::Logging::LogSystemInterface
+class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
     ~AWSLogger() final = default;
