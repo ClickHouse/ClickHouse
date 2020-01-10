@@ -61,7 +61,7 @@ You can also download and install packages manually from here: <https://repo.yan
 
 ### From tgz archives {#from-tgz-archives}
 
-It is recommended to use official pre-compiled `tgz` archieves for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
+It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 
 Required version can be dowloaded with `curl` or `wget` from repository <https://repo.yandex.ru/clickhouse/tgz/>.
 After that downloaded archieves should be unpacked and installed with installation scripts. Example for the latest version:
