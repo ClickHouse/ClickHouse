@@ -64,7 +64,7 @@ namespace
     constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
 
-    constexpr size_t AIO_MAX_SIMULTANIOUS_REQUESTS = 32;
+    constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
     constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16; // TODO: в параметры
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
