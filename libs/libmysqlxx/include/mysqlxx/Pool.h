@@ -36,6 +36,7 @@ protected:
     {
         mysqlxx::Connection conn;
         int ref_count = 0;
+        bool auto_close;
     };
 
 public:
@@ -165,10 +166,12 @@ public:
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-         unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE)
+         unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
+         bool auto_close_ = false)
     : default_connections(default_connections_), max_connections(max_connections_),
     db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_) {}
+    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
+    auto_close(auto_close_) {}
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -177,7 +180,8 @@ public:
           user{other.user}, password{other.password},
           port{other.port}, socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
-          enable_local_infile{other.enable_local_infile}
+          enable_local_infile{other.enable_local_infile},
+          auto_close(other.auto_close)
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -231,6 +235,7 @@ private:
     std::string ssl_cert;
     std::string ssl_key;
     bool enable_local_infile;
+    bool auto_close;
 
     /// True if connection was established at least once.
     bool was_successful{false};

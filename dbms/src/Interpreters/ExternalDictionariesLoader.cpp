@@ -5,6 +5,10 @@
 #   include <mysqlxx/PoolFactory.h>
 #endif
 
+#if USE_MYSQL
+#   include <mysqlxx/PoolFactory.h>
+#endif
+
 namespace DB
 {
 
@@ -17,7 +21,6 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }
-
 
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
