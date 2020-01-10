@@ -42,6 +42,12 @@
 #include <avro/ValidSchema.hh>
 #include <avro/Writer.hh>
 
+#define DEFAULT_SYNC_INTERVAL 16*1024
+#ifdef SNAPPY_CODEC_AVAILABLE
+#define DEFAULT_CODEC avro::Codec::SNAPPY_CODEC
+#else
+#define DEFAULT_CODEC avro::Codec::DEFLATE_CODEC
+#endif
 
 namespace DB
 {
@@ -293,7 +299,7 @@ AvroRowOutputFormat::AvroRowOutputFormat(
     : IRowOutputFormat(header_, out_, callback)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName())
-    , file_writer(std::make_unique<OutputStreamWriteBufferAdapter>(out_), serializer.getSchema(), 16 * 1024, avro::Codec::SNAPPY_CODEC)
+    , file_writer(std::make_unique<OutputStreamWriteBufferAdapter>(out_), serializer.getSchema(), DEFAULT_SYNC_INTERVAL, DEFAULT_CODEC)
 {
 }
 
