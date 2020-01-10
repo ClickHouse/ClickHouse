@@ -34,7 +34,7 @@ def started_cluster():
             CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
             INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
         ''')
-        
+
         yield cluster
 
     finally:
@@ -58,6 +58,7 @@ def test_smoke():
     assert instance.query("SELECT a FROM mydb.filtered_table1") == "1\n1\n"
     assert instance.query("SELECT b FROM mydb.filtered_table1") == "0\n1\n"
     assert instance.query("SELECT a FROM mydb.filtered_table1 WHERE a = 1") == "1\n1\n"
+    assert instance.query("SELECT a FROM mydb.filtered_table1 WHERE a IN (1)") == "1\n1\n"
     assert instance.query("SELECT a = 1 FROM mydb.filtered_table1") == "1\n1\n"
 
     assert instance.query("SELECT a FROM mydb.filtered_table3") == "0\n1\n"
