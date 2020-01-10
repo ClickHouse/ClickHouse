@@ -1005,8 +1005,12 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Start to make the main work
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
+    size_t max_volume_index = 0;
+    for (auto & part_ptr : parts)
+        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+
     /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_merge);
+    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_merge, max_volume_index);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
