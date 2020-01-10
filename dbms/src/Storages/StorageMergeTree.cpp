@@ -1152,7 +1152,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         if (!canReplacePartition(src_part))
             throw Exception(
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::BAD_ARGUMENTS);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
