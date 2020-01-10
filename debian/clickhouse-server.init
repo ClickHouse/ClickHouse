@@ -23,12 +23,13 @@ CLICKHOUSE_DATADIR=/var/lib/clickhouse
 if [ -d "/var/lock" ]; then
     LOCALSTATEDIR=/var/lock
 else
-    if [ -d "/var/run" ]; then
-        LOCALSTATEDIR=/var/run
-    else
-        LOCALSTATEDIR=/run/lock
-    fi
+    LOCALSTATEDIR=/run/lock
 fi
+
+if [ ! -d "$LOCALSTATEDIR" ]; then
+    mkdir -p "$LOCALSTATEDIR"
+fi
+
 CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
