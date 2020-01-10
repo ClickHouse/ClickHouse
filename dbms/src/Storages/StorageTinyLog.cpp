@@ -144,7 +144,7 @@ private:
         void finalize()
         {
             compressed.next();
-            plain->next();
+            plain->finalize();
         }
     };
 

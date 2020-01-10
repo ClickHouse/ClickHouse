@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 std::mutex DiskLocal::mutex;
@@ -121,7 +122,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskLocalDirectoryIterator>(disk_path + path);
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -217,6 +218,11 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             if (path.back() != '/')
                 throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+
+        if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
+        {
+            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
