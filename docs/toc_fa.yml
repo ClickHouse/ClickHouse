@@ -1,15 +1,17 @@
 nav:
 
-- 'Introduction':
+- 'ﯽﻓﺮﻌﻣ':
   - 'ClickHouse چیست؟': 'index.md'
   - ' ویژگی های برجسته ClickHouse': 'introduction/distinctive_features.md'
   - ' ویژگی های از ClickHouse که می تواند معایبی باشد': 'introduction/features_considered_disadvantages.md'
-  - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
+  - 'ﯽﯾﺍﺭﺎﮐ': 'introduction/performance.md'
+  - 'ﺦﯾﺭﺎﺗ': 'introduction/history.md'
 
 - 'Getting started':
-  - ' شروع به کار': 'getting_started/index.md'
-  - 'Example datasets':
+  - 'hidden': 'getting_started/index.md'
+  - 'ﯼﺯﺍﺪﻧﺍ ﻩﺍﺭ ﻭ ﺐﺼﻧ': 'getting_started/install.md'
+  - 'ﺵﺯﻮﻣﺁ': 'getting_started/tutorial.md'
+  - 'ﻪﻧﻮﻤﻧ ﯼﺎﻫ ﻩﺩﺍﺩ ﻪﻋﻮﻤﺠﻣ':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - ' داده های تاکسی New York': 'getting_started/example_datasets/nyc_taxi.md'
     - ' بنچمارک AMPLab Big Data': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -18,7 +20,7 @@ nav:
     - ' بنچمارک Star Schema': 'getting_started/example_datasets/star_schema.md'
     - 'Yandex.Metrica Data': 'getting_started/example_datasets/metrica.md'
 
-- 'Interfaces':
+- 'ﻂﺑﺍﺭ':
   - 'Interface ها': 'interfaces/index.md'
   - ' کلاینت Command-line': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
@@ -33,7 +35,7 @@ nav:
     - 'رابط های بصری': 'interfaces/third-party/gui.md'
     - 'پروکسی': 'interfaces/third-party/proxy.md'
 
-- 'Data types':
+- 'ﻩﺩﺍﺩ ﻉﺍﻮﻧﺍ':
   - 'Introduction': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
@@ -147,6 +149,7 @@ nav:
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
     - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
+    - 'Introspection': 'query_language/functions/introspection.md'
     - 'Other': 'query_language/functions/other_functions.md'
   - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
@@ -190,6 +193,7 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server Settings': 'operations/server_settings/settings.md'
@@ -205,7 +209,8 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
+    
 - 'F.A.Q.':
   - 'General Questions': 'faq/general.md'
 

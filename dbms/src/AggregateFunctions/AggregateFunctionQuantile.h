@@ -179,8 +179,6 @@ public:
         }
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
     static void assertSecondArg(const DataTypes & types)
     {
         if constexpr (has_second_arg)

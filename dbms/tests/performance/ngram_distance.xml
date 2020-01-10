@@ -43,7 +43,4 @@
     <query>SELECT DISTINCT URL, ngramDistanceCaseInsensitiveUTF8(URL, 'как дЕлА') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT URL, ngramDistanceCaseInsensitiveUTF8(URL, 'Чем зАнимаешЬся') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

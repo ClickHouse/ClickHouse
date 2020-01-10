@@ -1,5 +1,7 @@
 #pragma once
 
+#include <queue>
+
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/AlignedBuffer.h>
@@ -140,7 +142,7 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     void insertCurrentRowIfNeeded(MutableColumns & merged_columns);

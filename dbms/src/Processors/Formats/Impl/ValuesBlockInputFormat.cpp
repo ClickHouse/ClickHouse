@@ -33,8 +33,8 @@ namespace ErrorCodes
 
 
 ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                                               const Context & context_, const FormatSettings & format_settings_)
-        : IInputFormat(header_, buf), buf(in_), params(params_), context(std::make_unique<Context>(context_)),
+                                               const FormatSettings & format_settings_)
+        : IInputFormat(header_, buf), buf(in_), params(params_),
           format_settings(format_settings_), num_columns(header_.columns()),
           parser_type_for_column(num_columns, ParserType::Streaming),
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
@@ -411,17 +411,23 @@ void ValuesBlockInputFormat::readSuffix()
         throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
+void ValuesBlockInputFormat::resetParser()
+{
+    IInputFormat::resetParser();
+    // I'm not resetting parser modes here.
+    // There is a good chance that all messages have the same format.
+    total_rows = 0;
+}
 
 void registerInputFormatProcessorValues(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Values", [](
         ReadBuffer & buf,
         const Block & header,
-        const Context & context,
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, context, settings);
+        return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
     });
 }
 

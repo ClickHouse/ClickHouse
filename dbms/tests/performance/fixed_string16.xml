@@ -22,7 +22,4 @@
 
     <query><![CDATA[SELECT count() FROM test.hits WHERE ClientIP6 < RemoteIP6]]></query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

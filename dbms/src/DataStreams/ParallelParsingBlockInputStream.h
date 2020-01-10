@@ -55,23 +55,21 @@ private:
     using InputProcessorCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
-            const Context & context,
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 public:
     struct InputCreatorParams
     {
-        const Block &sample;
-        const Context &context;
-        const RowInputFormatParams& row_input_format_params;
+        const Block & sample;
+        const RowInputFormatParams & row_input_format_params;
         const FormatSettings &settings;
     };
 
     struct Params
     {
         ReadBuffer & read_buffer;
-        const InputProcessorCreator &input_processor_creator;
-        const InputCreatorParams &input_creator_params;
+        const InputProcessorCreator & input_processor_creator;
+        const InputCreatorParams & input_creator_params;
         FormatFactory::FileSegmentationEngine file_segmentation_engine;
         int max_threads;
         size_t min_chunk_bytes;
@@ -79,7 +77,6 @@ public:
 
     explicit ParallelParsingBlockInputStream(const Params & params)
             : header(params.input_creator_params.sample),
-              context(params.input_creator_params.context),
               row_input_format_params(params.input_creator_params.row_input_format_params),
               format_settings(params.input_creator_params.settings),
               input_processor_creator(params.input_processor_creator),
@@ -149,7 +146,6 @@ protected:
 
 private:
     const Block header;
-    const Context context;
     const RowInputFormatParams row_input_format_params;
     const FormatSettings format_settings;
     const InputProcessorCreator input_processor_creator;
@@ -227,7 +223,7 @@ private:
         finished = true;
 
         {
-            std::unique_lock lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }
@@ -255,4 +251,4 @@ private:
     void onBackgroundException();
 };
 
-};
+}

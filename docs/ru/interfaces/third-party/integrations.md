@@ -32,7 +32,9 @@
 - Мониторинг
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
-        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../operations/table_engines/graphitemergetree.md#rollup-configuration)
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)

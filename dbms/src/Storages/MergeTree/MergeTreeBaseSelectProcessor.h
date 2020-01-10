@@ -27,6 +27,7 @@ public:
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
         UInt64 min_bytes_to_use_direct_io_,
+        UInt64 min_bytes_to_use_mmap_io_,
         UInt64 max_read_buffer_size_,
         bool use_uncompressed_cache_,
         bool save_marks_in_cache_ = true,
@@ -64,6 +65,7 @@ protected:
     UInt64 preferred_max_column_in_block_size_bytes;
 
     UInt64 min_bytes_to_use_direct_io;
+    UInt64 min_bytes_to_use_mmap_io;
     UInt64 max_read_buffer_size;
 
     bool use_uncompressed_cache;
