@@ -89,7 +89,7 @@ for q in test_queries:
     for run in range(0, 7):
         for conn_index, c in enumerate(connections):
             res = c.execute(q)
-            print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+        print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
 
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]
