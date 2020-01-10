@@ -78,6 +78,7 @@ public:
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
         std::array<std::atomic<Int32>, NUM_BUCKETS> source_for_bucket;
+        std::atomic<bool> is_cancelled = false;
 
         SharedData()
         {
@@ -112,7 +113,7 @@ protected:
         if (bucket_num >= NUM_BUCKETS)
             return {};
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
         shared_data->source_for_bucket[bucket_num] = source_number;
@@ -200,6 +201,9 @@ public:
         {
             for (auto & input : inputs)
                 input.close();
+
+            if (shared_data)
+                shared_data->is_cancelled.store(true);
 
             return Status::Finished;
         }
