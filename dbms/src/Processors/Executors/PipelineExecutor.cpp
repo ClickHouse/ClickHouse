@@ -64,13 +64,6 @@ bool PipelineExecutor::addEdges(UInt64 node)
             throwUnknownProcessor(to_proc, cur, true);
 
         UInt64 proc_num = it->second;
-
-        for (auto & edge : edges)
-        {
-            if (edge.to == proc_num)
-                throw Exception("Multiple edges are not allowed for the same processors.", ErrorCodes::LOGICAL_ERROR);
-        }
-
         auto & edge = edges.emplace_back(proc_num, is_backward, input_port_number, output_port_number, update_list);
 
         from_port.setUpdateInfo(&edge.update_info);
