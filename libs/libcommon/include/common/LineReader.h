@@ -2,6 +2,7 @@
 
 #include <common/Types.h>
 
+#include <atomic>
 #include <vector>
 
 #ifdef USE_REPLXX
