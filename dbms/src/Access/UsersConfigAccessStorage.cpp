@@ -139,12 +139,12 @@ namespace
                     config.keys(database_config, table_names);
 
                     /// Read table properties
-                    for (const String & table : table_names)
+                    for (const String & key_in_database_config : table_names)
                     {
-                        String table_name = table;
+                        String table_name = key_in_database_config;
                         String filter_config = database_config + "." + table_name + ".filter";
 
-                        if (table.find("table[") == 0)
+                        if (key_in_database_config.find("table[") == 0)
                         {
                             const auto table_name_config = database_config + "." + table_name + "[@name]";
                             if (config.has(table_name_config))

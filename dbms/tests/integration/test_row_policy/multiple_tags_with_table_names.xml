@@ -16,7 +16,7 @@
                     </table>
 
                     <!-- Filter with ALIAS column -->
-                    <table name='.filtered_table3'>
+                    <table name='.filtered_table4'>
                         <filter>c = 1</filter>
                     </table>
                 </mydb>
