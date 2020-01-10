@@ -91,15 +91,23 @@ using DiskLocalPtr = std::shared_ptr<DiskLocal>;
 class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskLocalDirectoryIterator(const String & path) : iter(path) {}
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
+        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
 
     void next() override { ++iter; }
 
     bool isValid() const override { return iter != Poco::DirectoryIterator(); }
 
-    String name() const override { return iter.name(); }
+    String path() const override
+    {
+        if (iter->isDirectory())
+            return dir_path + iter.name() + '/';
+        else
+            return dir_path + iter.name();
+    }
 
 private:
+    String dir_path;
     Poco::DirectoryIterator iter;
 };
 
