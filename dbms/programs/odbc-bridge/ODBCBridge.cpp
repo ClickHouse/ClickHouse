@@ -5,7 +5,13 @@
 #include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+// It doesn't make much sense to build this bridge without ODBC, but we
+// still do this.
 #include <Poco/Data/ODBC/Connector.h>
+#endif
+
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
