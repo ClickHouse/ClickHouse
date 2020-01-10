@@ -104,7 +104,7 @@ TEST_P(MostSubtypeTest, getLeastSupertype)
     }
 }
 
-INSTANTIATE_TEST_CASE_P(data_type,
+INSTANTIATE_TEST_SUITE_P(data_type,
     LeastSuperTypeTest,
     ::testing::ValuesIn(
         std::initializer_list<TypesTestCase>{
@@ -162,7 +162,7 @@ INSTANTIATE_TEST_CASE_P(data_type,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(data_type,
+INSTANTIATE_TEST_SUITE_P(data_type,
     MostSubtypeTest,
     ::testing::ValuesIn(
         std::initializer_list<TypesTestCase>{

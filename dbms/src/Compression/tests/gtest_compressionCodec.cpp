@@ -820,7 +820,7 @@ const auto DefaultCodecsToTest = ::testing::Values(
 // test cases
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-INSTANTIATE_TEST_CASE_P(Simple,
+INSTANTIATE_TEST_SUITE_P(Simple,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -830,7 +830,7 @@ INSTANTIATE_TEST_CASE_P(Simple,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SmallSequences,
+INSTANTIATE_TEST_SUITE_P(SmallSequences,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -847,7 +847,7 @@ INSTANTIATE_TEST_CASE_P(SmallSequences,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(Mixed,
+INSTANTIATE_TEST_SUITE_P(Mixed,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -864,7 +864,7 @@ INSTANTIATE_TEST_CASE_P(Mixed,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SameValueInt,
+INSTANTIATE_TEST_SUITE_P(SameValueInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -881,7 +881,7 @@ INSTANTIATE_TEST_CASE_P(SameValueInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SameNegativeValueInt,
+INSTANTIATE_TEST_SUITE_P(SameNegativeValueInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -898,7 +898,7 @@ INSTANTIATE_TEST_CASE_P(SameNegativeValueInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SameValueFloat,
+INSTANTIATE_TEST_SUITE_P(SameValueFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -912,7 +912,7 @@ INSTANTIATE_TEST_CASE_P(SameValueFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SameNegativeValueFloat,
+INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -926,7 +926,7 @@ INSTANTIATE_TEST_CASE_P(SameNegativeValueFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialInt,
+INSTANTIATE_TEST_SUITE_P(SequentialInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -945,7 +945,7 @@ INSTANTIATE_TEST_CASE_P(SequentialInt,
 
 // -1, -2, -3, ... etc for signed
 // 0xFF, 0xFE, 0xFD, ... for unsigned
-INSTANTIATE_TEST_CASE_P(SequentialReverseInt,
+INSTANTIATE_TEST_SUITE_P(SequentialReverseInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -962,7 +962,7 @@ INSTANTIATE_TEST_CASE_P(SequentialReverseInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialFloat,
+INSTANTIATE_TEST_SUITE_P(SequentialFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -976,7 +976,7 @@ INSTANTIATE_TEST_CASE_P(SequentialFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialReverseFloat,
+INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -990,7 +990,7 @@ INSTANTIATE_TEST_CASE_P(SequentialReverseFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicInt,
+INSTANTIATE_TEST_SUITE_P(MonotonicInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1007,7 +1007,7 @@ INSTANTIATE_TEST_CASE_P(MonotonicInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicReverseInt,
+INSTANTIATE_TEST_SUITE_P(MonotonicReverseInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1024,7 +1024,7 @@ INSTANTIATE_TEST_CASE_P(MonotonicReverseInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicFloat,
+INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1037,7 +1037,7 @@ INSTANTIATE_TEST_CASE_P(MonotonicFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicReverseFloat,
+INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1050,7 +1050,7 @@ INSTANTIATE_TEST_CASE_P(MonotonicReverseFloat,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomInt,
+INSTANTIATE_TEST_SUITE_P(RandomInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1063,7 +1063,7 @@ INSTANTIATE_TEST_CASE_P(RandomInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomishInt,
+INSTANTIATE_TEST_SUITE_P(RandomishInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1078,7 +1078,7 @@ INSTANTIATE_TEST_CASE_P(RandomishInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomishFloat,
+INSTANTIATE_TEST_SUITE_P(RandomishFloat,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1090,7 +1090,7 @@ INSTANTIATE_TEST_CASE_P(RandomishFloat,
 );
 
 // Double delta overflow case, deltas are out of bounds for target type
-INSTANTIATE_TEST_CASE_P(OverflowInt,
+INSTANTIATE_TEST_SUITE_P(OverflowInt,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1106,7 +1106,7 @@ INSTANTIATE_TEST_CASE_P(OverflowInt,
     )
 );
 
-INSTANTIATE_TEST_CASE_P(OverflowFloat,
+INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1156,7 +1156,7 @@ auto DDCompatibilityTestSequence()
 
 #define BIN_STR(x) std::string{x, sizeof(x) - 1}
 
-INSTANTIATE_TEST_CASE_P(DoubleDelta,
+INSTANTIATE_TEST_SUITE_P(DoubleDelta,
     CodecTest_Compatibility,
     ::testing::Combine(
         ::testing::Values(Codec("DoubleDelta")),
@@ -1230,7 +1230,7 @@ auto GCompatibilityTestSequence()
     return generateSeq<ValueType>(G(PrimesWithMultiplierGenerator(intExp10(sizeof(ValueType)))), 0, 42);
 }
 
-INSTANTIATE_TEST_CASE_P(Gorilla,
+INSTANTIATE_TEST_SUITE_P(Gorilla,
     CodecTest_Compatibility,
     ::testing::Combine(
         ::testing::Values(Codec("Gorilla")),
@@ -1292,7 +1292,7 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
 //    return sequence;
 //};
 
-//INSTANTIATE_TEST_CASE_P(DoubleDelta,
+//INSTANTIATE_TEST_SUITE_P(DoubleDelta,
 //    CodecTest_Performance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("DoubleDelta")),
@@ -1309,7 +1309,7 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
 //    ),
 //);
 
-//INSTANTIATE_TEST_CASE_P(Gorilla,
+//INSTANTIATE_TEST_SUITE_P(Gorilla,
 //    CodecTest_Performance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("Gorilla")),
