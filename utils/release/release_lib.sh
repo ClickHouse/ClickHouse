@@ -287,8 +287,8 @@ function make_tgz {
         fi
 
         SCRIPT_TEXT='
-SCRIPTPATH=$(dirname "$SCRIPT")
-for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "/install/"`; do
+SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
     cp -r "$filepath" "$destpath"
