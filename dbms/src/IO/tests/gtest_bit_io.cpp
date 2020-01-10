@@ -177,7 +177,7 @@ TEST_P(BitIO, WriteAndRead)
     }
 }
 
-INSTANTIATE_TEST_CASE_P(Simple,
+INSTANTIATE_TEST_SUITE_P(Simple,
     BitIO,
     ::testing::ValuesIn(std::initializer_list<TestCaseParameter>{
         {
@@ -241,7 +241,7 @@ TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
     return TestCaseParameter(test_data);
 }
 
-INSTANTIATE_TEST_CASE_P(Primes,
+INSTANTIATE_TEST_SUITE_P(Primes,
     BitIO,
     ::testing::Values(
         primes_case(11, 0xFFFFFFFFFFFFFFFFULL),

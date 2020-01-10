@@ -120,7 +120,7 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal128)
 }
 
 // Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
-INSTANTIATE_TEST_CASE_P(Basic,
+INSTANTIATE_TEST_SUITE_P(Basic,
     DecimalUtilsSplitAndCombineTest,
     ::testing::ValuesIn(std::initializer_list<DecimalUtilsSplitAndCombineTestParam>{
         {
