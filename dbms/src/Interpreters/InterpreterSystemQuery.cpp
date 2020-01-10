@@ -176,12 +176,14 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
         case Type::RELOAD_DICTIONARY:
             system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             system_context.getEmbeddedDictionaries().reload();
