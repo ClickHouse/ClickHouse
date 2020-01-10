@@ -248,6 +248,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 /// let's use info about old type
                 if (data_type == nullptr)
                     codec->useInfoAboutType(column.type);
+                else /// use info about new DataType
+                    codec->useInfoAboutType(data_type);
+
                 column.codec = codec;
             }
 
