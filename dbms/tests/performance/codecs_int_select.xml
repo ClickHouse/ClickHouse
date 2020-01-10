@@ -56,7 +56,7 @@
 
     <!-- INSERTs above will be run unspecified amount of times, hence size of table is unknown.
     To make test more reliable, we SELECT fixed number of rows. -->
-    <query>SELECT count(n) FROM codec_{seq_type}_{type}_{codec} WHERE ignore(n) LIMIT {num_rows} SETTINGS max_threads=1</query>
+    <query>SELECT count(n) FROM codec_{seq_type}_{type}_{codec} WHERE NOT ignore(n) LIMIT {num_rows} SETTINGS max_threads=1</query>
 
     <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_{codec}</drop_query>
 
