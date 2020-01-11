@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct BloomFilterHash
@@ -90,7 +91,7 @@ struct BloomFilterHash
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isString()) return build_hash_column(getStringTypeHash(field));
         else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
-        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
@@ -101,7 +102,7 @@ struct BloomFilterHash
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
-                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
             const auto & offsets = array_col->getOffsets();
             limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
@@ -146,7 +147,7 @@ struct BloomFilterHash
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
-        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     template <typename Type, bool is_first>

@@ -14,6 +14,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
+#include <ext/range.h>
 #include "registerTableFunctions.h"
 
 
@@ -140,7 +141,10 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
-        cluster = context.getCluster(cluster_name);
+        if (name != "clusterAllReplicas")
+            cluster = context.getCluster(cluster_name);
+        else
+            cluster = context.getCluster(cluster_name)->getClusterWithReplicasAsShards(context.getSettings());
     }
     else
     {
@@ -164,13 +168,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                    context.getRemoteHostFilter().checkHostAndPort(
+                        host,
+                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
                 else
                     context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
+        cluster = std::make_shared<Cluster>(
+            context.getSettings(),
+            names,
+            username,
+            password,
+            (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()),
+            false,
+            secure);
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
@@ -198,7 +211,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {
-    is_cluster_function = name == "cluster";
+    is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
 
     std::stringstream ss;
     ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
@@ -213,6 +226,7 @@ void registerTableFunctionRemote(TableFunctionFactory & factory)
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
     factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
     factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); });
 }
 
 }

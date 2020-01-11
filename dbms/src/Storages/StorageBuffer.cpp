@@ -438,7 +438,7 @@ void StorageBuffer::startup()
     if (global_context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
-            << " Set apropriate system_profile to fix this.");
+            << " Set appropriate system_profile to fix this.");
     }
 
     flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);

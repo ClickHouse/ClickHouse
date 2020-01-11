@@ -182,7 +182,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         }
 
         if (num_shards > 1)
-            shard_jobs.shard_current_block_permuation.reserve(first_block.rows());
+            shard_jobs.shard_current_block_permutation.reserve(first_block.rows());
     }
 }
 
@@ -235,7 +235,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         /// Generate current shard block
         if (num_shards > 1)
         {
-            auto & shard_permutation = shard_job.shard_current_block_permuation;
+            auto & shard_permutation = shard_job.shard_current_block_permutation;
             size_t num_shard_rows = shard_permutation.size();
 
             for (size_t j = 0; j < current_block.columns(); ++j)
@@ -348,10 +348,10 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
         /// Prepare row numbers for each shard
         for (size_t shard_index : ext::range(0, num_shards))
-            per_shard_jobs[shard_index].shard_current_block_permuation.resize(0);
+            per_shard_jobs[shard_index].shard_current_block_permutation.resize(0);
 
         for (size_t i = 0; i < block.rows(); ++i)
-            per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
+            per_shard_jobs[current_selector[i]].shard_current_block_permutation.push_back(i);
     }
 
     try
