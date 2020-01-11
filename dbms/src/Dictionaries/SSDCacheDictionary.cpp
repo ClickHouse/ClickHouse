@@ -664,60 +664,62 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 
     const auto now = std::chrono::system_clock::now();
 
-    const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-
-    if (now > backoff_end_time)
     {
-        try
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
+        if (now > backoff_end_time)
         {
-            if (update_error_count)
+            try
             {
-                /// Recover after error: we have to clone the source here because
-                /// it could keep connections which should be reset after error.
-                source_ptr = source_ptr->clone();
-            }
-
-            Stopwatch watch;
-            auto stream = source_ptr->loadIds(requested_ids);
-            stream->readPrefix();
-
-            while (const auto block = stream->read())
-            {
-                const auto new_keys = std::move(createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front());
-                const auto new_attributes = createAttributesFromBlock(block, 1, attributes_structure);
-
-                const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
-
-                PaddedPODArray<CachePartition::Metadata> metadata(ids.size());
-
-                for (const auto i : ext::range(0, ids.size()))
+                if (update_error_count)
                 {
-                    std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-                    metadata[i].setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
-                    /// mark corresponding id as found
-                    on_updated(ids[i], i, new_attributes);
-                    remaining_ids[ids[i]] = 1;
+                    /// Recover after error: we have to clone the source here because
+                    /// it could keep connections which should be reset after error.
+                    source_ptr = source_ptr->clone();
                 }
 
-                append_block(new_keys, new_attributes, metadata);
+                Stopwatch watch;
+                auto stream = source_ptr->loadIds(requested_ids);
+                stream->readPrefix();
+
+                while (const auto block = stream->read())
+                {
+                    const auto new_keys = std::move(createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front());
+                    const auto new_attributes = createAttributesFromBlock(block, 1, attributes_structure);
+
+                    const auto & ids = std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values);
+
+                    PaddedPODArray<CachePartition::Metadata> metadata(ids.size());
+
+                    for (const auto i : ext::range(0, ids.size()))
+                    {
+                        std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
+                        metadata[i].setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
+                        /// mark corresponding id as found
+                        on_updated(ids[i], i, new_attributes);
+                        remaining_ids[ids[i]] = 1;
+                    }
+
+                    append_block(new_keys, new_attributes, metadata);
+                }
+
+                stream->readSuffix();
+
+                update_error_count = 0;
+                last_update_exception = std::exception_ptr{};
+                backoff_end_time = std::chrono::system_clock::time_point{};
+
+                ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
             }
+            catch (...)
+            {
+                ++update_error_count;
+                last_update_exception = std::current_exception();
+                backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, update_error_count));
 
-            stream->readSuffix();
-
-            update_error_count = 0;
-            last_update_exception = std::exception_ptr{};
-            backoff_end_time = std::chrono::system_clock::time_point{};
-
-            ProfileEvents::increment(ProfileEvents::DictCacheRequestTimeNs, watch.elapsed());
-        }
-        catch (...)
-        {
-            ++update_error_count;
-            last_update_exception = std::current_exception();
-            backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, update_error_count));
-
-            tryLogException(last_update_exception, log,
-                    "Could not update ssd cache dictionary, next update is scheduled at " + ext::to_string(backoff_end_time));
+                tryLogException(last_update_exception, log,
+                        "Could not update ssd cache dictionary, next update is scheduled at " + ext::to_string(backoff_end_time));
+            }
         }
     }
 
@@ -835,8 +837,11 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         on_id_not_found(id);
     }
 
-    if (not_found_num)
-        append_block(new_keys, new_attributes, metadata);
+    {
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+        if (not_found_num)
+            append_block(new_keys, new_attributes, metadata);
+    }
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
