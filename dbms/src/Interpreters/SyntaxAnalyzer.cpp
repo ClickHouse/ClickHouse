@@ -21,6 +21,7 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/OptimizeIfChains.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -914,8 +915,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
 
+    if (settings.optimize_if_chain_to_miltiif)
+        OptimizeIfChainsVisitor().visit(query);
+
     if (select_query)
     {
+        /// Push the predicate expression down to the subqueries.
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
+
         /// GROUP BY injective function elimination.
         optimizeGroupBy(select_query, source_columns_set, context);
 
@@ -930,9 +937,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         /// array_join_alias_to_name, array_join_result_to_source.
         getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
-
-        /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
         setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                           result.analyzed_join->table_join);

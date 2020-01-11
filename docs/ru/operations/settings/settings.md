@@ -566,12 +566,6 @@ ClickHouse использует этот параметр при чтении д
 
 Как правило, не имеет смысла менять эту настройку.
 
-## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
-
-Если превышено значение параметра [mark_cache_size](../server_settings/settings.md#server-mark-cache-size), то будут удалены только записи старше чем значение этого параметра. Имеет смысл понижать данный параметр при малом количестве RAM на хост-системах.
-
-Default value: 10000 seconds.
-
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -957,6 +951,39 @@ load_balancing = first_or_random
 
 Значение по умолчанию — 0.
 
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+
+Основной интервал отправки данных движком таблиц [Distributed](../table_engines/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
+
+Возможные значения:
+
+- Положительное целое количество миллисекунд.
+
+Значение по умолчанию: 100 миллисекунд.
+
+
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+
+Максимальный интервал отправки данных движком таблиц [Distributed](../table_engines/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms).
+
+Возможные значения:
+
+- Положительное целое количество миллисекунд.
+
+Значение по умолчанию: 30000 миллисекунд (30 секунд).
+
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+
+Включает/выключает пакетную отправку вставленных данных.
+
+Если пакетная отправка включена, то движок таблиц [Distributed](../table_engines/distributed.md) вместо того, чтобы отправлять каждый файл со вставленными данными по отдельности, старается отправить их все за одну операцию. Пакетная отправка улучшает производительность кластера за счет более оптимального использования ресурсов сервера и сети.
+
+Возможные значения:
+
+- 1 — включено.
+- 0 — выключено.
+
+Значение по умолчанию: 0.
 
 ## os_thread_priority {#setting-os_thread_priority}
 

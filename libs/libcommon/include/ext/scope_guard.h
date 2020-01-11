@@ -1,22 +1,56 @@
 #pragma once
 
 #include <utility>
+#include <functional>
+
 
 namespace ext
 {
-
-template <class F> class scope_guard {
-    const F function;
-
+template <class F>
+class [[nodiscard]] basic_scope_guard
+{
 public:
-    constexpr scope_guard(const F & function_) : function{function_} {}
-    constexpr scope_guard(F && function_) : function{std::move(function_)} {}
-    ~scope_guard() { function(); }
+    constexpr basic_scope_guard() = default;
+    constexpr basic_scope_guard(basic_scope_guard && src) : function{std::exchange(src.function, F{})} {}
+
+    constexpr basic_scope_guard & operator=(basic_scope_guard && src)
+    {
+        if (this != &src)
+        {
+            invoke();
+            function = std::exchange(src.function, F{});
+        }
+        return *this;
+    }
+
+    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    constexpr basic_scope_guard(const G & function_) : function{function_} {}
+
+    template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
+    constexpr basic_scope_guard(G && function_) : function{std::move(function_)} {}
+
+    ~basic_scope_guard() { invoke(); }
+
+private:
+    void invoke()
+    {
+        if constexpr (std::is_constructible_v<bool, F>)
+        {
+            if (!function)
+                return;
+        }
+
+        function();
+    }
+
+    F function = F{};
 };
 
-template <class F>
-inline scope_guard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
+using scope_guard = basic_scope_guard<std::function<void(void)>>;
 
+
+template <class F>
+inline basic_scope_guard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
 }
 
 #define SCOPE_EXIT_CONCAT(n, ...) \

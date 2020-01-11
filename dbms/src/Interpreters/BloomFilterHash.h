@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct BloomFilterHash
@@ -69,7 +70,7 @@ struct BloomFilterHash
             unexpected_type = true;
 
         if (unexpected_type)
-            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
         return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
     }
@@ -82,7 +83,7 @@ struct BloomFilterHash
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
-                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
             const auto & offsets = array_col->getOffsets();
             limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
@@ -127,7 +128,7 @@ struct BloomFilterHash
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
-        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     template <typename Type, bool is_first>
