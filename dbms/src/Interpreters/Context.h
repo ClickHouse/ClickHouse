@@ -589,7 +589,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+    StoragePtr getTableImpl(const String & database_name, const String & table_name, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

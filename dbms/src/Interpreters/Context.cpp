@@ -33,8 +33,6 @@
 #include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -924,21 +922,21 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
-    Exception exc;
+    std::optional<Exception> exc;
     auto res = getTableImpl(database_name, table_name, &exc);
     if (!res)
-        throw exc;
+        throw *exc;
     return res;
 }
 
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(database_name, table_name, nullptr);
+    return getTableImpl(database_name, table_name, {});
 }
 
 
-StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
+StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, std::optional<Exception> * exception) const
 {
     String db;
     DatabasePtr database;
@@ -960,7 +958,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
         if (shared->databases.end() == it)
         {
             if (exception)
-                *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             return {};
         }
 
@@ -971,7 +969,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
@@ -1088,7 +1086,6 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
     auto res = getDatabase(database_name);
-    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
 
     return res;
@@ -1436,7 +1433,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 

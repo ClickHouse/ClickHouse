@@ -74,6 +74,7 @@ public:
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
 
+            auto * data_to_ptr = data_to.data();    /// avoid assert on array indexing after end
             for (size_t pos = offset, end = offset + length; pos < end; pos += 4)    /// We have padding in column buffers that we can overwrite.
             {
                 UInt64 rand = thread_local_rng();
@@ -86,10 +87,10 @@ public:
                 /// Printable characters are from range [32; 126].
                 /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
 
-                data_to[pos + 0] = 32 + ((rand1 * 95) >> 16);
-                data_to[pos + 1] = 32 + ((rand2 * 95) >> 16);
-                data_to[pos + 2] = 32 + ((rand3 * 95) >> 16);
-                data_to[pos + 3] = 32 + ((rand4 * 95) >> 16);
+                data_to_ptr[pos + 0] = 32 + ((rand1 * 95) >> 16);
+                data_to_ptr[pos + 1] = 32 + ((rand2 * 95) >> 16);
+                data_to_ptr[pos + 2] = 32 + ((rand3 * 95) >> 16);
+                data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                 /// NOTE gcc failed to vectorize this code (aliasing of char?)
                 /// TODO Implement SIMD optimizations from Danila Kutenin.

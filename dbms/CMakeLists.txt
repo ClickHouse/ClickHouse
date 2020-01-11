@@ -45,36 +45,75 @@ endif ()
 
 option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpedantic -Wno-vla-extension -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types")
+if (COMPILER_CLANG)
+    add_warning(pedantic)
+    no_warning(gnu-anonymous-struct)
+    no_warning(nested-anon-types)
+    no_warning(vla-extension)
+    no_warning(zero-length-array)
 
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wshadow-uncaptured-local -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wcovered-switch-default -Wold-style-cast -Wrange-loop-analysis -Wunused-member-function -Wunreachable-code -Wunreachable-code-return -Wnewline-eof -Wembedded-directive -Wgnu-case-range -Wunused-macros -Wconditional-uninitialized -Wdeprecated -Wundef -Wreserved-id-macro -Wredundant-parens -Wzero-as-null-pointer-constant")
+    add_warning(comma)
+    add_warning(conditional-uninitialized)
+    add_warning(covered-switch-default)
+    add_warning(deprecated)
+    add_warning(embedded-directive)
+    add_warning(empty-init-stmt) # linux-only
+    add_warning(extra-semi-stmt) # linux-only
+    add_warning(extra-semi)
+    add_warning(gnu-case-range)
+    add_warning(inconsistent-missing-destructor-override)
+    add_warning(newline-eof)
+    add_warning(old-style-cast)
+    add_warning(range-loop-analysis)
+    add_warning(redundant-parens)
+    add_warning(reserved-id-macro)
+    add_warning(shadow-field) # clang 8+
+    add_warning(shadow-uncaptured-local)
+    add_warning(shadow)
+    add_warning(string-plus-int) # clang 8+
+    add_warning(undef)
+    add_warning(unreachable-code-return)
+    add_warning(unreachable-code)
+    add_warning(unused-exception-parameter)
+    add_warning(unused-macros)
+    add_warning(unused-member-function)
+    add_warning(zero-as-null-pointer-constant)
 
     if (WEVERYTHING)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded -Wno-switch-enum -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-vla-extension -Wno-vla -Wno-packed")
+        add_warning(everything)
+        no_warning(c++98-compat-pedantic)
+        no_warning(c++98-compat)
+        no_warning(c99-extensions)
+        no_warning(conversion)
+        no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
+        no_warning(deprecated-dynamic-exception-spec)
+        no_warning(disabled-macro-expansion)
+        no_warning(documentation-unknown-command)
+        no_warning(double-promotion)
+        no_warning(exit-time-destructors)
+        no_warning(float-equal)
+        no_warning(global-constructors)
+        no_warning(gnu-anonymous-struct)
+        no_warning(missing-prototypes)
+        no_warning(missing-variable-declarations)
+        no_warning(nested-anon-types)
+        no_warning(packed)
+        no_warning(padded)
+        no_warning(return-std-move-in-c++11) # clang 7+
+        no_warning(shift-sign-overflow)
+        no_warning(sign-conversion)
+        no_warning(switch-enum)
+        no_warning(undefined-func-template)
+        no_warning(unused-template)
+        no_warning(vla-extension)
+        no_warning(vla)
+        no_warning(weak-template-vtables)
+        no_warning(weak-vtables)
+        no_warning(zero-length-array)
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-        if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
-        endif ()
-    endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow-field -Wstring-plus-int")
-        if(NOT APPLE)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wempty-init-stmt")
-        endif()
-    endif ()
-
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-        if (WEVERYTHING AND NOT APPLE)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
-        endif ()
-    endif ()
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
     function(add_cxx_compile_options option)
         add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
@@ -156,7 +195,7 @@ if (USE_DEBUG_HELPERS)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
     # It leads to slow code. This is compiler bug. It looks like this:
     #
@@ -330,6 +369,7 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
+    ryu
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}

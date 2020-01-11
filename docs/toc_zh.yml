@@ -192,6 +192,7 @@ nav:
   - '配置文件': 'operations/configuration_files.md'
   - '配额': 'operations/quotas.md'
   - '系统表': 'operations/system_tables.md'
+  - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server参数配置':
     - '介绍': 'operations/server_settings/index.md'
     - 'Server参数说明': 'operations/server_settings/settings.md'
