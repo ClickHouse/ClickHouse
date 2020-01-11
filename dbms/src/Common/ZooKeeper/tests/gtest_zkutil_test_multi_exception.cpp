@@ -85,7 +85,7 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.error == Coordination::ZOK);
+        ASSERT_EQ(res.error, Coordination::ZOK);
         ASSERT_EQ(res.responses.size(), 2);
     }
 
@@ -121,7 +121,7 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.error == Coordination::ZNODEEXISTS);
+        ASSERT_EQ(res.error, Coordination::ZNODEEXISTS);
         ASSERT_EQ(res.responses.size(), 2);
     }
 }
