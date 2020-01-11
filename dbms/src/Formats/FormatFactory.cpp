@@ -100,6 +100,8 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
+    format_settings.avro.output_codec = settings.output_format_avro_codec;
+    format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
 
     return format_settings;
 }
