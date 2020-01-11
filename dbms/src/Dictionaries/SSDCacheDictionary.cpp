@@ -64,6 +64,9 @@ namespace
     constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
 
+    constexpr size_t FILE_SIZE_TO_PREALLOCATE = 1 * 1024 * 1024 * 1024;
+    constexpr size_t FILE_SIZE_IN_BLOCKS = FILE_SIZE_TO_PREALLOCATE / SSD_BLOCK_SIZE;
+
     constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
     constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16; // TODO: в параметры
 
@@ -81,6 +84,15 @@ namespace
 
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
+
+    int preallocateDiskSpace(int fd, size_t len)
+    {
+        #if defined(__FreeBSD__)
+            return posix_fallocate(fd, 0, len);
+        #else
+            return fallocate(fd, 0, 0, len);
+        #endif
+    }
 }
 
 CachePartition::Metadata::time_point_t CachePartition::Metadata::expiresAt() const
@@ -159,6 +171,11 @@ CachePartition::CachePartition(
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
             throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
+        }
+
+        if (preallocateDiskSpace(fd, FILE_SIZE_TO_PREALLOCATE) < 0)
+        {
+            throwFromErrnoWithPath("Cannot preallocate space for the file " + filename, filename, ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
     }
 }
