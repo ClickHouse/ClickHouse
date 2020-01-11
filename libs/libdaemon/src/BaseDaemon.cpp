@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
+#include <ext/scope_guard.h>
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>
 #include <common/getThreadNumber.h>
@@ -461,7 +462,7 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
-    pid.clear();
+    pid.reset();
     if (::raise(SIGKILL) != 0)
         throw Poco::SystemException("cannot kill process");
 }
@@ -631,7 +632,7 @@ void BaseDaemon::initialize(Application & self)
 
     /// Create pid file.
     if (config().has("pid"))
-        pid.seed(config().getString("pid"));
+        pid.emplace(config().getString("pid"));
 
     /// Change path for logging.
     if (!log_path.empty())
@@ -796,7 +797,7 @@ bool isPidRunning(pid_t pid)
     return 0;
 }
 
-void BaseDaemon::PID::seed(const std::string & file_)
+BaseDaemon::PID::PID(const std::string & file_)
 {
     file = Poco::Path(file_).absolute().toString();
     Poco::File poco_file(file);
@@ -823,35 +824,28 @@ void BaseDaemon::PID::seed(const std::string & file_)
 
     if (-1 == fd)
     {
-        file.clear();
         if (EEXIST == errno)
             throw Poco::Exception("Pid file exists, should not start daemon.");
         throw Poco::CreateFileException("Cannot create pid file.");
     }
 
+    SCOPE_EXIT({ close(fd); });
+
+    std::stringstream s;
+    s << getpid();
+    if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
+        throw Poco::Exception("Cannot write to pid file.");
+}
+
+BaseDaemon::PID::~PID()
+{
     try
     {
-        std::stringstream s;
-        s << getpid();
-        if (static_cast<ssize_t>(s.str().size()) != write(fd, s.str().c_str(), s.str().size()))
-            throw Poco::Exception("Cannot write to pid file.");
-        pid_created = true;
+        Poco::File(file).remove();
     }
     catch (...)
     {
-        close(fd);
-        throw;
-    }
-
-    close(fd);
-}
-
-void BaseDaemon::PID::clear()
-{
-    if (!file.empty() && pid_created)
-    {
-        Poco::File(file).remove();
-        file.clear();
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -892,4 +886,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-
