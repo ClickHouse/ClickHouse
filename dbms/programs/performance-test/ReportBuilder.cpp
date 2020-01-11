@@ -117,7 +117,7 @@ std::string ReportBuilder::buildFullReport(
                 if (isASCIIString(statistics.exception))
                     runJSON.set("exception", jsonString(statistics.exception, settings), false);
                 else
-                    runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
+                    runJSON.set("exception", "Some exception occurred with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
             }
 
             if (test_info.exec_type == ExecutionType::Loop)
