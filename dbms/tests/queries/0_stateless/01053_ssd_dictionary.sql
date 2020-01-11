@@ -62,13 +62,17 @@ SELECT 'VALUES FROM DISK AND RAM BUFFER';
 -- 118
 SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table;
 
+SELECT 'HAS';
+-- 1 2 5 10
+SELECT id FROM database_for_dict.keys_table WHERE dictHas('database_for_dict.ssd_dict', toUInt64(id)) ORDER BY id;
+
 SELECT 'VALUES NOT FROM TABLE';
 -- 0 -1
 SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(1000000)), dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1000000));
 
 SELECT 'DUPLICATE KEYS';
 SELECT arrayJoin([1, 2, 3, 3, 2, 1]) AS id, dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(id));
-
+--SELECT
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
 DROP TABLE IF EXISTS database_for_dict.keys_table;
@@ -99,7 +103,7 @@ CREATE DICTIONARY database_for_dict.ssd_dict
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
-LAYOUT(SSD(MAX_PARTITION_SIZE 1000 PATH '/mnt/disk4/clickhouse_dicts/1'));
+LAYOUT(SSD(MAX_PARTITION_SIZE 1000 PATH '/mnt/disk4/clickhouse_dicts/2'));
 
 SELECT 'UPDATE DICTIONARY (MT)';
 -- 118
