@@ -293,7 +293,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             if (target.isEnum())
             {
-                const auto & enum_type = assert_cast<const IDataTypeEnum &>(*target_type);
+                const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 std::vector<Field> symbol_mapping;
                 for (size_t i = 0; i < root_node->names(); i++)
                 {
