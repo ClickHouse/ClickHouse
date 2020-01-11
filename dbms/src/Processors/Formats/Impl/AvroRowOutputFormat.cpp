@@ -42,12 +42,6 @@
 #include <avro/ValidSchema.hh>
 #include <avro/Writer.hh>
 
-#define DEFAULT_SYNC_INTERVAL 16*1024
-#ifdef SNAPPY_CODEC_AVAILABLE
-#define DEFAULT_CODEC avro::Codec::SNAPPY_CODEC
-#else
-#define DEFAULT_CODEC avro::Codec::DEFLATE_CODEC
-#endif
 
 namespace DB
 {
@@ -294,12 +288,36 @@ void AvroSerializer::serializeRow(const Columns & columns, size_t row_num, avro:
     }
 }
 
+static avro::Codec getCodec(const std::string& codec_name)
+{
+    if (codec_name == "")
+    {
+#ifdef SNAPPY_CODEC_AVAILABLE
+        return avro::Codec::SNAPPY_CODEC;
+#else
+        return avro::Codec::DEFLATE_CODEC;
+#endif
+    }
+
+    if (codec_name == "null")    return avro::Codec::NULL_CODEC;
+    if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
+#ifdef SNAPPY_CODEC_AVAILABLE
+    if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
+#endif
+
+    throw Exception("Avro codec " + codec_name + " is not available", ErrorCodes::BAD_ARGUMENTS);
+}
+
 AvroRowOutputFormat::AvroRowOutputFormat(
     WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_, callback)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName())
-    , file_writer(std::make_unique<OutputStreamWriteBufferAdapter>(out_), serializer.getSchema(), DEFAULT_SYNC_INTERVAL, DEFAULT_CODEC)
+    , file_writer(
+        std::make_unique<OutputStreamWriteBufferAdapter>(out_),
+        serializer.getSchema(),
+        settings.avro.output_sync_interval,
+        getCodec(settings.avro.output_codec))
 {
 }
 
