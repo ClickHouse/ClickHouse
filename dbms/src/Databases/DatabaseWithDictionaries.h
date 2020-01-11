@@ -32,7 +32,7 @@ public:
 
 protected:
     DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & logger)
-    : DatabaseOnDisk(name, metadata_path_, logger) {}
+        : DatabaseOnDisk(name, metadata_path_, logger) {}
 
     void attachToExternalDictionariesLoader(Context & context);
     void detachFromExternalDictionariesLoader();
