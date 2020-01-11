@@ -111,7 +111,7 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
-    /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
+    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
@@ -191,7 +191,7 @@ struct ContextShared
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
-    ConfigurationPtr clusters_config;                        /// Soteres updated configs
+    ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER

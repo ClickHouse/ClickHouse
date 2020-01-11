@@ -68,7 +68,7 @@ ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
 
     const auto * else_arg = function_args->children[2]->as<ASTFunction>();
 
-    /// Recursively collect arguments from the innermost if ("head-resursion").
+    /// Recursively collect arguments from the innermost if ("head-recursion").
     /// Arguments will be returned in reverse order.
 
     if (else_arg && else_arg->name == "if")
