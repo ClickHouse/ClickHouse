@@ -56,7 +56,7 @@ public:
 
 private:
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
-    /// max_bytes is prefered. If it isn't set we aproximate it as (max_rows * bytes/row).
+    /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
     {
         size_t operator()(const Block & block) const { return block.bytes(); }
