@@ -98,7 +98,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;

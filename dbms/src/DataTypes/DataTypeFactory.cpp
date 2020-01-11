@@ -35,7 +35,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
-            throw Exception("Data type cannot have multiple parenthesed parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+            throw Exception("Data type cannot have multiple parenthesized parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
         return get(func->name, func->arguments);
     }
 
