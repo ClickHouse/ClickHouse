@@ -82,6 +82,8 @@ namespace
 
     constexpr size_t NOT_EXISTS = -1;
 
+    constexpr UInt8 HAS_NOT_FOUND = 2;
+
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
 
@@ -277,7 +279,7 @@ void CachePartition::flush()
     if (ids.empty())
         return;
 
-    Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!!");
+    Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
 
     AIOContext aio_context{1};
 
@@ -358,16 +360,19 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
     {
         if (found[i])
         {
+            Poco::Logger::get("kek").information("FOUND BEFORE:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
             indices[i].setNotExists();
         }
         else if (auto it = key_to_index_and_metadata.find(ids[i]);
                 it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
         {
+            Poco::Logger::get("kek").information(std::to_string(file_id) + " FOUND BEFORE: inmemory: " + std::to_string(it->second.index.inMemory()) + " " + std::to_string(it->second.index.getBlockId()) + " " + std::to_string(it->second.index.getAddressInBlock()));
             indices[i] = it->second.index;
             found[i] = true;
         }
         else
         {
+            Poco::Logger::get("kek").information("NF:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
             indices[i].setNotExists();
         }
     }
@@ -575,7 +580,8 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
 
         if (it == std::end(key_to_index_and_metadata) || it->second.metadata.expiresAt() <= now)
         {
-            out[i] = static_cast<UInt8>(-1);
+            Poco::Logger::get("kek").information("NF:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
+            out[i] = HAS_NOT_FOUND;
         }
         else
         {
@@ -599,6 +605,34 @@ CacheStorage::CacheStorage(
 {
 }
 
+template <typename Out>
+void CacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+      ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+      std::chrono::system_clock::time_point now) const
+{
+    std::vector<bool> found(ids.size(), false);
+
+    std::shared_lock lock(rw_lock);
+    for (auto & partition : partitions)
+        partition->getValue<Out>(attribute_index, ids, out, found, now);
+
+    for (size_t i = 0; i < ids.size(); ++i)
+        if (!found[i])
+            not_found[ids[i]].push_back(i);
+}
+
+void CacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+     std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
+{
+    std::shared_lock lock(rw_lock);
+    for (auto & partition : partitions)
+        partition->has(ids, out, now);
+
+    for (size_t i = 0; i < ids.size(); ++i)
+        if (out[i] == HAS_NOT_FOUND)
+            not_found[ids[i]].push_back(i);
+}
+
 template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
         PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
@@ -616,7 +650,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
             {
                 partitions.emplace_front(std::make_unique<CachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
-                        (partitions.empty() ? 0 : partitions.back()->getId() + 1), partition_max_size));
+                        (partitions.empty() ? 0 : partitions.front()->getId() + 1), partition_max_size));
             }
         }
     };
