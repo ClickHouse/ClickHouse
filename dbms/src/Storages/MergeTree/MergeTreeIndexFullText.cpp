@@ -636,15 +636,16 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     {
         if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
+            /// Finish current token if any
             if (*token_len > 0)
                 return true;
             *token_start = ++*pos;
         }
         else
         {
-            const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*pos]));
-            *pos += sz;
-            *token_len += sz;
+            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
+            ++*pos;
+            ++*token_len;
         }
     }
     return *token_len > 0;

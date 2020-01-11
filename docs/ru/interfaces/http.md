@@ -175,7 +175,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
 
-1. С использованием HTTP Basic Authentification. Пример:
+1. С использованием HTTP Basic Authentication. Пример:
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
