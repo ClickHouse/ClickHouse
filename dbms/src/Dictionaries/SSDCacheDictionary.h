@@ -191,33 +191,13 @@ public:
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-            std::chrono::system_clock::time_point now) const
-    {
-        std::vector<bool> found(ids.size(), false);
-
-        std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
-            partition->getValue<Out>(attribute_index, ids, out, found, now);
-
-        for (size_t i = 0; i < ids.size(); ++i)
-            if (!found[i])
-                not_found[ids[i]].push_back(i);
-    }
+            std::chrono::system_clock::time_point now) const;
 
     // getString();
 
-    template <typename Key>
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
-    {
-        std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
-            partition->has(ids, out, now);
 
-        for (size_t i = 0; i < ids.size(); ++i)
-            if (out[i] == static_cast<UInt8>(-1))
-                not_found[ids[i]].push_back(i);
-    }
+    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
