@@ -30,4 +30,4 @@ else ()
         $<TARGET_OBJECTS:base64_ssse3>)
 endif ()
 
-target_include_directories(base64 PUBLIC ${LIBRARY_DIR})
+target_include_directories(base64 SYSTEM PUBLIC ${LIBRARY_DIR})
