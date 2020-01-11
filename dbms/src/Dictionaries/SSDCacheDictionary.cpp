@@ -64,7 +64,7 @@ namespace
     constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
 
-    constexpr size_t FILE_SIZE_IN_BLOCKS = 16;
+    constexpr size_t FILE_SIZE_IN_BLOCKS = 2;
     constexpr size_t FILE_SIZE_TO_PREALLOCATE = FILE_SIZE_IN_BLOCKS * SSD_BLOCK_SIZE;
 
     constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
@@ -186,7 +186,8 @@ CachePartition::~CachePartition()
     ::close(fd);
 }
 
-size_t CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata)
+size_t CachePartition::appendBlock(
+        const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
     std::unique_lock lock(rw_lock);
     if (current_file_block_id >= FILE_SIZE_IN_BLOCKS)
@@ -201,9 +202,9 @@ size_t CachePartition::appendBlock(const Attribute & new_keys, const Attributes 
     if (!write_buffer)
         write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
 
-    for (size_t index = 0; index < ids.size();)
+    for (size_t index = begin; index < ids.size();)
     {
-        auto & index_and_metadata = key_to_index_and_metadata[ids[index]];
+        IndexAndMetadata index_and_metadata;
         index_and_metadata.index.setInMemory(true);
         index_and_metadata.index.setBlockId(current_memory_block_id);
         index_and_metadata.index.setAddressInBlock(write_buffer->offset());
@@ -257,15 +258,16 @@ size_t CachePartition::appendBlock(const Attribute & new_keys, const Attributes 
 
         if (!flushed)
         {
+            key_to_index_and_metadata[ids[index]] = index_and_metadata;
             ids_buffer.push_back(ids[index]);
             ++index;
         }
         else if (current_file_block_id < FILE_SIZE_IN_BLOCKS)
             write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
         else
-            return index; // End of current file.
+            return index - begin; // End of current file.
     }
-    return ids.size();
+    return ids.size() - begin;
 }
 
 void CachePartition::flush()
@@ -471,7 +473,6 @@ void CachePartition::getValueFromStorage(
             const auto & request = requests[request_id];
             if (events[i].res != static_cast<ssize_t>(request.aio_nbytes))
                 throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". returned: " + std::to_string(events[i].res), ErrorCodes::AIO_WRITE_ERROR);
-
             for (const size_t idx : blocks_to_indices[request_id])
             {
                 const auto & [file_index, out_index] = index_to_out[idx];
@@ -583,17 +584,19 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
     }
 }
 
+size_t CachePartition::getId() const
+{
+    return file_id;
+}
+
 CacheStorage::CacheStorage(
-        const Attributes & attributes_structure_, const std::string & path_,
-        const size_t partitions_count_, const size_t partition_max_size_)
+        const AttributeTypes & attributes_structure_, const std::string & path_,
+        const size_t /* partitions_count_ */, const size_t partition_max_size_)
     : attributes_structure(attributes_structure_)
     , path(path_)
     , partition_max_size(partition_max_size_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
-    for (size_t partition_id = 0; partition_id < partitions_count_; ++partition_id)
-        partitions.emplace_back(std::make_unique<CachePartition>(AttributeUnderlyingType::utUInt64,
-                attributes_structure, path_, partition_id, partition_max_size));
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
@@ -601,6 +604,23 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
         PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
         const DictionaryLifetime lifetime, const std::vector<AttributeValueVariant> & null_values)
 {
+    auto append_block = [this](const CachePartition::Attribute & new_keys,
+            const CachePartition::Attributes & new_attributes, const PaddedPODArray<CachePartition::Metadata> & metadata)
+    {
+        size_t inserted = 0;
+        while (inserted < metadata.size())
+        {
+            if (!partitions.empty())
+                inserted += partitions.front()->appendBlock(new_keys, new_attributes, metadata, inserted);
+            if (inserted < metadata.size())
+            {
+                partitions.emplace_front(std::make_unique<CachePartition>(
+                        AttributeUnderlyingType::utUInt64, attributes_structure, path,
+                        (partitions.empty() ? 0 : partitions.back()->getId() + 1), partition_max_size));
+            }
+        }
+    };
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
 
@@ -645,7 +665,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                     remaining_ids[ids[i]] = 1;
                 }
 
-                partitions[0]->appendBlock(new_keys, new_attributes, metadata);
+                append_block(new_keys, new_attributes, metadata);
             }
 
             stream->readSuffix();
@@ -782,7 +802,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     }
 
     if (not_found_num)
-        partitions[0]->appendBlock(new_keys, new_attributes, metadata);
+        append_block(new_keys, new_attributes, metadata);
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);

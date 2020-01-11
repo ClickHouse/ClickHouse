@@ -126,10 +126,12 @@ public:
     };
     using Attributes = std::vector<Attribute>;
 
-    /// Returns false if there are no allocated space to append block.
-    size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata);
+    size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes,
+            const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
     void flush();
+
+    size_t getId() const;
 
 private:
     template <typename Out>
@@ -177,10 +179,10 @@ using CachePartitionPtr = std::shared_ptr<CachePartition>;
 class CacheStorage
 {
 public:
-    using Attributes = std::vector<AttributeUnderlyingType>;
+    using AttributeTypes = std::vector<AttributeUnderlyingType>;
     using Key = CachePartition::Key;
 
-    CacheStorage(const Attributes & attributes_structure_, const std::string & path_,
+    CacheStorage(const AttributeTypes & attributes_structure_, const std::string & path_,
             const size_t partitions_count_, const size_t partition_max_size_);
 
     template <typename T>
@@ -192,6 +194,8 @@ public:
             std::chrono::system_clock::time_point now) const
     {
         std::vector<bool> found(ids.size(), false);
+
+        std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
             partition->getValue<Out>(attribute_index, ids, out, found, now);
 
@@ -206,6 +210,7 @@ public:
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
     {
+        std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
             partition->has(ids, out, now);
 
@@ -229,13 +234,15 @@ private:
     CachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
 
-    const Attributes attributes_structure;
+    void collectGarbage() {}
+
+    const AttributeTypes attributes_structure;
 
     const std::string path;
     const size_t partition_max_size;
 
     mutable std::shared_mutex rw_lock;
-    std::vector<CachePartitionPtr> partitions;
+    std::list<CachePartitionPtr> partitions;
 
     Logger * const log;
 
