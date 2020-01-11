@@ -43,6 +43,26 @@ using AttributeValueVariant = std::variant<
 class CachePartition
 {
 public:
+    struct Index final
+    {
+        bool inMemory() const;
+        void setInMemory(const bool in_memory);
+
+        bool exists() const;
+        void setNotExists();
+
+        size_t getAddressInBlock() const;
+        void setAddressInBlock(const size_t address_in_block);
+
+        size_t getBlockId() const;
+        void setBlockId(const size_t block_id);
+
+        bool operator< (const Index & rhs) const { return index < rhs.index; }
+
+        /// Stores `is_in_memory` flag, block id, address in uncompressed block
+        size_t index = 0;
+    };
+
     struct Metadata final
     {
         using time_point_t = std::chrono::system_clock::time_point;
@@ -61,6 +81,7 @@ public:
 
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
+    using Key = IDictionary::Key;
 
     CachePartition(
             const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
@@ -71,16 +92,14 @@ public:
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    template <typename Out, typename Key>
+    template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+            ResultArrayType<Out> & out, std::vector<bool> & found,
             std::chrono::system_clock::time_point now) const;
 
     // TODO:: getString
 
-    template <typename Key>
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
+    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
 
     struct Attribute
     {
@@ -107,31 +126,12 @@ public:
     };
     using Attributes = std::vector<Attribute>;
 
-    // Key, (Metadata), attributes
-    void appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata);
+    /// Returns false if there are no allocated space to append block.
+    size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata);
 
     void flush();
+
 private:
-    struct Index final
-    {
-        bool inMemory() const;
-        void setInMemory(const bool in_memory);
-
-        bool exists() const;
-        void setNotExists();
-
-        size_t getAddressInBlock() const;
-        void setAddressInBlock(const size_t address_in_block);
-
-        size_t getBlockId() const;
-        void setBlockId(const size_t block_id);
-
-        bool operator< (const Index & rhs) const { return index < rhs.index; }
-
-        /// Stores `is_in_memory` flag, block id, address in uncompressed block
-        size_t index = 0;
-    };
-
     template <typename Out>
     void getValueFromMemory(
             const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
@@ -178,7 +178,7 @@ class CacheStorage
 {
 public:
     using Attributes = std::vector<AttributeUnderlyingType>;
-    using Key = IDictionary::Key;
+    using Key = CachePartition::Key;
 
     CacheStorage(const Attributes & attributes_structure_, const std::string & path_,
             const size_t partitions_count_, const size_t partition_max_size_);
@@ -191,7 +191,13 @@ public:
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
             std::chrono::system_clock::time_point now) const
     {
-        partitions[0]->getValue<Out>(attribute_index, ids, out, not_found, now);
+        std::vector<bool> found(ids.size(), false);
+        for (auto & partition : partitions)
+            partition->getValue<Out>(attribute_index, ids, out, found, now);
+
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (!found[i])
+                not_found[ids[i]].push_back(i);
     }
 
     // getString();
@@ -200,8 +206,12 @@ public:
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
     {
-        //for (auto & partition : partitions)
-        partitions[0]->has(ids, out, not_found, now);
+        for (auto & partition : partitions)
+            partition->has(ids, out, now);
+
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (out[i] == static_cast<UInt8>(-1))
+                not_found[ids[i]].push_back(i);
     }
 
     template <typename PresentIdHandler, typename AbsentIdHandler>

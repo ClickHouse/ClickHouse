@@ -64,8 +64,8 @@ namespace
     constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
 
-    constexpr size_t FILE_SIZE_TO_PREALLOCATE = 1 * 1024 * 1024 * 1024;
-    constexpr size_t FILE_SIZE_IN_BLOCKS = FILE_SIZE_TO_PREALLOCATE / SSD_BLOCK_SIZE;
+    constexpr size_t FILE_SIZE_IN_BLOCKS = 16;
+    constexpr size_t FILE_SIZE_TO_PREALLOCATE = FILE_SIZE_IN_BLOCKS * SSD_BLOCK_SIZE;
 
     constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
     constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16; // TODO: в параметры
@@ -186,9 +186,12 @@ CachePartition::~CachePartition()
     ::close(fd);
 }
 
-void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata)
+size_t CachePartition::appendBlock(const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata)
 {
     std::unique_lock lock(rw_lock);
+    if (current_file_block_id >= FILE_SIZE_IN_BLOCKS)
+        return 0;
+
     if (new_attributes.size() != attributes_structure.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
@@ -257,9 +260,12 @@ void CachePartition::appendBlock(const Attribute & new_keys, const Attributes & 
             ids_buffer.push_back(ids[index]);
             ++index;
         }
-        else
+        else if (current_file_block_id < FILE_SIZE_IN_BLOCKS)
             write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
+        else
+            return index; // End of current file.
     }
+    return ids.size();
 }
 
 void CachePartition::flush()
@@ -339,29 +345,28 @@ void CachePartition::flush()
     std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
 }
 
-template <typename Out, typename Key>
+template <typename Out>
 void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-          ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+          ResultArrayType<Out> & out, std::vector<bool> & found,
           std::chrono::system_clock::time_point now) const
 {
     std::shared_lock lock(rw_lock);
     PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
-        auto it = key_to_index_and_metadata.find(ids[i]);
-        if (it == std::end(key_to_index_and_metadata))
+        if (found[i])
         {
             indices[i].setNotExists();
-            not_found[ids[i]].push_back(i);
         }
-        else if (it->second.metadata.expiresAt() <= now)
+        else if (auto it = key_to_index_and_metadata.find(ids[i]);
+                it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
         {
-            indices[i].setNotExists();
-            not_found[ids[i]].push_back(i);
+            indices[i] = it->second.index;
+            found[i] = true;
         }
         else
         {
-            indices[i] = it->second.index;
+            indices[i].setNotExists();
         }
     }
 
@@ -560,22 +565,16 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
     }
 }
 
-template <typename Key>
-void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-        std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
+void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const
 {
     std::shared_lock lock(rw_lock);
     for (size_t i = 0; i < ids.size(); ++i)
     {
         auto it = key_to_index_and_metadata.find(ids[i]);
 
-        if (it == std::end(key_to_index_and_metadata))
+        if (it == std::end(key_to_index_and_metadata) || it->second.metadata.expiresAt() <= now)
         {
-            not_found[ids[i]].push_back(i);
-        }
-        else if (it->second.metadata.expiresAt() <= now)
-        {
-            not_found[ids[i]].push_back(i);
+            out[i] = static_cast<UInt8>(-1);
         }
         else
         {
