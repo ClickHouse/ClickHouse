@@ -4,10 +4,9 @@
 #include <Core/UUID.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
-
-#include <memory>
+#include <Access/AccessRights.h>
+#include <optional>
 #include <unordered_set>
-#include <vector>
 
 
 namespace Poco
@@ -44,6 +43,8 @@ struct User
 
     bool is_quota_management_allowed = false;
     bool is_row_policy_management_allowed = false;
+
+    AccessRights access;
 
     User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };

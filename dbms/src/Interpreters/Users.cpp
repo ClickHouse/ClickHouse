@@ -103,6 +103,16 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         }
     }
 
+    access.grant(AccessType::ALL); /// By default all databases are accessible.
+
+    if (databases)
+    {
+        access.fullRevoke(AccessFlags::databaseLevel());
+        for (const String & database : *databases)
+            access.grant(AccessFlags::databaseLevel(), database);
+        access.grant(AccessFlags::databaseLevel(), "system"); /// Anyone has access to the "system" database.
+    }
+
     if (config.has(config_elem + ".allow_quota_management"))
         is_quota_management_allowed = config.getBool(config_elem + ".allow_quota_management");
     if (config.has(config_elem + ".allow_row_policy_management"))
