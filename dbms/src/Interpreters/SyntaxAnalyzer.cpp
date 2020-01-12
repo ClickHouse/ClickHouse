@@ -181,7 +181,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
-/// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are inpossible.
+/// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
 void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
     ASTs & elements = select_query->select()->children;
@@ -632,7 +632,7 @@ std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
 /// After execution, columns will only contain the list of columns needed to read from the table.
 void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns)
 {
-    /// We caclulate required_source_columns with source_columns modifications and swap them on exit
+    /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
 
     if (!additional_source_columns.empty())
@@ -652,15 +652,15 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
 
     if (columns_context.has_table_join)
     {
-        NameSet avaliable_columns;
+        NameSet available_columns;
         for (const auto & name : source_columns)
-            avaliable_columns.insert(name.name);
+            available_columns.insert(name.name);
 
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
             auto & name = joined_column.name;
-            if (avaliable_columns.count(name))
+            if (available_columns.count(name))
                 continue;
 
             if (required.count(name))
@@ -845,12 +845,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         {
             if (storage)
             {
-                const ColumnsDescription & starage_columns = storage->getColumns();
-                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, starage_columns.getOrdinary().getNames());
+                const ColumnsDescription & storage_columns = storage->getColumns();
+                tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary().getNames());
                 auto & table = tables_with_columns.back();
-                table.addHiddenColumns(starage_columns.getMaterialized());
-                table.addHiddenColumns(starage_columns.getAliases());
-                table.addHiddenColumns(starage_columns.getVirtuals());
+                table.addHiddenColumns(storage_columns.getMaterialized());
+                table.addHiddenColumns(storage_columns.getAliases());
+                table.addHiddenColumns(storage_columns.getVirtuals());
             }
             else
             {
