@@ -10,6 +10,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
