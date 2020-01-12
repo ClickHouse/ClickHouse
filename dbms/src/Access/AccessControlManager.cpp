@@ -4,6 +4,7 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/QuotaContextFactory.h>
 #include <Access/RowPolicyContextFactory.h>
+#include <Access/AccessRightsContext.h>
 
 
 namespace DB
@@ -37,6 +38,12 @@ void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguratio
 {
     auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(1));
     users_config_access_storage.loadFromConfig(users_config);
+}
+
+
+std::shared_ptr<const AccessRightsContext> AccessControlManager::getAccessRightsContext(const ClientInfo & client_info, const AccessRights & granted_to_user, const Settings & settings, const String & current_database)
+{
+    return std::make_shared<AccessRightsContext>(client_info, granted_to_user, settings, current_database);
 }
 
 
