@@ -84,8 +84,13 @@ public:
     using Key = IDictionary::Key;
 
     CachePartition(
-            const AttributeUnderlyingType & key_structure, const std::vector<AttributeUnderlyingType> & attributes_structure,
-            const std::string & dir_path, const size_t file_id, const size_t max_size);
+            const AttributeUnderlyingType & key_structure,
+            const std::vector<AttributeUnderlyingType> & attributes_structure,
+            const std::string & dir_path,
+            const size_t file_id,
+            const size_t max_size,
+            const size_t block_size,
+            const size_t read_buffer_size);
 
     ~CachePartition();
 
@@ -147,9 +152,11 @@ private:
     template <typename Out>
     void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
 
-    size_t file_id;
-    size_t max_size;
-    std::string path;
+    const size_t file_id;
+    const size_t max_size;
+    const size_t block_size;
+    const size_t read_buffer_size;
+    const std::string path;
 
     mutable std::shared_mutex rw_lock;
 
@@ -184,8 +191,13 @@ public:
     using AttributeTypes = std::vector<AttributeUnderlyingType>;
     using Key = CachePartition::Key;
 
-    CacheStorage(const AttributeTypes & attributes_structure_, const std::string & path_,
-            const size_t max_partitions_count_, const size_t partition_max_size_);
+    CacheStorage(
+            const AttributeTypes & attributes_structure_,
+            const std::string & path_,
+            const size_t max_partitions_count_,
+            const size_t partition_size_,
+            const size_t block_size_,
+            const size_t read_buffer_size_);
 
     ~CacheStorage();
 
@@ -223,8 +235,10 @@ private:
     const AttributeTypes attributes_structure;
 
     const std::string path;
-    const size_t partition_max_size;
     const size_t max_partitions_count;
+    const size_t partition_size;
+    const size_t block_size;
+    const size_t read_buffer_size;
 
     mutable std::shared_mutex rw_lock;
     std::list<CachePartitionPtr> partitions;
@@ -256,7 +270,10 @@ public:
             DictionarySourcePtr source_ptr_,
             const DictionaryLifetime dict_lifetime_,
             const std::string & path,
-            const size_t partition_max_size_);
+            const size_t max_partitions_count_,
+            const size_t partition_size_,
+            const size_t block_size_,
+            const size_t read_buffer_size_);
 
     std::string getName() const override { return name; }
 
@@ -273,13 +290,14 @@ public:
 
     size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / partition_max_size; } // TODO: fix
+    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / partition_size; } // TODO: fix
 
     bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path, partition_max_size);
+        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
+                max_partitions_count, partition_size, block_size, read_buffer_size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -398,7 +416,10 @@ private:
     const DictionaryLifetime dict_lifetime;
 
     const std::string path;
-    const size_t partition_max_size;
+    const size_t max_partitions_count;
+    const size_t partition_size;
+    const size_t block_size;
+    const size_t read_buffer_size;
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<AttributeValueVariant> null_values;
