@@ -187,6 +187,8 @@ public:
     CacheStorage(const AttributeTypes & attributes_structure_, const std::string & path_,
             const size_t max_partitions_count_, const size_t partition_max_size_);
 
+    ~CacheStorage();
+
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
