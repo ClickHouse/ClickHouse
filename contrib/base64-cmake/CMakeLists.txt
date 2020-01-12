@@ -8,8 +8,6 @@ if (ARCH_AMD64)
     add_library(base64_avx2 OBJECT ${LIBRARY_DIR}/turbob64avx2.c)
 endif ()
 
-add_definitions(-DB64CHECK) # Enable full check of incorrect base64 input at decoding.
-
 target_compile_options(base64_scalar PRIVATE -falign-loops)
 
 if (ARCH_AMD64)
