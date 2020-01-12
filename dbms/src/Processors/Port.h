@@ -166,7 +166,7 @@ protected:
             uintptr_t mask = HAS_DATA;
 
             if (set_not_needed)
-                mask &= IS_NEEDED;
+                mask |= IS_NEEDED;
 
             flags = data_.swap(data, 0, mask);
 
