@@ -609,7 +609,7 @@ public:
         {
             try
             {
-                /// Maybe alredy true, if we have an exception
+                /// Maybe already true, if we have an exception
                 if (!should_update_flag)
                     should_update_flag = object->isModified();
             }
