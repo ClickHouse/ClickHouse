@@ -7,6 +7,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/MemorySanitizer.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Poco/File.h>
 #include "DictionaryFactory.h"
 #include <IO/AIO.h>
 #include <IO/ReadHelpers.h>
@@ -164,6 +165,10 @@ CachePartition::CachePartition(
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
     keys_buffer.values = PaddedPODArray<UInt64>();
+
+    Poco::File directory(dir_path);
+    if (!directory.exists())
+        directory.createDirectory();
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -606,7 +611,8 @@ size_t CachePartition::getId() const
 void CachePartition::remove()
 {
     std::unique_lock lock(rw_lock);
-    std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
+    Poco::File(path + BIN_FILE_EXT).remove();
+    //std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
 }
 
 CacheStorage::CacheStorage(
@@ -618,6 +624,13 @@ CacheStorage::CacheStorage(
     , max_partitions_count(max_partitions_count_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
+}
+
+CacheStorage::~CacheStorage()
+{
+    std::unique_lock lock(rw_lock);
+    partition_delete_queue.splice(std::end(partition_delete_queue), partitions);
+    collectGarbage();
 }
 
 template <typename Out>
@@ -868,10 +881,9 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
 void CacheStorage::collectGarbage()
 {
     // add partitions to queue
-    if (partitions.size() > max_partitions_count)
+    while (partitions.size() > max_partitions_count)
     {
-        partition_delete_queue.push_back(partitions.back());
-        partitions.pop_back();
+        partition_delete_queue.splice(std::end(partition_delete_queue), partitions, std::prev(std::end(partitions)));
     }
 
     // drop unused partitions
