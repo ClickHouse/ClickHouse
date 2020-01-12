@@ -63,14 +63,14 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr size_t SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
-    constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE; // TODO: в параметры
+    constexpr size_t DEFAULT_SSD_BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE;
+    constexpr size_t DEFAULT_FILE_SIZE = 4 * 1024 * 1024 * 1024ULL;
+    constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
+    constexpr size_t DEFAULT_READ_BUFFER_SIZE = 16 * DEFAULT_SSD_BLOCK_SIZE;
 
-    constexpr size_t FILE_SIZE_IN_BLOCKS = 2;
-    constexpr size_t FILE_SIZE_TO_PREALLOCATE = FILE_SIZE_IN_BLOCKS * SSD_BLOCK_SIZE;
+    constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
 
     constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
-    constexpr size_t READ_BUFFER_SIZE_BLOCKS = 16; // TODO: в параметры
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
@@ -158,9 +158,18 @@ void CachePartition::Index::setBlockId(const size_t block_id)
 }
 
 CachePartition::CachePartition(
-        const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure_,
-        const std::string & dir_path, const size_t file_id_, const size_t max_size_)
-    : file_id(file_id_), max_size(max_size_), path(dir_path + "/" + std::to_string(file_id))
+        const AttributeUnderlyingType & /* key_structure */,
+        const std::vector<AttributeUnderlyingType> & attributes_structure_,
+        const std::string & dir_path,
+        const size_t file_id_,
+        const size_t max_size_,
+        const size_t block_size_,
+        const size_t read_buffer_size_)
+    : file_id(file_id_)
+    , max_size(max_size_)
+    , block_size(block_size_)
+    , read_buffer_size(read_buffer_size_)
+    , path(dir_path + "/" + std::to_string(file_id))
     , attributes_structure(attributes_structure_)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
@@ -181,7 +190,7 @@ CachePartition::CachePartition(
             throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
         }
 
-        if (preallocateDiskSpace(fd, FILE_SIZE_TO_PREALLOCATE) < 0)
+        if (preallocateDiskSpace(fd, max_size * block_size) < 0)
         {
             throwFromErrnoWithPath("Cannot preallocate space for the file " + filename, filename, ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
@@ -198,7 +207,7 @@ size_t CachePartition::appendBlock(
         const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
     std::unique_lock lock(rw_lock);
-    if (current_file_block_id >= FILE_SIZE_IN_BLOCKS)
+    if (current_file_block_id >= max_size)
         return 0;
 
     if (new_attributes.size() != attributes_structure.size())
@@ -208,9 +217,9 @@ size_t CachePartition::appendBlock(
     auto & ids_buffer = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
 
     if (!memory)
-        memory.emplace(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT);
+        memory.emplace(block_size, BUFFER_ALIGNMENT);
     if (!write_buffer)
-        write_buffer.emplace(memory->data(), SSD_BLOCK_SIZE);
+        write_buffer.emplace(memory->data(), block_size);
 
     for (size_t index = begin; index < ids.size();)
     {
@@ -272,9 +281,9 @@ size_t CachePartition::appendBlock(
             ids_buffer.push_back(ids[index]);
             ++index;
         }
-        else if (current_file_block_id < FILE_SIZE_IN_BLOCKS)
+        else if (current_file_block_id < max_size)
         {
-            write_buffer.emplace(memory->data(), SSD_BLOCK_SIZE);
+            write_buffer.emplace(memory->data(), block_size);
         }
         else
         {
@@ -303,14 +312,14 @@ void CachePartition::flush()
     write_request.aio.aio_lio_opcode = LIO_WRITE;
     write_request.aio.aio_fildes = fd;
     write_request.aio.aio_buf = reinterpret_cast<volatile void *>(memory->data());
-    write_request.aio.aio_nbytes = SSD_BLOCK_SIZE;
-    write_request.aio.aio_offset = SSD_BLOCK_SIZE * current_file_block_id;
+    write_request.aio.aio_nbytes = block_size;
+    write_request.aio.aio_offset = block_size * current_file_block_id;
 #else
     write_request.aio_lio_opcode = IOCB_CMD_PWRITE;
     write_request.aio_fildes = fd;
     write_request.aio_buf = reinterpret_cast<UInt64>(memory->data());
-    write_request.aio_nbytes = SSD_BLOCK_SIZE;
-    write_request.aio_offset = SSD_BLOCK_SIZE * current_file_block_id;
+    write_request.aio_nbytes = block_size;
+    write_request.aio_offset = block_size * current_file_block_id;
 #endif
 
     Poco::Logger::get("try:").information("offset: " + std::to_string(write_request.aio_offset) + "  nbytes: " + std::to_string(write_request.aio_nbytes));
@@ -405,7 +414,7 @@ void CachePartition::getValueFromMemory(
         {
             const size_t offset = index.getAddressInBlock();
 
-            ReadBufferFromMemory read_buffer(memory->data() + offset, SSD_BLOCK_SIZE - offset);
+            ReadBufferFromMemory read_buffer(memory->data() + offset, block_size - offset);
             readValueFromBuffer(attribute_index, out[i], read_buffer);
         }
     }
@@ -428,7 +437,7 @@ void CachePartition::getValueFromStorage(
     /// sort by (block_id, offset_in_block)
     std::sort(std::begin(index_to_out), std::end(index_to_out));
 
-    DB::Memory read_buffer(SSD_BLOCK_SIZE * READ_BUFFER_SIZE_BLOCKS, BUFFER_ALIGNMENT);
+    DB::Memory read_buffer(block_size * read_buffer_size, BUFFER_ALIGNMENT);
 
     std::vector<iocb> requests;
     std::vector<iocb*> pointers;
@@ -439,7 +448,7 @@ void CachePartition::getValueFromStorage(
     for (size_t i = 0; i < index_to_out.size(); ++i)
     {
         if (!requests.empty() &&
-                static_cast<size_t>(requests.back().aio_offset) == index_to_out[i].first.getBlockId() * SSD_BLOCK_SIZE)
+                static_cast<size_t>(requests.back().aio_offset) == index_to_out[i].first.getBlockId() * block_size)
         {
             blocks_to_indices.back().push_back(i);
             continue;
@@ -457,9 +466,9 @@ void CachePartition::getValueFromStorage(
 #else
         request.aio_lio_opcode = IOCB_CMD_PREAD;
         request.aio_fildes = fd;
-        request.aio_buf = reinterpret_cast<UInt64>(read_buffer.data()) + SSD_BLOCK_SIZE * (requests.size() % READ_BUFFER_SIZE_BLOCKS);
-        request.aio_nbytes = SSD_BLOCK_SIZE;
-        request.aio_offset = index_to_out[i].first.getBlockId() * SSD_BLOCK_SIZE;
+        request.aio_buf = reinterpret_cast<UInt64>(read_buffer.data()) + block_size * (requests.size() % read_buffer_size);
+        request.aio_nbytes = block_size;
+        request.aio_offset = index_to_out[i].first.getBlockId() * block_size;
         request.aio_data = requests.size();
 #endif
         requests.push_back(request);
@@ -468,7 +477,7 @@ void CachePartition::getValueFromStorage(
         blocks_to_indices.back().push_back(i);
     }
 
-    AIOContext aio_context(READ_BUFFER_SIZE_BLOCKS);
+    AIOContext aio_context(read_buffer_size);
 
     std::vector<bool> processed(requests.size(), false);
     std::vector<io_event> events(requests.size());
@@ -496,7 +505,7 @@ void CachePartition::getValueFromStorage(
                 const auto & [file_index, out_index] = index_to_out[idx];
                 DB::ReadBufferFromMemory buf(
                         reinterpret_cast<char *>(request.aio_buf) + file_index.getAddressInBlock(),
-                        SSD_BLOCK_SIZE - file_index.getAddressInBlock());
+                        block_size - file_index.getAddressInBlock());
                 readValueFromBuffer(attribute_index, out[out_index], buf);
             }
 
@@ -507,7 +516,7 @@ void CachePartition::getValueFromStorage(
             ++to_pop;
 
         /// add new io tasks
-        const size_t new_tasks_count = std::min(READ_BUFFER_SIZE_BLOCKS - (to_push - to_pop), requests.size() - to_push);
+        const size_t new_tasks_count = std::min(read_buffer_size - (to_push - to_pop), requests.size() - to_push);
 
         size_t pushed = 0;
         while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) < 0)
@@ -616,12 +625,18 @@ void CachePartition::remove()
 }
 
 CacheStorage::CacheStorage(
-        const AttributeTypes & attributes_structure_, const std::string & path_,
-        const size_t max_partitions_count_, const size_t partition_max_size_)
+        const AttributeTypes & attributes_structure_,
+        const std::string & path_,
+        const size_t max_partitions_count_,
+        const size_t partition_size_,
+        const size_t block_size_,
+        const size_t read_buffer_size_)
     : attributes_structure(attributes_structure_)
     , path(path_)
-    , partition_max_size(partition_max_size_)
     , max_partitions_count(max_partitions_count_)
+    , partition_size(partition_size_)
+    , block_size(block_size_)
+    , read_buffer_size(read_buffer_size_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
 }
@@ -678,7 +693,8 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
             {
                 partitions.emplace_front(std::make_unique<CachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
-                        (partitions.empty() ? 0 : partitions.front()->getId() + 1), partition_max_size));
+                        (partitions.empty() ? 0 : partitions.front()->getId() + 1),
+                        partition_size, block_size, read_buffer_size));
             }
         }
 
@@ -948,15 +964,21 @@ SSDCacheDictionary::SSDCacheDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     const std::string & path_,
-    const size_t partition_max_size_)
+    const size_t max_partitions_count_,
+    const size_t partition_size_,
+    const size_t block_size_,
+    const size_t read_buffer_size_)
     : name(name_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , path(path_)
-    , partition_max_size(partition_max_size_)
+    , max_partitions_count(max_partitions_count_)
+    , partition_size(partition_size_)
+    , block_size(block_size_)
+    , read_buffer_size(read_buffer_size_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, 2, partition_max_size)
+            path, max_partitions_count, partition_size, block_size, read_buffer_size)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     if (!this->source_ptr->supportsSelectiveLoad())
@@ -1240,17 +1262,36 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
                               "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
         const auto & layout_prefix = config_prefix + ".layout";
-        const auto max_partition_size = config.getInt(layout_prefix + ".ssd.max_partition_size");
-        if (max_partition_size == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+        const auto max_partitions_count = config.getInt(layout_prefix + ".ssd.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
+        if (max_partitions_count <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
+
+        const auto block_size = config.getInt(layout_prefix + ".ssd.block_size", DEFAULT_SSD_BLOCK_SIZE);
+        if (block_size <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
+
+        const auto partition_size = config.getInt64(layout_prefix + ".ssd.partition_size", DEFAULT_FILE_SIZE);
+        if (partition_size <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
+        if (partition_size % block_size != 0)
+            throw Exception{name + ": partition_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+
+        const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
+        if (read_buffer_size <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) read_buffer_size", ErrorCodes::BAD_ARGUMENTS};
+        if (read_buffer_size % block_size != 0)
+            throw Exception{name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
         const auto path = config.getString(layout_prefix + ".ssd.path");
         if (path.empty())
-            throw Exception{name + ": dictionary of layout 'cache' cannot have empty path",
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SSDCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, path, max_partition_size);
+        return std::make_unique<SSDCacheDictionary>(
+                name, dict_struct, std::move(source_ptr), dict_lifetime, path,
+                max_partitions_count, partition_size / block_size, block_size, read_buffer_size / block_size);
     };
     factory.registerLayout("ssd", create_layout, false);
 }
