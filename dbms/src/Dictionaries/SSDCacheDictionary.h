@@ -131,6 +131,8 @@ public:
 
     void flush();
 
+    void remove();
+
     size_t getId() const;
 
 private:
@@ -164,7 +166,7 @@ private:
     Attribute keys_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
 
-    DB::Memory<> memory;
+    std::optional<DB::Memory<>> memory;
     std::optional<DB::WriteBuffer> write_buffer;
 
     size_t current_memory_block_id = 0;
@@ -183,7 +185,7 @@ public:
     using Key = CachePartition::Key;
 
     CacheStorage(const AttributeTypes & attributes_structure_, const std::string & path_,
-            const size_t partitions_count_, const size_t partition_max_size_);
+            const size_t max_partitions_count_, const size_t partition_max_size_);
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -214,15 +216,17 @@ private:
     CachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
 
-    void collectGarbage() {}
+    void collectGarbage();
 
     const AttributeTypes attributes_structure;
 
     const std::string path;
     const size_t partition_max_size;
+    const size_t max_partitions_count;
 
     mutable std::shared_mutex rw_lock;
     std::list<CachePartitionPtr> partitions;
+    std::list<CachePartitionPtr> partition_delete_queue;
 
     Logger * const log;
 

@@ -17,6 +17,7 @@
 #include <ext/size.h>
 #include <ext/bit_cast.h>
 #include <numeric>
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -159,7 +160,7 @@ CachePartition::CachePartition(
         const AttributeUnderlyingType & /* key_structure */, const std::vector<AttributeUnderlyingType> & attributes_structure_,
         const std::string & dir_path, const size_t file_id_, const size_t max_size_)
     : file_id(file_id_), max_size(max_size_), path(dir_path + "/" + std::to_string(file_id))
-    , attributes_structure(attributes_structure_), memory(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT)
+    , attributes_structure(attributes_structure_)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
     keys_buffer.values = PaddedPODArray<UInt64>();
@@ -201,8 +202,10 @@ size_t CachePartition::appendBlock(
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
     auto & ids_buffer = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
 
+    if (!memory)
+        memory.emplace(SSD_BLOCK_SIZE, BUFFER_ALIGNMENT);
     if (!write_buffer)
-        write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
+        write_buffer.emplace(memory->data(), SSD_BLOCK_SIZE);
 
     for (size_t index = begin; index < ids.size();)
     {
@@ -265,9 +268,14 @@ size_t CachePartition::appendBlock(
             ++index;
         }
         else if (current_file_block_id < FILE_SIZE_IN_BLOCKS)
-            write_buffer.emplace(memory.data(), SSD_BLOCK_SIZE);
+        {
+            write_buffer.emplace(memory->data(), SSD_BLOCK_SIZE);
+        }
         else
+        {
+            memory.reset();
             return index - begin; // End of current file.
+        }
     }
     return ids.size() - begin;
 }
@@ -289,13 +297,13 @@ void CachePartition::flush()
 #if defined(__FreeBSD__)
     write_request.aio.aio_lio_opcode = LIO_WRITE;
     write_request.aio.aio_fildes = fd;
-    write_request.aio.aio_buf = reinterpret_cast<volatile void *>(memory.data());
+    write_request.aio.aio_buf = reinterpret_cast<volatile void *>(memory->data());
     write_request.aio.aio_nbytes = SSD_BLOCK_SIZE;
     write_request.aio.aio_offset = SSD_BLOCK_SIZE * current_file_block_id;
 #else
     write_request.aio_lio_opcode = IOCB_CMD_PWRITE;
     write_request.aio_fildes = fd;
-    write_request.aio_buf = reinterpret_cast<UInt64>(memory.data());
+    write_request.aio_buf = reinterpret_cast<UInt64>(memory->data());
     write_request.aio_nbytes = SSD_BLOCK_SIZE;
     write_request.aio_offset = SSD_BLOCK_SIZE * current_file_block_id;
 #endif
@@ -392,7 +400,7 @@ void CachePartition::getValueFromMemory(
         {
             const size_t offset = index.getAddressInBlock();
 
-            ReadBufferFromMemory read_buffer(memory.data() + offset, SSD_BLOCK_SIZE - offset);
+            ReadBufferFromMemory read_buffer(memory->data() + offset, SSD_BLOCK_SIZE - offset);
             readValueFromBuffer(attribute_index, out[i], read_buffer);
         }
     }
@@ -595,12 +603,19 @@ size_t CachePartition::getId() const
     return file_id;
 }
 
+void CachePartition::remove()
+{
+    std::unique_lock lock(rw_lock);
+    std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
+}
+
 CacheStorage::CacheStorage(
         const AttributeTypes & attributes_structure_, const std::string & path_,
-        const size_t /* partitions_count_ */, const size_t partition_max_size_)
+        const size_t max_partitions_count_, const size_t partition_max_size_)
     : attributes_structure(attributes_structure_)
     , path(path_)
     , partition_max_size(partition_max_size_)
+    , max_partitions_count(max_partitions_count_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
 }
@@ -653,6 +668,8 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1), partition_max_size));
             }
         }
+
+        collectGarbage();
     };
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
@@ -848,6 +865,23 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
+void CacheStorage::collectGarbage()
+{
+    // add partitions to queue
+    if (partitions.size() > max_partitions_count)
+    {
+        partition_delete_queue.push_back(partitions.back());
+        partitions.pop_back();
+    }
+
+    // drop unused partitions
+    while (!partition_delete_queue.empty() && partition_delete_queue.front().use_count() == 1)
+    {
+        partition_delete_queue.front()->remove();
+        partition_delete_queue.pop_front();
+    }
+}
+
 CachePartition::Attributes CacheStorage::createAttributesFromBlock(
         const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure)
 {
@@ -910,7 +944,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     , path(path_)
     , partition_max_size(partition_max_size_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, 1, partition_max_size)
+            path, 2, partition_max_size)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     if (!this->source_ptr->supportsSelectiveLoad())
