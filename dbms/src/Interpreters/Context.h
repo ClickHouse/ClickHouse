@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -81,6 +80,12 @@ class ICompressionCodec;
 class AccessControlManager;
 class SettingsConstraints;
 class RemoteHostFilter;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class DiskSelector;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
