@@ -80,7 +80,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
 
-It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
+It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
 ## enable_http_compression {#settings-enable_http_compression}
 
@@ -132,11 +132,11 @@ Default value: 0.
 
 ## max_http_get_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to the both types of tables: created by [CREATE TABLE](../../query_language/create/#create-table-query) query and by [url](../../query_language/table_functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
 
 Possible values:
 
-- Positive integer number of hops.
+- Any positive integer number of hops.
 - 0 — No hops allowed.
 
 Default value: 0.
@@ -218,11 +218,11 @@ Ok.
 Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
 ```sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
-``` 
+```
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
  - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
  - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
-  
+
 Enabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
@@ -232,7 +232,7 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 (..., abs(3.141592654), ...),   -- Float64 literal
 (..., abs(-1), ...),            -- Int64 literal
 ```
-When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`. 
+When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`.
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 Enabled by default.
 
@@ -477,7 +477,7 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks. 
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn't use the cache of uncompressed blocks.
 
 The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
@@ -590,12 +590,6 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
 
 There usually isn't any reason to change this setting.
-
-## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
-
-If the value of [mark_cache_size](../server_settings/settings.md#server-mark-cache-size) setting is exceeded, delete only records older than mark_cache_min_lifetime seconds. If your hosts have low amount of RAM, it makes sense to lower this parameter.
-
-Default value: 10000 seconds.
 
 ## max_query_size {#settings-max_query_size}
 
@@ -960,7 +954,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues.
 
 - 0 — skipping disabled.
 
@@ -987,7 +981,7 @@ Default value: 0.
 - Type: seconds
 - Default value: 60 seconds
 
-Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+Controls how fast errors in distributed tables are zeroed. If a replica is unavailabe for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
 ** See also **
 
@@ -1000,7 +994,7 @@ Controls how fast errors of distributed tables are zeroed. Given that currently 
 - Type: unsigned int
 - Default value: 1000
 
-Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
 ** See also **
 
@@ -1010,7 +1004,7 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Base interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Actual interval grows exponentially in case of any errors.
+Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
 Possible values:
 
@@ -1021,7 +1015,7 @@ Default value: 100 milliseconds.
 
 ## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum interval of data sending by the [Distributed](../table_engines/distributed.md) table engine. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
 Possible values:
 
@@ -1033,14 +1027,14 @@ Default value: 30000 milliseconds (30 seconds).
 
 Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better server and network resources utilization.
+When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better utilizing server and network resources.
 
 Possible values:
 
 - 1 — Enabled.
 - 0 — Disabled.
 
-Defaule value: 0.
+Default value: 0.
 
 ## os_thread_priority {#setting-os_thread_priority}
 
@@ -1067,7 +1061,7 @@ Possible values:
 - Positive integer number, in nanoseconds.
 
     Recommended values:
-        
+
         - 10000000 (100 times a second) nanoseconds and less for single queries.
         - 1000000000 (once a second) for cluster-wide profiling.
 
@@ -1090,7 +1084,7 @@ Possible values:
 - Positive integer number of nanoseconds.
 
     Recommended values:
-        
+
         - 10000000 (100 times a second) nanosecods and more for for single queries.
         - 1000000000 (once a second) for cluster-wide profiling.
 

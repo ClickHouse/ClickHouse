@@ -17,6 +17,8 @@
 соответственно. Для обработки `POST`-запросов удаленный сервер должен поддерживать
 [Chunked transfer encoding](https://ru.wikipedia.org/wiki/Chunked_transfer_encoding).
 
+Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max_http_get_redirects](../settings/settings.md#setting-max_http_get_redirects).
+
 **Пример:**
 
 **1.** Создадим на сервере таблицу `url_engine_table`:

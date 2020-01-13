@@ -12,6 +12,7 @@
 #include "IFunctionImpl.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -119,9 +120,8 @@ struct IntegerRoundingComputation
             }
             case RoundingMode::Round:
             {
-                bool negative = x < 0;
-                if (negative)
-                    x = -x;
+                if (x < 0)
+                    x -= scale;
                 switch (tie_breaking_mode)
                 {
                     case TieBreakingMode::Auto:
@@ -131,14 +131,14 @@ struct IntegerRoundingComputation
                     {
                         T quotient = (x + scale / 2) / scale;
                         if (quotient * scale == x + scale / 2)
-                            x = (quotient & ~1) * scale;
+                            // round half to even
+                            x = ((quotient + (x < 0)) & ~1) * scale;
                         else
+                            // round the others as usual
                             x = quotient * scale;
                         break;
                     }
                 }
-                if (negative)
-                    x = -x;
                 return x;
             }
         }
@@ -703,7 +703,7 @@ private:
     }
 
     template <typename Container>
-    void executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
     {
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
@@ -715,20 +715,53 @@ private:
 
         size_t size = src.size();
         dst.resize(size);
-        for (size_t i = 0; i < size; ++i)
+
+        if (boundary_values.size() < 32)    /// Just a guess
         {
-            auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
-            if (it == boundary_values.end())
+            /// Linear search with value on previous iteration as a hint.
+            /// Not optimal if the size of list is large and distribution of values is uniform random.
+
+            auto begin = boundary_values.begin();
+            auto end = boundary_values.end();
+            auto it = begin + (end - begin) / 2;
+
+            for (size_t i = 0; i < size; ++i)
             {
-                dst[i] = boundary_values.back();
+                auto value = src[i];
+
+                if (*it < value)
+                {
+                    while (it != end && *it <= value)
+                        ++it;
+                    if (it != begin)
+                        --it;
+                }
+                else
+                {
+                    while (*it > value && it != begin)
+                        --it;
+                }
+
+                dst[i] = *it;
             }
-            else if (it == boundary_values.begin())
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
             {
-                dst[i] = boundary_values.front();
-            }
-            else
-            {
-                dst[i] = *(it - 1);
+                auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
+                if (it == boundary_values.end())
+                {
+                    dst[i] = boundary_values.back();
+                }
+                else if (it == boundary_values.begin())
+                {
+                    dst[i] = boundary_values.front();
+                }
+                else
+                {
+                    dst[i] = *(it - 1);
+                }
             }
         }
     }

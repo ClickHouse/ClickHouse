@@ -3,7 +3,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
 
-
 #include <functional>
 #include <memory>
 #include <string>

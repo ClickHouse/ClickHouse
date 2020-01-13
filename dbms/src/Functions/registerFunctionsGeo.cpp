@@ -21,6 +21,7 @@ void registerFunctionH3IsValid(FunctionFactory &);
 void registerFunctionH3KRing(FunctionFactory &);
 #endif
 
+
 void registerFunctionsGeo(FunctionFactory & factory)
 {
     registerFunctionGeoDistance(factory);
@@ -41,4 +42,3 @@ void registerFunctionsGeo(FunctionFactory & factory)
 }
 
 }
-

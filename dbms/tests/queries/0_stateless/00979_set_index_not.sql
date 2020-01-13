@@ -1,4 +1,3 @@
-SET allow_experimental_data_skipping_indices = 1;
 
 DROP TABLE IF EXISTS test.set_index_not;
 

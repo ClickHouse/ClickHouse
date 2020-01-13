@@ -31,7 +31,7 @@ std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery
     {
         const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
 
-        if (tables_element->table_expression)
+        if (tables_element && tables_element->table_expression)
             tables_expression.emplace_back(tables_element->table_expression->as<ASTTableExpression>());
     }
 

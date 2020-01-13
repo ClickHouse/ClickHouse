@@ -125,6 +125,7 @@ Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample
     , nullable_left_side(table_join->forceNullableLeft())
     , any_take_last_row(any_take_last_row_)
     , asof_inequality(table_join->getAsofInequality())
+    , data(std::make_shared<RightTableData>())
     , log(&Logger::get("Join"))
 {
     setSampleBlock(right_sample_block);
@@ -260,26 +261,26 @@ struct KeyGetterForType
 
 void Join::init(Type type_)
 {
-    type = type_;
+    data->type = type_;
 
     if (kind == ASTTableJoin::Kind::Cross)
         return;
-    joinDispatchInit(kind, strictness, maps);
-    joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { map.create(type); });
+    joinDispatchInit(kind, strictness, data->maps);
+    joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { map.create(data->type); });
 }
 
 size_t Join::getTotalRowCount() const
 {
     size_t res = 0;
 
-    if (type == Type::CROSS)
+    if (data->type == Type::CROSS)
     {
-        for (const auto & block : blocks)
+        for (const auto & block : data->blocks)
             res += block.rows();
     }
     else
     {
-        joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { res += map.getTotalRowCount(type); });
+        joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { res += map.getTotalRowCount(data->type); });
     }
 
     return res;
@@ -289,15 +290,15 @@ size_t Join::getTotalByteCount() const
 {
     size_t res = 0;
 
-    if (type == Type::CROSS)
+    if (data->type == Type::CROSS)
     {
-        for (const auto & block : blocks)
+        for (const auto & block : data->blocks)
             res += block.bytes();
     }
     else
     {
-        joinDispatch(kind, strictness, maps, [&](auto, auto, auto & map) { res += map.getTotalByteCountImpl(type); });
-        res += pool.size();
+        joinDispatch(kind, strictness, data->maps, [&](auto, auto, auto & map) { res += map.getTotalByteCountImpl(data->type); });
+        res += data->pool.size();
     }
 
     return res;
@@ -482,6 +483,8 @@ void Join::initRequiredRightKeys()
 
 void Join::initRightBlockStructure()
 {
+    auto & saved_block_sample = data->sample_block;
+
     if (isRightOrFull(kind))
     {
         /// Save keys for NonJoinedBlockInputStream
@@ -501,15 +504,12 @@ void Join::initRightBlockStructure()
         JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
 }
 
-Block Join::structureRightBlock(const Block & source_block) const
+Block Join::structureRightBlock(const Block & block) const
 {
-    /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    Block block = materializeBlock(source_block);
-
     Block structured_block;
-    for (auto & sample_column : saved_block_sample.getColumnsWithTypeAndName())
+    for (auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
     {
-        auto & column = block.getByName(sample_column.name);
+        ColumnWithTypeAndName column = block.getByName(sample_column.name);
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
         structured_block.insert(column);
@@ -518,14 +518,16 @@ Block Join::structureRightBlock(const Block & source_block) const
     return structured_block;
 }
 
-bool Join::addJoinedBlock(const Block & block)
+bool Join::addJoinedBlock(const Block & source_block)
 {
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
-    Columns materialized_columns;
-    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_right, materialized_columns);
+    /// There's no optimization for right side const columns. Remove constness if any.
+    Block block = materializeBlock(source_block);
+    size_t rows = block.rows();
+
+    ColumnRawPtrs key_columns = JoinCommon::materializeColumnsInplace(block, key_names_right);
 
     /// We will insert to the map only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -544,25 +546,24 @@ bool Join::addJoinedBlock(const Block & block)
     size_t total_bytes = 0;
 
     {
-        std::unique_lock lock(rwlock);
+        std::unique_lock lock(data->rwlock);
 
-        blocks.emplace_back(std::move(structured_block));
-        Block * stored_block = &blocks.back();
+        data->blocks.emplace_back(std::move(structured_block));
+        Block * stored_block = &data->blocks.back();
 
-        size_t rows = block.rows();
         if (rows)
-            has_no_rows_in_maps = false;
+            data->empty = false;
 
         if (kind != ASTTableJoin::Kind::Cross)
         {
-            joinDispatch(kind, strictness, maps, [&](auto, auto strictness_, auto & map)
+            joinDispatch(kind, strictness, data->maps, [&](auto, auto strictness_, auto & map)
             {
-                insertFromBlockImpl<strictness_>(*this, type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
+                insertFromBlockImpl<strictness_>(*this, data->type, map, rows, key_columns, key_sizes, stored_block, null_map, data->pool);
             });
         }
 
         if (save_nullmap)
-            blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+            data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
 
         /// TODO: Do not calculate them every time
         total_rows = getTotalRowCount();
@@ -886,9 +887,9 @@ void Join::joinBlockImpl(
     constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
     constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
 
-    /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
-    Columns materialized_columns;
-    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_left, materialized_columns);
+    /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+    Columns materialized_keys = JoinCommon::materializeColumns(block, key_names_left);
+    ColumnRawPtrs key_columns = JoinCommon::getRawPointers(materialized_keys);
 
     /// Keys with NULL value in any column won't join to anything.
     ConstNullMapPtr null_map{};
@@ -917,12 +918,12 @@ void Join::joinBlockImpl(
     if constexpr (is_asof_join)
         extras.push_back(right_table_keys.getByName(key_names_right.back()));
 
-    AddedColumns added_columns(sample_block_with_columns_to_add, block_with_columns_to_add, block, saved_block_sample,
+    AddedColumns added_columns(sample_block_with_columns_to_add, block_with_columns_to_add, block, savedBlockSample(),
                                extras, *this, key_columns, key_sizes);
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = need_filter || has_required_right_keys;
 
-    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, type, null_map);
+    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, null_map);
 
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
@@ -1014,7 +1015,7 @@ void Join::joinBlockImplCross(Block & block) const
 
     for (size_t i = 0; i < rows_left; ++i)
     {
-        for (const Block & block_right : blocks)
+        for (const Block & block_right : data->blocks)
         {
             size_t rows_right = block_right.rows();
 
@@ -1052,7 +1053,7 @@ static void checkTypeOfKey(const Block & block_left, const Block & block_right)
 
 DataTypePtr Join::joinGetReturnType(const String & column_name) const
 {
-    std::shared_lock lock(rwlock);
+    std::shared_lock lock(data->rwlock);
 
     if (!sample_block_with_columns_to_add.has(column_name))
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
@@ -1073,7 +1074,7 @@ void Join::joinGetImpl(Block & block, const String & column_name, const Maps & m
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
 void Join::joinGet(Block & block, const String & column_name) const
 {
-    std::shared_lock lock(rwlock);
+    std::shared_lock lock(data->rwlock);
 
     if (key_names_right.size() != 1)
         throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::LOGICAL_ERROR);
@@ -1083,7 +1084,7 @@ void Join::joinGet(Block & block, const String & column_name) const
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
         kind == ASTTableJoin::Kind::Left)
     {
-        joinGetImpl(block, column_name, std::get<MapsOne>(maps));
+        joinGetImpl(block, column_name, std::get<MapsOne>(data->maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
@@ -1092,12 +1093,12 @@ void Join::joinGet(Block & block, const String & column_name) const
 
 void Join::joinBlock(Block & block)
 {
-    std::shared_lock lock(rwlock);
+    std::shared_lock lock(data->rwlock);
 
     const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
-    if (joinDispatch(kind, strictness, maps, [&](auto kind_, auto strictness_, auto & map)
+    if (joinDispatch(kind, strictness, data->maps, [&](auto kind_, auto strictness_, auto & map)
         {
             joinBlockImpl<kind_, strictness_>(block, key_names_left, sample_block_with_columns_to_add, map);
         }))
@@ -1174,7 +1175,7 @@ public:
             const String & right_key_name = parent.table_join->keyNamesRight()[i];
 
             size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
-            size_t right_key_pos = parent.saved_block_sample.getPositionByName(right_key_name);
+            size_t right_key_pos = parent.savedBlockSample().getPositionByName(right_key_name);
 
             if (remap_keys && !parent.required_right_keys.has(right_key_name))
                 left_to_right_key_remap[left_key_pos] = right_key_pos;
@@ -1196,9 +1197,10 @@ public:
                 column_indices_left.emplace_back(left_pos);
         }
 
-        for (size_t right_pos = 0; right_pos < parent.saved_block_sample.columns(); ++right_pos)
+        const auto & saved_block_sample = parent.savedBlockSample();
+        for (size_t right_pos = 0; right_pos < saved_block_sample.columns(); ++right_pos)
         {
-            const String & name = parent.saved_block_sample.getByPosition(right_pos).name;
+            const String & name = saved_block_sample.getByPosition(right_pos).name;
             if (!result_sample_block.has(name))
                 continue;
 
@@ -1227,7 +1229,7 @@ public:
 protected:
     Block readImpl() override
     {
-        if (parent.blocks.empty())
+        if (parent.data->blocks.empty())
             return Block();
         return createBlock();
     }
@@ -1264,14 +1266,14 @@ private:
 
     bool hasNullabilityChange(size_t right_pos, size_t result_pos) const
     {
-        const auto & src = parent.saved_block_sample.getByPosition(right_pos).column;
+        const auto & src = parent.savedBlockSample().getByPosition(right_pos).column;
         const auto & dst = result_sample_block.getByPosition(result_pos).column;
         return src->isNullable() != dst->isNullable();
     }
 
     Block createBlock()
     {
-        MutableColumns columns_right = parent.saved_block_sample.cloneEmptyColumns();
+        MutableColumns columns_right = parent.savedBlockSample().cloneEmptyColumns();
 
         size_t rows_added = 0;
 
@@ -1280,7 +1282,7 @@ private:
             rows_added = fillColumnsFromMap<strictness>(map, columns_right);
         };
 
-        if (!joinDispatch(parent.kind, parent.strictness, parent.maps, fill_callback))
+        if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps, fill_callback))
             throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
 
         fillNullsFromBlocks(columns_right, rows_added);
@@ -1331,7 +1333,7 @@ private:
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
     {
-        switch (parent.type)
+        switch (parent.data->type)
         {
         #define M(TYPE) \
             case Join::Type::TYPE: \
@@ -1339,7 +1341,7 @@ private:
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
             default:
-                throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(parent.type)),
+                throw Exception("Unsupported JOIN keys. Type: " + toString(static_cast<UInt32>(parent.data->type)),
                                 ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
@@ -1382,9 +1384,9 @@ private:
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
         if (!nulls_position.has_value())
-            nulls_position = parent.blocks_nullmaps.begin();
+            nulls_position = parent.data->blocks_nullmaps.begin();
 
-        auto end = parent.blocks_nullmaps.end();
+        auto end = parent.data->blocks_nullmaps.end();
 
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
@@ -1414,6 +1416,16 @@ BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & result_sam
     if (isRightOrFull(table_join->kind()))
         return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, max_block_size);
     return {};
+}
+
+
+bool Join::hasStreamWithNonJoinedRows() const
+{
+     if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
+        table_join->strictness() == ASTTableJoin::Strictness::Semi)
+        return false;
+
+    return isRightOrFull(table_join->kind());
 }
 
 }

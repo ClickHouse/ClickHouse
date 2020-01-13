@@ -30,6 +30,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -364,7 +365,7 @@ bool StorageKafka::streamToViews()
 {
     auto table = global_context.getTable(database_name, table_name);
     if (!table)
-        throw Exception("Engine table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Engine table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -415,15 +416,6 @@ bool StorageKafka::streamToViews()
     limits_applied = info.hasAppliedLimit();
 
     return limits_applied;
-}
-
-
-void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
-{
-    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
-        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
-
-    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)

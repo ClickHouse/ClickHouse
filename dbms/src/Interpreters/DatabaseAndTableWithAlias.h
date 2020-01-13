@@ -53,9 +53,25 @@ struct TableWithColumnNames
         for (auto & column : addition)
             hidden_columns.push_back(column.name);
     }
+
+    bool hasColumn(const String & name) const
+    {
+        if (columns_set.empty())
+        {
+            columns_set.insert(columns.begin(), columns.end());
+            columns_set.insert(hidden_columns.begin(), hidden_columns.end());
+        }
+
+        return columns_set.count(name);
+    }
+
+private:
+    mutable NameSet columns_set;
 };
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
+
+using TablesWithColumnNames = std::vector<TableWithColumnNames>;
 
 }

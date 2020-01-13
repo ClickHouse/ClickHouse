@@ -1,7 +1,8 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
 
@@ -41,14 +42,26 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
-            if (!parseIdentifierOrStringLiteral(pos, expected, res->target_dictionary))
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->target_dictionary = ast->as<ASTLiteral &>().value.safeGet<String>();
+            else if (!parseDatabaseAndTableName(pos, expected, res->database, res->target_dictionary))
                 return false;
             break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::FLUSH_DISTRIBUTED:
-            if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table))
+            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
                 return false;
             break;
 
@@ -66,7 +79,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
-            parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table);
+            parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
 
         default:
