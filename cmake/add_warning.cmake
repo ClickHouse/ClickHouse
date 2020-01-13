@@ -1,4 +1,4 @@
-include (CheckCXXSourceCompiles)
+include (CheckCXXCompilerFlag)
 
 # Try to add -Wflag if compiler supports it
 macro (add_warning flag)
