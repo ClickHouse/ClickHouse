@@ -109,7 +109,7 @@ public:
     virtual Type getType() const = 0;
 
     static String typeToString(Type type);
-    String getTypeName() { return typeToString(getType()); }
+    String getTypeName() const { return typeToString(getType()); }
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,

@@ -785,7 +785,7 @@ String IMergeTreeDataPart::typeToString(Type type)
         case Type::WIDE:
             return "Wide";
         case Type::COMPACT:
-            return "Striped";
+            return "Compact";
         case Type::IN_MEMORY:
             return "InMemory";
         case Type::UNKNOWN:
