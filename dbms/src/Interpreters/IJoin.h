@@ -23,7 +23,7 @@ public:
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
     /// Could be called from different threads in parallel.
-    virtual void joinBlock(Block & block) = 0;
+    virtual void joinBlock(Block & block, Block & not_processed) = 0;
 
     virtual bool hasTotals() const = 0;
     virtual void setTotals(const Block & block) = 0;

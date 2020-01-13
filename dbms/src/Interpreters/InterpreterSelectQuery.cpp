@@ -1113,7 +1113,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
+                        stream = std::make_shared<SplittingExpressionBlockInputStream>(stream, expressions.before_join);
 
                     if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {

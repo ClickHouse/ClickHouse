@@ -44,4 +44,28 @@ Block ExpressionBlockInputStream::readImpl()
     return res;
 }
 
+Block SplittingExpressionBlockInputStream::readImpl()
+{
+    if (!initialized)
+    {
+        if (expression->resultIsAlwaysEmpty())
+            return {};
+
+        initialized = true;
+    }
+
+    Block res;
+    if (likely(!not_processed))
+    {
+        res = children.back()->read();
+        if (!res)
+            return res;
+    }
+    else
+        res.swap(not_processed);
+
+    action_number = expression->execute(res, action_number, not_processed);
+    return res;
+}
+
 }

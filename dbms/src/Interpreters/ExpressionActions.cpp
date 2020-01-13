@@ -346,7 +346,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 }
 
 
-void ExpressionAction::execute(Block & block, bool dry_run) const
+Block ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
 
@@ -477,8 +477,9 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block);
-            break;
+            Block not_processed;
+            join->joinBlock(block, not_processed);
+            return not_processed;
         }
 
         case PROJECT:
@@ -537,6 +538,8 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
             break;
     }
+
+    return {};
 }
 
 
@@ -760,6 +763,20 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
         action.execute(block, dry_run);
         checkLimits(block);
     }
+}
+
+size_t ExpressionActions::execute(Block & block, size_t start_action, Block & not_processed) const
+{
+    for (size_t i = start_action; i < actions.size(); ++i)
+    {
+        not_processed = actions[i].execute(block, false);
+        checkLimits(block);
+
+        if (not_processed)
+            return i;
+    }
+
+    return 0;
 }
 
 bool ExpressionActions::hasTotalsInJoin() const
