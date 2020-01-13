@@ -1192,7 +1192,7 @@ bool StorageReplicatedMergeTree::tryFinishAlter(const StorageReplicatedMergeTree
     {
         LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-        auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
+        auto table_lock = lockExclusively(RWLockImpl::NO_QUERY);
 
         if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
         {
@@ -1205,7 +1205,7 @@ bool StorageReplicatedMergeTree::tryFinishAlter(const StorageReplicatedMergeTree
         {
             LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-            storage.setTableStructure(std::move(columns_in_zk), metadata_diff);
+            setTableStructure(std::move(columns_in_zk), metadata_diff);
 
             LOG_INFO(log, "Applied changes to the metadata of the table.");
         }
