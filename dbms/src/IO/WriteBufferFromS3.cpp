@@ -59,7 +59,7 @@ void WriteBufferFromS3::nextImpl()
 
     if (last_part_size > minimum_upload_part_size)
     {
-        temporary_buffer->finish();
+        temporary_buffer->finalize();
         writePart(buffer_string);
         last_part_size = 0;
         temporary_buffer = std::make_unique<WriteBufferFromString>(buffer_string);
@@ -69,7 +69,7 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::finalize()
 {
-    temporary_buffer->finish();
+    temporary_buffer->finalize();
     if (!buffer_string.empty())
     {
         writePart(buffer_string);
