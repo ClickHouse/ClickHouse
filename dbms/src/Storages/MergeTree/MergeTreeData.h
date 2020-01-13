@@ -506,8 +506,8 @@ public:
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
 
-    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
-    /// but not from the disk.
+    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
     DataPartsVector grabOldParts(bool force = false);
 
     /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
@@ -517,6 +517,7 @@ public:
     void removePartsFinally(const DataPartsVector & parts);
 
     /// Delete irrelevant parts from memory and disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
     void clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
