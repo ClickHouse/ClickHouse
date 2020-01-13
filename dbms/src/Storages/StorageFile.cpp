@@ -197,7 +197,7 @@ class StorageFileBlockInputStream : public IBlockInputStream
 public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
         const Context & context, UInt64 max_block_size,
-        std::string file_path,
+        std::string file_path_,
         const CompressionMethod compression_method,
         BlockInputStreamPtr prepared_reader = nullptr)
         : storage(std::move(storage_)), reader(std::move(prepared_reader))
