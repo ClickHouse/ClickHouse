@@ -250,6 +250,14 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
     if (!inputs_with_data.empty())
         throw Exception("Has input with data, but no outputs which need data were found.", ErrorCodes::LOGICAL_ERROR);
 
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
     /// Enable more inputs if needed.
     while (!disabled_input_ports.empty()
            && (inputs.size() - disabled_input_ports.size()) < waiting_outputs.size())
@@ -261,18 +269,10 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         input.status = InputStatus::NeedData;
     }
 
-    if (num_finished_inputs == inputs.size())
-    {
-        for (auto & output : outputs)
-            output.finish();
+    if (waiting_outputs.empty())
+        return Status::PortFull;
 
-        return Status::Finished;
-    }
-
-    if (!waiting_outputs.empty())
-        return Status::NeedData;
-
-    return Status::PortFull;
+    return Status::NeedData;
 }
 
 }
