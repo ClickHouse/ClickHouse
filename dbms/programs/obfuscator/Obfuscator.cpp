@@ -40,7 +40,7 @@
 #include <Common/TerminalSize.h>
 
 
-static const char * documantation = R"(
+static const char * documentation = R"(
 Simple tool for table data obfuscation.
 
 It reads input table and produces output table, that retain some properties of input, but contains different data.
@@ -979,7 +979,7 @@ try
         || !options.count("input-format")
         || !options.count("output-format"))
     {
-        std::cout << documantation << "\n"
+        std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"

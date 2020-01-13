@@ -503,28 +503,31 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     /// Do all AST changes here, because actions from analysis_result will be used later in readImpl.
 
-    /// PREWHERE optimization.
-    /// Turn off, if the table filter (row-level security) is applied.
-    if (storage && !context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER))
+    if (storage)
     {
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
 
-        auto optimize_prewhere = [&](auto & merge_tree)
+        /// PREWHERE optimization.
+        /// Turn off, if the table filter (row-level security) is applied.
+        if (!context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER))
         {
-            SelectQueryInfo current_info;
-            current_info.query = query_ptr;
-            current_info.syntax_analyzer_result = syntax_analyzer_result;
-            current_info.sets = query_analyzer->getPreparedSets();
+            auto optimize_prewhere = [&](auto & merge_tree)
+            {
+                SelectQueryInfo current_info;
+                current_info.query = query_ptr;
+                current_info.syntax_analyzer_result = syntax_analyzer_result;
+                current_info.sets = query_analyzer->getPreparedSets();
 
-            /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-            if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{current_info, *context, merge_tree,
-                                        syntax_analyzer_result->requiredSourceColumns(), log};
-        };
+                /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+                if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
+                    MergeTreeWhereOptimizer{current_info, *context, merge_tree,
+                                            syntax_analyzer_result->requiredSourceColumns(), log};
+            };
 
-        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            optimize_prewhere(*merge_tree_data);
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+                optimize_prewhere(*merge_tree_data);
+        }
     }
 
     if (storage && !options.only_analyze)
@@ -1215,7 +1218,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
-                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
 
             need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
@@ -2348,9 +2351,6 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
     });
 
-    /// If there are several streams, we merge them into one
-    pipeline.resize(1);
-
     /// Merge the sorted blocks.
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -2359,11 +2359,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         return std::make_shared<MergeSortingTransform>(
                 header, output_order_descr, settings.max_block_size, limit,
-                settings.max_bytes_before_remerge_sort,
+                settings.max_bytes_before_remerge_sort / pipeline.getNumStreams(),
                 settings.max_bytes_before_external_sort, context->getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
 
-    pipeline.enableQuotaForCurrentStreams();
+    /// If there are several streams, we merge them into one
+    executeMergeSorted(pipeline, output_order_descr, limit);
 }
 
 

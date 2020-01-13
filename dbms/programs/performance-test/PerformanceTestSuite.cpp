@@ -200,7 +200,7 @@ private:
 
         if (current.checkPreconditions())
         {
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
             LOG_INFO(
                 log,
                 "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
@@ -219,7 +219,7 @@ private:
                 return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
         }
         else
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fulfilled, skip run");
 
         return {"", current.checkSIGINT()};
     }
@@ -361,8 +361,8 @@ try
     po::notify(options);
 
     Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %s: %t"));
-    Poco::AutoPtr<Poco::ConsoleChannel> console_chanel(new Poco::ConsoleChannel);
-    Poco::AutoPtr<Poco::FormattingChannel> channel(new Poco::FormattingChannel(formatter, console_chanel));
+    Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
+    Poco::AutoPtr<Poco::FormattingChannel> channel(new Poco::FormattingChannel(formatter, console_channel));
 
     Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     Poco::Logger::root().setChannel(channel);

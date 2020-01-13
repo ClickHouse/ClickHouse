@@ -328,10 +328,14 @@ public:
         else
         {
             MergeTreeDataPart::TTLInfos ttl_infos;
+            size_t max_volume_index = 0;
             for (auto & part_ptr : future_part_.parts)
+            {
                 ttl_infos.update(part_ptr->ttl_infos);
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+            }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
@@ -612,7 +616,13 @@ bool StorageMergeTree::merge(
         if (!selected)
         {
             if (out_disable_reason)
-                *out_disable_reason = "Cannot select parts for optimization";
+            {
+                if (!out_disable_reason->empty())
+                {
+                    *out_disable_reason += ". ";
+                }
+                *out_disable_reason += "Cannot select parts for optimization";
+            }
             return false;
         }
 
@@ -697,9 +707,6 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        /// DataPart can be store only at one disk. Get Max of free space at all disks
-        UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
-
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.empty())
@@ -715,7 +722,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            if (merger_mutator.getMaxSourcePartSizeForMutation() > disk_space)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
             size_t current_ast_elements = 0;
@@ -1145,7 +1152,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         if (!canReplacePartition(src_part))
             throw Exception(
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::BAD_ARGUMENTS);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
