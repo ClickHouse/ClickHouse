@@ -506,9 +506,9 @@ public:
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
 
-    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
-    /// but not from the disk.
-    DataPartsVector grabOldParts();
+    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    DataPartsVector grabOldParts(bool force = false);
 
     /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
     void rollbackDeletingParts(const DataPartsVector & parts);
@@ -517,7 +517,8 @@ public:
     void removePartsFinally(const DataPartsVector & parts);
 
     /// Delete irrelevant parts from memory and disk.
-    void clearOldPartsFromFilesystem();
+    /// If 'force' - don't wait for old_parts_lifetime.
+    void clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
@@ -900,6 +901,8 @@ protected:
 
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
+
+    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
