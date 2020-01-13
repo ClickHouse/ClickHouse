@@ -1784,6 +1784,7 @@ void MergeTreeData::alterDataPart(
             new_checksums.files[it.second] = add_checksums.files[it.first];
     }
 
+    /// NOTE(alesap) Don't miss this
     /// Write the checksums to the temporary file.
     if (!part->checksums.empty())
     {

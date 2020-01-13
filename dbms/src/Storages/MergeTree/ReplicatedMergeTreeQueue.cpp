@@ -557,6 +557,11 @@ static Names getPartNamesToMutate(
 }
 
 
+Names getPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const
+{
+    return getPartNamesToMutate(entry, current_parts);
+}
+
 void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
@@ -998,6 +1003,21 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             LOG_DEBUG(log, conflicts_description);
             return false;
+        }
+    }
+
+    if (entry.type == LogEntry::FINISH_ALTER)
+    {
+        for (const auto & name : entry.source_parts)
+        {
+            if (future_parts.count(name))
+            {
+                String reason = "Not altering storage because part " + name
+                    + " is not ready yet (log entry for that part is being processed).";
+                LOG_TRACE(log, reason);
+                out_postpone_reason = reason;
+                return false;
+            }
         }
     }
 

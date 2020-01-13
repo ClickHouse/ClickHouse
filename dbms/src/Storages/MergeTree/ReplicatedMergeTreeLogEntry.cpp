@@ -65,6 +65,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
+        case FINISH_ALTER: /// Just make local /metadata and /columns consistent with global
+            out << "alter\n";
+                for (const String & s : source_parts)
+                    out << s << '\n';
+            out << "finish";
+            break;
         default:
             throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
     }
@@ -151,6 +157,18 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> "to\n"
            >> new_part_name;
         source_parts.push_back(source_part);
+    }
+    else if (type_str == "alter")
+    {
+        type = FINISH_ALTER;
+        while (!in.eof())
+        {
+            String s;
+            in >> s >> "\n";
+            if (s == "finish")
+                break;
+            source_parts.push_back(s);
+        }
     }
 
     in >> "\n";

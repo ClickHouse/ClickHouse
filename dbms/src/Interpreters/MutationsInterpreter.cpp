@@ -381,6 +381,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             const auto required_columns = syntax_result->requiredSourceColumns();
             affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
+        else if (command.type == MutationCommand::CAST)
+        {
+            stages.back().column_to_updated.emplace(command.column_name, makeASTFunction("CAST", command.column_name, command.type_name));
+        }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }

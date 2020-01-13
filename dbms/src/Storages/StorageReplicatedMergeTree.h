@@ -110,6 +110,7 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+    ReplicatedMergeTreeMutationEntry mutateImpl(const MutationCommands & commands, const Context & context);
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
@@ -382,6 +383,8 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
+    bool tryFinishAlter(const LogEntry & entry);
+
     bool tryExecutePartMutation(const LogEntry & entry);
 
 
@@ -430,6 +433,9 @@ private:
 
     /// Checks if some mutations are done and marks them as done.
     void mutationsFinalizingTask();
+
+    /// finish alter after all heavy processes finished
+    void finishAlter();
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
