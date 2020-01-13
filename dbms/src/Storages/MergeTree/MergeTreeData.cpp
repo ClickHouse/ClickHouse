@@ -237,6 +237,8 @@ MergeTreeData::MergeTreeData(
                 "MergeTree data format version on disk doesn't support custom partitioning",
                 ErrorCodes::METADATA_MISMATCH);
     }
+
+    checkCanUsePolymorphicParts(true);
 }
 
 
@@ -1567,6 +1569,9 @@ AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
 {
+    if (!canUseAdaptiveGranularity())
+        return MergeTreeDataPartType::WIDE;
+
     const auto settings = getSettings();
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
@@ -1584,7 +1589,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
     else if (type == MergeTreeDataPartType::WIDE)
         return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);
     else
-        throw Exception("Unknown part type", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unknown type in part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
@@ -1818,6 +1823,7 @@ void MergeTreeData::changeSettings(
         copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
+        checkCanUsePolymorphicParts(false);
     }
 }
 
@@ -3806,6 +3812,28 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
         }
     }
     return true;
+}
+
+void MergeTreeData::checkCanUsePolymorphicParts(bool no_throw)
+{
+    const auto settings = getSettings();
+    if (!canUseAdaptiveGranularity() && (settings->min_rows_for_wide_part != 0 || settings->min_bytes_for_wide_part != 0))
+    {
+        std::ostringstream message;
+        message << "Table can't create parts with adaptive granularity, but settings min_rows_for_wide_part = "
+                << settings->min_rows_for_wide_part << ", min_bytes_for_wide_part = " << settings->min_bytes_for_wide_part
+                << ". Parts with non-adaptive granularity can be stored only in Wide (default) format.";
+
+        if (no_throw)
+        {
+            message << " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored further.";
+            LOG_WARNING(log, message.str());
+        }
+        else
+        {
+            throw Exception(message.str(), ErrorCodes::NOT_IMPLEMENTED);
+        }
+    }
 }
 
 }
