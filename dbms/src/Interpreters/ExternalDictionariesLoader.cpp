@@ -5,10 +5,6 @@
 #   include <mysqlxx/PoolFactory.h>
 #endif
 
-#if USE_MYSQL
-#   include <mysqlxx/PoolFactory.h>
-#endif
-
 namespace DB
 {
 
