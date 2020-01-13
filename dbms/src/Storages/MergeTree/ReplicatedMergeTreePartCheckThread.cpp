@@ -236,8 +236,6 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 checkDataPart(
                     part,
                     true,
-                    storage.primary_key_data_types,
-                    storage.skip_indices,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)

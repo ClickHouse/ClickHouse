@@ -1233,7 +1233,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+                auto calculated_checksums = checkDataPart(part, false);
                 calculated_checksums.checkEqual(part->checksums, true);
                 WriteBufferFromFile out(tmp_checksums_path, 4096);
                 part->checksums.write(out);
@@ -1254,7 +1254,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
         {
             try
             {
-                checkDataPart(part, true, primary_key_data_types, skip_indices);
+                checkDataPart(part, true);
                 results.emplace_back(part->name, true, "");
             }
             catch (const Exception & ex)

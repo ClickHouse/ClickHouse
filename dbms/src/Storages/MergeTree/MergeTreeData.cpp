@@ -2714,7 +2714,7 @@ void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
+        part->checksums = checkDataPart(part, false);
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
             part->checksums.write(out);

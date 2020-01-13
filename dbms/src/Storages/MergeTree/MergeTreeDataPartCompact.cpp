@@ -196,7 +196,7 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const 
     if (!getColumnPosition(column_name))
         return false;
 
-    auto bin_checksum = checksums.files.find(String(DATA_FILE_NAME) + DATA_FILE_EXTENSION);
+    auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);
 
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
@@ -246,7 +246,7 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
         analysis_result.expression->add(ExpressionAction::project(projection));
 
         String data_temp_name = String(DATA_FILE_NAME) + "_converting";
-        rename_map[data_temp_name + DATA_FILE_EXTENSION] = String(DATA_FILE_NAME) + DATA_FILE_EXTENSION;
+        rename_map[data_temp_name + DATA_FILE_EXTENSION] = DATA_FILE_NAME_WITH_EXTENSION;
         rename_map[data_temp_name + part_mrk_file_extension] = DATA_FILE_NAME + part_mrk_file_extension;
     }
 
