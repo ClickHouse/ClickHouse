@@ -1,5 +1,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
