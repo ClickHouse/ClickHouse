@@ -1065,12 +1065,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     /// Can throw an exception while reserving space.
     MergeTreeDataPart::TTLInfos ttl_infos;
+    size_t max_volume_index = 0;
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
+        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
     }
     ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
-            ttl_infos, time(nullptr));
+            ttl_infos, time(nullptr), max_volume_index);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 

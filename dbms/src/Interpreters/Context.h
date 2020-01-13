@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -82,6 +81,12 @@ class AccessControlManager;
 class SettingsConstraints;
 class RemoteHostFilter;
 struct StorageID;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class DiskSelector;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -589,7 +594,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const StorageID & table_id, Exception * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

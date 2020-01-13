@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset='UTF-8' />
+        <title>Performance Comparison Of ClickHouse On Various Hardware</title>
+
+<style type='text/css'>
+
+@font-face {
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
+}
+
+body {
+    background-color: #EEE;
+
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+
+h1, h2 {
+    margin: 3px;
+    font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+}
+
+p {
+    line-height: 20px;
+    white-space: pre-wrap;
+}
+
+a {
+    text-decoration: none;
+    color: #06F;
+}
+
+a:hover {
+    text-decoration: underline;
+    color: #F40;
+}
+
+.island {
+    background-color: #FFF;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+/*    border-radius: 5px;*/
+    padding: 10px;
+    width: 90%;
+    margin: 10px auto 10px auto;
+}
+
+.title {
+    font-size: 40px;
+    font-weight: normal;
+    text-align: center;
+    margin: 0;
+}
+
+.subtitle {
+    font-size: 50px;
+    font-weight: normal;
+    text-align: center;
+    margin: 0;
+}
+
+.signature {
+    text-align: right;
+    margin: 0;
+}
+
+.terminal {
+    font-family: Monospace;
+    font-size: 9pt;
+    color: #B2B2B2;
+    background-color: #000;
+    padding: 3px;
+    border: 1px solid #AAA;
+    white-space: pre-wrap;
+}
+
+.text-example {
+    font-family: Monospace;
+    font-size: 9pt;
+    background-color: #FEC;
+    padding: 3px;
+    border: 1px solid #DDD;
+    white-space: pre-wrap;
+}
+
+.inline-example {
+    font-family: Monospace;
+    font-size: 9pt;
+    background-color: #FEC;
+}
+
+.informer {
+    width: 1000px;
+    margin: 20px auto 10px auto;
+    text-align: right;
+}
+
+.show-example {
+    display: none;
+}
+
+.show-hide-link {
+    color: #06C;
+    border-bottom: 1px dotted #06C;
+}
+
+.show-hide-link:hover {
+    color: #F40;
+    border-bottom: 1px dotted #F40;
+    cursor: pointer;
+}
+
+.head-anchor {
+    float: right;
+    color: #AAA;
+}
+
+.head-anchor:hover {
+    text-decoration: none;
+}
+
+.comparison_table {
+    background-color: #EEE;
+}
+
+td {
+    padding: 2px 5px 1px 5px;
+}
+
+th {
+    padding: 5px 5px 5px 5px;
+}
+
+.query_cell {
+    width: 300px;
+    white-space: pre;
+    overflow-x: hidden;
+}
+
+.query_cell:hover {
+    width: auto;
+    background-color: #FEC;
+    position: absolute;
+    padding: 3px;
+    margin: -11px 0 0 -3px;
+    overflow-x: auto;
+    white-space: normal;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 25px -5px rgba(0, 0, 0, 0.25);
+}
+
+.number_cell {
+    text-align: right;
+}
+
+.comparison_table td {
+    background-color: #FFF;
+}
+
+.comparison_table th {
+    background-color: #F8F8F8;
+}
+
+#selectors {
+    font-size: 20px;
+    font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+    margin: 5px;
+}
+
+#selectors p span {
+    border: 1px solid #DDD;
+    background-color: #EEE;
+    padding: 1px 5px 1px 5px;
+    cursor: pointer;
+}
+
+#selectors p span.selected {
+    border: 1px solid #F60;
+    background-color: #F80;
+}
+
+#selectors p span.disabled {
+    color: #AAA;
+    cursor: default;
+}
+
+.bar {
+    background-color: #6AF;
+    margin-top: 1px;
+}
+
+#diagram table tr td {
+    border-left: 1px solid #EEE;
+    border-top: 1px solid #EEE;
+    background-color: #F8F8F8;
+}
+
+#diagram table tr td:last-child {
+    border-right: 1px solid #EEE;
+}
+
+#diagram table tr:last-child td {
+    border-bottom: 1px solid #EEE;
+}
+
+
+</style>
+
+    </head>
+    <body>
+
+<script type="text/javascript">
+function getParams() {
+    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
+    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
+}
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function (d, w, c) {
+        (w[c] = w[c] || []).push(function() {
+            try {
+                w.yaCounter18343495 = new Ya.Metrika2({
+                    id:18343495,
+                    clickmap:true,
+                    trackLinks:true,
+                    accurateTrackBounce:true,
+                    webvisor:true
+                });
+            } catch(e) { }
+        });
+
+        var n = d.getElementsByTagName("script")[0],
+            s = d.createElement("script"),
+            f = function () { n.parentNode.insertBefore(s, n); };
+        s.type = "text/javascript";
+        s.async = true;
+        s.src = "https://mc.yandex.ru/metrika/tag.js";
+
+        if (w.opera == "[object Opera]") {
+            d.addEventListener("DOMContentLoaded", f, false);
+        } else { f(); }
+    })(document, window, "yandex_metrika_callbacks2");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+<script type="text/javascript">
+
+var queries =
+[
+    {
+        "query": "SELECT count() FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT count() FROM hits WHERE AdvEngineID != 0",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(UserID) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT uniq(UserID) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT uniq(SearchPhrase) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT min(EventDate), max(EventDate) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT AdvEngineID, count() FROM hits WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC",
+        "comment": "",
+    },
+    {
+        "query": "SELECT RegionID, uniq(UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM hits GROUP BY RegionID ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, uniq(UserID) AS u FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchEngineID, SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, count() FROM hits GROUP BY UserID ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID FROM hits WHERE UserID = 12345678901234567890",
+        "comment": "",
+    },
+    {
+        "query": "SELECT count() FROM hits WHERE URL LIKE '%metrika%'",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, any(URL), count() AS c FROM hits WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM hits WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT * FROM hits WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT CounterID, avg(length(URL)) AS l, count() AS c FROM hits WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25",
+        "comment": "",
+    },
+    {
+        "query": "SELECT domainWithoutWWW(Referer) AS key, avg(length(Referer)) AS l, count() AS c, any(Referer) FROM hits WHERE Referer != '' GROUP BY key HAVING c > 100000 ORDER BY l DESC LIMIT 25",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchEngineID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT URL, count() AS c FROM hits GROUP BY URL ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT 1, URL, count() AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    Title,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND IsLink    AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    TraficSourceID,    SearchEngineID,    AdvEngineID,    ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src,    URL AS Dst,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh GROUP BY    TraficSourceID,    SearchEngineID,    AdvEngineID,    Src,    Dst ORDER BY PageViews DESC LIMIT 1000",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URLHash,    EventDate,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND TraficSourceID IN (-1, 6)    AND RefererHash = halfMD5('http://yandex.ru/') GROUP BY    URLHash,    EventDate ORDER BY PageViews DESC LIMIT 100",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    WindowClientWidth,    WindowClientHeight,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND NOT DontCountHits    AND URLHash = halfMD5('http://yandex.ru/') GROUP BY    WindowClientWidth,    WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    toStartOfMinute(EventTime) AS Minute,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-02')    AND NOT Refresh    AND NOT DontCountHits GROUP BY    Minute ORDER BY Minute;",
+        "comment": "",
+    }
+]
+
+var results =
+[
+    {
+        "system":       "Xeon Gold 6230, 2 sockets, 40 threads",
+        "data_size":    100000000,
+        "time":         "2020-01-01 00:00:00",
+        "result":
+        [
+[0.009, 0.002, 0.001],
+[0.028, 0.008, 0.009],
+[0.055, 0.014, 0.014],
+[0.122, 0.018, 0.018],
+[0.157, 0.069, 0.068],
+[0.217, 0.124, 0.121],
+[0.020, 0.008, 0.008],
+[0.013, 0.008, 0.007],
+[0.284, 0.213, 0.217],
+[0.312, 0.241, 0.239],
+[0.164, 0.087, 0.090],
+[0.168, 0.092, 0.092],
+[0.318, 0.256, 0.251],
+[0.436, 0.323, 0.325],
+[0.385, 0.327, 0.327],
+[0.419, 0.402, 0.398],
+[1.061, 0.918, 0.935],
+[0.523, 0.474, 0.598],
+[1.706, 1.621, 1.657],
+[0.124, 0.037, 0.024],
+[1.192, 0.263, 0.258],
+[1.362, 0.303, 0.302],
+[2.473, 0.730, 0.735],
+[2.857, 0.451, 0.382],
+[0.374, 0.106, 0.103],
+[0.204, 0.079, 0.078],
+[0.381, 0.114, 0.109],
+[1.185, 0.327, 0.318],
+[1.011, 0.408, 0.415],
+[0.895, 0.925, 0.880],
+[0.406, 0.277, 0.274],
+[0.846, 0.386, 0.389],
+[3.174, 2.500, 2.533],
+[1.758, 1.311, 1.315],
+[1.766, 1.332, 1.355],
+[0.469, 0.449, 0.462],
+[0.201, 0.169, 0.170],
+[0.069, 0.061, 0.061],
+[0.064, 0.056, 0.057],
+[0.362, 0.365, 0.369],
+[0.035, 0.022, 0.024],
+[0.030, 0.019, 0.019],
+[0.009, 0.005, 0.005]
+        ]
+    },
+
+    {
+        "system":       "Lenovo B580 Laptop (i5-3210M)",
+        "data_size":    100000000,
+        "time":         "2020-01-11 00:00:00",
+        "result":
+        [
+[0.035, 0.003, 0.005],
+[0.093, 0.064, 0.060],
+[0.265, 0.170, 0.167],
+[0.880, 0.251, 0.266],
+[0.954, 0.593, 0.561],
+[2.140, 1.506, 1.525],
+[0.148, 0.096, 0.105],
+[0.064, 0.048, 0.044],
+[2.727, 2.330, 2.280],
+[3.386, 3.210, 2.951],
+[1.218, 0.787, 0.749],
+[1.293, 0.915, 0.904],
+[3.713, 3.224, 3.190],
+[4.943, 4.338, 4.310],
+[4.503, 3.999, 3.918],
+[4.001, 3.686, 4.144],
+[10.714, 10.011, 10.035],
+[7.456, 6.556, 6.675],
+[20.201, 19.238, 19.135],
+[0.888, 0.217, 0.209],
+[9.685, 4.144, 4.023],
+[11.201, 4.648, 4.636],
+[21.037, 10.712, 10.571],
+[18.186, 4.743, 4.743],
+[2.844, 1.379, 1.358],
+[1.623, 1.138, 1.130],
+[2.861, 1.394, 1.417],
+[9.691, 4.191, 4.129],
+[10.285, 7.381, 7.379],
+[6.879, 6.871, 6.829],
+[4.131, 3.336, 3.240],
+[7.157, 4.666, 4.616],
+[29.371, 36.392, 29.946],
+[17.929, 14.223, 14.127],
+[17.058, 13.998, 14.055],
+[5.667, 5.460, 5.408],
+[0.325, 0.230, 0.217],
+[0.115, 0.101, 0.094],
+[0.148, 0.093, 0.084],
+[0.585, 0.464, 0.459],
+[0.078, 0.042, 0.035],
+[0.057, 0.038, 0.032],
+[0.024, 0.011, 0.010]
+        ]
+    },
+
+    {
+        "system":       "Yandex Cloud Cascade Lake, 64 vCPU (32 threads), 128 GB RAM, 400 GB SSD",
+        "data_size":    100000000,
+        "time":         "2020-01-11 00:00:00",
+        "result":
+        [
+[0.037, 0.002, 0.002],
+[0.113, 0.008, 0.014],
+[0.275, 0.016, 0.016],
+[0.448, 0.022, 0.022],
+[0.472, 0.083, 0.082],
+[0.808, 0.137, 0.136],
+[0.063, 0.016, 0.010],
+[0.055, 0.008, 0.008],
+[0.753, 0.280, 0.327],
+[0.850, 0.308, 0.305],
+[0.540, 0.110, 0.105],
+[0.533, 0.113, 0.112],
+[0.930, 0.326, 0.314],
+[1.463, 0.392, 0.374],
+[0.994, 0.389, 0.386],
+[0.763, 0.471, 0.499],
+[1.890, 1.271, 1.280],
+[1.335, 0.642, 1.776],
+[3.886, 2.448, 2.370],
+[0.452, 0.052, 0.029],
+[5.834, 0.380, 0.374],
+[6.645, 0.509, 0.385],
+[12.401, 1.204, 1.146],
+[12.727, 0.502, 0.513],
+[1.628, 0.154, 0.128],
+[0.739, 0.121, 0.144],
+[1.632, 0.173, 0.127],
+[5.856, 0.495, 0.568],
+[4.960, 0.685, 0.784],
+[1.619, 0.974, 1.638],
+[1.420, 0.377, 0.361],
+[3.379, 0.596, 0.580],
+[5.797, 4.241, 4.280],
+[6.864, 2.376, 2.224],
+[6.834, 2.112, 2.118],
+[0.996, 0.890, 0.947],
+[0.286, 0.226, 0.218],
+[0.110, 0.080, 0.077],
+[0.146, 0.075, 0.068],
+[0.531, 0.500, 0.438],
+[0.076, 0.025, 0.027],
+[0.054, 0.021, 0.022],
+[0.033, 0.004, 0.004]
+        ]
+    },
+
+    {
+        "system":       "E5-2650 v2 @ 2.60GHz, 2 sockets, 16 threads, 8xHDD RAID-5",
+        "data_size":    100000000,
+        "time":         "2020-01-12 00:00:00",
+        "result":
+        [
+[0.101, 0.002, 0.002],
+[0.196, 0.019, 0.021],
+[0.486, 0.035, 0.029],
+[0.413, 0.045, 0.043],
+[0.368, 0.134, 0.105],
+[0.563, 0.282, 0.269],
+[0.078, 0.030, 0.025],
+[0.070, 0.019, 0.014],
+[0.751, 0.522, 0.558],
+[0.856, 0.549, 0.547],
+[0.458, 0.155, 0.163],
+[0.439, 0.169, 0.190],
+[0.929, 0.699, 0.608],
+[1.494, 0.863, 0.902],
+[1.379, 0.778, 0.794],
+[1.032, 0.832, 0.851],
+[2.364, 1.974, 1.914],
+[1.284, 1.140, 1.043],
+[4.745, 4.279, 4.294],
+[0.713, 0.085, 0.071],
+[4.133, 0.775, 0.729],
+[3.485, 0.924, 0.880],
+[7.568, 1.808, 1.853],
+[9.496, 1.115, 1.119],
+[1.130, 0.209, 0.243],
+[0.643, 0.225, 0.211],
+[1.338, 0.293, 0.233],
+[4.353, 0.803, 0.759],
+[2.667, 1.158, 1.070],
+[2.612, 1.753, 1.721],
+[1.370, 0.641, 0.704],
+[2.348, 0.977, 1.015],
+[6.154, 5.822, 5.696],
+[4.553, 3.076, 3.232],
+[4.647, 2.960, 3.249],
+[1.441, 1.424, 1.285],
+[0.560, 0.303, 0.245],
+[0.223, 0.082, 0.084],
+[0.275, 0.078, 0.076],
+[0.929, 0.487, 0.416],
+[0.362, 0.033, 0.049],
+[0.179, 0.035, 0.022],
+[0.075, 0.013, 0.013]
+        ]
+    },
+];
+
+</script>
+
+<script type="text/javascript">
+
+var data_sizes =
+[
+    { id: "100000000",  name: "100 mln." },
+];
+
+var current_data_size = 100000000;
+
+var systems = [];
+var systems_uniq = {};
+for (r in results) {
+    if (systems_uniq[results[r].system])
+       continue;
+    systems_uniq[results[r].system] = 1;
+    systems.push(results[r].system);
+}
+
+var current_systems = systems;
+
+var runs = ["first (cold cache)", "second", "third"];
+var current_runs = ['1', '2'];
+
+try {
+    var state = JSON.parse(window.location.hash.substring(1));
+
+    current_data_size = state[0];
+    current_systems = state[1];
+    current_runs = state[2];
+} catch (e) {}
+
+function update_hash() {
+    window.location.hash = JSON.stringify([ current_data_size, current_systems, current_runs ]);
+}
+
+
+function generate_selectors(elem) {
+    var html = "<p id='systems_selector'>Compare: ";
+
+    var available_systems_for_current_data_size = results.
+        filter(function(run) { return run.data_size == current_data_size; }).
+        map(function(run) { return run.system; });
+
+    for (var i = 0; i < systems.length; i++) {
+        var selected = current_systems.indexOf(systems[i]) != -1;
+        var available = available_systems_for_current_data_size.indexOf(systems[i]) != -1;
+
+        html += "<span class='" +
+            (selected && available ? "selected" : "") +
+            (available ? "" : " disabled") +
+            "'>" + systems[i] + "</span> ";
+    }
+
+    html += "</p>";
+    html += "<p id='data_size_selector'>";
+
+    html += "Dataset size: ";
+
+    for (var i = 0; i < data_sizes.length; i++) {
+        html += "<span class='" + (data_sizes[i].id == current_data_size ? "selected" : "") + "' data-size-id='" + data_sizes[i].id + "'>" + data_sizes[i].name + "</span> ";
+    }
+
+    html += "</p>";
+    html += "<p id='runs_selector'>";
+
+    html += "Run number: ";
+
+    for (var i = 0; i < runs.length; i++) {
+        html += "<span class='" + (current_runs.indexOf(String(i)) != -1 ? "selected" : "") + "' data-run-id='" + i + "'>" + runs[i] + "</span> ";
+    }
+
+    html += "</p>";
+
+    elem.html(html);
+
+    $('#systems_selector span:not(.disabled)').click(function(event) {
+        var target = $(event.target || event.srcElement);
+
+        if (target.hasClass("selected") && current_systems.length == 1) {
+            return;
+        }
+
+        target.toggleClass("selected");
+
+        current_systems = $.map($('#systems_selector span'), function(elem) {
+            return $(elem).hasClass("selected") ? $(elem).html() : null }).filter(function(x) { return x; });
+
+        update_hash();
+        generate_selectors(elem);
+        generate_comparison_table();
+        generate_diagram();
+    });
+
+    $('#data_size_selector span').click(function(event) {
+        var target = $(event.target || event.srcElement);
+
+        current_data_size = target.attr("data-size-id");
+
+        update_hash();
+        generate_selectors(elem);
+        generate_comparison_table();
+        generate_diagram();
+    });
+
+    $('#runs_selector span').click(function(event) {
+        var target = $(event.target || event.srcElement);
+
+        if (target.hasClass("selected") && current_runs.length == 1) {
+            return;
+        }
+
+        target.toggleClass("selected");
+
+        current_runs = $.map($('#runs_selector span'), function(elem) {
+            return $(elem).hasClass("selected") ? $(elem).attr("data-run-id") : null }).filter(function(x) { return x; });
+
+        update_hash();
+        generate_selectors(elem);
+        generate_comparison_table();
+        generate_diagram();
+    });
+};
+
+
+function format_number_cell(value, ratio) {
+    var html = "";
+
+    var redness = (ratio - 1) / ratio;
+    var blackness = ratio < 10 ? 0 : ((ratio - 10) / ratio / 2);
+
+    var color = !value ? "#FFF" :
+        ratio == 1 ?
+            ("rgba(0, 255, 0, 1)") :
+            ("rgba(" + ~~(255 * (1 - blackness)) + ", 0, 0, " + redness + ")");
+
+    html += "<td class='number_cell' style='background-color: " + color + "'>";
+    html += value ?
+        (ratio == 1 ? "" : ("x" + ratio.toFixed(2))) + "&nbsp;<span style='color: #888;'>(" + value.toFixed(3) + "&nbsp;s.)</span>" :
+        "—";
+    html += "</td>";
+
+    return html;
+}
+
+
+/* Отношения времени выполнения запроса к лучшему времени по системам:
+ *  номер системы -> номер запуска -> номер запроса -> отношение.
+ */
+var ratios = [];
+
+
+function generate_comparison_table() {
+    ratios = [];
+
+    var filtered_results = results.filter(function(x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+
+    var html = "";
+
+    html += "<table class='comparison_table'>";
+
+    html += "<tr>";
+    html += "<th><input id='query_checkbox_toggler' type='checkbox' checked /></th>";
+    html += "<th style='text-align: left;'>Query</th>";
+    for (var j = 0; j < filtered_results.length; j++) {
+        html += "<th colspan='" + current_runs.length + "'>" + filtered_results[j].system +
+            (filtered_results[j].version ? " (" + filtered_results[j].version + ")" : "") + "</th>";
+    }
+    html += "</tr>";
+
+    for (var i = 0; i < queries.length; i++) {
+        html += "<tr>";
+        html += "<td><input id='query_checkbox" + i + "' type='checkbox' " +
+            ($('#query_checkbox' + i).length == 0 || $('#query_checkbox' + i).is(':checked') ? "checked" : "") + " /></td>";
+
+        html += "<td><div class='query_cell'>" + queries[i].query + "</div></td>";
+
+        // Вычислим максимальное и минимальное время выполнения по системам, для каждого из трёх прогонов.
+        var minimums = [0, 0, 0], maximums = [0, 0, 0];
+
+        for (var j = 0; j < filtered_results.length; j++) {
+            for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+                var k = current_runs[current_run_idx];
+                var value = filtered_results[j].result[i][k];
+
+                if (value && (!minimums[k] || value < minimums[k])) {
+                    minimums[k] = value;
+
+                    // Меньше 10 мс. не различаем.
+                    if (minimums[k] < 0.01) {
+                        minimums[k] = 0.01;
+                    }
+                }
+
+                if (value > maximums[k]) {
+                    maximums[k] = value;
+                }
+            }
+        }
+
+        for (var j = 0; j < filtered_results.length; j++) {
+            if (!ratios[j]) {
+                ratios[j] = [];
+            }
+
+            for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+                var k = current_runs[current_run_idx];
+                var value = filtered_results[j].result[i][k];
+
+                var ratio = value / minimums[k];
+
+                ratios[j][k] = ratios[j][k] || [];
+
+                if (ratio && ratio <= 1) {
+                    ratio = 1;
+                }
+
+                ratios[j][k].push(ratio);
+
+                html += format_number_cell(value, ratio);
+            }
+        }
+        html += "</tr>";
+    }
+
+    if (current_systems.length) {
+        html += "<tr>";
+        html += "<td rowspan='2'></td>";
+        html += "<td rowspan='2'><div class='query_cell'>Geometric mean of ratios</div></td>";
+
+        for (var j = 0; j < filtered_results.length; j++) {
+            for (var k = 0; k < current_runs.length; k++) {
+                html += "<th id='totals" + j + "_" + current_runs[k] + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+            }
+        }
+
+        html += "</tr>";
+        html += "<tr>";
+
+        for (var j = 0; j < filtered_results.length; j++) {
+            html += "<th id='absolute_totals" + j + "' colspan='" + current_runs.length + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+        }
+
+        html += "</tr>";
+    }
+
+    html += "</table>";
+
+    $('#comparison_table').html(html);
+
+    for (var i = 0; i < queries.length; i++) {
+        $('#query_checkbox' + i).click(function() { calculate_totals(); generate_diagram(); } );
+    }
+    $('#query_checkbox_toggler').click(function() {
+        for (var i = 0; i < queries.length; i++) {
+            var item = $('#query_checkbox' + i);
+            item.prop("checked", !item.prop("checked"));
+        }
+    });
+
+    calculate_totals();
+}
+
+
+function calculate_totals() {
+    if (!current_systems.length) return;
+
+    var filtered_results = results.filter(function(x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+
+    var total_ratios = [];
+
+    for (var j = 0; j < filtered_results.length; j++) {
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+            var k = current_runs[current_run_idx];
+
+            var current_ratios = ratios[j][k].filter(
+                function(x, i) {
+                    return x && $("#query_checkbox" + i).is(':checked');
+                }
+            );
+
+            var ratio = Math.pow(
+                current_ratios.reduce(
+                    function(acc, cur) { return acc * cur; },
+                    1),
+                1 / current_ratios.length);
+
+            total_ratios[j] = total_ratios[j] || 1;
+            total_ratios[j] *= ratio;
+
+            $("#totals" + j + "_" + k).attr("data-ratio", ratio).html("x" + ratio.toFixed(2));
+        }
+    }
+
+    for (var j = 0; j < filtered_results.length; j++) {
+        var total_ratio = Math.pow(total_ratios[j], 1 / current_runs.length);
+        $("#absolute_totals" + j).attr("data-ratio", total_ratio).html("x" + total_ratio.toFixed(2));
+    }
+}
+
+
+function generate_diagram() {
+    var html = "";
+
+    var filtered_results = results.filter(function(x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+
+    var max_ratio = 1;
+    var min_ratio = 0;
+
+    var max_total_ratio = 1;
+    var min_total_ratio = 0;
+
+    for (var j = 0; j < filtered_results.length; j++) {
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+            var k = current_runs[current_run_idx];
+            var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
+
+            if (ratio > max_ratio) {
+                max_ratio = ratio;
+            }
+
+            if (!min_ratio || ratio < min_ratio) {
+                min_ratio = ratio;
+            }
+        }
+
+        var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+
+        if (total_ratio > max_total_ratio) {
+            max_total_ratio = total_ratio;
+        }
+
+        if (!min_total_ratio || total_ratio < min_total_ratio) {
+            min_total_ratio = total_ratio;
+        }
+    }
+
+    html += "<table style='width: 100%'>";
+
+    for (var j = 0; j < filtered_results.length; j++) {
+        var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+
+        html += "<tr>";
+        html += "<td style='text-align: right;'><b>" + filtered_results[j].system + "</b>" +
+            (filtered_results[j].version ? "<br />(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")" : "") + "</td>";
+
+        html += "<td style='width: 100%; padding-right: 20px;'>";
+
+        for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
+            var k = current_runs[current_run_idx];
+
+            var ratio = +$("#totals" + j + "_" + k).attr("data-ratio");
+            var percents = (ratio * 100 / max_ratio).toFixed(2);
+
+            if (!ratio) {
+                ratio = +$("#absolute_totals" + j).attr("data-ratio");
+                percents = (ratio * 100 / max_total_ratio).toFixed(2);
+            }
+
+            html += "<div class='bar' style='width: " + percents + "%;'>&nbsp;</div>";
+
+        }
+
+        html += "</td>";
+
+        //min_total_ratio = 1;
+        //total_ratio = 1;
+        html += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
+        html += "</tr>";
+    }
+
+    html += "</table>";
+
+    $('#diagram').html(html);
+}
+
+
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
+          webvisor:true,
+          clickmap:true,
+          trackLinks:true,
+          accurateTrackBounce:true,
+          trackHash:true});
+} catch(e) { }
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+
+<div class='island'>
+
+<div style="float: left; margin-right: -100%; margin-top: -1px;">
+    <a href="/" title="Main page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="45" height="40" viewBox="0 0 9 8">
+            <style>
+                .o{fill:#fc0}
+                .r{fill:#f00}
+            </style>
+            <path class="r" d="M0,7 h1 v1 h-1 z"/>
+            <path class="o" d="M0,0 h1 v7 h-1 z"/>
+            <path class="o" d="M2,0 h1 v8 h-1 z"/>
+            <path class="o" d="M4,0 h1 v8 h-1 z"/>
+            <path class="o" d="M6,0 h1 v8 h-1 z"/>
+            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+        </svg>
+    </a>
+</div>
+
+<h1 class='title'>Performance Comparison Of ClickHouse On Various Hardware</h1>
+</div>
+
+<div class='island'>
+
+<div id='selectors'></div>
+
+<h2>Relative query processing time (lower is better):</h2>
+<div id='diagram' style='width: 100%;'></div>
+
+<br />
+<h2>Full results:</h2>
+
+<div id='comparison_table'></div>
+
+</div>
+
+<div class='island'>
+Results for Lenovo B580 Laptop are from <b>Ragıp Ünal</b>. 16GB RAM 1600 GHz, 240GB SSD, Intel(R) Core(TM) i5-3210M CPU @ 2.50GHz (2 Core / 4 HT)<br/>
+Submit your own results: <a href="https://clickhouse.yandex/docs/en/operations/performance_test/">https://clickhouse.yandex/docs/en/operations/performance_test/</a>
+</div>
+
+<script type="text/javascript">
+generate_selectors($('#selectors'));
+generate_comparison_table();
+generate_diagram();
+</script>
+
+    </body>
+</html>
