@@ -301,10 +301,6 @@ struct Codec
         : codec_statement(std::move(codec_statement_)),
           expected_compression_ratio(expected_compression_ratio_)
     {}
-
-    Codec()
-        : Codec(std::string())
-    {}
 };
 
 
@@ -314,22 +310,11 @@ struct CodecTestSequence
     std::vector<char> serialized_data;
     DataTypePtr data_type;
 
-    CodecTestSequence()
-        : name(),
-          serialized_data(),
-          data_type()
-    {}
-
     CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
         : name(name_),
           serialized_data(serialized_data_),
           data_type(data_type_)
     {}
-
-    CodecTestSequence(const CodecTestSequence &) = default;
-    CodecTestSequence & operator=(const CodecTestSequence &) = default;
-    CodecTestSequence(CodecTestSequence &&) = default;
-    CodecTestSequence & operator=(CodecTestSequence &&) = default;
 
     CodecTestSequence & append(const CodecTestSequence & other)
     {
@@ -819,24 +804,6 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     return sequences;
 };
 
-// Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
-template <typename T, typename Generator>
-CodecTestSequence generatePyramidSequence(const size_t sequences_count, Generator && generator, const char* generator_name)
-{
-    CodecTestSequence sequence;
-    sequence.data_type = makeDataType<T>();
-    sequence.serialized_data.reserve(sequences_count * sequences_count * sizeof(T));
-
-    for (size_t i = 1; i < sequences_count; ++i)
-    {
-        std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequence.append(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
-    }
-
-    return sequence;
-};
-
-
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator
 
@@ -853,17 +820,17 @@ const auto DefaultCodecsToTest = ::testing::Values(
 // test cases
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-INSTANTIATE_TEST_CASE_P(Simple,
+INSTANTIATE_TEST_SUITE_P(Simple,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
             makeSeq<Float64>(1, 2, 3, 5, 7, 11, 13, 17, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97)
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SmallSequences,
+INSTANTIATE_TEST_SUITE_P(SmallSequences,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -877,10 +844,10 @@ INSTANTIATE_TEST_CASE_P(SmallSequences,
                 + generatePyramidOfSequences<UInt32>(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<UInt64>(42, G(SequentialGenerator(1)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(Mixed,
+INSTANTIATE_TEST_SUITE_P(Mixed,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -894,10 +861,10 @@ INSTANTIATE_TEST_CASE_P(Mixed,
             generateSeq<UInt32>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt32>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001)
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SameValueInt,
+INSTANTIATE_TEST_SUITE_P(SameValueInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -911,10 +878,10 @@ INSTANTIATE_TEST_CASE_P(SameValueInt,
             generateSeq<UInt32>(G(SameValueGenerator(1000))),
             generateSeq<UInt64>(G(SameValueGenerator(1000)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SameNegativeValueInt,
+INSTANTIATE_TEST_SUITE_P(SameNegativeValueInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -928,10 +895,10 @@ INSTANTIATE_TEST_CASE_P(SameNegativeValueInt,
             generateSeq<UInt32>(G(SameValueGenerator(-1000))),
             generateSeq<UInt64>(G(SameValueGenerator(-1000)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SameValueFloat,
+INSTANTIATE_TEST_SUITE_P(SameValueFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -942,10 +909,10 @@ INSTANTIATE_TEST_CASE_P(SameValueFloat,
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
             generateSeq<Float64>(G(SameValueGenerator(M_E)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SameNegativeValueFloat,
+INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -956,10 +923,10 @@ INSTANTIATE_TEST_CASE_P(SameNegativeValueFloat,
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
             generateSeq<Float64>(G(SameValueGenerator(-1 * M_E)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialInt,
+INSTANTIATE_TEST_SUITE_P(SequentialInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -973,12 +940,12 @@ INSTANTIATE_TEST_CASE_P(SequentialInt,
             generateSeq<UInt32>(G(SequentialGenerator(1))),
             generateSeq<UInt64>(G(SequentialGenerator(1)))
         )
-    ),
+    )
 );
 
 // -1, -2, -3, ... etc for signed
 // 0xFF, 0xFE, 0xFD, ... for unsigned
-INSTANTIATE_TEST_CASE_P(SequentialReverseInt,
+INSTANTIATE_TEST_SUITE_P(SequentialReverseInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -992,10 +959,10 @@ INSTANTIATE_TEST_CASE_P(SequentialReverseInt,
             generateSeq<UInt32>(G(SequentialGenerator(-1))),
             generateSeq<UInt64>(G(SequentialGenerator(-1)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialFloat,
+INSTANTIATE_TEST_SUITE_P(SequentialFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1006,10 +973,10 @@ INSTANTIATE_TEST_CASE_P(SequentialFloat,
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
             generateSeq<Float64>(G(SequentialGenerator(M_E)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(SequentialReverseFloat,
+INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1020,10 +987,10 @@ INSTANTIATE_TEST_CASE_P(SequentialReverseFloat,
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
             generateSeq<Float64>(G(SequentialGenerator(-1 * M_E)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicInt,
+INSTANTIATE_TEST_SUITE_P(MonotonicInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1037,10 +1004,10 @@ INSTANTIATE_TEST_CASE_P(MonotonicInt,
             generateSeq<UInt32>(G(MonotonicGenerator(1, 5))),
             generateSeq<UInt64>(G(MonotonicGenerator(1, 5)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicReverseInt,
+INSTANTIATE_TEST_SUITE_P(MonotonicReverseInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1054,10 +1021,10 @@ INSTANTIATE_TEST_CASE_P(MonotonicReverseInt,
             generateSeq<UInt32>(G(MonotonicGenerator(-1, 5))),
             generateSeq<UInt64>(G(MonotonicGenerator(-1, 5)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicFloat,
+INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1067,10 +1034,10 @@ INSTANTIATE_TEST_CASE_P(MonotonicFloat,
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(M_E, 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(MonotonicReverseFloat,
+INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1080,10 +1047,10 @@ INSTANTIATE_TEST_CASE_P(MonotonicReverseFloat,
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(-1 * M_E, 5))),
             generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomInt,
+INSTANTIATE_TEST_SUITE_P(RandomInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1093,10 +1060,10 @@ INSTANTIATE_TEST_CASE_P(RandomInt,
             generateSeq<UInt32>(G(RandomGenerator<UInt32>(0, 0, 1000'000'000))),
             generateSeq<UInt64>(G(RandomGenerator<UInt64>(0, 0, 1000'000'000)))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomishInt,
+INSTANTIATE_TEST_SUITE_P(RandomishInt,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1108,10 +1075,10 @@ INSTANTIATE_TEST_CASE_P(RandomishInt,
             generateSeq<Float32>(G(RandomishGenerator)),
             generateSeq<Float64>(G(RandomishGenerator))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(RandomishFloat,
+INSTANTIATE_TEST_SUITE_P(RandomishFloat,
     CodecTest,
     ::testing::Combine(
         DefaultCodecsToTest,
@@ -1119,11 +1086,11 @@ INSTANTIATE_TEST_CASE_P(RandomishFloat,
             generateSeq<Float32>(G(RandomishGenerator)),
             generateSeq<Float64>(G(RandomishGenerator))
         )
-    ),
+    )
 );
 
 // Double delta overflow case, deltas are out of bounds for target type
-INSTANTIATE_TEST_CASE_P(OverflowInt,
+INSTANTIATE_TEST_SUITE_P(OverflowInt,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1136,10 +1103,10 @@ INSTANTIATE_TEST_CASE_P(OverflowInt,
             generateSeq<UInt64>(G(MinMaxGenerator())),
             generateSeq<Int64>(G(MinMaxGenerator()))
         )
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(OverflowFloat,
+INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
@@ -1152,7 +1119,7 @@ INSTANTIATE_TEST_CASE_P(OverflowFloat,
             generateSeq<Float32>(G(FFand0Generator())),
             generateSeq<Float64>(G(FFand0Generator()))
         )
-    ),
+    )
 );
 
 template <typename ValueType>
@@ -1189,7 +1156,7 @@ auto DDCompatibilityTestSequence()
 
 #define BIN_STR(x) std::string{x, sizeof(x) - 1}
 
-INSTANTIATE_TEST_CASE_P(DoubleDelta,
+INSTANTIATE_TEST_SUITE_P(DoubleDelta,
     CodecTest_Compatibility,
     ::testing::Combine(
         ::testing::Values(Codec("DoubleDelta")),
@@ -1227,7 +1194,7 @@ INSTANTIATE_TEST_CASE_P(DoubleDelta,
                 BIN_STR("\x94\xd4\x00\x00\x00\x98\x01\x00\x00\x08\x00\x33\x00\x00\x00\x2a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x6b\x65\x5f\x50\x34\xff\x4f\xaf\xbc\xe3\x5d\xa3\xd3\xd9\xf6\x1f\xe2\x07\x7c\x47\x20\x67\x48\x07\x47\xff\x47\xf6\xfe\xf8\x00\x00\x70\x6b\xd0\x00\x02\x83\xd9\xfb\x9f\xdc\x1f\xfc\x20\x1e\x80\x00\x22\xc8\xf0\x00\x00\x66\x67\xa0\x00\x02\x00\x3d\x00\x00\x0f\xff\xe8\x00\x00\x7f\xee\xff\xdf\x00\x00\x70\x0d\x7a\x00\x02\x80\x7b\x9f\xf7\x9f\xfb\xc0\x00\x00\xff\xfe\x00\x00\x08\x00\xfc\x00\x00\x00\x04\x00\x06\xbe\x4f\xbf\xff\xd6\x0c\xff\x00\x00\x00\x01\x00\x00\x00\x03\xf8\x00\x00\x00\x08\x00\x00\x00\x0f\xc0\x00\x00\x00\x3f\xff\xff\xff\xfb\xff\xff\xff\xfb\xe0\x00\x00\x01\xc0\x00\x00\x06\x9f\x80\x00\x00\x0a\x00\x00\x00\x34\xf3\xff\xff\xff\xe7\x9f\xff\xff\xff\x7e\x00\x00\x00\x00\xff\xff\xff\xfd\xf0\x00\x00\x00\x07\xff\xff\xff\xf0")
             },
         })
-    ),
+    )
 );
 
 template <typename ValueType>
@@ -1263,7 +1230,7 @@ auto GCompatibilityTestSequence()
     return generateSeq<ValueType>(G(PrimesWithMultiplierGenerator(intExp10(sizeof(ValueType)))), 0, 42);
 }
 
-INSTANTIATE_TEST_CASE_P(Gorilla,
+INSTANTIATE_TEST_SUITE_P(Gorilla,
     CodecTest_Compatibility,
     ::testing::Combine(
         ::testing::Values(Codec("Gorilla")),
@@ -1301,14 +1268,31 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
                 BIN_STR("\x95\x91\x00\x00\x00\x50\x01\x00\x00\x08\x00\x2a\x00\x00\x00\x00\xc2\xeb\x0b\x00\x00\x00\x00\xe3\x2b\xa0\xa6\x19\x85\x98\xdc\x45\x74\x74\x43\xc2\x57\x41\x4c\x6e\x42\x79\xd9\x8f\x88\xa5\x05\xf3\xf1\x94\xa3\x62\x1e\x02\xdf\x05\x10\xf1\x15\x97\x35\x2a\x50\x71\x0f\x09\x6c\x89\xf7\x65\x1d\x11\xb7\xcc\x7d\x0b\x70\xc1\x86\x88\x48\x47\x87\xb6\x32\x26\xa7\x86\x87\x88\xd3\x93\x3d\xfc\x28\x68\x85\x05\x0b\x13\xc6\x5f\xd4\x70\xe1\x5e\x76\xf1\x9f\xf3\x33\x2a\x14\x14\x5e\x40\xc1\x5c\x28\x3f\xec\x43\x03\x05\x11\x91\xe8\xeb\x8e\x0a\x0e\x27\x21\x55\xcb\x39\xbc\x6a\xff\x11\x5d\x81\xa0\xa6\x10")
             },
         })
-    ),
+    )
 );
 
 // These 'tests' try to measure performance of encoding and decoding and hence only make sence to be run locally,
 // also they require pretty big data to run agains and generating this data slows down startup of unit test process.
 // So un-comment only at your discretion.
 
-//INSTANTIATE_TEST_CASE_P(DoubleDelta,
+// Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
+//template <typename T, typename Generator>
+//CodecTestSequence generatePyramidSequence(const size_t sequences_count, Generator && generator, const char* generator_name)
+//{
+//    CodecTestSequence sequence;
+//    sequence.data_type = makeDataType<T>();
+//    sequence.serialized_data.reserve(sequences_count * sequences_count * sizeof(T));
+//
+//    for (size_t i = 1; i < sequences_count; ++i)
+//    {
+//        std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
+//        sequence.append(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+//    }
+//
+//    return sequence;
+//};
+
+//INSTANTIATE_TEST_SUITE_P(DoubleDelta,
 //    CodecTest_Performance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("DoubleDelta")),
@@ -1325,7 +1309,7 @@ INSTANTIATE_TEST_CASE_P(Gorilla,
 //    ),
 //);
 
-//INSTANTIATE_TEST_CASE_P(Gorilla,
+//INSTANTIATE_TEST_SUITE_P(Gorilla,
 //    CodecTest_Performance,
 //    ::testing::Combine(
 //        ::testing::Values(Codec("Gorilla")),
