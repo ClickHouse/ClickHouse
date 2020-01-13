@@ -2,6 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <DataTypes/NumberTraits.h>
 
+
 namespace DB
 {
     namespace ErrorCodes

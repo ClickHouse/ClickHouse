@@ -1063,6 +1063,7 @@ def test_freeze(start_cluster):
 
     finally:
         node1.query("DROP TABLE IF EXISTS default.freezing_table")
+        node1.exec_in_container(["rm", "-rf", "/jbod1/shadow", "/external/shadow"])
 
 
 def test_kill_while_insert(start_cluster):

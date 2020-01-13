@@ -25,6 +25,11 @@ struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
+    virtual const std::string & getDatabase() const = 0;
+    virtual const std::string & getName() const = 0;
+    virtual const std::string & getFullName() const = 0;
+    const std::string & getLoadableName() const override { return getFullName(); }
+
     virtual std::string getTypeName() const = 0;
 
     virtual size_t getBytesAllocated() const = 0;

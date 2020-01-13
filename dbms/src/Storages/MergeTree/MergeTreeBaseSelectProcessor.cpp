@@ -25,6 +25,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
     UInt64 min_bytes_to_use_direct_io_,
+    UInt64 min_bytes_to_use_mmap_io_,
     UInt64 max_read_buffer_size_,
     bool use_uncompressed_cache_,
     bool save_marks_in_cache_,
@@ -37,6 +38,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     preferred_block_size_bytes(preferred_block_size_bytes_),
     preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
     min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_),
+    min_bytes_to_use_mmap_io(min_bytes_to_use_mmap_io_),
     max_read_buffer_size(max_read_buffer_size_),
     use_uncompressed_cache(use_uncompressed_cache_),
     save_marks_in_cache(save_marks_in_cache_),
@@ -76,35 +78,23 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(
-                pre_reader.get(), nullptr,
-                prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                &prewhere_info->prewhere_column_name,
-                current_task.remove_prewhere_column, true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), nullptr,
-                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                    &prewhere_info->prewhere_column_name,
-                    current_task.remove_prewhere_column, false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
-            current_task.range_reader = MergeTreeRangeReader(
-                reader.get(), pre_reader_ptr, nullptr, nullptr,
-                nullptr, false, true);
+            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true);
         }
     }
     else
     {
-        current_task.range_reader = MergeTreeRangeReader(
-            reader.get(), nullptr, nullptr, nullptr,
-            nullptr, false, true);
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true);
     }
 }
 
@@ -333,6 +323,12 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         prewhere_info->prewhere_actions->execute(block);
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
+        else
+        {
+            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
+            ctn.type = std::make_shared<DataTypeUInt8>();
+            ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+        }
 
         if (!block)
             block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});

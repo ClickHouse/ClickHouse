@@ -15,7 +15,7 @@
 #include <vector>
 #include <typeinfo>
 #include <iostream>
-
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -36,11 +36,11 @@ std::string bin(const T & value, size_t bits = sizeof(T)*8)
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
+// gets N low bits of value
 template <typename T>
 T getBits(UInt8 bits, const T & value)
 {
-    const T mask = ((static_cast<T>(1) << static_cast<T>(bits)) - 1);
-    return value & mask;
+    return value & maskLowBits<T>(bits);
 }
 
 template <typename T>
@@ -83,12 +83,36 @@ std::string dumpContents(const T& container,
     return sstr.str();
 }
 
+template <typename ValueLeft, typename ValueRight>
+::testing::AssertionResult BinaryEqual(const ValueLeft & left, const ValueRight & right)
+{
+//    ::testing::AssertionResult result = ::testing::AssertionSuccess();
+    if (sizeof(left) != sizeof(right))
+        return ::testing::AssertionFailure()
+                << "Sizes do not match, expected: " << sizeof(left) << " actual: " << sizeof(right);
+
+    const auto size = std::min(sizeof(left), sizeof(right));
+    if (memcmp(&left, &right, size) != 0)
+    {
+        const auto l_bits = left ? static_cast<size_t>(std::log2(left)) : 0;
+        const auto r_bits = right ? static_cast<size_t>(std::log2(right)) : 0;
+        const size_t bits = std::max(l_bits, r_bits) + 1;
+
+        return ::testing::AssertionFailure()
+                << "Values are binary different,\n"
+                << "\texpected: 0b" << bin(left, bits) << " (" << std::hex << left << "),\n"
+                << "\tactual  : 0b" << bin(right, bits) << " (" <<std::hex << right << ").";
+    }
+
+    return ::testing::AssertionSuccess();
+}
+
 struct TestCaseParameter
 {
     std::vector<std::pair<UInt8, UInt64>> bits_and_vals;
     std::string expected_buffer_binary;
 
-    explicit TestCaseParameter(std::vector<std::pair<UInt8, UInt64>> vals, std::string binary = std::string{})
+    TestCaseParameter(std::vector<std::pair<UInt8, UInt64>> vals, std::string binary = std::string{})
         : bits_and_vals(std::move(vals)),
           expected_buffer_binary(binary)
     {}
@@ -114,8 +138,7 @@ TEST_P(BitIO, WriteAndRead)
     PODArray<char> data(max_buffer_size);
 
     {
-        WriteBuffer write_buffer(data.data(), data.size());
-        BitWriter writer(write_buffer);
+        BitWriter writer(data.data(), data.size());
         for (const auto & bv : bits_and_vals)
         {
             writer.writeBits(bv.first, bv.second);
@@ -133,38 +156,73 @@ TEST_P(BitIO, WriteAndRead)
             ASSERT_EQ(expected_buffer_binary, actual_buffer_binary);
         }
 
-        BitReader reader(read_buffer);
+        BitReader reader(data.data(), data.size());
 
+        int bitpos = 0;
         int item = 0;
         for (const auto & bv : bits_and_vals)
         {
             SCOPED_TRACE(::testing::Message()
-                         << "item #" << item << ", width: " << static_cast<UInt32>(bv.first)
-                         << ", value: " << bin(bv.second)
-                         << ".\n\n\nBuffer memory:\n" << dumpContents(data));
+                         << "item #" << item << " of " << bits_and_vals.size() << ", width: " << static_cast<UInt32>(bv.first)
+                         << ", value: " << bv.second << "(" << bin(bv.second) << ")"
+                         << ", at bit position: " << std::dec << reader.count()
+                         << ".\nBuffer memory:\n" << dumpContents(data));
 
-            //EXPECT_EQ(getBits(bv.first, bv.second), reader.peekBits(bv.first));
-            EXPECT_EQ(getBits(bv.first, bv.second), reader.readBits(bv.first));
+//            const UInt8 next_byte = getBits(bv.first, bv.second) &
+            ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
+            bitpos += bv.first;
         }
     }
 }
 
-INSTANTIATE_TEST_CASE_P(Simple,
-        BitIO,
-        ::testing::Values(
-            TestCaseParameter(
-                {{9, 0xFFFFFFFF}, {9, 0x00}, {9, 0xFFFFFFFF}, {9, 0x00}, {9, 0xFFFFFFFF}},
-                "11111111 10000000 00111111 11100000 00001111 11111000 "),
-            TestCaseParameter(
-                {{7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {3, 0xFFFF}},
-                "01111110 11111101 11111011 11110111 11101111 11011111 10111111 01111111 11000000 "),
-            TestCaseParameter({{33, 0xFF110d0b07050300}, {33, 0xAAEE29251f1d1713}}),
-            TestCaseParameter({{33, BIT_PATTERN}, {33, BIT_PATTERN}}),
-            TestCaseParameter({{24, 0xFFFFFFFF}},
-                "11111111 11111111 11111111 ")
-),);
+INSTANTIATE_TEST_SUITE_P(Simple,
+    BitIO,
+    ::testing::ValuesIn(std::initializer_list<TestCaseParameter>{
+        {
+            {{9, 0xFFFFFFFF}, {9, 0x00}, {9, 0xFFFFFFFF}, {9, 0x00}, {9, 0xFFFFFFFF}},
+            "11111111 10000000 00111111 11100000 00001111 11111000 "
+        },
+        {
+            {{7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {7, 0x3f}, {3, 0xFFFF}},
+            "01111110 11111101 11111011 11110111 11101111 11011111 10111111 01111111 11000000 "
+        },
+        {
+            {{33, 0xFF110d0b07050300}, {33, 0xAAEE29251f1d1713}}
+        },
+        {
+            {{33, BIT_PATTERN}, {33, BIT_PATTERN}}
+        },
+        {
+            {{24, 0xFFFFFFFF}},
+            "11111111 11111111 11111111 "
+        },
+        {
+            // Note that we take only N lower bits of the number: {3, 0b01011} => 011
+            {{5, 0b01010}, {3, 0b111}, {7, 0b11001100}, {6, 0}, {5, 0b11111111}, {4, 0}, {3, 0b101}, {2, 0}, {1, 0b11111111}},
+            "01010111 10011000 00000111 11000010 10010000 "
+        },
+        {
+            {{64, BIT_PATTERN}, {56, BIT_PATTERN} , {4, 0b1111}, {4, 0}, // 128
+             {8, 0b11111111}, {64, BIT_PATTERN}, {48, BIT_PATTERN}, {8, 0}}, // 256
+            "11101011 11101111 10111010 11101111 10101111 10111010 11101011 10101001 " // 64
+            "11101111 10111010 11101111 10101111 10111010 11101011 10101001 11110000 " // 128
+            "11111111 11101011 11101111 10111010 11101111 10101111 10111010 11101011 " // 192
+            "10101001 10111010 11101111 10101111 10111010 11101011 10101001 00000000 " // 256
+        },
+        {
+            {{64, BIT_PATTERN}, {56, BIT_PATTERN} , {5, 0b11111}, {3, 0}, // 128
+             {8, 0b11111111}, {64, BIT_PATTERN}, {48, BIT_PATTERN}, {8, 0}, //256
+             {32, BIT_PATTERN}, {12, 0xff}, {8, 0}, {12, 0xAEff}},
+            "11101011 11101111 10111010 11101111 10101111 10111010 11101011 10101001 " // 64
+            "11101111 10111010 11101111 10101111 10111010 11101011 10101001 11111000 " // 128
+            "11111111 11101011 11101111 10111010 11101111 10101111 10111010 11101011 " // 192
+            "10101001 10111010 11101111 10101111 10111010 11101011 10101001 00000000 " // 256
+            "10101111 10111010 11101011 10101001 00001111 11110000 00001110 11111111 " // 320
+        }
+    })
+);
 
 TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
 {
@@ -183,12 +241,13 @@ TestCaseParameter primes_case(UInt8 repeat_times, UInt64 pattern)
     return TestCaseParameter(test_data);
 }
 
-INSTANTIATE_TEST_CASE_P(Primes,
-        BitIO,
-        ::testing::Values(
-            primes_case(11, 0xFFFFFFFFFFFFFFFFULL),
-            primes_case(11, BIT_PATTERN)
-),);
+INSTANTIATE_TEST_SUITE_P(Primes,
+    BitIO,
+    ::testing::Values(
+        primes_case(11, 0xFFFFFFFFFFFFFFFFULL),
+        primes_case(11, BIT_PATTERN)
+    )
+);
 
 TEST(BitHelpers, maskLowBits)
 {

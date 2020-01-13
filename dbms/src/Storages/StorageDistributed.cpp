@@ -214,7 +214,7 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach_)
     : IStorage(ColumnsDescription({
         {"_shard_num", std::make_shared<DataTypeUInt32>()},
@@ -222,7 +222,7 @@ StorageDistributed::StorageDistributed(
     table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
+    path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -252,9 +252,9 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, relative_data_path_, attach)
 {
     remote_table_function_ptr = remote_table_function_ptr_;
 }
@@ -393,20 +393,31 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 }
 
 
-void StorageDistributed::alter(
-    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_COLUMN)
+
+            throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
+void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(std::move(new_columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 
@@ -472,7 +483,7 @@ void StorageDistributed::createDirectoryMonitors()
     if (path.empty())
         return;
 
-    Poco::File{path}.createDirectory();
+    Poco::File{path}.createDirectories();
 
     std::filesystem::directory_iterator begin(path);
     std::filesystem::directory_iterator end;
@@ -596,6 +607,22 @@ void StorageDistributed::flushClusterNodesAllData()
         it->second.flushAllData();
 }
 
+void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
+                                TableStructureWriteLockHolder &)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+    if (!path.empty())
+    {
+        auto new_path = global_context.getPath() + new_path_to_table_data;
+        Poco::File(path).renameTo(new_path);
+        path = new_path;
+        std::lock_guard lock(cluster_nodes_mutex);
+        for (auto & node : cluster_nodes_data)
+            node.second.directory_monitor->updatePath();
+    }
+}
+
 
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -649,7 +676,7 @@ void registerStorageDistributed(StorageFactory & factory)
         return StorageDistributed::create(
             args.database_name, args.table_name, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
-            args.context, sharding_key, args.data_path,
+            args.context, sharding_key, args.relative_data_path,
             args.attach);
     });
 }

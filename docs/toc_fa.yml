@@ -193,6 +193,7 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server Settings': 'operations/server_settings/settings.md'
@@ -208,7 +209,8 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
-
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
+    
 - 'F.A.Q.':
   - 'General Questions': 'faq/general.md'
 

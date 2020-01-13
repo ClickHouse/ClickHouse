@@ -356,7 +356,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -369,7 +368,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -382,7 +380,6 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerInputFormatProcessor(name, [](
             ReadBuffer & buf,
             const Block & sample,
-            const Context &,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
@@ -391,7 +388,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
     }
 }
 
-bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     bool need_more_data = true;
     char * pos = in.position();

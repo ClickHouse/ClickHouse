@@ -30,9 +30,9 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, const Context &
     const auto & external_models_loader = context.getExternalModelsLoader();
     auto load_results = external_models_loader.getCurrentLoadResults();
 
-    for (const auto & [model_name, load_result] : load_results)
+    for (const auto & load_result : load_results)
     {
-        res_columns[0]->insert(model_name);
+        res_columns[0]->insert(load_result.name);
         res_columns[1]->insert(static_cast<Int8>(load_result.status));
         res_columns[2]->insert(load_result.origin);
 

@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
@@ -37,6 +38,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {
@@ -50,7 +52,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
 {
     return std::find_if(cols.begin(), cols.end(),
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
@@ -392,6 +394,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto child_column_name = child->getColumnName();
 
         const auto * lambda = child->as<ASTFunction>();
+        const auto * identifier = child->as<ASTIdentifier>();
         if (lambda && lambda->name == "lambda")
         {
             /// If the argument is a lambda expression, just remember its approximate type.
@@ -432,6 +435,23 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 data.addAction(ExpressionAction::addColumn(column));
             }
 
+            argument_types.push_back(column.type);
+            argument_names.push_back(column.name);
+        }
+        else if (identifier && node.name == "joinGet" && arg == 0)
+        {
+            String database_name;
+            String table_name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+            if (database_name.empty())
+                database_name = data.context.getCurrentDatabase();
+            auto column_string = ColumnString::create();
+            column_string->insert(database_name + "." + table_name);
+            ColumnWithTypeAndName column(
+                ColumnConst::create(std::move(column_string), 1),
+                std::make_shared<DataTypeString>(),
+                getUniqueName(data.getSampleBlock(), "__joinGet"));
+            data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
         }

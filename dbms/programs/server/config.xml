@@ -318,7 +318,7 @@
     <!--
     <prometheus>
         <endpoint>/metrics</endpoint>
-        <port>8001</port>
+        <port>9363</port>
 
         <metrics>true</metrics>
         <events>true</events>

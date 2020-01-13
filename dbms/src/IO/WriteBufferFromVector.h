@@ -89,8 +89,14 @@ public:
 
     ~WriteBufferFromVector() override
     {
-        if (!is_finished)
+        try
+        {
             finish();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 };
 

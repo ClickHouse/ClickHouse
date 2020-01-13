@@ -1,3 +1,6 @@
+set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${ConfigIncludePath})
+
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
@@ -72,8 +75,81 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         endif ()
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
-endif()
+    # Add compiler options only to c++ compiler
+    function(add_cxx_compile_options option)
+        add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
+    endfunction()
+    # Warn about boolean expression compared with an integer value different from true/false
+    add_cxx_compile_options(-Wbool-compare)
+    # Warn whenever a pointer is cast such that the required alignment of the target is increased.
+    add_cxx_compile_options(-Wcast-align)
+    # Warn whenever a pointer is cast so as to remove a type qualifier from the target type.
+    add_cxx_compile_options(-Wcast-qual)
+    # Warn when deleting a pointer to incomplete type, which may cause undefined behavior at runtime
+    add_cxx_compile_options(-Wdelete-incomplete)
+    # Warn if a requested optimization pass is disabled. Code is too big or too complex
+    add_cxx_compile_options(-Wdisabled-optimization)
+    # Warn about duplicated conditions in an if-else-if chain
+    add_cxx_compile_options(-Wduplicated-cond)
+    # Warn about a comparison between values of different enumerated types
+    add_cxx_compile_options(-Wenum-compare)
+    # Warn about uninitialized variables that are initialized with themselves
+    add_cxx_compile_options(-Winit-self)
+    # Warn about logical not used on the left hand side operand of a comparison
+    add_cxx_compile_options(-Wlogical-not-parentheses)
+    # Warn about suspicious uses of logical operators in expressions
+    add_cxx_compile_options(-Wlogical-op)
+    # Warn if there exists a path from the function entry to a use of the variable that is uninitialized.
+    add_cxx_compile_options(-Wmaybe-uninitialized)
+    # Warn when the indentation of the code does not reflect the block structure
+    add_cxx_compile_options(-Wmisleading-indentation)
+    # Warn if a global function is defined without a previous declaration
+    # add_cxx_compile_options(-Wmissing-declarations)
+    # Warn if a user-supplied include directory does not exist
+    # add_cxx_compile_options(-Wmissing-include-dirs)
+    # Obvious
+    add_cxx_compile_options(-Wnon-virtual-dtor)
+    # Obvious
+    add_cxx_compile_options(-Wno-return-local-addr)
+    # This warning is disabled due to false positives if compiled with libc++: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90037
+    #add_cxx_compile_options(-Wnull-dereference)
+    # Obvious
+    add_cxx_compile_options(-Wodr)
+    # Obvious
+    add_cxx_compile_options(-Wold-style-cast)
+    # Warn when a function declaration hides virtual functions from a base class
+    # add_cxx_compile_options(-Woverloaded-virtual)
+    # Warn about placement new expressions with undefined behavior
+    add_cxx_compile_options(-Wplacement-new=2)
+    # Warn about anything that depends on the “size of” a function type or of void
+    add_cxx_compile_options(-Wpointer-arith)
+    # Warn if anything is declared more than once in the same scope
+    add_cxx_compile_options(-Wredundant-decls)
+    # Member initialization reordering
+    add_cxx_compile_options(-Wreorder)
+    # Obvious
+    add_cxx_compile_options(-Wshadow)
+    # Warn if left shifting a negative value
+    add_cxx_compile_options(-Wshift-negative-value)
+    # Warn about a definition of an unsized deallocation function
+    add_cxx_compile_options(-Wsized-deallocation)
+    # Warn when the sizeof operator is applied to a parameter that is declared as an array in a function definition
+    add_cxx_compile_options(-Wsizeof-array-argument)
+    # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
+    add_cxx_compile_options(-Wsizeof-pointer-memaccess)
+    # Warn about overriding virtual functions that are not marked with the override keyword
+    # add_cxx_compile_options(-Wsuggest-override)
+    # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
+    add_cxx_compile_options(-Wswitch-bool)
+    # Warn if a self-comparison always evaluates to true or false
+    add_cxx_compile_options(-Wtautological-compare)
+    # Warn about trampolines generated for pointers to nested functions
+    add_cxx_compile_options(-Wtrampolines)
+    # Obvious
+    add_cxx_compile_options(-Wunused)
+    # Warn if vector operation is not implemented via SIMD capabilities of the architecture
+    add_cxx_compile_options(-Wvector-operation-performance)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
@@ -110,8 +186,8 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
-list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp src/Functions/extractTimeZoneFromFunctionArguments.cpp)
+list (APPEND dbms_headers src/Functions/IFunctionImpl.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h src/Functions/extractTimeZoneFromFunctionArguments.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -213,7 +289,6 @@ macro (dbms_target_link_libraries)
 endmacro ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
@@ -255,6 +330,7 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
+    ryu
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}

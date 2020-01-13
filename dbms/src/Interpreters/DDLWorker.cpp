@@ -645,7 +645,8 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
         }
         catch (...)
         {
-            task.execution_status = ExecutionStatus::fromCurrentException("An error occured before execution");
+            tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
+            task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
 
         /// We need to distinguish ZK errors occured before and after query executing
@@ -940,22 +941,19 @@ void DDLWorker::runMainThread()
     {
         try
         {
-            try
-            {
-                auto zookeeper = getAndSetZooKeeper();
-                zookeeper->createAncestors(queue_dir + "/");
-                initialized = true;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (!Coordination::isHardwareError(e.code))
-                    throw;  /// A logical error.
+            auto zookeeper = getAndSetZooKeeper();
+            zookeeper->createAncestors(queue_dir + "/");
+            initialized = true;
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;  /// A logical error.
 
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Avoid busy loop when ZooKeeper is not available.
-                sleepForSeconds(1);
-            }
+            /// Avoid busy loop when ZooKeeper is not available.
+            sleepForSeconds(1);
         }
         catch (...)
         {
