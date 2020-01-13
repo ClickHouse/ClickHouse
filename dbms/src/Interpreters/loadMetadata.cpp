@@ -118,7 +118,7 @@ void loadMetadata(Context & context)
         }
         catch (...)
         {
-            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data santity checks");
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
         }
     }
 }
