@@ -37,6 +37,7 @@ struct ReplicatedMergeTreeLogEntryData
         CLEAR_INDEX,    /// Drop specific index from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
+        FINISH_ALTER,   /// Apply one or several alter modifications to part
     };
 
     static String typeToString(Type type)
@@ -50,6 +51,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
+            case ReplicatedMergeTreeLogEntryData::FINISH_ALTER:     return "FINISH_ALTER";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }

@@ -339,6 +339,8 @@ public:
     /// Adds a subscriber
     SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
+    Names getPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const;
+
     struct Status
     {
         UInt32 future_parts;

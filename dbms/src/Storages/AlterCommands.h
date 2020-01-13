@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MutationCommands.h>
 
 
 #include <Common/SettingsChanges.h>
@@ -18,6 +19,8 @@ class ASTAlterCommand;
 /// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
+    ASTPtr ast; /// The AST of the whole command
+
     enum Type
     {
         ADD_COLUMN,
@@ -96,11 +99,15 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData() const;
 
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
 
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
+
+    std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -136,6 +143,10 @@ public:
 
     /// At least one command modify comments.
     bool isCommentAlter() const;
+
+    MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const;
 };
 
+
+MutationCommands extractMutationCommandsFromAlterCommands(const StorageInMemoryMetadata & metadata, AlterCommands & commands);
 }

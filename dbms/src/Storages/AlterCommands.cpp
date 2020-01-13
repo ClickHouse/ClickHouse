@@ -1,24 +1,30 @@
-#include <Storages/AlterCommands.h>
-#include <Storages/IStorage.h>
+#include <Compression/CompressionFactory.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include <Compression/CompressionFactory.h>
+
 
 #include <Parsers/queryToString.h>
 
@@ -43,6 +49,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::ADD_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
@@ -83,6 +90,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::DROP_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         command.if_exists = command_ast->if_exists;
@@ -91,6 +99,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
@@ -126,6 +135,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
@@ -136,6 +146,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::MODIFY_ORDER_BY;
         command.order_by = command_ast->order_by;
         return command;
@@ -143,6 +154,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.index_decl = command_ast->index_decl;
         command.type = AlterCommand::ADD_INDEX;
 
@@ -160,6 +172,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.constraint_decl = command_ast->constraint_decl;
         command.type = AlterCommand::ADD_CONSTRAINT;
 
@@ -177,6 +190,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
+        command.ast = command_ast;
         command.if_exists = command_ast->if_exists;
         command.type = AlterCommand::DROP_CONSTRAINT;
         command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
@@ -189,6 +203,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR INDEX index\" queries are not supported yet. Use \"CLEAR INDEX index IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::DROP_INDEX;
         command.index_name = command_ast->index->as<ASTIdentifier &>().name;
         command.if_exists = command_ast->if_exists;
@@ -198,6 +213,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_TTL)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::MODIFY_TTL;
         command.ttl = command_ast->ttl;
         return command;
@@ -205,6 +221,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_SETTING)
     {
         AlterCommand command;
+        command.ast = command_ast;
         command.type = AlterCommand::MODIFY_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
@@ -423,6 +440,76 @@ bool AlterCommand::isSettingsAlter() const
     return type == MODIFY_SETTING;
 }
 
+namespace
+{
+
+/// If true, then in order to ALTER the type of the column from the type from to the type to
+/// we don't need to rewrite the data, we only need to update metadata and columns.txt in part directories.
+/// The function works for Arrays and Nullables of the same structure.
+bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+{
+    if (from->getName() == to->getName())
+        return true;
+
+    static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
+        {
+            { typeid(DataTypeEnum8),    typeid(DataTypeEnum8)    },
+            { typeid(DataTypeEnum8),    typeid(DataTypeInt8)     },
+            { typeid(DataTypeEnum16),   typeid(DataTypeEnum16)   },
+            { typeid(DataTypeEnum16),   typeid(DataTypeInt16)    },
+            { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
+            { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
+            { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+            { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
+        };
+
+    while (true)
+    {
+        auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
+        for (auto it = it_range.first; it != it_range.second; ++it)
+        {
+            if (it->second == typeid(*to))
+                return true;
+        }
+
+        const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (arr_from && arr_to)
+        {
+            from = arr_from->getNestedType().get();
+            to = arr_to->getNestedType().get();
+            continue;
+        }
+
+        const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
+        const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
+        if (nullable_from && nullable_to)
+        {
+            from = nullable_from->getNestedType().get();
+            to = nullable_to->getNestedType().get();
+            continue;
+        }
+
+        return false;
+    }
+}
+
+}
+
+
+bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
+{
+    if (type != MODIFY_COLUMN || data_type == nullptr)
+        return false;
+
+    for (const auto & column : metadata.columns.getAllPhysical())
+    {
+        if (column.name == column_name && !isMetadataOnlyConversion(column.type, data_type))
+            return true;
+    }
+    return false;
+}
+
 bool AlterCommand::isCommentAlter() const
 {
     if (type == COMMENT_COLUMN)
@@ -438,6 +525,21 @@ bool AlterCommand::isCommentAlter() const
             && ttl == nullptr;
     }
     return false;
+}
+
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const
+{
+    if (!isRequireMutationStage(metadata))
+        return {};
+
+    MutationCommand result;
+
+    result.type = MutationCommand::Type::CAST;
+    result.column_name = column_name;
+    result.data_type = data_type;
+    result.predicate = nullptr;
+    result.ast = ast;
+    return result;
 }
 
 
@@ -635,6 +737,12 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
                 command->default_expression = makeASTFunction("CAST",
                     command->default_expression->clone(),
                     std::make_shared<ASTLiteral>(explicit_type->getName()));
+
+                //TODO(alesap)
+                //command->ast = std::make_shared<ASTAlterCommand>();
+                //command->type = ASTAlterCommand::MODIFY_COLUMN;
+                //command->col_decl = std::make_shared<ASTColumnDeclaration>();
+                //command->col_decl->name = column.name;
             }
         }
         else
@@ -725,4 +833,15 @@ bool AlterCommands::isCommentAlter() const
 {
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
 }
+
+
+MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const
+{
+    MutationCommands result;
+    for (const auto & alter_cmd : *this)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata); mutation_cmd)
+            result.push_back(*mutation_cmd);
+    return result;
+}
+
 }

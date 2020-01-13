@@ -945,16 +945,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().max_threads = 1;
 
     std::vector<MutationCommand> commands_for_part;
-    std::copy_if(
-            std::cbegin(commands), std::cend(commands),
-            std::back_inserter(commands_for_part),
-            [&] (const MutationCommand & command)
-            {
-                return command.partition == nullptr ||
-                    future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
-                            command.partition, context_for_reading);
-            });
-
+    for (const auto & command : commands)
+    {
+        if (command.partition == nullptr || future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
+                command.partition, context_for_reading))
+            commands_for_part.emplace_back(command);
+    }
 
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
@@ -1061,7 +1057,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                     indices_recalc_syntax, context).getActions(false);
 
             /// We can update only one column, but some skip idx expression may depend on several
-            /// columns (c1 + c2 * c3). It works because in stream was created with help of
+            /// columns (c1 + c2 * c3). It works because this stream was created with help of
             /// MutationsInterpreter which knows about skip indices and stream 'in' already has
             /// all required columns.
             /// TODO move this logic to single place.

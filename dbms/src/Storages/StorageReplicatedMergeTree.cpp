@@ -977,6 +977,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         do_fetch = !tryExecutePartMutation(entry);
     }
+    else if (entry.type == LogEntry::FINISH_ALTER)
+    {
+        tryFinishAlter(entry);
+    }
     else
     {
         throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
@@ -1151,6 +1155,72 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 }
 
+
+bool StorageReplicatedMergeTree::tryFinishAlter(const StorageReplicatedMergeTree::LogEntry & entry)
+{
+    auto zookeeper = getZooKeeper();
+
+    String columns_path = zookeeper_path + "/columns";
+    auto columns_znode = zookeeper->get(columns_path);
+    if (!columns_znode.exists)
+        throw Exception(columns_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    int32_t columns_version = columns_znode.stat.version;
+
+    String metadata_path = zookeeper_path + "/metadata";
+    auto metadata_znode = zookeeper->get(metadata_path);
+    if (!metadata_znode.exists)
+        throw Exception(metadata_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    int32_t metadata_version = metadata_znode.stat.version;
+
+    const bool changed_columns_version = (columns_version != storage.columns_version);
+    const bool changed_metadata_version = (metadata_version != storage.metadata_version);
+
+    if (!(changed_columns_version || changed_metadata_version))
+        return;
+
+    const String & columns_str = columns_znode.contents;
+    auto columns_in_zk = ColumnsDescription::parse(columns_str);
+
+    const String & metadata_str = metadata_znode.contents;
+    auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
+
+    MergeTreeData::DataParts parts;
+
+    /// If metadata nodes have changed, we will update table structure locally.
+    if (changed_columns_version || changed_metadata_version)
+    {
+        LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
+
+        auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
+
+        if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
+        {
+            LOG_INFO(
+                log,
+                "Metadata nodes changed in ZooKeeper, but their contents didn't change. "
+                "Most probably it is a cyclic ALTER.");
+        }
+        else
+        {
+            LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
+
+            storage.setTableStructure(std::move(columns_in_zk), metadata_diff);
+
+            LOG_INFO(log, "Applied changes to the metadata of the table.");
+        }
+
+        columns_version = columns_version;
+        metadata_version = metadata_version;
+
+        recalculateColumnSizes();
+        /// Update metadata ZK nodes for a specific replica.
+        if (changed_columns_version)
+            zookeeper->set(replica_path + "/columns", columns_str);
+        if (changed_metadata_version)
+            zookeeper->set(replica_path + "/metadata", metadata_str);
+    }
+}
 
 bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedMergeTree::LogEntry & entry)
 {
@@ -3199,6 +3269,7 @@ void StorageReplicatedMergeTree::alter(
 
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
+    auto maybe_mutation_commands = params.getMutationCommands(getInMemoryMetadata());
 
     /// We cannot check this alter commands with method isModifyingData()
     /// because ReplicatedMergeTree stores both columns and metadata for
@@ -3218,31 +3289,6 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    /// Alter is done by modifying the metadata nodes in ZK that are shared between all replicas
-    /// (/columns, /metadata). We set contents of the shared nodes to the new values and wait while
-    /// replicas asynchronously apply changes (see ReplicatedMergeTreeAlterThread.cpp) and modify
-    /// their respective replica metadata nodes (/replicas/<replica>/columns, /replicas/<replica>/metadata).
-
-    struct ChangedNode
-    {
-        ChangedNode(const String & table_path_, String name_, String new_value_)
-            : table_path(table_path_), name(std::move(name_)), shared_path(table_path + "/" + name)
-            , new_value(std::move(new_value_))
-        {}
-
-        const String & table_path;
-        String name;
-
-        String shared_path;
-
-        String getReplicaPath(const String & replica) const
-        {
-            return table_path + "/replicas/" + replica + "/" + name;
-        }
-
-        String new_value;
-        int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
-    };
 
     auto ast_to_str = [](ASTPtr query) -> String
     {
@@ -3250,9 +3296,6 @@ void StorageReplicatedMergeTree::alter(
             return "";
         return queryToString(query);
     };
-
-    /// /columns and /metadata nodes
-    std::vector<ChangedNode> changed_nodes;
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
@@ -3309,202 +3352,219 @@ void StorageReplicatedMergeTree::alter(
 
     table_lock_holder.release();
 
-    /// Wait until all replicas will apply ALTER.
+    ReplicatedMergeTreeLogEntryData entry;
+    entry.type = LogEntry::FINISH_ALTER;
+    entry.source_replica = replica_name;
 
-    for (const auto & node : changed_nodes)
+    if (maybe_mutation_commands)
     {
-        Coordination::Stat stat;
-        /// Subscribe to change of shared ZK metadata nodes, to finish waiting if someone will do another ALTER.
-        if (!getZooKeeper()->exists(node.shared_path, &stat, alter_query_event))
-            throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-        if (stat.version != node.new_version)
-        {
-            LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; " +
-                "overlapping ALTER-s are fine but use caution with nontransitive changes");
-            return;
-        }
+        ReplicatedMergeTreeMutationEntry entry = mutateImpl(*maybe_mutation_commands, context);
+        entry.source_parts = queue.getPartNamesToMutate(entry);
     }
 
-    Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    entry.new_part_name = new_part_name;
+    entry.create_time = time(nullptr);
 
-    std::set<String> inactive_replicas;
-    std::set<String> timed_out_replicas;
+    zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 
-    time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
+    waitForAllReplicasToProcessLogEntry(entry);
 
-    /// This code is quite similar with waitMutationToFinishOnReplicas
-    /// but contains more complicated details (versions manipulations, multiple nodes, etc.).
-    /// It will be removed soon in favor of alter-modify implementation on top of mutations.
-    /// TODO (alesap)
-    for (const String & replica : replicas)
-    {
-        LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
+    ///// Wait until all replicas will apply ALTER.
 
-        while (!partial_shutdown_called)
-        {
-            auto zookeeper = getZooKeeper();
+    //for (const auto & node : changed_nodes)
+    //{
+    //    Coordination::Stat stat;
+    //    /// Subscribe to change of shared ZK metadata nodes, to finish waiting if someone will do another ALTER.
+    //    if (!getZooKeeper()->exists(node.shared_path, &stat, alter_query_event))
+    //        throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-            /// Replica could be inactive.
-            if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
-            {
-                LOG_WARNING(log, "Replica " << replica << " is not active during ALTER query."
-                    " ALTER will be done asynchronously when replica becomes active.");
+    //    if (stat.version != node.new_version)
+    //    {
+    //        LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; " +
+    //            "overlapping ALTER-s are fine but use caution with nontransitive changes");
+    //        return;
+    //    }
+    //}
 
-                inactive_replicas.emplace(replica);
-                break;
-            }
+    //Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
 
-            struct ReplicaNode
-            {
-                explicit ReplicaNode(String path_) : path(std::move(path_)) {}
+    //std::set<String> inactive_replicas;
+    //std::set<String> timed_out_replicas;
 
-                String path;
-                String value;
-                int32_t version = -1;
-            };
+    //time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
 
-            std::vector<ReplicaNode> replica_nodes;
-            for (const auto & node : changed_nodes)
-                replica_nodes.emplace_back(node.getReplicaPath(replica));
+    ///// This code is quite similar with waitMutationToFinishOnReplicas
+    ///// but contains more complicated details (versions manipulations, multiple nodes, etc.).
+    ///// It will be removed soon in favor of alter-modify implementation on top of mutations.
+    ///// TODO (alesap)
+    //for (const String & replica : replicas)
+    //{
+    //    LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
 
-            bool replica_was_removed = false;
-            for (auto & node : replica_nodes)
-            {
-                Coordination::Stat stat;
+    //    while (!partial_shutdown_called)
+    //    {
+    //        auto zookeeper = getZooKeeper();
 
-                /// Replica could has been removed.
-                if (!zookeeper->tryGet(node.path, node.value, &stat))
-                {
-                    LOG_WARNING(log, replica << " was removed");
-                    replica_was_removed = true;
-                    break;
-                }
+    //        /// Replica could be inactive.
+    //        if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+    //        {
+    //            LOG_WARNING(log, "Replica " << replica << " is not active during ALTER query."
+    //                " ALTER will be done asynchronously when replica becomes active.");
 
-                node.version = stat.version;
-            }
+    //            inactive_replicas.emplace(replica);
+    //            break;
+    //        }
 
-            if (replica_was_removed)
-                break;
+    //        struct ReplicaNode
+    //        {
+    //            explicit ReplicaNode(String path_) : path(std::move(path_)) {}
 
-            bool alter_was_applied = true;
-            for (size_t i = 0; i < replica_nodes.size(); ++i)
-            {
-                if (replica_nodes[i].value != changed_nodes[i].new_value)
-                {
-                    alter_was_applied = false;
-                    break;
-                }
-            }
+    //            String path;
+    //            String value;
+    //            int32_t version = -1;
+    //        };
 
-            /// The ALTER has been successfully applied.
-            if (alter_was_applied)
-                break;
+    //        std::vector<ReplicaNode> replica_nodes;
+    //        for (const auto & node : changed_nodes)
+    //            replica_nodes.emplace_back(node.getReplicaPath(replica));
 
-            for (const auto & node : changed_nodes)
-            {
-                Coordination::Stat stat;
-                if (!zookeeper->exists(node.shared_path, &stat))
-                    throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    //        bool replica_was_removed = false;
+    //        for (auto & node : replica_nodes)
+    //        {
+    //            Coordination::Stat stat;
 
-                if (stat.version != node.new_version)
-                {
-                    LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; "
-                        "overlapping ALTER-s are fine but use caution with nontransitive changes");
-                    return;
-                }
-            }
+    //            /// Replica could has been removed.
+    //            if (!zookeeper->tryGet(node.path, node.value, &stat))
+    //            {
+    //                LOG_WARNING(log, replica << " was removed");
+    //                replica_was_removed = true;
+    //                break;
+    //            }
 
-            bool replica_nodes_changed_concurrently = false;
-            for (const auto & replica_node : replica_nodes)
-            {
-                Coordination::Stat stat;
-                if (!zookeeper->exists(replica_node.path, &stat, alter_query_event))
-                {
-                    LOG_WARNING(log, replica << " was removed");
-                    replica_was_removed = true;
-                    break;
-                }
+    //            node.version = stat.version;
+    //        }
 
-                if (stat.version != replica_node.version)
-                {
-                    replica_nodes_changed_concurrently = true;
-                    break;
-                }
-            }
+    //        if (replica_was_removed)
+    //            break;
 
-            if (replica_was_removed)
-                break;
+    //        bool alter_was_applied = true;
+    //        for (size_t i = 0; i < replica_nodes.size(); ++i)
+    //        {
+    //            if (replica_nodes[i].value != changed_nodes[i].new_value)
+    //            {
+    //                alter_was_applied = false;
+    //                break;
+    //            }
+    //        }
 
-            if (replica_nodes_changed_concurrently)
-                continue;
+    //        /// The ALTER has been successfully applied.
+    //        if (alter_was_applied)
+    //            break;
 
-            /// alter_query_event subscribed with zookeeper watch callback to /repliacs/{replica}/metadata
-            /// and /replicas/{replica}/columns nodes for current relica + shared nodes /columns and /metadata,
-            /// which is common for all replicas. If changes happen with this nodes (delete, set and create)
-            /// than event will be notified and wait will be interrupted.
-            ///
-            /// ReplicatedMergeTreeAlterThread responsible for local /replicas/{replica}/metadata and
-            /// /replicas/{replica}/columns changes. Shared /columns and /metadata nodes can be changed by *newer*
-            /// concurrent alter from other replica. First of all it will update shared nodes and we will have no
-            /// ability to identify, that our *current* alter finshed. So we cannot do anything better than just
-            /// return from *current* alter with success result.
-            if (!replication_alter_columns_timeout)
-            {
-                alter_query_event->wait();
-                /// Everything is fine.
-            }
-            else if (alter_query_event->tryWait(replication_alter_columns_timeout * 1000))
-            {
-                /// Everything is fine.
-            }
-            else
-            {
-                LOG_WARNING(log, "Timeout when waiting for replica " << replica << " to apply ALTER."
-                    " ALTER will be done asynchronously.");
+    //        for (const auto & node : changed_nodes)
+    //        {
+    //            Coordination::Stat stat;
+    //            if (!zookeeper->exists(node.shared_path, &stat))
+    //                throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-                timed_out_replicas.emplace(replica);
-                break;
-            }
-        }
+    //            if (stat.version != node.new_version)
+    //            {
+    //                LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; "
+    //                    "overlapping ALTER-s are fine but use caution with nontransitive changes");
+    //                return;
+    //            }
+    //        }
 
-        if (partial_shutdown_called)
-            throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
-                ErrorCodes::UNFINISHED);
+    //        bool replica_nodes_changed_concurrently = false;
+    //        for (const auto & replica_node : replica_nodes)
+    //        {
+    //            Coordination::Stat stat;
+    //            if (!zookeeper->exists(replica_node.path, &stat, alter_query_event))
+    //            {
+    //                LOG_WARNING(log, replica << " was removed");
+    //                replica_was_removed = true;
+    //                break;
+    //            }
 
-        if (!inactive_replicas.empty() || !timed_out_replicas.empty())
-        {
-            std::stringstream exception_message;
-            exception_message << "Alter is not finished because";
+    //            if (stat.version != replica_node.version)
+    //            {
+    //                replica_nodes_changed_concurrently = true;
+    //                break;
+    //            }
+    //        }
 
-            if (!inactive_replicas.empty())
-            {
-                exception_message << " some replicas are inactive right now";
+    //        if (replica_was_removed)
+    //            break;
 
-                for (auto it = inactive_replicas.begin(); it != inactive_replicas.end(); ++it)
-                    exception_message << (it == inactive_replicas.begin() ? ": " : ", ") << *it;
-            }
+    //        if (replica_nodes_changed_concurrently)
+    //            continue;
 
-            if (!timed_out_replicas.empty() && !inactive_replicas.empty())
-                exception_message << " and";
+    //        /// alter_query_event subscribed with zookeeper watch callback to /repliacs/{replica}/metadata
+    //        /// and /replicas/{replica}/columns nodes for current relica + shared nodes /columns and /metadata,
+    //        /// which is common for all replicas. If changes happen with this nodes (delete, set and create)
+    //        /// than event will be notified and wait will be interrupted.
+    //        ///
+    //        /// ReplicatedMergeTreeAlterThread responsible for local /replicas/{replica}/metadata and
+    //        /// /replicas/{replica}/columns changes. Shared /columns and /metadata nodes can be changed by *newer*
+    //        /// concurrent alter from other replica. First of all it will update shared nodes and we will have no
+    //        /// ability to identify, that our *current* alter finshed. So we cannot do anything better than just
+    //        /// return from *current* alter with success result.
+    //        if (!replication_alter_columns_timeout)
+    //        {
+    //            alter_query_event->wait();
+    //            /// Everything is fine.
+    //        }
+    //        else if (alter_query_event->tryWait(replication_alter_columns_timeout * 1000))
+    //        {
+    //            /// Everything is fine.
+    //        }
+    //        else
+    //        {
+    //            LOG_WARNING(log, "Timeout when waiting for replica " << replica << " to apply ALTER."
+    //                " ALTER will be done asynchronously.");
 
-            if (!timed_out_replicas.empty())
-            {
-                exception_message << " timeout when waiting for some replicas";
+    //            timed_out_replicas.emplace(replica);
+    //            break;
+    //        }
+    //    }
 
-                for (auto it = timed_out_replicas.begin(); it != timed_out_replicas.end(); ++it)
-                    exception_message << (it == timed_out_replicas.begin() ? ": " : ", ") << *it;
+    //    if (partial_shutdown_called)
+    //        throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
+    //            ErrorCodes::UNFINISHED);
 
-                exception_message << " (replication_alter_columns_timeout = " << replication_alter_columns_timeout << ")";
-            }
+    //    if (!inactive_replicas.empty() || !timed_out_replicas.empty())
+    //    {
+    //        std::stringstream exception_message;
+    //        exception_message << "Alter is not finished because";
 
-            exception_message << ". Alter will be done asynchronously.";
+    //        if (!inactive_replicas.empty())
+    //        {
+    //            exception_message << " some replicas are inactive right now";
 
-            throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
-        }
-    }
+    //            for (auto it = inactive_replicas.begin(); it != inactive_replicas.end(); ++it)
+    //                exception_message << (it == inactive_replicas.begin() ? ": " : ", ") << *it;
+    //        }
 
-    LOG_DEBUG(log, "ALTER finished");
+    //        if (!timed_out_replicas.empty() && !inactive_replicas.empty())
+    //            exception_message << " and";
+
+    //        if (!timed_out_replicas.empty())
+    //        {
+    //            exception_message << " timeout when waiting for some replicas";
+
+    //            for (auto it = timed_out_replicas.begin(); it != timed_out_replicas.end(); ++it)
+    //                exception_message << (it == timed_out_replicas.begin() ? ": " : ", ") << *it;
+
+    //            exception_message << " (replication_alter_columns_timeout = " << replication_alter_columns_timeout << ")";
+    //        }
+
+    //        exception_message << ". Alter will be done asynchronously.";
+
+    //        throw Exception(exception_message.str(), ErrorCodes::UNFINISHED);
+    //    }
+    //}
+
+    //LOG_DEBUG(log, "ALTER finished");
 }
 
 void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context)
@@ -4458,6 +4518,11 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
 {
+    mutateImpl(commands, context);
+}
+
+StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands, const Context & query_context)
+{
     /// Overview of the mutation algorithm.
     ///
     /// When the client executes a mutation, this method is called. It acquires block numbers in all
@@ -4572,6 +4637,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         waitMutationToFinishOnReplicas(replicas, entry.znode_name);
     }
 
+    return entry;
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
