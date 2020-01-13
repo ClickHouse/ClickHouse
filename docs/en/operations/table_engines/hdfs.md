@@ -107,6 +107,6 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 **See Also**
 
-- [Virtual columns](index.md#table_engines-virtual_columns)
+- [Virtual columns](https://clickhouse.yandex/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/hdfs/) <!--hide-->
