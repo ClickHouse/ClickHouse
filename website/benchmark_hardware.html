@@ -32,7 +32,7 @@ h1, h2 {
 }
 
 p {
-    line-height: 20px;
+    line-height: 1.5;
     white-space: pre-wrap;
 }
 
@@ -49,7 +49,6 @@ a:hover {
 .island {
     background-color: #FFF;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
-/*    border-radius: 5px;*/
     padding: 10px;
     width: 90%;
     margin: 10px auto 10px auto;
@@ -180,12 +179,14 @@ th {
     border: 1px solid #DDD;
     background-color: #EEE;
     padding: 1px 5px 1px 5px;
+    margin: 1px 5px 1px 5px;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 #selectors p span.selected {
-    border: 1px solid #F60;
-    background-color: #F80;
+    border: 1px solid #FC9;
+    background-color: #FC9;
 }
 
 #selectors p span.disabled {
@@ -212,6 +213,9 @@ th {
     border-bottom: 1px solid #EEE;
 }
 
+.diagram-system-name {
+    text-align: right; width: 20%;
+}
 
 </style>
 
@@ -696,7 +700,7 @@ var results =
     },
 
     {
-        "system":       "Time4vps.eu VPS (KVM) Linux Ubuntu 4 Core (Skylake) 16GB RAM 160GB Disk Size",
+        "system":       "Time4vps.eu VPS (KVM) Linux Ubuntu 4 Core (Skylake) 16GB RAM 160GB Disk",
         "data_size":    100000000,
         "time":         "2020-01-13 00:00:00",
         "result":
@@ -1147,7 +1151,7 @@ function generate_diagram() {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
 
         html += "<tr>";
-        html += "<td style='text-align: right;'><b>" + filtered_results[j].system + "</b>" +
+        html += "<td class='diagram-system-name'>" + filtered_results[j].system +
             (filtered_results[j].version ? "<br />(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")" : "") + "</td>";
 
         html += "<td style='width: 100%; padding-right: 20px;'>";
