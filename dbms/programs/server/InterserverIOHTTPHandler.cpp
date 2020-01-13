@@ -28,23 +28,23 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net:
     if (config.has("interserver_http_credentials.user"))
     {
         if (!request.hasCredentials())
-            return {"Server requires HTTP Basic authentification, but client doesn't provide it", false};
+            return {"Server requires HTTP Basic authentication, but client doesn't provide it", false};
         String scheme, info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
-            return {"Server requires HTTP Basic authentification but client provides another method", false};
+            return {"Server requires HTTP Basic authentication but client provides another method", false};
 
         String user = config.getString("interserver_http_credentials.user");
         String password = config.getString("interserver_http_credentials.password", "");
 
         Poco::Net::HTTPBasicCredentials credentials(info);
         if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
-            return {"Incorrect user or password in HTTP Basic authentification", false};
+            return {"Incorrect user or password in HTTP Basic authentication", false};
     }
     else if (request.hasCredentials())
     {
-        return {"Client requires HTTP Basic authentification, but server doesn't provide it", false};
+        return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }
     return {"", true};
 }
@@ -99,7 +99,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
-            LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentification failed");
+            LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentication failed");
         }
     }
     catch (Exception & e)

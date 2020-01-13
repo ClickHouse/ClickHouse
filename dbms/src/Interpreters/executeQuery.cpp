@@ -620,7 +620,7 @@ void executeQuery(
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
         copyData(limit, out);
-        out.finish();
+        out.finalize();
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();

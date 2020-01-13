@@ -1053,12 +1053,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     /// Can throw an exception while reserving space.
     MergeTreeDataPart::TTLInfos ttl_infos;
+    size_t max_volume_index = 0;
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
+        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
     }
     ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
-            ttl_infos, time(nullptr));
+            ttl_infos, time(nullptr), max_volume_index);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -3181,7 +3183,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     {
         /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
         for (auto & merge_entry : merge_entries)
-            waitForAllReplicasToProcessLogEntry(merge_entry);
+            waitForAllReplicasToProcessLogEntry(merge_entry, false);
     }
 
     return true;
@@ -3895,13 +3897,19 @@ StorageReplicatedMergeTree::allocateBlockNumber(
 }
 
 
-void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry)
+void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
 {
     LOG_DEBUG(log, "Waiting for all replicas to process " << entry.znode_name);
 
-    Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+    auto zookeeper = getZooKeeper();
+    Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
     for (const String & replica : replicas)
-        waitForReplicaToProcessLogEntry(replica, entry);
+    {
+        if (wait_for_non_active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+        {
+            waitForReplicaToProcessLogEntry(replica, entry);
+        }
+    }
 
     LOG_DEBUG(log, "Finished waiting for all replicas to process " << entry.znode_name);
 }

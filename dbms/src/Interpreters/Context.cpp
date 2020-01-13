@@ -111,7 +111,7 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
-    /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
+    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
@@ -191,7 +191,7 @@ struct ContextShared
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
-    ConfigurationPtr clusters_config;                        /// Soteres updated configs
+    ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
@@ -922,21 +922,21 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
-    Exception exc;
+    std::optional<Exception> exc;
     auto res = getTableImpl(database_name, table_name, &exc);
     if (!res)
-        throw exc;
+        throw *exc;
     return res;
 }
 
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(database_name, table_name, nullptr);
+    return getTableImpl(database_name, table_name, {});
 }
 
 
-StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
+StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, std::optional<Exception> * exception) const
 {
     String db;
     DatabasePtr database;
@@ -958,7 +958,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
         if (shared->databases.end() == it)
         {
             if (exception)
-                *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             return {};
         }
 
@@ -969,7 +969,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 

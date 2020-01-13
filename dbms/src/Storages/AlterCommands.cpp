@@ -249,6 +249,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 /// let's use info about old type
                 if (data_type == nullptr)
                     codec->useInfoAboutType(column.type);
+                else /// use info about new DataType
+                    codec->useInfoAboutType(data_type);
+
                 column.codec = codec;
             }
 
@@ -316,7 +319,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 
             if (insert_it == metadata.indices.indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
-                        ErrorCodes::LOGICAL_ERROR);
+                        ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
@@ -338,7 +341,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.",
-                            ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::BAD_ARGUMENTS);
         }
 
         metadata.indices.indices.erase(erase_it);
@@ -378,7 +381,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::BAD_ARGUMENTS);
         }
         metadata.constraints.constraints.erase(erase_it);
     }

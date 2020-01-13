@@ -676,10 +676,12 @@ public:
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move) const;
+                                                                time_t time_of_move,
+                                                                size_t min_volume_index = 0) const;
     ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move) const;
+                                                                time_t time_of_move,
+                                                                size_t min_volume_index = 0) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }

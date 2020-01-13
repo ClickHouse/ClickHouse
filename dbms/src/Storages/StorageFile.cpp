@@ -31,6 +31,7 @@
 
 #include <re2/re2.h>
 #include <filesystem>
+#include <Storages/Distributed/DirectoryMonitor.h>
 
 namespace fs = std::filesystem;
 
@@ -155,6 +156,17 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
+
+    if (args.format_name == "Distributed")
+    {
+        if (!paths.empty())
+        {
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
+
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
+        }
+    }
 }
 
 StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
@@ -172,7 +184,9 @@ StorageFile::StorageFile(CommonArguments args)
     : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
     , compression_method(args.compression_method), base_path(args.context.getPath())
 {
-    setColumns(args.columns);
+    if (args.format_name != "Distributed")
+        setColumns(args.columns);
+
     setConstraints(args.constraints);
 }
 
@@ -182,8 +196,9 @@ public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
         const Context & context, UInt64 max_block_size,
         std::string file_path,
-        const CompressionMethod compression_method)
-        : storage(std::move(storage_))
+        const CompressionMethod compression_method,
+        BlockInputStreamPtr prepared_reader = nullptr)
+        : storage(std::move(storage_)), reader(std::move(prepared_reader))
     {
         if (storage->use_table_fd)
         {
@@ -211,7 +226,8 @@ public:
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
         }
 
-        reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+        if (!reader)
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -268,8 +284,14 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
-            std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+        BlockInputStreamPtr cur_block;
+
+        if (format_name == "Distributed")
+            cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
+        else
+            cur_block = std::make_shared<StorageFileBlockInputStream>(
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return narrowBlockInputStreams(blocks_input, num_streams);
@@ -338,7 +360,11 @@ BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
     const Context & context)
 {
-    return std::make_shared<StorageFileBlockOutputStream>(*this, chooseCompressionMethod(paths[0], compression_method), context);
+    if (format_name == "Distributed")
+        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
+
+    return std::make_shared<StorageFileBlockOutputStream>(*this,
+        chooseCompressionMethod(paths[0], compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
