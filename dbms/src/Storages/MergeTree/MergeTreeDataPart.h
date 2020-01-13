@@ -24,6 +24,8 @@ namespace DB
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
+class IReservation;
+using ReservationPtr = std::unique_ptr<IReservation>;
 
 
 /// Description of the data part.

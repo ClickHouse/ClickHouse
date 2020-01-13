@@ -1284,7 +1284,7 @@ void MergeTreeData::rename(
     {
         auto new_table_path_parent = Poco::Path(new_table_path).makeParent().toString();
         disk->createDirectory(new_table_path_parent);
-        disk->moveFile(relative_data_path, new_table_path);
+        disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
@@ -3216,18 +3216,20 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
 
 ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move) const
+        time_t time_of_move,
+        size_t min_volume_index) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
 ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
         const MergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move) const
+        time_t time_of_move,
+        size_t min_volume_index) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
@@ -3253,10 +3255,19 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
                 return reservation;
+            else
+                if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                    LOG_WARNING(log, "Would like to reserve space on volume '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
+                else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                    LOG_WARNING(log, "Would like to reserve space on disk '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
         }
     }
 
-    reservation = storage_policy->reserve(expected_size);
+    reservation = storage_policy->reserve(expected_size, min_volume_index);
 
     return reservation;
 }

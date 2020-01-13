@@ -24,7 +24,7 @@ CREATE TABLE non_mixed_granularity_adaptive_table AS test.hits;
 
 INSERT INTO non_mixed_granularity_adaptive_table SELECT * FROM test.hits LIMIT 10;
 
-ALTER TABLE non_mixed_granularity_adaptive_table REPLACE PARTITION 201403 FROM test.hits; -- { serverError 49 }
+ALTER TABLE non_mixed_granularity_adaptive_table REPLACE PARTITION 201403 FROM test.hits; -- { serverError 36 }
 
 DROP TABLE IF EXISTS non_mixed_granularity_adaptive_table;
 
@@ -35,7 +35,7 @@ CREATE TABLE non_mixed_granularity_non_adaptive_table (`WatchID` UInt64, `JavaEn
 INSERT INTO non_mixed_granularity_non_adaptive_table SELECT * FROM test.hits LIMIT 10;
 
 -- after optimize mixed_granularity_table will have .mrk2 parts
-ALTER TABLE non_mixed_granularity_non_adaptive_table REPLACE PARTITION 201403 FROM mixed_granularity_table; -- { serverError 49 }
+ALTER TABLE non_mixed_granularity_non_adaptive_table REPLACE PARTITION 201403 FROM mixed_granularity_table; -- { serverError 36 }
 
 DROP TABLE IF EXISTS non_mixed_granularity_non_adaptive_table;
 
@@ -46,7 +46,7 @@ CREATE TABLE mixed_granularity_strictly_non_adaptive_table (`WatchID` UInt64, `J
 
 INSERT INTO mixed_granularity_strictly_non_adaptive_table SELECT * FROM test.hits LIMIT 10;
 
-ALTER TABLE mixed_granularity_strictly_non_adaptive_table REPLACE PARTITION 201403 FROM mixed_granularity_table; -- { serverError 49 }
+ALTER TABLE mixed_granularity_strictly_non_adaptive_table REPLACE PARTITION 201403 FROM mixed_granularity_table; -- { serverError 36 }
 
 DROP TABLE IF EXISTS mixed_granularity_table;
 
