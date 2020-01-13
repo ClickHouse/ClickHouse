@@ -88,7 +88,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("listen-host", "", "hostname to listen, default localhost").argument("listen-host").binding("listen-host"));
     options.addOption(
-        Poco::Util::Option("http-timeout", "", "http timout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
+        Poco::Util::Option("http-timeout", "", "http timeout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
 
     options.addOption(Poco::Util::Option("max-server-connections", "", "max connections to server, default 1024")
                           .argument("max-server-connections")
