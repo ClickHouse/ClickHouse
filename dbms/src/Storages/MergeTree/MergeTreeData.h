@@ -1017,6 +1017,8 @@ private:
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
+
+    void checkCanUsePolymorphicParts(bool no_throw);
 };
 
 }
