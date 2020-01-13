@@ -34,7 +34,7 @@ Possible values:
 
 Default value: 1.
 
-**Usage**
+Usage
 
 Consider the following queries:
 
@@ -47,7 +47,7 @@ If `enable_optimize_predicate_expression = 0`, then the execution time of the se
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md)".
+Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../operations/table_engines/replication.md).
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
@@ -61,7 +61,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
+If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
 
 
 ## force_primary_key
@@ -70,7 +70,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
+If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../operations/table_engines/mergetree.md).
 
 ## format_schema
 
@@ -183,7 +183,7 @@ Possible values:
 
 Default value: 1.
 
-**Example of Use**
+Example of Use
 
 Insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
 
@@ -191,6 +191,7 @@ Insert the [DateTime](../../data_types/datetime.md) type value with the differen
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
 ```
+
 ```text
 Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
@@ -200,6 +201,7 @@ Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
 ```
+
 ```text
 Ok.
 ```
@@ -210,28 +212,34 @@ The last query is equivalent to the following:
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t SELECT now()
 ```
+
 ```text
 Ok.
 ```
 
 ## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+
 Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
+
 ```sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
- - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
- - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
- - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
+
+- if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
+- if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
+- if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
 
 Enabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
+
 This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
 ```sql
 (..., abs(0), ...),             -- UInt64 literal
 (..., abs(3.141592654), ...),   -- Float64 literal
 (..., abs(-1), ...),            -- Int64 literal
 ```
+
 When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`.
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 Enabled by default.
@@ -296,7 +304,7 @@ Possible values:
 
 Default value: 0.
 
-**See Also**
+See also:
 
 - [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
@@ -336,7 +344,7 @@ Possible values:
 
 Default value: `'basic'`.
 
-**See Also**
+See also:
 
 - [DateTime data type.](../../data_types/datetime.md)
 - [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
@@ -368,7 +376,7 @@ Possible values:
 
 Default value: 0.
 
-**See Also**
+See also:
 
 - [JOIN clause](../../query_language/select.md#select-join)
 - [Join table engine](../table_engines/join.md)
@@ -439,7 +447,7 @@ If the number of bytes to read from one file of a [MergeTree*](../table_engines/
 
 Possible value:
 
-* Any positive integer.
+- Any positive integer.
 
 Default value: 251658240.
 
@@ -486,7 +494,6 @@ Possible values:
 
 Default value: 128 ✕ 8192.
 
-
 ## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
 
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn't use the cache of uncompressed blocks.
@@ -499,19 +506,18 @@ Possible value:
 
 Default value: 2013265920.
 
-
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
 
 ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
 
-**Possible values**
+Possible values:
 
 - 0 — Direct I/O is disabled.
 - Positive integer.
 
-**Default value**: 0.
+Default value: 0.
 
 ## log_queries {#settings-log-queries}
 
@@ -519,9 +525,11 @@ Setting up query logging.
 
 Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md#server_settings-query-log) server configuration parameter.
 
-**Example**:
+Example:
 
-    log_queries=1
+```text
+log_queries=1
+```
 
 ## log_query_threads {#settings-log-query-threads}
 
@@ -529,9 +537,11 @@ Setting up query threads logging.
 
 Queries' threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
 
-**Example**:
+Example:
 
-    log_query_threads=1
+```text
+log_query_threads=1
+```
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -547,7 +557,7 @@ The default is slightly more than `max_block_size`. The reason for this is becau
 
 ## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
 
-Disables lagging replicas for distributed queries. See "[Replication](../../operations/table_engines/replication.md)".
+Disables lagging replicas for distributed queries. See [Replication](../../operations/table_engines/replication.md).
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
@@ -782,7 +792,6 @@ If the value is 1 or more, compilation occurs asynchronously in a separate threa
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
 The results of compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results, since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
@@ -799,12 +808,12 @@ For CSV input format enables or disables parsing of unquoted `NULL` as literal (
 
 Enables quorum writes.
 
-  - If `insert_quorum < 2`, the quorum writes are disabled.
-  - If `insert_quorum >= 2`, the quorum writes are enabled.
+- If `insert_quorum < 2`, the quorum writes are disabled.
+- If `insert_quorum >= 2`, the quorum writes are enabled.
 
 Default value: 0.
 
-**Quorum writes**
+Quorum writes
 
 `INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
 
@@ -812,16 +821,15 @@ All the replicas in the quorum are consistent, i.e., they contain data from all 
 
 When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
 
-**ClickHouse generates an exception**
+ClickHouse generates an exception
 
 - If the number of available replicas at the time of the query is less than the `insert_quorum`.
 - At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
 
-**See also the following parameters:**
+See also:
 
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 - [select_sequential_consistency](#settings-select_sequential_consistency)
-
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
@@ -829,7 +837,7 @@ Quorum write timeout in seconds. If the timeout has passed and no write has take
 
 Default value: 60 seconds.
 
-**See also the following parameters:**
+See also:
 
 - [insert_quorum](#settings-insert_quorum)
 - [select_sequential_consistency](#settings-select_sequential_consistency)
@@ -846,11 +854,11 @@ Possible values:
 
 Default value: 0.
 
-**Usage**
+Usage
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
-**See Also**
+See also:
 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
@@ -912,10 +920,9 @@ Possible values:
 
 Default value: 1.
 
-**See Also**
+See also:
 
 - [Multiple JOIN](../../query_language/select.md#select-join)
-
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
@@ -982,11 +989,10 @@ Default value: 0.
 
 Controls how fast errors in distributed tables are zeroed. If a replica is unavailabe for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
 
-** See also **
+See also:
 
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
-- [`distributed_replica_error_cap`](#settings-distributed_replica_error_cap)
-
+- [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 
 ## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
 
@@ -995,11 +1001,10 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
 
-** See also **
+See also:
 
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
-- [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
-
+- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
 ## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
@@ -1010,7 +1015,6 @@ Possible values:
 - Positive integer number of milliseconds.
 
 Default value: 100 milliseconds.
-
 
 ## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
@@ -1050,7 +1054,6 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
-
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
@@ -1070,7 +1073,7 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
-**See Also**
+See also:
 
 - [system.trace_log](../system_tables.md#system_tables-trace_log)
 
@@ -1093,7 +1096,7 @@ Type: [UInt64](../../data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds.
 
-**See Also**
+See also:
 
 - [system.trace_log](../system_tables.md#system_tables-trace_log)
 
