@@ -138,8 +138,11 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
-    void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
+
+    /// Executes action on block (modify it). If block is splitted @returns block of not processed rows, empty block otherwise.
+    /// Block could be splitted in case of JOIN (or another row multiplying action).
+    Block execute(Block & block, bool dry_run) const;
 };
 
 
@@ -220,6 +223,10 @@ public:
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block, bool dry_run = false) const;
+
+    /// Execute the expression on the block.
+    /// @returns starting action to continue with and block with not processed rows if any.
+    size_t execute(Block & block, size_t start_action, Block & not_processed) const;
 
     /// Check if joined subquery has totals.
     bool hasTotalsInJoin() const;

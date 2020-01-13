@@ -48,7 +48,7 @@ public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block) override;
-    void joinBlock(Block &) override;
+    void joinBlock(Block &, Block & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
@@ -85,7 +85,7 @@ private:
     size_t right_blocks_bytes = 0;
     bool is_in_memory = true;
     const bool nullable_right_side;
-    const bool is_all;
+    const bool is_all_join;
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
@@ -98,13 +98,15 @@ private:
 
     template <bool in_memory>
     size_t rightBlocksCount();
-    template <bool in_memory>
+    template <bool in_memory, bool is_all>
     void joinSortedBlock(Block & block);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
 
+    template <bool is_all>
     void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+    template <bool is_all>
     void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                    MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
 
