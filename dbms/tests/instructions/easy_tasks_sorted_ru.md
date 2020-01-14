@@ -8,29 +8,15 @@
 
 \* кстати, сейчас функциональность реализована плохо: ввод пароля не поддерживает корректную обработку backspace.
 
-## Недостатки юзабилити: у clickhouse-client отсутствует сокращённая опция -C, как вариант --config-file; Недостатки юзабилити, если пользователь не может прочитать конфиг клиента.
+## Недостатки юзабилити, если пользователь не может прочитать конфиг клиента.
 
 `dbms/programs/client/Client.cpp`
 
-Также делаем `chmod 000 /etc/clickhouse-client/config.xml` и смотрим, что получится.
-
-## Оператор NOT BETWEEN.
-
-`SELECT * FROM system.numbers WHERE number NOT BETWEEN 5 AND 10 LIMIT 10`
-
-`ExpressionListParsers.cpp`: `ParserBetweenExpression::parseImpl`
-
-## HTTP заголовок query_id.
-
-`programs/server/HTTPHandler.cpp` - смотрим метод `executeQuery`
-
-`src/Interpreters/executeQuery.h`
-
-`src/Interpreters/executeQuery.cpp` - смотрим колбэк на выставление Content-Type
+Делаем `chmod 000 /etc/clickhouse-client/config.xml` и смотрим, что получится.
 
 ## Уменьшать max_memory_usage и размеры кэшей при старте, если на сервере мало оперативки.
 
-Смотрим, сколько на сервере оперативки. Если `max_memory_usage`, `max_memory_usage_for_all_queries` ограничены, но больше 90% (настройка) от имеющейся оперативки, то уменьшать их и выводить предупреждение в лог. Аналогично для кэшей: `mark_cache`, `uncompressed_cache`.
+Смотрим, сколько на сервере оперативки. Если `max_memory_usage`, `max_memory_usage_for_all_queries` ограничены, но больше 90% (настройка) от имеющейся оперативки, то уменьшать их и выводить предупреждение в лог..
 
 `programs/server/Server.cpp` - инициализация сервера, установка размера кэшей
 
@@ -47,17 +33,6 @@ bitAnd, bitOr, bitNot, bitXor для значения типа FixedString, ин
 void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 ```
 Потом используйте их в вашей функции.
-
-## Функция arrayWithConstant.
-
-`arrayWithConstant(3, 'hello') = ['hello', 'hello', 'hello']`
-
-Смотрите метод `IColumn::replicate` для размножения значений столбца.
-
-## Функция flatten для превращения массивов массивов в массив элементов.
-
-`flatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5]`
-`ColumnArray` - внимательно изучаем, как устроены массивы в ClickHouse.
 
 ## Добавить generic вариант функций least, greatest.
 
@@ -83,26 +58,9 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 Состояния агрегатных функций могут быть записаны в дамп и считаны из него. Но десериализация состояний агрегатных функций небезопасна. Аккуратно выбранные пользовательские данные могут привести к segfault или порче памяти. Поэтому нужно просто сделать настройку, которая запрещает читать AggregateFunction из пользовательских данных.
 
-## Опции progress и time для clickhouse-local (по аналогии с clickhouse-client).
-
-Возможность выводить время выполнения запроса, а также красивый прогресс-бар для каждого запроса.
-
-## Usability: clickhouse-server должен поддерживать --help.
-
 ## В статистику jemalloc добавить информацию по arenas.
 
 В `system.asynchronous_metrics` - суммарный размер арен.
-
-## Добавить агрегатную функцию topKWeighted.
-
-`SELECT topKWeighted(value, weight)` - учитывать каждое значение с весом.
-
-## Функция isValidUTF8, toValidUTF8.
-
-`isValidUTF8` возвращает 1, если строка содержит набор байт в кодировке UTF-8.
-
-`toValidUTF8` - заменяет последовательности байт, не соответствующие кодировке UTF-8, на replacement character.
-
 
 # Более сложные задачи
 
@@ -149,12 +107,6 @@ https://github.com/ClickHouse/ClickHouse/issues/3266
 `createAggregationState('groupArray', 1)` - создать состояние агрегатной функции, в котором агрегировано одно значение 1.
 
 `createAggregationState('argMax', ('hello', 123))` - то же самое для агрегатных функций, принимающих несколько аргументов.
-
-## Корректное сравнение Date и DateTime.
-
-https://github.com/ClickHouse/ClickHouse/issues/2011
-
-Нужно сравнивать Date и DateTime так, как будто Date расширено до DateTime на начало суток в том же часовом поясе.
 
 ## LEFT ONLY JOIN
 
@@ -211,10 +163,6 @@ position с конца строки.
 
 Если сервер собран с поддержкой SSE 4.2, 4.1, 4, SSSE 3, SSE 3, то как можно ближе к началу работы, запускаем функцию, которая выполняет нужную инструкцию в качестве теста (asm volatile вставка), а до этого ставим обработчик сигнала SIGILL, который в случае невозможности выполнить инструкцию, сделает siglongjmp, позволит нам вывести понятное сообщение в лог и завершить работу. Замечание: /proc/cpuinfo зачастую не содержит актуальную информацию.
 
-## Добавить сжатие Brotli для HTTP интерфейса.
-
-`Content-Encoding: br`
-
 ## Метрики количества ошибок.
 
 Добавляем счётчики всех ошибок (ErrorCodes) по аналогии с ProfileEvents. Кроме количества запоминаем также время последней ошибки, стек трейс, сообщение. Добавляем системную таблицу system.errors. Отправка в Graphite.
@@ -254,10 +202,6 @@ https://clickhouse.yandex/docs/en/query_language/create/#create-table
 ## Запрос ALTER TABLE LOCK/UNLOCK PARTITION.
 
 Запретить модификацию данных в партиции. На партицию ставится флаг, что она заблокирована. В неё нельзя делать INSERT и ALTER. С файлов снимается доступ на запись.
-
-## Поддержка произвольных константных выражений в LIMIT.
-
-Возможность писать `LIMIT 1 + 2`. То же самое для `LIMIT BY`.
 
 ## Добавить информацию об exp-smoothed количестве ошибок соединений с репликами в таблицу system.clusters.
 
