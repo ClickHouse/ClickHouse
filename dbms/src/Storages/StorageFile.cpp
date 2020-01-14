@@ -197,7 +197,7 @@ class StorageFileBlockInputStream : public IBlockInputStream
 public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
         const Context & context, UInt64 max_block_size,
-        std::string file_path_,
+        std::string file_path_, bool need_path, bool need_file,
         const CompressionMethod compression_method,
         BlockInputStreamPtr prepared_reader = nullptr)
         : storage(std::move(storage_)), reader(std::move(prepared_reader))
@@ -226,6 +226,8 @@ public:
         {
             shared_lock = std::shared_lock(storage->rwlock);
             file_path = std::make_optional(file_path_);
+            with_file_column = need_file;
+            with_path_column = need_path;
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path.value()), compression_method);
         }
 
@@ -243,12 +245,17 @@ public:
         auto res = reader->read();
         if (res && file_path)
         {
-            /// construction with const is for probably generating less code
-            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(),
-                        std::make_shared<DataTypeString>(), "_path"});
-            size_t last_slash_pos = file_path.value().find_last_of('/');
-            res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value().substr(last_slash_pos + 1))->convertToFullColumnIfConst(),
-                        std::make_shared<DataTypeString>(), "_file"});
+            if (with_path_column)
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value())->convertToFullColumnIfConst(),
+                        std::make_shared<DataTypeString>(), "_path"});    /// construction with const is for probably generating less code
+            if (with_file_column)
+            {
+
+                size_t last_slash_pos = file_path.value().find_last_of('/');
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value().substr(
+                        last_slash_pos + 1))->convertToFullColumnIfConst(),
+                            std::make_shared<DataTypeString>(), "_file"});
+            }
         }
         return res;
     }
@@ -258,8 +265,10 @@ public:
         auto res = reader->getHeader();
         if (res && file_path)
         {
-            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
-            res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+            if (with_path_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            if (with_file_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
         }
         return res;
     }
@@ -277,6 +286,8 @@ public:
 private:
     std::shared_ptr<StorageFile> storage;
     std::optional<std::string> file_path;
+    bool with_path_column = false;
+    bool with_file_column = false;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
@@ -287,7 +298,7 @@ private:
 
 
 BlockInputStreams StorageFile::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -305,6 +316,15 @@ BlockInputStreams StorageFile::read(
             throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
     }
     blocks_input.reserve(paths.size());
+    bool need_path_column = false;
+    bool need_file_column = false;
+    for (const auto & column : column_names)
+    {
+        if (column == "_path")
+            need_path_column = true;
+        if (column == "_file")
+            need_file_column = true;
+    }
     for (const auto & file_path : paths)
     {
         BlockInputStreamPtr cur_block;
@@ -313,7 +333,7 @@ BlockInputStreams StorageFile::read(
             cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
         else
             cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, need_path_column, need_file_column, chooseCompressionMethod(file_path, compression_method));
 
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
