@@ -62,7 +62,6 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 Возможность выводить время выполнения запроса, а также красивый прогресс-бар для каждого запроса.
 
-## Usability: clickhouse-server должен поддерживать --help.
 
 ## В статистику jemalloc добавить информацию по arenas.
 
