@@ -544,11 +544,12 @@ IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const F
 }
 
 SimplePolygonDictionary::SimplePolygonDictionary(
+    const std::string & database_,
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_)
-    : IPolygonDictionary(name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
+    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
 {
 }
 
