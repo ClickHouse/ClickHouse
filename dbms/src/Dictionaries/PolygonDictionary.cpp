@@ -449,21 +449,21 @@ inline void makeDifferences(IColumn::Offsets & values)
 }
 
 void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest) {
-    const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
+    auto ptr_multi_polygons = typeid_cast<ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
         throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
 
-    const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
+    auto ptr_polygons = typeid_cast<ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
     IColumn::Offsets & polygons = ptr_multi_polygons->getOffsets();
 
-    const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
+    auto ptr_rings = typeid_cast<ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
     IColumn::Offsets & rings = ptr_polygons->getOffsets();
 
-    const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
+    auto ptr_points = typeid_cast<ColumnArray*>(&ptr_rings->getData());
     if (!ptr_points)
         throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
     IColumn::Offsets & points = ptr_rings->getOffsets();
