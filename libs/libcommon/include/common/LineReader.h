@@ -5,10 +5,6 @@
 #include <atomic>
 #include <vector>
 
-#ifdef USE_REPLXX
-#   include <replxx.hxx>
-#endif
-
 class LineReader
 {
 public:
@@ -52,7 +48,7 @@ private:
     InputStatus readOneLine(const String & prompt);
     void addToHistory(const String & line);
 
-#ifdef USE_REPLXX
-    replxx::Replxx rx;
-#endif
+    /// Since CMake doesn't impose restrictions on includes between unrelated targets
+    /// it's possible that we include this file without USE_REPLXX defined.
+    void * impl;
 };
