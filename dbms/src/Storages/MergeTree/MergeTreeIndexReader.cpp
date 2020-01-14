@@ -12,7 +12,6 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         MergeTreeReaderSettings{}, nullptr, nullptr,
         part_->getFileSizeOrZero(index->getFileName() + ".idx"),
         &part_->index_granularity_info,
-        MergeTreeReaderStream::ReadingMode::INDEX,
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE)
 {
     stream.seekToStart();

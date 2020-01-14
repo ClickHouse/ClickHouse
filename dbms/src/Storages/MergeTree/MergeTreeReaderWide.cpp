@@ -171,7 +171,6 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
-            MergeTreeReaderStream::ReadingMode::COLUMN,
             profile_callback, clock_type));
     };
 

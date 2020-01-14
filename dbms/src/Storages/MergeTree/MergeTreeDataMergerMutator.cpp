@@ -992,8 +992,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         std::move(new_columns),
         source_part->bytes_on_disk,
         source_part->rows_count,
-        "tmp_mut_" + future_part.name,
-        &source_part->index_granularity_info); /// Granularity info can't be changed during mutation.
+        "tmp_mut_" + future_part.name);
 
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;

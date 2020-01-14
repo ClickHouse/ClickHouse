@@ -200,7 +200,7 @@ void MergeTreeReaderCompact::initMarksLoader()
     {
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t marks_count = data_part->getMarksCount();
-        size_t mark_size_in_bytes = data_part->index_granularity_info.mark_size_in_bytes;
+        size_t mark_size_in_bytes = data_part->index_granularity_info.getMarkSizeInBytes(columns_num);
 
         size_t expected_file_size = mark_size_in_bytes * marks_count;
         if (expected_file_size != file_size)

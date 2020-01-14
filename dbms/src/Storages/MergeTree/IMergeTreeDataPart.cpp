@@ -52,12 +52,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Str
     {
         String file_name = part_path + "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
         ReadBufferFromFile file = openForReading(file_name);
-        const DataTypePtr & type = data.minmax_idx_column_types[i];
+        const DataTypePtr & data_type = data.minmax_idx_column_types[i];
 
         Field min_val;
-        type->deserializeBinary(min_val, file);
+        data_type->deserializeBinary(min_val, file);
         Field max_val;
-        type->deserializeBinary(max_val, file);
+        data_type->deserializeBinary(max_val, file);
 
         parallelogram.emplace_back(min_val, true, max_val, true);
     }
@@ -78,12 +78,12 @@ void IMergeTreeDataPart::MinMaxIndex::store(const Names & column_names, const Da
     for (size_t i = 0; i < column_names.size(); ++i)
     {
         String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
-        const DataTypePtr & type = data_types.at(i);
+        const DataTypePtr & data_type = data_types.at(i);
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
-        type->serializeBinary(parallelogram[i].left, out_hashing);
-        type->serializeBinary(parallelogram[i].right, out_hashing);
+        data_type->serializeBinary(parallelogram[i].left, out_hashing);
+        data_type->serializeBinary(parallelogram[i].right, out_hashing);
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -139,12 +139,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
         const DiskPtr & disk_,
-        const std::optional<String> & relative_path_)
+        const std::optional<String> & relative_path_,
+        Type part_type_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
+    , index_granularity_info(storage_, part_type_)
+    , part_type(part_type_)
 {
 }
 
@@ -153,12 +156,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         const String & name_,
         const MergeTreePartInfo & info_,
         const DiskPtr & disk_,
-        const std::optional<String> & relative_path_)
+        const std::optional<String> & relative_path_,
+        Type part_type_)
     : storage(storage_)
     , name(name_)
     , info(info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
+    , index_granularity_info(storage_, part_type_)
+    , part_type(part_type_)
 {
 }
 
@@ -593,7 +599,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
         columns.readText(file);
     }
 
-    index_granularity_info = MergeTreeIndexGranularityInfo{storage, getType(), columns.size()};
     size_t pos = 0;
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
