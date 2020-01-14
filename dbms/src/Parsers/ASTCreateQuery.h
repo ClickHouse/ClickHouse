@@ -58,6 +58,7 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_live_view{false};
+    bool is_window_view{false};
     bool is_populate{false};
     bool is_dictionary{false}; /// CREATE DICTIONARY
     bool replace_view{false}; /// CREATE OR REPLACE VIEW

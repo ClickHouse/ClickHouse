@@ -11,6 +11,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
@@ -83,6 +84,18 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
+        else if (dynamic_cast<const StorageWindowView *>(dependent_table.get()))
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
+        else
+            out = std::make_shared<PushingToViewsBlockOutputStream>(
+                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
+
+        views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
+    }
+        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
@@ -122,6 +135,10 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         StorageLiveView::writeIntoLiveView(*live_view, block, context);
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
+    {
+        StorageWindowView::writeIntoWindowView(*window_view, block, context);
     }
     else
     {
