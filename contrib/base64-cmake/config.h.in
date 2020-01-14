@@ -1,8 +1,0 @@
-#define HAVE_NEON32                @base64_NEON32@
-#define HAVE_NEON64                @base64_NEON64@
-#cmakedefine HAVE_SSSE3                 @base64_SSSE3@
-#cmakedefine HAVE_SSE41                 @base64_SSE41@
-#cmakedefine HAVE_SSE42                 @base64_SSE42@
-#cmakedefine HAVE_AVX                   @base64_AVX@
-#cmakedefine HAVE_AVX2                  @base64_AVX2@
-#cmakedefine HAVE_FAST_UNALIGNED_ACCESS @HAVE_FAST_UNALIGNED_ACCESS@

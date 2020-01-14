@@ -238,7 +238,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     if (context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
-            << " Set apropriate system_profile or distributed_ddl.profile to fix this.");
+            << " Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -825,7 +825,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             if (!zookeeper->exists(node_path, &stat))
                 continue;
 
-            /// Delete node if its lifetmie is expired (according to task_max_lifetime parameter)
+            /// Delete node if its lifetime is expired (according to task_max_lifetime parameter)
             constexpr UInt64 zookeeper_time_resolution = 1000;
             Int64 zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
             bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < current_time_seconds;
@@ -941,22 +941,19 @@ void DDLWorker::runMainThread()
     {
         try
         {
-            try
-            {
-                auto zookeeper = getAndSetZooKeeper();
-                zookeeper->createAncestors(queue_dir + "/");
-                initialized = true;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (!Coordination::isHardwareError(e.code))
-                    throw;  /// A logical error.
+            auto zookeeper = getAndSetZooKeeper();
+            zookeeper->createAncestors(queue_dir + "/");
+            initialized = true;
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (!Coordination::isHardwareError(e.code))
+                throw;  /// A logical error.
 
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
-                /// Avoid busy loop when ZooKeeper is not available.
-                sleepForSeconds(1);
-            }
+            /// Avoid busy loop when ZooKeeper is not available.
+            sleepForSeconds(1);
         }
         catch (...)
         {

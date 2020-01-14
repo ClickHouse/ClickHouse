@@ -70,7 +70,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
         ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
-        ("level", boost::program_options::value<int>(), "compression level for codecs spicified via flags")
+        ("level", boost::program_options::value<int>(), "compression level for codecs specified via flags")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;

@@ -4,13 +4,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Timestamp.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <set>
 
 namespace DB
 {
-
 using LoadablesConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 /// Base interface for configurations source for Loadble objects, which can be
@@ -22,24 +22,27 @@ using LoadablesConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguratio
 class IExternalLoaderConfigRepository
 {
 public:
+    /// Returns the name of the repository.
+    virtual const std::string & getName() const = 0;
+
+    /// Whether this repository is temporary:
+    /// it's created and destroyed while executing the same query.
+    virtual bool isTemporary() const { return false; }
+
     /// Return all available sources of loadables structure
     /// (all .xml files from fs, all entities from database, etc)
-    virtual std::set<std::string> getAllLoadablesDefinitionNames() const = 0;
+    virtual std::set<std::string> getAllLoadablesDefinitionNames() = 0;
 
     /// Checks that source of loadables configuration exist.
-    virtual bool exists(const std::string & loadable_definition_name) const = 0;
+    virtual bool exists(const std::string & path) = 0;
 
     /// Returns entity last update time
-    virtual Poco::Timestamp getUpdateTime(const std::string & loadable_definition_name) = 0;
+    virtual Poco::Timestamp getUpdateTime(const std::string & path) = 0;
 
     /// Load configuration from some concrete source to AbstractConfiguration
-    virtual LoadablesConfigurationPtr load(const std::string & loadable_definition_name) const = 0;
+    virtual LoadablesConfigurationPtr load(const std::string & path) = 0;
 
-    virtual ~IExternalLoaderConfigRepository() = default;
-
-    static const char * INTERNAL_REPOSITORY_NAME_PREFIX;
+    virtual ~IExternalLoaderConfigRepository() {}
 };
-
-using ExternalLoaderConfigRepositoryPtr = std::unique_ptr<IExternalLoaderConfigRepository>;
 
 }

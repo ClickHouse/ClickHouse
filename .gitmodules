@@ -49,7 +49,7 @@
 	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/aklomp/base64.git
+	url = https://github.com/powturbo/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow
@@ -128,6 +128,12 @@
 [submodule "contrib/icu"]
 	path = contrib/icu
 	url = https://github.com/unicode-org/icu.git
+[submodule "contrib/flatbuffers"]
+	path = contrib/flatbuffers
+	url = https://github.com/google/flatbuffers.git
 [submodule "contrib/libc-headers"]
 	path = contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
+[submodule "contrib/ryu"]
+	path = contrib/ryu
+	url = https://github.com/ClickHouse-Extras/ryu.git

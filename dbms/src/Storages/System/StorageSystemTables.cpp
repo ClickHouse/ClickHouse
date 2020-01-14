@@ -13,6 +13,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace DB
@@ -258,7 +259,7 @@ protected:
                     res_columns[res_index++]->insert(database->getObjectMetadataPath(table_name));
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(context, table_name)));
+                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 {
                     Array dependencies_table_name_array;
