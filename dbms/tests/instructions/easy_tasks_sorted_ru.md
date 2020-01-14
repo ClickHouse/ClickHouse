@@ -67,10 +67,6 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 В `system.asynchronous_metrics` - суммарный размер арен.
 
-## Добавить агрегатную функцию topKWeighted.
-
-`SELECT topKWeighted(value, weight)` - учитывать каждое значение с весом.
-
 # Более сложные задачи
 
 ## CREATE TABLE AS table_function()
