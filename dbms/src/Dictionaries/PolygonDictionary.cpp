@@ -478,6 +478,7 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
     makeDifferences(polygons), makeDifferences(rings), makeDifferences(points);
     IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
     dest.emplace_back();
+    dest.back().emplace_back();
     for (size_t i = 0; i < coordinates.size(); ++i)
     {
 
@@ -486,24 +487,26 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
         if (points[point_offset] == 0)
         {
             ++point_offset;
-            if (!dest.back().back().outer().empty())
-                dest.back().back().inners().emplace_back();
+            --rings[ring_offset];
             if (rings[ring_offset] == 0)
             {
                 ++ring_offset;
-                dest.back().emplace_back();
+                if (ring_offset == rings.size())
+                    throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+                --polygons[polygon_offset];
                 if (polygons[polygon_offset] == 0)
                 {
                     dest.emplace_back();
                     ++polygon_offset;
+                    if (polygon_offset == polygons.size())
+                        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
                 }
-                if (polygon_offset == polygons.size())
-                    throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-                --polygons[polygon_offset];
+                else
+                    dest.back().emplace_back();
             }
-            if (ring_offset == rings.size())
-                throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-            --rings[ring_offset];
+            else
+                if (!dest.back().back().outer().empty())
+                    dest.back().back().inners().emplace_back();
         }
         if (point_offset == points.size())
             throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
@@ -511,6 +514,9 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
         auto & ring = (dest.back().back().inners().empty() ? dest.back().back().outer() : dest.back().back().inners().back());
         ring.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
     }
+
+    for (auto & multi_polygon : dest)
+        bg::correct(multi_polygon);
 }
 
 IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
