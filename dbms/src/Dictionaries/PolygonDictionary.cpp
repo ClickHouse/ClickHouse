@@ -467,7 +467,7 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
     const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
     if (!ptr_points)
         throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
-    points.assign(tr_rings->getOffsets());
+    points.assign(ptr_rings->getOffsets());
 
     const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
