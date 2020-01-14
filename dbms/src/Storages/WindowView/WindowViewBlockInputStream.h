@@ -113,7 +113,7 @@ protected:
                 while (true)
                 {
                     UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-                    UInt64 w_end = static_cast<UInt64>(storage->getWindowUpperBound((UInt32)(timestamp_usec / 1000000))) * 1000000;
+                    UInt64 w_end = static_cast<UInt64>(storage->getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
                     storage->condition.wait_for(lock, std::chrono::microseconds(w_end - timestamp_usec));
 
                     if (isCancelled() || storage->is_dropped)
