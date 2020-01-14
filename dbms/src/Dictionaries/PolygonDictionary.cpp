@@ -1,4 +1,5 @@
 #include <ext/map.h>
+#include <Columns/ColumnArray.h>
 #include "PolygonDictionary.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -16,11 +17,14 @@ namespace ErrorCodes
 
 
 IPolygonDictionary::IPolygonDictionary(
+        const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_)
-        : name(name_)
+        : database(database_)
+        , name(name_)
+        , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
@@ -29,9 +33,19 @@ IPolygonDictionary::IPolygonDictionary(
     loadData();
 }
 
-std::string IPolygonDictionary::getName() const
+const std::string & IPolygonDictionary::getDatabase() const
+{
+    return database;
+}
+
+const std::string & IPolygonDictionary::getName() const
 {
     return name;
+}
+
+const std::string & IPolygonDictionary::getFullName() const
+{
+    return full_name;
 }
 
 std::string IPolygonDictionary::getTypeName() const
@@ -424,7 +438,47 @@ void IPolygonDictionary::getItemsImpl(
     query_count.fetch_add(points.size(), std::memory_order_relaxed);
 }
 
+void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest) {
+    const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
+    if (!ptr_multi_polygons)
+        throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
 
+    const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
+    if (!ptr_polygons)
+        throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
+    const auto polygons = std::move(ptr_multi_polygons->getOffsets());
+
+    const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
+    if (!ptr_rings)
+        throw Exceptions{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
+    const auto rings = std::move(ptr_polygons->getOffsets());
+
+    const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
+    if (!ptr_points)
+        throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
+    const auto points = std::move(ptr_rings->getOffsets());
+
+    const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
+    if (!ptr_coord)
+        throw Exception{"Expected a column containing Float64s when reading coordinates", ErrorCodes::TYPE_MISMATCH};
+    const auto coordinates = std::move(ptr_points->getOffsets());
+
+    IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
+    dest.emplace_back();
+    for (size_t i = 0; i < coordinates.size(); ++i)
+    {
+        if (polygons[polygon_offset] == 0)
+        {
+            dest.emplace_back();
+            ++polygon_offset;
+        }
+
+        if (coordinates[i] - (i == 0 ? 0 : coordinates[i - 1]) != DIM)
+            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::LOGICAL_ERROR};
+        Point pt(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
+
+    }
+}
 
 IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
 {
@@ -522,7 +576,7 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & name,
+    auto create_layout = [=](const std::string &,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -534,8 +588,11 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                             + ": elements .structure.range_min and .structure.range_max should be defined only "
                               "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
+
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime);
     };
     factory.registerLayout("polygon", create_layout, true);
 }

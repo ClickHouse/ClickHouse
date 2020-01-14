@@ -27,12 +27,15 @@ class IPolygonDictionary : public IDictionaryBase
 {
 public:
     IPolygonDictionary(
+            const std::string & database_,
             const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_);
 
-    std::string getName() const override;
+    const std::string & getDatabase() const override;
+    const std::string & getName() const override;
+    const std::string & getFullName() const override;
 
     std::string getTypeName() const override;
 
@@ -167,7 +170,9 @@ protected:
 
     std::vector<MultiPolygon> polygons;
 
+    const std::string database;
     const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
@@ -222,6 +227,8 @@ private:
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
+    
+    static void extractMultiPolygons(const ColumnPtr & column, std::vector<MultiPolygon> & dest);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
     static std::vector<Point> extractPoints(const Columns &key_columns);
