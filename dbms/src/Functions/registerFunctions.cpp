@@ -37,6 +37,7 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
+void registerFunctionsWindow(FunctionFactory &);
 
 
 void registerFunctions()
@@ -76,6 +77,7 @@ void registerFunctions()
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
+    registerFunctionsWindow(factory);
 }
 
 }
