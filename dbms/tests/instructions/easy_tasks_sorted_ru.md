@@ -48,12 +48,6 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 ```
 Потом используйте их в вашей функции.
 
-## Функция arrayWithConstant.
-
-`arrayWithConstant(3, 'hello') = ['hello', 'hello', 'hello']`
-
-Смотрите метод `IColumn::replicate` для размножения значений столбца.
-
 ## Добавить generic вариант функций least, greatest.
 
 `SELECT least(123, 456)` - работает.
