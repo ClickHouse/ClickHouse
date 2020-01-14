@@ -432,6 +432,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
+    , max_joined_block_size(table_join->maxJoinedBlockSize())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
@@ -568,8 +569,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block)
     return saveRightBlock(std::move(block));
 }
 
-/// TODO: not processed
-void MergeJoin::joinBlock(Block & block, Block &)
+void MergeJoin::joinBlock(Block & block, Block & not_processed)
 {
     JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
     materializeBlockInplace(block);
@@ -579,21 +579,21 @@ void MergeJoin::joinBlock(Block & block, Block &)
     if (is_in_memory)
     {
         if (is_all_join)
-            joinSortedBlock<true, true>(block);
+            joinSortedBlock<true, true>(block, not_processed);
         else
-            joinSortedBlock<true, false>(block);
+            joinSortedBlock<true, false>(block, not_processed);
     }
     else
     {
         if (is_all_join)
-            joinSortedBlock<false, true>(block);
+            joinSortedBlock<false, true>(block, not_processed);
         else
-            joinSortedBlock<false, false>(block);
+            joinSortedBlock<false, false>(block, not_processed);
     }
 }
 
 template <bool in_memory, bool is_all>
-void MergeJoin::joinSortedBlock(Block & block)
+void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
 {
     std::shared_lock lock(rwlock);
 
@@ -623,6 +623,15 @@ void MergeJoin::joinSortedBlock(Block & block)
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
             leftJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
+
+            if constexpr (is_all)
+            {
+                if (max_joined_block_size && left_columns.size() > max_joined_block_size)
+                {
+                    splitResultBlock(block, not_processed, left_cursor.position(), std::move(left_columns), std::move(right_columns));
+                    return;
+                }
+            }
         }
 
         left_cursor.nextN(left_key_tail);
@@ -651,6 +660,15 @@ void MergeJoin::joinSortedBlock(Block & block)
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
             innerJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
+
+            if constexpr (is_all)
+            {
+                if (max_joined_block_size && left_columns.size() > max_joined_block_size)
+                {
+                    splitResultBlock(block, not_processed, left_cursor.position(), std::move(left_columns), std::move(right_columns));
+                    return;
+                }
+            }
         }
 
         left_cursor.nextN(left_key_tail);
@@ -743,6 +761,30 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
         const auto & column = right_columns_to_add.getByPosition(i);
         block.insert(ColumnWithTypeAndName{std::move(right_columns[i]), column.type, column.name});
     }
+}
+
+/// Split block into processed (result) and not processed. Not processed block would be joined next time.
+void MergeJoin::splitResultBlock(Block & processed, Block & not_processed, size_t position,
+                                 MutableColumns && left_columns, MutableColumns && right_columns)
+{
+    if (position < processed.rows())
+    {
+        not_processed = processed.cloneEmpty();
+
+        /// @note it's not OK for ANY JOIN. @sa changeLeftColumns()
+        MutableColumns columns = processed.mutateColumns();
+        for (auto & col : columns)
+        {
+            auto tmp = col->cloneEmpty();
+            tmp->insertRangeFrom(*col, position, processed.rows() - position);
+            col = std::move(tmp);
+        }
+
+        not_processed.setColumns(std::move(columns));
+    }
+
+    changeLeftColumns(processed, std::move(left_columns));
+    addRightColumns(processed, std::move(right_columns));
 }
 
 template <bool in_memory>
