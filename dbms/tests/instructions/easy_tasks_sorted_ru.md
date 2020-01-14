@@ -72,13 +72,6 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 `SELECT topKWeighted(value, weight)` - учитывать каждое значение с весом.
 
-## Функция isValidUTF8, toValidUTF8.
-
-`isValidUTF8` возвращает 1, если строка содержит набор байт в кодировке UTF-8.
-
-`toValidUTF8` - заменяет последовательности байт, не соответствующие кодировке UTF-8, на replacement character.
-
-
 # Более сложные задачи
 
 ## CREATE TABLE AS table_function()
