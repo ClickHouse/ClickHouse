@@ -89,17 +89,20 @@ private:
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
+    const size_t max_joined_block_size;
     const size_t max_rows_in_right_block;
 
     void changeLeftColumns(Block & block, MutableColumns && columns);
     void addRightColumns(Block & block, MutableColumns && columns);
+    void splitResultBlock(Block & processed, Block & not_processed, size_t position,
+                          MutableColumns && left_columns, MutableColumns && right_columns);
 
     void mergeRightBlocks();
 
     template <bool in_memory>
     size_t rightBlocksCount();
     template <bool in_memory, bool is_all>
-    void joinSortedBlock(Block & block);
+    void joinSortedBlock(Block & block, Block & not_processed);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
 
