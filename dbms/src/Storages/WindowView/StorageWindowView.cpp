@@ -192,14 +192,14 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         UInt32 start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, time_zone); \
         return AddTime<IntervalKind::KIND>::execute(start, window_num_units, time_zone); \
     }
-        CASE_WINDOW_KIND(Second);
-        CASE_WINDOW_KIND(Minute);
-        CASE_WINDOW_KIND(Hour);
-        CASE_WINDOW_KIND(Day);
-        CASE_WINDOW_KIND(Week);
-        CASE_WINDOW_KIND(Month);
-        CASE_WINDOW_KIND(Quarter);
-        CASE_WINDOW_KIND(Year);
+        CASE_WINDOW_KIND(Second)
+        CASE_WINDOW_KIND(Minute)
+        CASE_WINDOW_KIND(Hour)
+        CASE_WINDOW_KIND(Day)
+        CASE_WINDOW_KIND(Week)
+        CASE_WINDOW_KIND(Month)
+        CASE_WINDOW_KIND(Quarter)
+        CASE_WINDOW_KIND(Year)
 #undef CASE_WINDOW_KIND
     }
     __builtin_unreachable();

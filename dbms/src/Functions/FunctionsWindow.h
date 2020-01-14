@@ -40,7 +40,7 @@ namespace DB
   * HOP_END(time_attr, hop_interval, window_interval)
   * 
   */
-enum FunctionName
+enum WindowFunctionName
 {
     TUMBLE,
     TUMBLE_START,
@@ -188,14 +188,20 @@ namespace
         }
     }
 
-    struct TumbleImpl
+    template <WindowFunctionName type>
+    struct WindowImpl
+    {
+        static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name);
+    };
+
+    template <>
+    struct WindowImpl<TUMBLE>
     {
         static constexpr auto name = "TUMBLE";
         static constexpr auto isVariadic = false;
         static constexpr auto numberOfArguments = 2;
-        static constexpr auto type = FunctionName::TUMBLE;
 
-        static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
+        [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             if (arguments.size() != 2)
             {
@@ -213,7 +219,7 @@ namespace
             return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()});
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
@@ -272,12 +278,12 @@ namespace
         }
     };
 
-    struct TumbleStartImpl
+    template <>
+    struct WindowImpl<TUMBLE_START>
     {
         static constexpr auto name = "TUMBLE_START";
         static constexpr auto isVariadic = true;
         static constexpr auto numberOfArguments = 0;
-        static constexpr auto type = FunctionName::TUMBLE_START;
 
         static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -307,14 +313,14 @@ namespace
             }
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = TumbleImpl::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, time_zone, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 0, function_name);
@@ -322,40 +328,40 @@ namespace
     };
 
 
-    struct TumbleEndImpl
+    template <>
+    struct WindowImpl<TUMBLE_END>
     {
         static constexpr auto name = "TUMBLE_END";
         static constexpr auto isVariadic = true;
         static constexpr auto numberOfArguments = 0;
-        static constexpr auto type = FunctionName::TUMBLE_END;
 
-        static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
+        [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            return TumbleStartImpl::getReturnType(arguments, function_name);
+            return WindowImpl<TUMBLE_START>::getReturnType(arguments, function_name);
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = TumbleImpl::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(block, arguments, time_zone, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 1, function_name);
         }
     };
 
-    struct HopImpl
+    template <>
+    struct WindowImpl<HOP>
     {
         static constexpr auto name = "HOP";
         static constexpr auto isVariadic = false;
         static constexpr auto numberOfArguments = 3;
-        static constexpr auto type = FunctionName::HOP;
 
-        static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
+        [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
             if (arguments.size() != 3)
             {
@@ -486,12 +492,12 @@ namespace
         }
     };
 
-    struct HopStartImpl
+    template <>
+    struct WindowImpl<HOP_START>
     {
         static constexpr auto name = "HOP_START";
         static constexpr auto isVariadic = true;
         static constexpr auto numberOfArguments = 0;
-        static constexpr auto type = FunctionName::HOP_START;
 
         static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
@@ -526,40 +532,40 @@ namespace
             }
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = HopImpl::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, time_zone, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 0, function_name);
         }
     };
 
-    struct HopEndImpl
+    template <>
+    struct WindowImpl<HOP_END>
     {
         static constexpr auto name = "HOP_END";
         static constexpr auto isVariadic = true;
         static constexpr auto numberOfArguments = 0;
-        static constexpr auto type = FunctionName::HOP_END;
 
-        static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
+        [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
         {
-            return HopStartImpl::getReturnType(arguments, function_name);
+            return WindowImpl<HOP_START>::getReturnType(arguments, function_name);
         }
 
-        static ColumnPtr
+        [[maybe_unused]] static ColumnPtr
         dispatchForColumns(Block & block, const ColumnNumbers & arguments, const DateLUTImpl & time_zone, const String & function_name)
         {
             const auto & time_column = block.getByPosition(arguments[0]);
             const auto which_type = WhichDataType(time_column.type);
             ColumnPtr result_column_;
             if (which_type.isDateTime())
-                result_column_ = HopImpl::dispatchForColumns(block, arguments, time_zone, function_name);
+                result_column_ = WindowImpl<HOP>::dispatchForColumns(block, arguments, time_zone, function_name);
             else
                 result_column_ = block.getByPosition(arguments[0]).column;
             return executeWindowBound(result_column_, 1, function_name);
@@ -567,32 +573,32 @@ namespace
     };
 };
 
-template <typename Impl>
+template <WindowFunctionName type>
 class FunctionWindow : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
+    static constexpr auto name = WindowImpl<type>::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionWindow>(); }
     String getName() const override { return name; }
-    bool isVariadic() const override { return Impl::isVariadic; }
-    size_t getNumberOfArguments() const override { return Impl::numberOfArguments; }
+    bool isVariadic() const override { return WindowImpl<type>::isVariadic; }
+    size_t getNumberOfArguments() const override { return WindowImpl<type>::numberOfArguments; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return Impl::getReturnType(arguments, name); }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return WindowImpl<type>::getReturnType(arguments, name); }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const DateLUTImpl & time_zone = DateLUT::instance();
-        auto result_column = Impl::dispatchForColumns(block, arguments, time_zone, name);
+        auto result_column = WindowImpl<type>::dispatchForColumns(block, arguments, time_zone, name);
         block.getByPosition(result).column = std::move(result_column);
     }
 };
 
-using FunctionTumble = FunctionWindow<TumbleImpl>;
-using FunctionTumbleStart = FunctionWindow<TumbleStartImpl>;
-using FunctionTumbleEnd = FunctionWindow<TumbleEndImpl>;
-using FunctionHop = FunctionWindow<HopImpl>;
-using FunctionHopStart = FunctionWindow<HopStartImpl>;
-using FunctionHopEnd = FunctionWindow<HopEndImpl>;
+using FunctionTumble = FunctionWindow<TUMBLE>;
+using FunctionTumbleStart = FunctionWindow<TUMBLE_START>;
+using FunctionTumbleEnd = FunctionWindow<TUMBLE_END>;
+using FunctionHop = FunctionWindow<HOP>;
+using FunctionHopStart = FunctionWindow<HOP_START>;
+using FunctionHopEnd = FunctionWindow<HOP_END>;
 }
