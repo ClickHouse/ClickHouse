@@ -54,11 +54,6 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 Смотрите метод `IColumn::replicate` для размножения значений столбца.
 
-## Функция flatten для превращения массивов массивов в массив элементов.
-
-`flatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5]`
-`ColumnArray` - внимательно изучаем, как устроены массивы в ClickHouse.
-
 ## Добавить generic вариант функций least, greatest.
 
 `SELECT least(123, 456)` - работает.
