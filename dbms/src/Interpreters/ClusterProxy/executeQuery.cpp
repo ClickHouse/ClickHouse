@@ -1,5 +1,5 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -34,39 +34,6 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_context.setSettings(new_settings);
 
     return new_context;
-}
-
-BlockInputStreams executeQuery(
-    IStreamFactory & stream_factory, const ClusterPtr & cluster,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings)
-{
-    BlockInputStreams res;
-
-    const std::string query = queryToString(query_ast);
-
-    Context new_context = removeUserRestrictionsFromSettings(context, settings);
-
-    ThrottlerPtr user_level_throttler;
-    if (auto process_list_element = context.getProcessListElement())
-        user_level_throttler = process_list_element->getUserNetworkThrottler();
-
-    /// Network bandwidth limit, if needed.
-    ThrottlerPtr throttler;
-    if (settings.max_network_bandwidth || settings.max_network_bytes)
-    {
-        throttler = std::make_shared<Throttler>(
-                settings.max_network_bandwidth,
-                settings.max_network_bytes,
-                "Limit for bytes to send or receive over network exceeded.",
-                user_level_throttler);
-    }
-    else
-        throttler = user_level_throttler;
-
-    for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);
-
-    return res;
 }
 
 }

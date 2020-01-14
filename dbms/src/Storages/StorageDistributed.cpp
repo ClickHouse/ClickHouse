@@ -27,6 +27,7 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -40,6 +41,8 @@
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
+
+#include <Interpreters/ProcessList.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -331,12 +334,6 @@ BlockInputStreams StorageDistributed::read(
     if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
         has_virtual_shard_num_column = false;
 
-    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
-        ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
-        : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
-
     if (settings.optimize_skip_unused_shards)
     {
         if (has_sharding_key)
@@ -358,8 +355,32 @@ BlockInputStreams StorageDistributed::read(
         }
     }
 
-    return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+    Context new_context = ClusterProxy::removeUserRestrictionsFromSettings(context, settings);
+
+    ThrottlerPtr user_level_throttler;
+    if (auto process_list_element = context.getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
+
+    /// Network bandwidth limit, if needed.
+    ThrottlerPtr throttler;
+    if (settings.max_network_bandwidth || settings.max_network_bytes)
+    {
+        throttler = std::make_shared<Throttler>(
+                settings.max_network_bandwidth,
+                settings.max_network_bytes,
+                "Limit for bytes to send or receive over network exceeded.",
+                user_level_throttler);
+    }
+    else
+        throttler = user_level_throttler;
+
+    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
+        ? ClusterProxy::SelectStreamFactory(
+            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables(), cluster, modified_query_ast, new_context, settings, throttler)
+        : ClusterProxy::SelectStreamFactory(
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables(), cluster, modified_query_ast, new_context, settings, throttler);
+
+    return select_stream_factory.createStreams();
 }
 
 

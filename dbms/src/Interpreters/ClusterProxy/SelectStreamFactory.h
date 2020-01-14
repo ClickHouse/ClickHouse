@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Client/ConnectionPool.h>
+#include <Interpreters/Cluster.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -10,7 +12,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-class SelectStreamFactory final : public IStreamFactory
+class SelectStreamFactory final
 {
 public:
     /// Database in a query.
@@ -20,7 +22,12 @@ public:
         QualifiedTableName main_table_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables);
+        const Tables & external_tables,
+        const ClusterPtr & cluster,
+        const ASTPtr & query_ast,
+        const Context & context,
+        const Settings & settings,
+        const ThrottlerPtr & throttler);
 
     /// TableFunction in a query.
     SelectStreamFactory(
@@ -29,15 +36,18 @@ public:
         ASTPtr table_func_ptr_,
         const Scalars & scalars_,
         bool has_virtual_shard_num_column_,
-        const Tables & external_tables_);
+        const Tables & external_tables_,
+        const ClusterPtr & cluster,
+        const ASTPtr & query_ast,
+        const Context & context,
+        const Settings & settings,
+        const ThrottlerPtr & throttler);
 
-    void createForShard(
-        const Cluster::ShardInfo & shard_info,
-        const String & query, const ASTPtr & query_ast,
-        const Context & context, const ThrottlerPtr & throttler,
-        BlockInputStreams & res) override;
+    BlockInputStreams createStreams();
 
 private:
+    BlockInputStreamPtr createForShard(const Cluster::ShardInfo & shard_info);
+
     const Block header;
     QueryProcessingStage::Enum processed_stage;
     QualifiedTableName main_table;
@@ -45,6 +55,11 @@ private:
     Scalars scalars;
     bool has_virtual_shard_num_column = false;
     Tables external_tables;
+    ClusterPtr cluster;
+    ASTPtr query_ast;
+    const Context & context;
+    const Settings & settings;
+    ThrottlerPtr throttler;
 };
 
 }
