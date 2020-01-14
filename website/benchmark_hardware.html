@@ -1618,14 +1618,17 @@ function generate_diagram() {
 
     html += "<table style='width: 100%'>";
 
+    var table_rows = [];
+
     for (var j = 0; j < filtered_results.length; j++) {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+        var table_row = "";
 
-        html += "<tr>";
-        html += "<td class='diagram-system-name'>" + filtered_results[j].system +
+        table_row += "<tr>";
+        table_row += "<td class='diagram-system-name'>" + filtered_results[j].system +
             (filtered_results[j].version ? "<br />(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")" : "") + "</td>";
 
-        html += "<td style='width: 100%; padding-right: 20px;'>";
+        table_row += "<td style='width: 100%; padding-right: 20px;'>";
 
         for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
@@ -1638,16 +1641,22 @@ function generate_diagram() {
                 percents = (ratio * 100 / max_total_ratio).toFixed(2);
             }
 
-            html += "<div class='bar' style='width: " + percents + "%;'>&nbsp;</div>";
+            table_row += "<div class='bar' style='width: " + percents + "%;'>&nbsp;</div>";
 
         }
 
-        html += "</td>";
+        table_row += "</td>";
 
-        //min_total_ratio = 1;
-        //total_ratio = 1;
-        html += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
-        html += "</tr>";
+        table_row += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
+        table_row += "</tr>";
+
+        table_rows.push({ data: table_row, value: total_ratio / min_total_ratio });
+    }
+
+    table_rows.sort(function(a, b) { return a.value - b.value; });
+
+    for (var j = 0; j < table_rows.length; j++) {
+        html += table_rows[j].data;
     }
 
     html += "</table>";
