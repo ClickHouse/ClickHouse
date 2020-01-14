@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -419,7 +418,7 @@ void IPolygonDictionary::getItemsImpl(
     using ColType = std::conditional_t<std::is_same<AttributeType, String>::value, ColumnString, ColVecType>;
     const auto column = typeid_cast<const ColType *>(attributes[attribute_ind].get());
     if (!column)
-        throw Exception{"An attribute should be a column of its type", ErrorCodes::LOGICAL_ERROR};
+        throw Exception{"An attribute should be a column of its type", ErrorCodes::BAD_ARGUMENTS};
     for (const auto i : ext::range(0, points.size()))
     {
         size_t id = 0;
@@ -438,6 +437,17 @@ void IPolygonDictionary::getItemsImpl(
     query_count.fetch_add(points.size(), std::memory_order_relaxed);
 }
 
+namespace
+{
+
+inline void makeDifferences(IColumn::Offsets & values)
+{
+    for (size_t i = 1; i < values.size(); ++i)
+        values[i] -= values[i - 1];
+}
+
+}
+
 void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest) {
     const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
@@ -446,36 +456,57 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
     const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
-    const auto & polygons = ptr_multi_polygons->getOffsets();
+    IColumn::Offsets & polygons = ptr_multi_polygons->getOffsets();
 
     const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
-    const auto & rings = ptr_polygons->getOffsets();
+    IColumn::Offsets & rings = ptr_polygons->getOffsets();
 
     const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
     if (!ptr_points)
         throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
-    const auto & points = ptr_rings->getOffsets();
+    IColumn::Offsets & points = ptr_rings->getOffsets();
 
     const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
         throw Exception{"Expected a column containing Float64s when reading coordinates", ErrorCodes::TYPE_MISMATCH};
     const auto & coordinates = ptr_points->getOffsets();
-
+    makeDifferences(polygons), makeDifferences(rings), makeDifferences(points);
     IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
     dest.emplace_back();
     for (size_t i = 0; i < coordinates.size(); ++i)
     {
-        if (polygons[polygon_offset] == 0)
-        {
-            dest.emplace_back();
-            ++polygon_offset;
-        }
 
         if (coordinates[i] - (i == 0 ? 0 : coordinates[i - 1]) != DIM)
-            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::LOGICAL_ERROR};
-        Point pt(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
+            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::BAD_ARGUMENTS};
+        if (points[point_offset] == 0)
+        {
+            ++point_offset;
+            if (!dest.back().back().outer().empty())
+                dest.back().back().inners().emplace_back();
+            if (rings[ring_offset] == 0)
+            {
+                ++ring_offset;
+                dest.back().emplace_back();
+                if (polygons[polygon_offset] == 0)
+                {
+                    dest.emplace_back();
+                    ++polygon_offset;
+                }
+                if (polygon_offset == polygons.size())
+                    throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+                --polygons[polygon_offset];
+            }
+            if (ring_offset == rings.size())
+                throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+            --rings[ring_offset];
+        }
+        if (point_offset == points.size())
+            throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+        --points[point_offset];
+        auto & ring = (dest.back().back().inners().empty() ? dest.back().back().outer() : dest.back().back().inners().back());
+        ring.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
     }
 }
 
@@ -485,7 +516,7 @@ IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
     {
         auto coordinate_array = field.get<Array>();
         if (coordinate_array.size() != DIM)
-            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::BAD_ARGUMENTS};
         Float64 values[DIM];
         for (size_t i = 0; i < DIM; ++i)
         {
@@ -506,7 +537,7 @@ IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & fie
     {
         const auto & ring_array = field.get<Array>();
         if (ring_array.empty())
-            throw Exception{"Empty polygons are not allowed", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Empty polygons are not allowed", ErrorCodes::BAD_ARGUMENTS};
         result.inners().resize(ring_array.size() - 1);
         if (ring_array[0].getType() != Field::Types::Array)
             throw Exception{"Outer polygon ring is not represented by an array", ErrorCodes::TYPE_MISMATCH};
@@ -583,6 +614,9 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
+
         // TODO: Check that there is only one key and it is of the correct type.
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
@@ -590,8 +624,6 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                               "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime);
     };
