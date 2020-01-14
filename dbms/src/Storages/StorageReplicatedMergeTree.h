@@ -233,7 +233,7 @@ private:
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
+    InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
