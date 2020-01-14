@@ -56,10 +56,11 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             return Status::Finished;
         }
 
-        // input.setNeeded();
-
         if (!input.hasData())
+        {
+            input.setNeeded();
             return Status::NeedData;
+        }
 
         current_data = input.pullData(true);
         has_input = true;
