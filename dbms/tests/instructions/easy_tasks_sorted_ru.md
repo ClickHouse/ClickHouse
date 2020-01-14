@@ -150,12 +150,6 @@ https://github.com/ClickHouse/ClickHouse/issues/3266
 
 `createAggregationState('argMax', ('hello', 123))` - то же самое для агрегатных функций, принимающих несколько аргументов.
 
-## Корректное сравнение Date и DateTime.
-
-https://github.com/ClickHouse/ClickHouse/issues/2011
-
-Нужно сравнивать Date и DateTime так, как будто Date расширено до DateTime на начало суток в том же часовом поясе.
-
 ## LEFT ONLY JOIN
 
 ## Функции makeDate, makeDateTime.
