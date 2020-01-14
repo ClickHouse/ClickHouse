@@ -99,8 +99,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
             /// Temporarily cancel parts sending
             ActionLock data_parts_exchange_blocker;
-            if (storage.data_parts_exchange_endpoint_holder)
-                data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->getBlocker().cancel();
+            if (storage.data_parts_exchange_endpoint)
+                data_parts_exchange_blocker = storage.data_parts_exchange_endpoint->blocker.cancel();
 
             /// Temporarily cancel part fetches
             auto fetches_blocker = storage.fetcher.blocker.cancel();

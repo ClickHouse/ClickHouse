@@ -2917,10 +2917,8 @@ void StorageReplicatedMergeTree::startup()
         database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
         getDataParts());
 
-    StoragePtr ptr = shared_from_this();
-    InterserverIOEndpointPtr data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this, ptr);
-    data_parts_exchange_endpoint_holder = std::make_shared<InterserverIOEndpointHolder>(
-        data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
+    data_parts_exchange_endpoint = std::make_shared<DataPartsExchange::Service>(*this);
+    global_context.getInterserverIOHandler().addEndpoint(data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint);
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
     if (areBackgroundMovesNeeded())
@@ -2952,11 +2950,15 @@ void StorageReplicatedMergeTree::shutdown()
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
 
-    if (data_parts_exchange_endpoint_holder)
+    if (data_parts_exchange_endpoint)
     {
-        data_parts_exchange_endpoint_holder->getBlocker().cancelForever();
-        data_parts_exchange_endpoint_holder = nullptr;
+        global_context.getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_endpoint->getId(replica_path));
+        /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+        data_parts_exchange_endpoint->blocker.cancelForever();
+        /// Wait for all of them
+        std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
+    data_parts_exchange_endpoint.reset();
 }
 
 
@@ -5206,7 +5208,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return fetcher.blocker.cancel();
 
     if (action_type == ActionLocks::PartsSend)
-        return data_parts_exchange_endpoint_holder ? data_parts_exchange_endpoint_holder->getBlocker().cancel() : ActionLock();
+        return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();
