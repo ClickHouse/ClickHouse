@@ -14,11 +14,11 @@ SELECT [DISTINCT] expr_list
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list]
+[LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
-[LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
