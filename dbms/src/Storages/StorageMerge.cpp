@@ -252,7 +252,7 @@ BlockInputStreams StorageMerge::read(
         else
         {
             source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(
-                header, [=]() mutable -> BlockInputStreamPtr
+                header, [=, this]() mutable -> BlockInputStreamPtr
                 {
                     BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
                                                                     header, storage, struct_lock, real_column_names,
@@ -413,17 +413,27 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-    setColumns(new_columns);
+    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    params.apply(storage_metadata);
+    context.getDatabase(database_name)->alterTable(context, table_name, storage_metadata);
+    setColumns(storage_metadata.columns);
 }
 
 Block StorageMerge::getQueryHeader(

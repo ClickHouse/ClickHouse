@@ -13,6 +13,7 @@ ClickHouse operations manual consists of the following major sections:
   - [Quotas](quotas.md)
   - [System Tables](system_tables.md)
   - [Server Configuration Parameters](server_settings/index.md)
+  - [How To Test Your Hardware With ClickHouse](performance_test.md)
   - [Settings](settings/index.md)
   - [Utilities](utils/index.md)
 

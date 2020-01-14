@@ -1,4 +1,4 @@
-SET max_bytes_to_read = 200000000;
+SET max_bytes_to_read = 600000000;
 
 SET optimize_move_to_prewhere = 1;
 

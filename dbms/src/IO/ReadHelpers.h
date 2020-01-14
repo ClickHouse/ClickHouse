@@ -29,21 +29,12 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/VarInt.h>
-#include <IO/ZlibInflatingReadBuffer.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-#endif
-
 #include <double-conversion/double-conversion.h>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
 
 
 /// 1 GiB
@@ -939,7 +930,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
@@ -1024,21 +1015,11 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-template <class TReadBuffer, class... Types>
-std::unique_ptr<ReadBuffer> getReadBuffer(const DB::CompressionMethod method, Types&&... args)
-{
-    if (method == DB::CompressionMethod::Gzip)
-    {
-        auto read_buf = std::make_unique<TReadBuffer>(std::forward<Types>(args)...);
-        return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
-    }
-    return std::make_unique<TReadBuffer>(args...);
-}
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
   */
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
 
 /** This function is negative to eof().
   * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
@@ -1047,6 +1028,6 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
   * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current);
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 }

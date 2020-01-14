@@ -128,10 +128,10 @@ private:
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
         }
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
@@ -304,10 +304,10 @@ private:
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
         }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
@@ -491,10 +491,10 @@ private:
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getFullName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
-                + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
+                + dict->getFullName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
         }
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&

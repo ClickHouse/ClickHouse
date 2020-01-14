@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -449,18 +450,64 @@ void Cluster::initMisc()
     }
 }
 
+std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings) const
+{
+    return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings)};
+}
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, {index}) };
+    return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, {index}) };
 }
 
 std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector<size_t> & indices) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, indices) };
+    return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
-Cluster::Cluster(const Cluster & from, const std::vector<size_t> & indices)
+Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
+    : shards_info{}, addresses_with_failover{}
+{
+    if (from.addresses_with_failover.empty())
+        throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
+
+    std::set<std::pair<String, int>> unique_hosts;
+    for (size_t shard_index : ext::range(0, from.shards_info.size()))
+    {
+        const auto & replicas = from.addresses_with_failover[shard_index];
+        for (const auto & address : replicas)
+        {
+            if (!unique_hosts.emplace(address.host_name, address.port).second)
+                continue;   /// Duplicate host, skip.
+
+            ShardInfo info;
+            if (address.is_local)
+                info.local_addresses.push_back(address);
+
+            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+                settings.distributed_connections_pool_size,
+                address.host_name,
+                address.port,
+                address.default_database,
+                address.user,
+                address.password,
+                "server",
+                address.compression,
+                address.secure);
+
+            info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+            info.per_replica_pools = {std::move(pool)};
+
+            addresses_with_failover.emplace_back(Addresses{address});
+            shards_info.emplace_back(std::move(info));
+        }
+    }
+
+    initMisc();
+}
+
+
+Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector<size_t> & indices)
     : shards_info{}
 {
     for (size_t index : indices)

@@ -14,11 +14,11 @@ SELECT [DISTINCT] expr_list
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list]
+[LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
-[LIMIT [offset_value, ]n BY columns]
 ```
 
 Все секции, кроме списка выражений сразу после SELECT, являются необязательными.
@@ -113,6 +113,23 @@ Cекция `FROM` определяет источник данных:
 
 Модификатор `FINAL` может быть использован в запросе `SELECT` из таблиц семейства [MergeTree](../operations/table_engines/mergetree.md). При указании `FINAL`, данные будут выбираться полностью "домерженными". Стоит учитывать, что использование `FINAL` приводит к чтению также столбцов, относящихся к первичному ключу. Также, запрос будет выполняться в один поток, и при выполнении запроса будет выполняться слияние данных. Это приводит к тому, что при использовании `FINAL`, запрос выполняется медленнее. В большинстве случаев, следует избегать использования `FINAL`.
 Модификатор `FINAL` может быть использован для всех таблиц семейства `MergeTree`, которые производят преобразования данных в процессе фоновых слияний (кроме GraphiteMergeTree).
+
+#### FINAL Modifier {#select-from-final}
+
+Применим при выборке данных из таблиц с движками таблиц семейства [MergeTree](../operations/table_engines/mergetree.md), кроме `GraphiteMergeTree`. Если в запросе используется `FINAL`, то ClickHouse полностью мёржит данные перед выдачей результата, таким образом выполняя все преобразования данных, которые производятся движком таблиц при мёржах.
+
+Также поддержан для движков:
+
+- [Replicated](../operations/table_engines/replication.md)-версий `MergeTree`.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), и [MaterializedView](../operations/table_engines/materializedview.md), которые работают поверх других движков, если они созданы для таблиц с движками семейства `MergeTree`.
+
+Запросы, использующие `FINAL` исполняются медленнее аналогичных запросов без `FINAL`, поскольку:
+
+- Запрос исполняется в один поток и данные мёржатся в процессе выполнения.
+- Запросы с модификатором `FINAL` дополнительно к столбцам, указанным в запросе, читают столбцы первичного ключа.
+
+По возможности не используйте модификатор `FINAL`.
+
 
 ### Секция SAMPLE {#select-sample-clause}
 

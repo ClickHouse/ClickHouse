@@ -23,13 +23,15 @@
 #include <Common/parseGlobs.h>
 
 #include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
 
 #include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <filesystem>
+#include <Storages/Distributed/DirectoryMonitor.h>
 
 namespace fs = std::filesystem;
 
@@ -40,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_IDENTIFIER;
@@ -54,7 +57,7 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+static std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -62,11 +65,12 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
     const size_t next_slash = suffix_with_globs.find('/', 1);
-    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+    auto regexp = makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash));
+    re2::RE2 matcher(regexp);
 
     std::vector<std::string> result;
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-    if (!fs::exists(fs::path(prefix_without_globs.data())))
+    if (!fs::exists(fs::path(prefix_without_globs)))
     {
         return result;
     }
@@ -98,90 +102,93 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
     return result;
 }
 
-std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
+static std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
-    return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
+    return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
+static void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    if (!startsWith(table_path, db_dir_path))
-        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+    /// "/dev/null" is allowed for perf testing
+    if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
+        throw Exception("File is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
     if (table_path_poco_file.exists() && table_path_poco_file.isDirectory())
-        throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 }
 
-StorageFile::StorageFile(
-        const std::string & table_path_,
-        int table_fd_,
-        const std::string & db_dir_path,
-        const std::string & database_name_,
-        const std::string & table_name_,
-        const std::string & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        Context & context_,
-        const String & compression_method_ = "")
-    :
-    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_), compression_method(compression_method_)
+
+StorageFile::StorageFile(int table_fd_, CommonArguments args)
+    : StorageFile(args)
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    if (args.context.getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    std::string db_dir_path_abs = Poco::Path(db_dir_path).makeAbsolute().makeDirectory().toString();
+    is_db_table = false;
+    use_table_fd = true;
+    table_fd = table_fd_;
 
-    if (table_fd < 0) /// Will use file
+    /// Save initial offset, it will be used for repeating SELECTs
+    /// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
+    table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
+}
+
+StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
+    : StorageFile(args)
+{
+    is_db_table = false;
+    std::string user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
+    Poco::Path poco_path = Poco::Path(table_path_);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    const std::string path = poco_path.absolute().toString();
+    if (path.find_first_of("*?{") == std::string::npos)
+        paths.push_back(path);
+    else
+        paths = listFilesWithRegexpMatching("/", path);
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(args.context, user_files_absolute_path, cur_path);
+
+    if (args.format_name == "Distributed")
     {
-        use_table_fd = false;
-
-        if (!table_path_.empty()) /// Is user's file
+        if (!paths.empty())
         {
-            Poco::Path poco_path = Poco::Path(table_path_);
-            if (poco_path.isRelative())
-                poco_path = Poco::Path(db_dir_path_abs, poco_path);
+            auto & first_path = paths[0];
+            Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-            const std::string path = poco_path.absolute().toString();
-            if (path.find_first_of("*?{") == std::string::npos)
-            {
-                paths.push_back(path);
-            }
-            else
-                paths = listFilesWithRegexpMatching("/", path);
-            for (const auto & cur_path : paths)
-                checkCreationIsAllowed(context_global, db_dir_path_abs, cur_path);
-            is_db_table = false;
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
         }
-        else /// Is DB's file
-        {
-            if (db_dir_path_abs.empty())
-                throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
-
-            paths = {getTablePath(db_dir_path_abs, table_name, format_name)};
-            is_db_table = true;
-            Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
-        }
-    }
-    else /// Will use FD
-    {
-        if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
-            throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-
-        is_db_table = false;
-        use_table_fd = true;
-
-        /// Save initial offset, it will be used for repeating SELECTs
-        /// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
-        table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
     }
 }
 
+StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
+    : StorageFile(args)
+{
+    if (relative_table_dir_path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    String table_dir_path = base_path + relative_table_dir_path + "/";
+    Poco::File(table_dir_path).createDirectories();
+    paths = {getTablePath(table_dir_path, format_name)};
+}
+
+StorageFile::StorageFile(CommonArguments args)
+    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
+    , compression_method(args.compression_method), base_path(args.context.getPath())
+{
+    if (args.format_name != "Distributed")
+        setColumns(args.columns);
+
+    setConstraints(args.constraints);
+}
 
 class StorageFileBlockInputStream : public IBlockInputStream
 {
@@ -189,8 +196,9 @@ public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
         const Context & context, UInt64 max_block_size,
         std::string file_path,
-        const CompressionMethod compression_method)
-        : storage(std::move(storage_))
+        const CompressionMethod compression_method,
+        BlockInputStreamPtr prepared_reader = nullptr)
+        : storage(std::move(storage_)), reader(std::move(prepared_reader))
     {
         if (storage->use_table_fd)
         {
@@ -210,15 +218,16 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = getReadBuffer<ReadBufferFromFileDescriptor>(compression_method, storage->table_fd);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
             shared_lock = std::shared_lock(storage->rwlock);
-            read_buf = getReadBuffer<ReadBufferFromFile>(compression_method, file_path);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path), compression_method);
         }
 
-        reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+        if (!reader)
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -275,8 +284,14 @@ BlockInputStreams StorageFile::read(
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
-        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(
-                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, IStorage::chooseCompressionMethod(file_path, compression_method));
+        BlockInputStreamPtr cur_block;
+
+        if (format_name == "Distributed")
+            cur_block = StorageDistributedDirectoryMonitor::createStreamFromFile(file_path);
+        else
+            cur_block = std::make_shared<StorageFileBlockInputStream>(
+                std::static_pointer_cast<StorageFile>(shared_from_this()), context, max_block_size, file_path, chooseCompressionMethod(file_path, compression_method));
+
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
     }
     return narrowBlockInputStreams(blocks_input, num_streams);
@@ -287,7 +302,8 @@ class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit StorageFileBlockOutputStream(StorageFile & storage_,
-        const CompressionMethod compression_method)
+        const CompressionMethod compression_method,
+        const Context & context)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
@@ -297,16 +313,18 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            write_buf = getWriteBuffer<WriteBufferFromFileDescriptor>(compression_method, storage.table_fd);
+            write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd), compression_method, 3);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            write_buf = getWriteBuffer<WriteBufferFromFile>(compression_method, storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
+                compression_method, 3);
         }
 
-        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
     }
 
     Block getHeader() const override { return storage.getSampleBlock(); }
@@ -340,10 +358,13 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Context & /*context*/)
+    const Context & context)
 {
+    if (format_name == "Distributed")
+        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
+
     return std::make_shared<StorageFileBlockOutputStream>(*this,
-        IStorage::chooseCompressionMethod(paths[0], compression_method));
+        chooseCompressionMethod(paths[0], compression_method), context);
 }
 
 Strings StorageFile::getDataPaths() const
@@ -353,7 +374,7 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
-void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -363,13 +384,35 @@ void StorageFile::rename(const String & new_path_to_db, const String & new_datab
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
+    std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
     table_name = new_table_name;
     database_name = new_database_name;
+}
+
+void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
+{
+    if (paths.size() != 1)
+        throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
+    if (use_table_fd)
+    {
+        if (0 != ::ftruncate(table_fd, 0))
+            throwFromErrno("Cannot truncate file at fd " + toString(table_fd), ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
+    else
+    {
+        if (!Poco::File(paths[0]).exists())
+            return;
+
+        if (0 != ::truncate(paths[0].c_str(), 0))
+            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+    }
 }
 
 
@@ -387,48 +430,54 @@ void registerStorageFile(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+        String compression_method;
+        StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name, compression_method,
+                                                 args.columns, args.constraints, args.context};
+
+        if (engine_args.size() == 1)    /// Table in database
+            return StorageFile::create(args.relative_data_path, common_args);
+
+        /// Will use FD if engine_args[1] is int literal or identifier with std* name
         int source_fd = -1;
         String source_path;
-        String compression_method;
-        if (engine_args.size() >= 2)
-        {
-            /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
-            {
-                if (*opt_name == "stdin")
-                    source_fd = STDIN_FILENO;
-                else if (*opt_name == "stdout")
-                    source_fd = STDOUT_FILENO;
-                else if (*opt_name == "stderr")
-                    source_fd = STDERR_FILENO;
-                else
-                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
-                                    ErrorCodes::UNKNOWN_IDENTIFIER);
-            }
-            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
-            {
-                auto type = literal->value.getType();
-                if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.get<Int64>());
-                else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.get<UInt64>());
-                else if (type == Field::Types::String)
-                    source_path = literal->value.get<String>();
-            }
-            if (engine_args.size() == 3)
-            {
-                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
-                compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            } else compression_method = "auto";
+        if (auto opt_name = tryGetIdentifierName(engine_args[1]))
+        {
+            if (*opt_name == "stdin")
+                source_fd = STDIN_FILENO;
+            else if (*opt_name == "stdout")
+                source_fd = STDOUT_FILENO;
+            else if (*opt_name == "stderr")
+                source_fd = STDERR_FILENO;
+            else
+                throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
+                                ErrorCodes::UNKNOWN_IDENTIFIER);
+        }
+        else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
+        {
+            auto type = literal->value.getType();
+            if (type == Field::Types::Int64)
+                source_fd = static_cast<int>(literal->value.get<Int64>());
+            else if (type == Field::Types::UInt64)
+                source_fd = static_cast<int>(literal->value.get<UInt64>());
+            else if (type == Field::Types::String)
+                source_path = literal->value.get<String>();
+            else
+                throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageFile::create(
-            source_path, source_fd,
-            args.data_path,
-            args.database_name, args.table_name, format_name, args.columns, args.constraints,
-            args.context,
-            compression_method);
+        if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+            compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+            compression_method = "auto";
+
+        if (0 <= source_fd)     /// File descriptor
+            return StorageFile::create(source_fd, common_args);
+        else                    /// User's file
+            return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
     });
 }
 

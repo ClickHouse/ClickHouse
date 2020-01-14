@@ -8,6 +8,13 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int PATH_ACCESS_DENIED;
+}
+
 std::mutex DiskLocal::mutex;
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
@@ -85,6 +92,11 @@ bool DiskLocal::isDirectory(const String & path) const
     return Poco::File(disk_path + path).isDirectory();
 }
 
+size_t DiskLocal::getFileSize(const String & path) const
+{
+    return Poco::File(disk_path + path).getSize();
+}
+
 void DiskLocal::createDirectory(const String & path)
 {
     Poco::File(disk_path + path).createDirectory();
@@ -95,9 +107,22 @@ void DiskLocal::createDirectories(const String & path)
     Poco::File(disk_path + path).createDirectories();
 }
 
+void DiskLocal::clearDirectory(const String & path)
+{
+    std::vector<Poco::File> files;
+    Poco::File(disk_path + path).list(files);
+    for (auto & file : files)
+        file.remove();
+}
+
+void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
+{
+    Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
+}
+
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskLocalDirectoryIterator>(disk_path + path);
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -105,19 +130,35 @@ void DiskLocal::moveFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
 }
 
+void DiskLocal::replaceFile(const String & from_path, const String & to_path)
+{
+    Poco::File from_file(disk_path + from_path);
+    Poco::File to_file(disk_path + to_path);
+    if (to_file.exists())
+    {
+        Poco::File tmp_file(disk_path + to_path + ".old");
+        to_file.renameTo(tmp_file.path());
+        from_file.renameTo(disk_path + to_path);
+        tmp_file.remove();
+    }
+    else
+        from_file.renameTo(to_file.path());
+}
+
 void DiskLocal::copyFile(const String & from_path, const String & to_path)
 {
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path) const
+std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
 {
-    return std::make_unique<ReadBufferFromFile>(disk_path + path);
+    return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
 }
 
-std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path)
+std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    return std::make_unique<WriteBufferFromFile>(disk_path + path);
+    int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
 
@@ -177,6 +218,11 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             if (path.back() != '/')
                 throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+
+        if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
+        {
+            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");

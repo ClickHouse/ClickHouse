@@ -55,27 +55,28 @@ namespace ActionLocks
 StorageMergeTree::StorageMergeTree(
     const String & database_name_,
     const String & table_name_,
-    const ColumnsDescription & columns_,
-    const IndicesDescription & indices_,
-    const ConstraintsDescription & constraints_,
+    const String & relative_data_path_,
+    const StorageInMemoryMetadata & metadata,
     bool attach,
     Context & context_,
     const String & date_column_name,
-    const ASTPtr & partition_by_ast_,
-    const ASTPtr & order_by_ast_,
-    const ASTPtr & primary_key_ast_,
-    const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-    const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_,
-            columns_, indices_, constraints_,
-            context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-            sample_by_ast_, ttl_table_ast_, merging_params_,
-            std::move(storage_settings_), false, attach),
-        reader(*this), writer(*this),
-        merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
+    : MergeTreeData(
+        database_name_,
+        table_name_,
+        relative_data_path_,
+        metadata,
+        context_,
+        date_column_name,
+        merging_params_,
+        std::move(storage_settings_),
+        false,
+        attach)
+    , reader(*this)
+    , writer(*this)
+    , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -109,6 +110,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
+    clearOldPartsFromFilesystem(true);
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
@@ -249,85 +251,58 @@ void StorageMergeTree::alter(
     const String current_database_name = getDatabaseName();
     const String current_table_name = getTableName();
 
-    if (!params.isMutable())
-    {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-        auto new_columns = getColumns();
-        auto new_indices = getIndices();
-        auto new_constraints = getConstraints();
-        ASTPtr new_order_by_ast = order_by_ast;
-        ASTPtr new_primary_key_ast = primary_key_ast;
-        ASTPtr new_ttl_table_ast = ttl_table_ast;
-        SettingsChanges new_changes;
-
-        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
-
-        changeSettings(new_changes, table_lock_holder);
-
-        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
-        setColumns(std::move(new_columns));
-        return;
-    }
-
-    /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    /// Also block moves, because they can replace part with old state
-    auto merge_blocker = merger_mutator.merges_blocker.cancel();
-    auto moves_blocked = parts_mover.moves_blocker.cancel();
-
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-    checkAlter(params, context);
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    ASTPtr new_order_by_ast = order_by_ast;
-    ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_ttl_table_ast = ttl_table_ast;
-    SettingsChanges new_changes;
-    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
-    auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
 
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    params.apply(metadata);
 
-    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
+    /// Update metdata in memory
+    auto update_metadata = [&metadata, &table_lock_holder, this]()
     {
-        auto & storage_ast = ast.as<ASTStorage &>();
 
-        if (new_order_by_ast.get() != order_by_ast.get())
-            storage_ast.set(storage_ast.order_by, new_order_by_ast);
+        changeSettings(metadata.settings_ast, table_lock_holder);
+        /// Reinitialize primary key because primary key column types might have changed.
+        setProperties(metadata);
 
-        if (new_primary_key_ast.get() != primary_key_ast.get())
-            storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
-
-        if (new_ttl_table_ast.get() != ttl_table_ast.get())
-            storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
-
-        if (!new_changes.empty())
-        {
-            auto settings_modifier = getSettingsModifier(new_changes);
-            settings_modifier(ast);
-        }
+        setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
     };
 
-    changeSettings(new_changes, table_lock_holder);
-
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
-
-
-    /// Reinitialize primary key because primary key column types might have changed.
-    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
-
-    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
-
-    for (auto & transaction : transactions)
+    /// This alter can be performed at metadata level only
+    if (!params.isModifyingData())
     {
-        transaction->commit();
-        transaction.reset();
-    }
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    /// Columns sizes could be changed
-    recalculateColumnSizes();
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, metadata);
+
+        update_metadata();
+    }
+    else
+    {
+
+        /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
+        /// Also block moves, because they can replace part with old state.
+        auto merge_blocker = merger_mutator.merges_blocker.cancel();
+        auto moves_blocked = parts_mover.moves_blocker.cancel();
+
+
+        auto transactions = prepareAlterTransactions(metadata.columns, metadata.indices, context);
+
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, metadata);
+
+        update_metadata();
+
+        for (auto & transaction : transactions)
+        {
+            transaction->commit();
+            transaction.reset();
+        }
+
+        /// Columns sizes could be changed
+        recalculateColumnSizes();
+    }
 }
 
 
@@ -354,10 +329,14 @@ public:
         else
         {
             MergeTreeDataPart::TTLInfos ttl_infos;
+            size_t max_volume_index = 0;
             for (auto & part_ptr : future_part_.parts)
+            {
                 ttl_infos.update(part_ptr->ttl_infos);
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+            }
 
-            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr));
+            reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
         }
         if (!reserved_space)
         {
@@ -453,7 +432,6 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
         auto check = [version, this]() { return isMutationDone(version); };
         std::unique_lock lock(mutation_wait_mutex);
         mutation_wait_event.wait(lock, check);
-
     }
 }
 
@@ -639,7 +617,13 @@ bool StorageMergeTree::merge(
         if (!selected)
         {
             if (out_disable_reason)
-                *out_disable_reason = "Cannot select parts for optimization";
+            {
+                if (!out_disable_reason->empty())
+                {
+                    *out_disable_reason += ". ";
+                }
+                *out_disable_reason += "Cannot select parts for optimization";
+            }
             return false;
         }
 
@@ -724,9 +708,6 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        /// DataPart can be store only at one disk. Get Max of free space at all disks
-        UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
-
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.empty())
@@ -742,7 +723,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            if (merger_mutator.getMaxSourcePartSizeForMutation() > disk_space)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
             size_t current_ast_elements = 0;
@@ -929,25 +910,18 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
 
     std::vector<AlterDataPartTransactionPtr> transactions;
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    ASTPtr ignored_order_by_ast;
-    ASTPtr ignored_primary_key_ast;
-    ASTPtr ignored_ttl_table_ast;
-    SettingsChanges ignored_settings_changes;
 
-    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast,
-        ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes);
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    alter_command.apply(metadata);
 
-    auto columns_for_parts = new_columns.getAllPhysical();
+    auto columns_for_parts = metadata.columns.getAllPhysical();
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
-        alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        alterDataPart(columns_for_parts, metadata.indices.indices, false, transaction);
         if (transaction->isValid())
             transactions.push_back(std::move(transaction));
 
@@ -1179,7 +1153,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         if (!canReplacePartition(src_part))
             throw Exception(
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::BAD_ARGUMENTS);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();

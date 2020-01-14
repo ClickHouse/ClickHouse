@@ -157,7 +157,7 @@ Aggregator::Aggregator(const Params & params_)
     total_size_of_aggregate_states = 0;
     all_aggregates_has_trivial_destructor = true;
 
-    // aggreate_states will be aligned as below:
+    // aggregate_states will be aligned as below:
     // |<-- state_1 -->|<-- pad_1 -->|<-- state_2 -->|<-- pad_2 -->| .....
     //
     // pad_N will be used to match alignment requirement for each next state.
@@ -168,7 +168,7 @@ Aggregator::Aggregator(const Params & params_)
 
         total_size_of_aggregate_states += params.aggregates[i].function->sizeOfData();
 
-        // aggreate states are aligned based on maximum requirement
+        // aggregate states are aligned based on maximum requirement
         align_aggregate_states = std::max(align_aggregate_states, params.aggregates[i].function->alignOfData());
 
         // If not the last aggregate_state, we need pad it so that next aggregate_state will be aligned.
