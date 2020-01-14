@@ -74,8 +74,6 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
 
-    Type getType() const override { return Type::WIDE; }
-
     ColumnSize getTotalColumnsSize() const override;
 
     ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;

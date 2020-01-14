@@ -73,8 +73,6 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
 
-    Type getType() const override { return Type::COMPACT; }
-
     ColumnSize getColumnSize(const String & name, const IDataType & type0) const override;
 
     ColumnSize getTotalColumnsSize() const override;
@@ -88,8 +86,6 @@ public:
     NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & analysis_result,
         const NamesAndTypesList & old_columns) const override;
-
-    void setColumns(const NamesAndTypesList & new_columns) override;
 
     ~MergeTreeDataPartCompact() override;
 

@@ -54,7 +54,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const String & name_,
         const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_, Type::WIDE)
 {
 }
 
@@ -64,7 +64,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreePartInfo & info_,
         const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_, Type::WIDE)
 {
 }
 
@@ -189,7 +189,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 
     if (!index_granularity_info.is_adaptive)
     {
-        size_t marks_count = marks_file_size / index_granularity_info.mark_size_in_bytes;
+        size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
         index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
     }
     else
@@ -203,7 +203,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
             index_granularity.appendMark(granularity);
         }
 
-        if (index_granularity.getMarksCount() * index_granularity_info.mark_size_in_bytes != marks_file_size)
+        if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes() != marks_file_size)
             throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 

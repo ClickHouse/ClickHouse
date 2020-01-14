@@ -1599,13 +1599,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     const NamesAndTypesList & columns_list,
     size_t bytes_uncompressed,
     size_t rows_count,
-    const String & relative_path,
-    const MergeTreeIndexGranularityInfo * index_granularity_info) const
+    const String & relative_path) const
 {
     auto type = choosePartType(bytes_uncompressed, rows_count);
     auto part = createPart(name, type, part_info, disk, relative_path);
-    part->index_granularity_info = index_granularity_info ? *index_granularity_info
-        : MergeTreeIndexGranularityInfo{*this, type, columns_list.size()};
     part->setColumns(columns_list);
     /// Don't save rows_count count here as it can be changed later
     return part;

@@ -57,7 +57,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const String & name_,
         const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -67,7 +67,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreePartInfo & info_,
         const DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_, Type::COMPACT)
 {
 }
 
@@ -160,7 +160,6 @@ String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
 
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
-    index_granularity_info = MergeTreeIndexGranularityInfo{storage, getType(), columns.size()};
     String full_path = getFullPath();
 
     if (columns.empty())
@@ -185,7 +184,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
         index_granularity.appendMark(granularity);
     }
 
-    if (index_granularity.getMarksCount() * index_granularity_info.mark_size_in_bytes != marks_file_size)
+    if (index_granularity.getMarksCount() * index_granularity_info.getMarkSizeInBytes(columns.size()) != marks_file_size)
         throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
     index_granularity.setInitialized();
@@ -251,13 +250,6 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
     }
 
     return rename_map;
-}
-
-void MergeTreeDataPartCompact::setColumns(const NamesAndTypesList & new_columns)
-{
-    if (new_columns.size() != columns.size())
-        index_granularity_info = MergeTreeIndexGranularityInfo{storage, Type::COMPACT, new_columns.size()};
-    IMergeTreeDataPart::setColumns(new_columns);
 }
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)

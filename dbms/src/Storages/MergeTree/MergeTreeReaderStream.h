@@ -16,19 +16,12 @@ namespace DB
 class MergeTreeReaderStream
 {
 public:
-    enum class ReadingMode
-    {
-        COLUMN,
-        INDEX,
-    };
-
     MergeTreeReaderStream(
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
         size_t file_size, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        ReadingMode mode_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
@@ -49,7 +42,6 @@ private:
     bool save_marks_in_cache;
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
-    ReadingMode mode;
 
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;

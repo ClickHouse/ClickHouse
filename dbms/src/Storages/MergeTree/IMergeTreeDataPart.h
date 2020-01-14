@@ -85,7 +85,7 @@ public:
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
-    virtual void setColumns(const NamesAndTypesList & columns_);
+    void setColumns(const NamesAndTypesList & columns_);
 
     virtual NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & /* analysis_result */,
@@ -106,7 +106,7 @@ public:
     virtual void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
     using Type = MergeTreeDataPartType;
-    virtual Type getType() const = 0;
+    Type getType() const { return part_type; }
 
     static String typeToString(Type type);
     String getTypeName() const { return typeToString(getType()); }
@@ -115,14 +115,16 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskPtr & disk = {},
-        const std::optional<String> & relative_path = {});
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskPtr & disk = {},
-        const std::optional<String> & relative_path = {});
+        const DiskPtr & disk,
+        const std::optional<String> & relative_path,
+        Type part_type_);
 
     void assertOnDisk() const;
 
@@ -157,11 +159,11 @@ public:
 
     String name;
     MergeTreePartInfo info;
-    MergeTreeIndexGranularityInfo index_granularity_info;
 
     DiskPtr disk;
 
     mutable String relative_path;
+    MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
 
@@ -313,7 +315,7 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
 protected:
-
+    Type part_type;
     void removeIfNeeded();
     virtual void checkConsistency(bool require_part_metadata) const;
 

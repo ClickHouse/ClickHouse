@@ -22,12 +22,10 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        ReadingMode mode_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(settings.save_marks_in_cache)
         , index_granularity_info(index_granularity_info_)
-        , mode(mode_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
@@ -119,9 +117,7 @@ void MergeTreeReaderStream::initMarksLoader()
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(mrk_path).getSize();
-        size_t mark_size = mode == ReadingMode::INDEX
-            ? index_granularity_info->skip_index_mark_size_in_bytes
-            : index_granularity_info->mark_size_in_bytes;
+        size_t mark_size = index_granularity_info->getMarkSizeInBytes();
 
         size_t expected_file_size = mark_size * marks_count;
         if (expected_file_size != file_size)
