@@ -250,7 +250,6 @@ public:
                         std::make_shared<DataTypeString>(), "_path"});    /// construction with const is for probably generating less code
             if (with_file_column)
             {
-
                 size_t last_slash_pos = file_path.value().find_last_of('/');
                 res.insert({DataTypeString().createColumnConst(res.rows(), file_path.value().substr(
                         last_slash_pos + 1))->convertToFullColumnIfConst(),
