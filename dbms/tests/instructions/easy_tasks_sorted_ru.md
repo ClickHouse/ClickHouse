@@ -14,12 +14,6 @@
 
 Делаем `chmod 000 /etc/clickhouse-client/config.xml` и смотрим, что получится.
 
-## Оператор NOT BETWEEN.
-
-`SELECT * FROM system.numbers WHERE number NOT BETWEEN 5 AND 10 LIMIT 10`
-
-`ExpressionListParsers.cpp`: `ParserBetweenExpression::parseImpl`
-
 ## HTTP заголовок query_id.
 
 `programs/server/HTTPHandler.cpp` - смотрим метод `executeQuery`
