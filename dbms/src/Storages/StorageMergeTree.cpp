@@ -1030,6 +1030,12 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
                         break;
+                    case PartitionCommand::MoveDestinationType::TABLE:
+                        checkPartitionCanBeDropped(command.partition);
+                        String dest_database = command.to_database.empty() ? context.getCurrentDatabase() : command.to_database;
+                        auto dest_storage = context.getTable(dest_database, command.to_table);
+                        movePartitionToTable(dest_storage, command.partition, context);
+                        break;
                 }
 
             }
@@ -1206,6 +1212,85 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
+void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
+{
+    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
+
+    auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
+    if (!dest_table_storage)
+        throw Exception("Table " + this->getTableName() + " supports attachPartitionFrom only for MergeTree family of table engines."
+                        " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
+    if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
+        throw Exception("Destination table " + dest_table_storage->getTableName() + " should have the same storage policy of source table " + this->getTableName() + ". " +
+                        this->getTableName() + ": " + this->getStoragePolicy()->getName() +
+                        ", " + dest_table_storage->getTableName() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+    Stopwatch watch;
+
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(this);
+    String partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MutableDataPartsVector dst_parts;
+
+    static const String TMP_PREFIX = "tmp_replace_from_";
+
+    for (const DataPartPtr & src_part : src_parts)
+    {
+        if (!dest_table_storage->canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = insert_increment.get();
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+        std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
+        dst_parts.emplace_back(dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info));
+    }
+
+    /// ATTACH empty part set
+    if (dst_parts.empty())
+        return;
+
+    MergeTreePartInfo drop_range;
+
+    drop_range.partition_id = partition_id;
+    drop_range.min_block = 0;
+    drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
+    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+
+    /// Atomically add new parts and remove old ones
+    try
+    {
+        {
+            Transaction transaction(*dest_table_storage);
+
+            auto src_data_parts_lock = lockParts();
+            auto dest_data_parts_lock = dest_table_storage->lockParts();
+
+            std::mutex mutex;
+            DataPartsLock lock(mutex);
+
+            for (MutableDataPartPtr & part : dst_parts)
+                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, lock);
+
+            removePartsFromWorkingSet(src_parts, true, lock);
+            transaction.commit(&lock);
+        }
+
+        clearOldMutations(true);
+        clearOldPartsFromFilesystem();
+
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+}
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
