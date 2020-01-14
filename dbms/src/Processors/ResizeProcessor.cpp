@@ -340,7 +340,6 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
             throw Exception("No associated output for input with data.", ErrorCodes::LOGICAL_ERROR);
 
         auto & waiting_output = output_ports[input_with_data.waiting_output];
-        waiting_outputs.pop();
 
         if (waiting_output.status != OutputStatus::NeedData)
             throw Exception("Invalid status for associated output.", ErrorCodes::LOGICAL_ERROR);
