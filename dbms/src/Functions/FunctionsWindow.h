@@ -261,7 +261,7 @@ namespace
             ColumnUInt32::Container & end_data = end->getData();
             for (size_t i = 0; i != size; ++i)
             {
-                UInt32 wid = (UInt32)ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone);
+                UInt32 wid = static_cast<UInt32>(ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone));
                 start_data[i] = wid;
                 end_data[i] = AddTime<unit>::execute(wid, num_units, time_zone);
             }
@@ -453,7 +453,7 @@ namespace
             IColumn::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                UInt32 wstart = (UInt32)ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
+                UInt32 wstart = static_cast<UInt32>(ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone));
                 UInt32 wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
                 wstart = AddTime<kind>::execute(wend, -1 * window_num_units, time_zone);
 

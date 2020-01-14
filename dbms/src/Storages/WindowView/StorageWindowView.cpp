@@ -211,7 +211,7 @@ void StorageWindowView::threadFuncToTable()
     {
         std::unique_lock lock(flushTableMutex);
         UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-        UInt64 w_end = static_cast<UInt64>(getWindowUpperBound((UInt32)(timestamp_usec / 1000000))) * 1000000;
+        UInt64 w_end = static_cast<UInt64>(getWindowUpperBound(static_cast<UInt32>(timestamp_usec / 1000000))) * 1000000;
         condition.wait_for(lock, std::chrono::microseconds(w_end - timestamp_usec));
         try
         {
