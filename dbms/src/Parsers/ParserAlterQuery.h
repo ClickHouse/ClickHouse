@@ -22,6 +22,8 @@ namespace DB
   *     [UPDATE col_name = expr, ... WHERE ...]
   * ALTER LIVE VIEW [db.name]
   *     [REFRESH]
+  * ALTER WINDOW VIEW [db.name]
+  *     [REFRESH]
   */
 
 class ParserAlterQuery : public IParserBase
@@ -40,8 +42,9 @@ protected:
 
 public:
     bool is_live_view;
+    bool is_window_view;
 
-    ParserAlterCommandList(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommandList(bool is_live_view_ = false, bool is_window_view_ = false) : is_live_view(is_live_view_), is_window_view(is_window_view_) {}
 };
 
 
@@ -53,8 +56,9 @@ protected:
 
 public:
     bool is_live_view;
+    bool is_window_view;
 
-    ParserAlterCommand(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
+    ParserAlterCommand(bool is_live_view_ = false, bool is_window_view_ = false) : is_live_view(is_live_view_), is_window_view(is_window_view_) {}
 };
 
 

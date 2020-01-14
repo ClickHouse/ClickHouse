@@ -103,6 +103,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         else
             return false;
     }
+    else if (is_window_view)
+    {
+        if (s_refresh.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::WINDOW_VIEW_REFRESH;
+        }
+        else
+            return false;
+    }
     else
     {
         if (s_add_column.ignore(pos, expected))
@@ -511,7 +520,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command(is_live_view);
+    ParserAlterCommand p_command(is_live_view, is_window_view);
 
     do
     {
@@ -561,19 +570,25 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
+    ParserKeyword s_alter_window_view("ALTER WINDOW VIEW");
 
     bool is_live_view = false;
+    bool is_window_view = false;
 
     if (!s_alter_table.ignore(pos, expected))
     {
-        if (!s_alter_live_view.ignore(pos, expected))
-            return false;
-        else
+        if (s_alter_live_view.ignore(pos, expected))
             is_live_view = true;
+        else if (s_alter_window_view.ignore(pos, expected))
+            is_window_view = true;
+        else
+            return false;
     }
 
     if (is_live_view)
         query->is_live_view = true;
+    else if(is_window_view)
+        query->is_window_view = true;
 
     if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
         return false;
@@ -586,7 +601,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     query->cluster = cluster_str;
 
-    ParserAlterCommandList p_command_list(is_live_view);
+    ParserAlterCommandList p_command_list(is_live_view, is_window_view);
     ASTPtr command_list;
     if (!p_command_list.parse(pos, command_list, expected))
         return false;

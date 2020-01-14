@@ -35,8 +35,8 @@ BlockInputStreamPtr InterpreterWatchQuery::executeImpl()
 
 BlockIO InterpreterWatchQuery::execute()
 {
-    if (!context.getSettingsRef().allow_experimental_live_view)
-        throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
+    if (!context.getSettingsRef().allow_experimental_live_view && !context.getSettingsRef().allow_experimental_window_view)
+        throw Exception("Experimental LIVE VIEW or WINDOW VIEW feature is not enabled (the setting 'allow_experimental_live_view' or 'allow_experimental_window_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);

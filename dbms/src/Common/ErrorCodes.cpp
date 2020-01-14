@@ -490,6 +490,8 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED = 516;
     extern const int CANNOT_ASSIGN_ALTER = 517;
 
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW = 666;
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;

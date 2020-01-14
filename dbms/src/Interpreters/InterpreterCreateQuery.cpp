@@ -482,7 +482,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary)
+    if (create.temporary && !create.is_window_view)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -512,6 +512,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
                 ErrorCodes::INCORRECT_QUERY);
 
+        if (as_create.is_window_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Window View",
+                ErrorCodes::INCORRECT_QUERY);
+
         if (as_create.is_dictionary)
             throw Exception(
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
@@ -525,7 +530,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty())
+    if (create.temporary && !create.database.empty() && !create.is_window_view)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
@@ -546,7 +551,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.to_table.empty() && create.to_database.empty())
         create.to_database = current_database;
 
-    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
+    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view || create.is_window_view))
     {
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
@@ -572,7 +577,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
     DatabasePtr database;
 
     const String & table_name = create.table;
-    bool need_add_to_database = !create.temporary;
+    bool need_add_to_database = !create.temporary || create.is_window_view;
     if (need_add_to_database)
     {
         database = context.getDatabase(create.database);
@@ -647,7 +652,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_view && !create.is_live_view && !create.is_window_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
 

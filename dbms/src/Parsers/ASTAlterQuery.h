@@ -18,6 +18,8 @@ namespace DB
  *      COMMENT_COLUMN col_name 'comment',
  *  ALTER LIVE VIEW [db.]name_type
  *      REFRESH
+ *  ALTER WINDOW VIEW [db.]name_type
+ *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -57,6 +59,7 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+        WINDOW_VIEW_REFRESH,
     };
 
     Type type = NO_TYPE;
@@ -186,6 +189,7 @@ class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCl
 {
 public:
     bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    bool is_window_view{false}; /// true for ALTER WINDOW VIEW
 
     ASTAlterCommandList * command_list = nullptr;
 
