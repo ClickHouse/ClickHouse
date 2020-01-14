@@ -264,7 +264,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         initialized = true;
 
         for (auto & input : inputs)
-            input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+            input_ports.push_back({.port = &input, .status = InputStatus::NotActive, .waiting_output = -1});
 
         for (UInt64 i = 0; i < input_ports.size(); ++i)
             disabled_input_ports.push(i);
@@ -330,14 +330,20 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         }
     }
 
-    while (!waiting_outputs.empty() && !inputs_with_data.empty())
+    while (!inputs_with_data.empty())
     {
-        auto & waiting_output = output_ports[waiting_outputs.front()];
-        waiting_outputs.pop();
-
         auto input_number = inputs_with_data.front();
         auto & input_with_data = input_ports[input_number];
         inputs_with_data.pop();
+
+        if (input_with_data.waiting_output == -1)
+            throw Exception("No associated output for input with data.", ErrorCodes::LOGICAL_ERROR);
+
+        auto & waiting_output = output_ports[input_with_data.waiting_output];
+        waiting_outputs.pop();
+
+        if (waiting_output.status != OutputStatus::NeedData)
+            throw Exception("Invalid status for associated output.", ErrorCodes::LOGICAL_ERROR);
 
         waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_deeded = */ true));
         waiting_output.status = OutputStatus::NotActive;
@@ -351,9 +357,6 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
             disabled_input_ports.push(input_number);
     }
 
-    if (!inputs_with_data.empty())
-        throw Exception("Has input with data, but no outputs which need data were found.", ErrorCodes::LOGICAL_ERROR);
-
     if (num_finished_inputs == inputs.size())
     {
         for (auto & output : outputs)
@@ -363,14 +366,16 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     }
 
     /// Enable more inputs if needed.
-    while (!disabled_input_ports.empty()
-           && (inputs.size() - num_finished_inputs - disabled_input_ports.size()) < waiting_outputs.size())
+    while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
         auto & input = input_ports[disabled_input_ports.front()];
         disabled_input_ports.pop();
 
         input.port->setNeeded();
         input.status = InputStatus::NeedData;
+        input.waiting_output = waiting_outputs.front();
+
+        waiting_outputs.pop();
     }
 
     if (waiting_outputs.empty())
