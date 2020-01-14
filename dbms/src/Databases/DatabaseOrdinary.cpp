@@ -122,7 +122,7 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [context, &file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
