@@ -95,8 +95,8 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> disabled_input_ports;
+    std::queue<UInt64> waiting_outputs;
     bool initialized = false;
 
     enum class OutputStatus
@@ -117,6 +117,7 @@ private:
     {
         InputPort * port;
         InputStatus status;
+        ssize_t waiting_output;
     };
 
     struct OutputPortWithStatus
