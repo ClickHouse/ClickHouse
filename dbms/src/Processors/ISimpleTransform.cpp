@@ -33,6 +33,10 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     {
         output.pushData(std::move(current_data));
         transformed = false;
+
+        if (!no_more_data_needed)
+            return Status::PortFull;
+
     }
 
     /// Stop if don't need more data.
@@ -52,12 +56,12 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             return Status::Finished;
         }
 
-        input.setNeeded();
+        // input.setNeeded();
 
         if (!input.hasData())
             return Status::NeedData;
 
-        current_data = input.pullData();
+        current_data = input.pullData(true);
         has_input = true;
 
         if (current_data.exception)
