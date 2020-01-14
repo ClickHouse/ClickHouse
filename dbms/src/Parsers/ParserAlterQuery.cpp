@@ -587,7 +587,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (is_live_view)
         query->is_live_view = true;
-    else if(is_window_view)
+    else if (is_window_view)
         query->is_window_view = true;
 
     if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))

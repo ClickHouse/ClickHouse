@@ -84,7 +84,7 @@ namespace
         {
             if (node.name == "TUMBLE")
             {
-                if(!data.window_function)
+                if (!data.window_function)
                 {
                     data.is_tumble = true;
                     data.window_column_name = node.getColumnName();
@@ -95,7 +95,7 @@ namespace
             }
             else if (node.name == "HOP")
             {
-                if(!data.window_function)
+                if (!data.window_function)
                 {
                     data.is_hop = true;
                     data.window_function = node.clone();
@@ -106,7 +106,7 @@ namespace
                     data.window_column_name = arrayJoin->getColumnName();
                     node_ptr = arrayJoin;
                 }
-                else if(serializeAST(node) != serializeAST(*data.window_function))
+                else if (serializeAST(node) != serializeAST(*data.window_function))
                     throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
             }
         }
@@ -239,7 +239,7 @@ BlockInputStreams StorageWindowView::watch(
     if (has_target_table)
         throw Exception("WATCH query is disabled for " + getName() + " when constructed with 'TO' clause.", ErrorCodes::INCORRECT_QUERY);
 
-    if(active_ptr.use_count() > 1)
+    if (active_ptr.use_count() > 1)
         throw Exception("WATCH query is already attached, WINDOW VIEW only supports attaching one watch query.", ErrorCodes::INCORRECT_QUERY);
 
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
@@ -373,25 +373,25 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
     ASTExpressionList &window_function_args = typeid_cast<ASTExpressionList&>(*window_function.arguments);
     const auto & children = window_function_args.children;
     const auto & interval_p1 = std::static_pointer_cast<ASTFunction>(children.at(1));
-    if(!interval_p1 || !startsWith(interval_p1->name, "toInterval"))
+    if (!interval_p1 || !startsWith(interval_p1->name, "toInterval"))
         throw Exception("Illegal type of last argument of function " + interval_p1->name + " should be Interval", ErrorCodes::ILLEGAL_COLUMN);
 
     String interval_str = interval_p1->name.substr(10);
-    if(interval_str == "Second")
+    if (interval_str == "Second")
         window_kind = IntervalKind::Second;
-    else if(interval_str == "Minute")
+    else if (interval_str == "Minute")
         window_kind = IntervalKind::Minute;
-    else if(interval_str == "Hour")
+    else if (interval_str == "Hour")
         window_kind = IntervalKind::Hour;
-    else if(interval_str == "Day")
+    else if (interval_str == "Day")
         window_kind = IntervalKind::Day;
-    else if(interval_str == "Week")
+    else if (interval_str == "Week")
         window_kind = IntervalKind::Week;
-    else if(interval_str == "Month")
+    else if (interval_str == "Month")
         window_kind = IntervalKind::Month;
-    else if(interval_str == "Quarter")
+    else if (interval_str == "Quarter")
         window_kind = IntervalKind::Quarter;
-    else if(interval_str == "Year")
+    else if (interval_str == "Year")
         window_kind = IntervalKind::Year;
 
     const auto & interval_units_p1 = std::static_pointer_cast<ASTLiteral>(interval_p1->children.front()->children.front());
@@ -509,7 +509,8 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr()
         //delete fired blocks
         for (BlocksListPtr mergeable_block : *mergeable_blocks)
         {
-            mergeable_block->remove_if([](Block & block_) {
+            mergeable_block->remove_if([](Block & block_)
+            {
                 auto & column_ = block_.getByName("____fire_status").column;
                 const auto & data = static_cast<const ColumnUInt8 &>(*column_).getData();
                 for (size_t i = 0; i < column_->size(); ++i)
@@ -650,7 +651,8 @@ void StorageWindowView::startNoUsersThread(const UInt64 & timeout)
 
 void registerStorageWindowView(StorageFactory & factory)
 {
-    factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
+    {
         if (!args.attach && !args.local_context.getSettingsRef().allow_experimental_window_view)
             throw Exception(
                 "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
