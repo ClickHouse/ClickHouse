@@ -14,14 +14,6 @@
 
 Делаем `chmod 000 /etc/clickhouse-client/config.xml` и смотрим, что получится.
 
-## HTTP заголовок query_id.
-
-`programs/server/HTTPHandler.cpp` - смотрим метод `executeQuery`
-
-`src/Interpreters/executeQuery.h`
-
-`src/Interpreters/executeQuery.cpp` - смотрим колбэк на выставление Content-Type
-
 ## Уменьшать max_memory_usage и размеры кэшей при старте, если на сервере мало оперативки.
 
 Смотрим, сколько на сервере оперативки. Если `max_memory_usage`, `max_memory_usage_for_all_queries` ограничены, но больше 90% (настройка) от имеющейся оперативки, то уменьшать их и выводить предупреждение в лог. Аналогично для кэшей: `mark_cache`, `uncompressed_cache`.
