@@ -446,22 +446,22 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
     const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
-    const auto polygons = std::move(ptr_multi_polygons->getOffsets());
+    const auto & polygons = ptr_multi_polygons->getOffsets();
 
     const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
-        throw Exceptions{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
-    const auto rings = std::move(ptr_polygons->getOffsets());
+        throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
+    const auto & rings = ptr_polygons->getOffsets();
 
     const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
     if (!ptr_points)
         throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
-    const auto points = std::move(ptr_rings->getOffsets());
+    const auto & points = ptr_rings->getOffsets();
 
     const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
         throw Exception{"Expected a column containing Float64s when reading coordinates", ErrorCodes::TYPE_MISMATCH};
-    const auto coordinates = std::move(ptr_points->getOffsets());
+    const auto & coordinates = ptr_points->getOffsets();
 
     IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
     dest.emplace_back();
@@ -476,7 +476,6 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
         if (coordinates[i] - (i == 0 ? 0 : coordinates[i - 1]) != DIM)
             throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::LOGICAL_ERROR};
         Point pt(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
-
     }
 }
 
@@ -556,6 +555,7 @@ SimplePolygonDictionary::SimplePolygonDictionary(
 std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
 {
     return std::make_shared<SimplePolygonDictionary>(
+            this->database,
             this->name,
             this->dict_struct,
             this->source_ptr->clone(),
