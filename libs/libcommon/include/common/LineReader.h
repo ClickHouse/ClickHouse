@@ -50,5 +50,5 @@ private:
 
     /// Since CMake doesn't impose restrictions on includes between unrelated targets
     /// it's possible that we include this file without USE_REPLXX defined.
-    void * impl;
+    [[maybe_unused]] void * impl;
 };
