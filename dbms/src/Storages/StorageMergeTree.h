@@ -140,6 +140,7 @@ private:
     void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
     /// Just checks versions of each active data part
