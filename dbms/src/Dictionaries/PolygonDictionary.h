@@ -227,7 +227,7 @@ private:
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
-    
+
     static void extractMultiPolygons(const ColumnPtr & column, std::vector<MultiPolygon> & dest);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
