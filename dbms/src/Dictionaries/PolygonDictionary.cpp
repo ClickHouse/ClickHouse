@@ -450,7 +450,8 @@ inline void makeDifferences(IColumn::Offsets & values)
 
 }
 
-void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest) {
+void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest)
+{
     IColumn::Offsets polygons, rings, points;
     const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
@@ -606,15 +607,22 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
 
 bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 {
+    bool found = false;
+    double area = 0;
     for (size_t i = 0; i < (this->polygons).size(); ++i)
     {
         if (bg::covered_by(point, (this->polygons)[i]))
         {
-            id = i;
-            return true;
+            double new_area = bg::area((this->polygons)[i]);
+            if (!found || new_area < area)
+            {
+                found = true;
+                id = i;
+                area = new_area;
+            }
         }
     }
-    return false;
+    return found;
 }
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
