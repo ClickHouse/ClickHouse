@@ -357,6 +357,32 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
+String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
+{
+    const auto & storage_columns = storage.getColumns().getAllPhysical();
+    const std::string * minimum_size_column = nullptr;
+    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
+
+    for (const auto & column : storage_columns)
+    {
+        if (!hasColumnFiles(column.name, *column.type))
+            continue;
+
+        const auto size = getColumnSize(column.name, *column.type).data_compressed;
+        if (size < minimum_size)
+        {
+            minimum_size = size;
+            minimum_size_column = &column.name;
+        }
+    }
+
+    if (!minimum_size_column)
+        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
+
+    return *minimum_size_column;
+}
+
+
 String IMergeTreeDataPart::getFullPath() const
 {
     assertOnDisk();
@@ -380,7 +406,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
     loadIndex(); /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
-    loadColumnSizes();
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
     loadTTLInfos();
@@ -490,13 +515,13 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
 void IMergeTreeDataPart::loadRowsCount()
 {
+    String path = getFullPath() + "count.txt";
     if (index_granularity.empty())
     {
         rows_count = 0;
     }
     else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        String path = getFullPath() + "count.txt";
         if (!Poco::File(path).exists())
             throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -506,6 +531,14 @@ void IMergeTreeDataPart::loadRowsCount()
     }
     else
     {
+        if (Poco::File(path).exists())
+        {
+            ReadBufferFromFile file = openForReading(path);
+            readIntText(rows_count, file);
+            assertEOF(file);
+            return;
+        }
+
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
@@ -575,7 +608,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     Poco::File poco_file_path{path};
     if (!poco_file_path.exists())
     {
-        if (require || isCompactPart(shared_from_this()))
+        /// We can get list of columns only from columns.txt in compact parts.
+        if (require || part_type == Type::COMPACT)
             throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
@@ -603,26 +637,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
 }
-
-void IMergeTreeDataPart::loadColumnSizes()
-{
-    size_t columns_num = columns.size();
-
-    if (columns_num == 0)
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-
-    auto column_sizes_path = getFullPath() + "columns_sizes.txt";
-    auto columns_sizes_file = Poco::File(column_sizes_path);
-    if (!columns_sizes_file.exists())
-        return;
-
-    ReadBufferFromFile buffer(column_sizes_path, columns_sizes_file.getSize());
-    auto it = columns.begin();
-    for (size_t i = 0; i < columns_num; ++i, ++it)
-        readPODBinary(columns_sizes[it->name], buffer);
-    assertEOF(buffer);
-}
-
 
 UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
 {

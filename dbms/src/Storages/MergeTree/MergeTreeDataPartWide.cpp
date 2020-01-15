@@ -126,34 +126,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
-/** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-  * If no checksums are present returns the name of the first physically existing column.
-  */
-String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
-{
-    const auto & storage_columns = storage.getColumns().getAllPhysical();
-    const std::string * minimum_size_column = nullptr;
-    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
-
-    for (const auto & column : storage_columns)
-    {
-        if (!hasColumnFiles(column.name, *column.type))
-            continue;
-
-        const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
-        if (size < minimum_size)
-        {
-            minimum_size = size;
-            minimum_size_column = &column.name;
-        }
-    }
-
-    if (!minimum_size_column)
-        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
-
-    return *minimum_size_column;
-}
-
 ColumnSize MergeTreeDataPartWide::getTotalColumnsSize() const
 {
     ColumnSize totals;

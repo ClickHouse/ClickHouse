@@ -83,7 +83,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    virtual String getColumnNameWithMinumumCompressedSize() const { return columns.front().name; }
+    String getColumnNameWithMinumumCompressedSize() const;
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -295,8 +295,6 @@ public:
         */
     mutable std::shared_mutex columns_lock;
 
-    ColumnSizeByName columns_sizes;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -320,6 +318,7 @@ protected:
     Type part_type;
     void removeIfNeeded();
     virtual void checkConsistency(bool require_part_metadata) const;
+    void checkConsistencyBase(bool require_part_metadata) const;
 
 private:
     /// In compact parts order of columns is necessary
@@ -345,8 +344,6 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    void loadColumnSizes();
 
     String getRelativePathForDetachedPart(const String & prefix) const;
 };

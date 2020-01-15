@@ -69,12 +69,6 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize() const override;
-
-    ColumnSize getColumnSize(const String & name, const IDataType & type0) const override;
-
     ColumnSize getTotalColumnsSize() const override;
 
     void checkConsistency(bool /* require_part_metadata */) const override {}

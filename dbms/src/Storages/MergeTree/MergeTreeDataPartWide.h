@@ -70,10 +70,6 @@ public:
 
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 
-    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize() const override;
-
     ColumnSize getTotalColumnsSize() const override;
 
     ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
