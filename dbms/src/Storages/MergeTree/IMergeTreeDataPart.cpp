@@ -875,6 +875,62 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservat
     cloning_directory.copyTo(path_to_clone);
 }
 
+void IMergeTreeDataPart::checkConsistencyBase() const
+{
+    String path = getFullPath();
+
+    if (!checksums.empty())
+    {
+        if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
+            throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        {
+            if (!checksums.files.count("count.txt"))
+                throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
+                throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+            if (!isEmpty())
+            {
+                for (const String & col_name : storage.minmax_idx_columns)
+                {
+                    if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
+                        throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+                }
+            }
+        }
+
+        checksums.checkSizes(path);
+    }
+    else
+    {
+        auto check_file_not_empty = [&path](const String & file_path)
+        {
+            Poco::File file(file_path);
+            if (!file.exists() || file.getSize() == 0)
+                throw Exception("Part " + path + " is broken: " + file_path + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            return file.getSize();
+        };
+
+        /// Check that the primary key index is not empty.
+        if (!storage.primary_key_columns.empty())
+            check_file_not_empty(path + "primary.idx");
+
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        {
+            check_file_not_empty(path + "count.txt");
+
+            if (storage.partition_key_expr)
+                check_file_not_empty(path + "partition.dat");
+
+            for (const String & col_name : storage.minmax_idx_columns)
+                check_file_not_empty(path + "minmax_" + escapeForFileName(col_name) + ".idx");
+        }
+    }
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
