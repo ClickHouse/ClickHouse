@@ -259,7 +259,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     /// In this method we have ownership on node.
     auto & node = graph[pid];
 
-    bool need_traverse = false;
     bool need_expand_pipeline = false;
 
     std::vector<Edge *> updated_back_edges;
@@ -290,13 +289,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             case IProcessor::Status::NeedData:
             case IProcessor::Status::PortFull:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Idle;
                 break;
             }
             case IProcessor::Status::Finished:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Finished;
                 break;
             }
@@ -325,7 +322,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             }
         }
 
-        if (need_traverse)
         {
             for (auto & edge_id : node.post_updated_input_ports)
             {
@@ -346,7 +342,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
     }
 
-    if (need_traverse)
     {
         for (auto & edge : updated_direct_edges)
         {
