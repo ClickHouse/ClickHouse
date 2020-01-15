@@ -13,7 +13,7 @@
 #include <Common/quoteString.h>
 
 #include <Poco/String.h>    /// toLower
-#include <Poco/File.h>
+#include <filesystem>
 
 
 namespace DB
@@ -60,9 +60,8 @@ StorageJoin::StorageJoin(
 
 void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    Poco::File(path).remove(true);
-    Poco::File(path).createDirectories();
-    Poco::File(path + "tmp/").createDirectories();
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(static_cast<std::filesystem::path>(path) / "tmp");
 
     increment = 0;
     join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());

@@ -22,6 +22,7 @@
 #include <boost/algorithm/string/finder.hpp>
 
 #include <Poco/DirectoryIterator.h>
+#include <filesystem>
 
 
 namespace CurrentMetrics
@@ -133,7 +134,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         thread.join();
     }
 
-    Poco::File(path).remove(true);
+    std::filesystem::remove_all(path);
 }
 
 
@@ -283,7 +284,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    Poco::File{file_path}.remove();
+    std::filesystem::remove_all(file_path);
 
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
@@ -417,7 +418,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
-            if (Poco::File{tmp_file}.exists())
+            if (std::filesystem::exists(tmp_file))
                 LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
 
             {
@@ -425,7 +426,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 writeText(out);
             }
 
-            Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
+            std::filesystem::rename(tmp_file, parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
@@ -480,7 +481,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
 
             for (UInt64 file_index : file_indices)
-                Poco::File{file_index_to_path.at(file_index)}.remove();
+                std::filesystem::remove(file_index_to_path.at(file_index));
         }
         else
         {
@@ -499,7 +500,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         total_bytes = 0;
         recovered = false;
 
-        Poco::File{parent.current_batch_file_path}.setSize(0);
+        std::filesystem::resize_file(parent.current_batch_file_path, 0);
     }
 
     void writeText(WriteBuffer & out)
@@ -572,7 +573,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 {
     std::unordered_set<UInt64> file_indices_to_skip;
 
-    if (Poco::File{current_batch_file_path}.exists())
+    if (std::filesystem::exists(current_batch_file_path))
     {
         /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
         Batch batch(*this, files);
@@ -648,7 +649,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.send();
     }
 
-    Poco::File{current_batch_file_path}.remove();
+    std::filesystem::remove(current_batch_file_path);
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
@@ -669,8 +670,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     const auto & broken_path = base_path + "broken/";
     const auto & broken_file_path = broken_path + file_name;
 
-    Poco::File{broken_path}.createDirectory();
-    Poco::File{file_path}.renameTo(broken_file_path);
+    std::filesystem::create_directory(broken_path);
+    std::filesystem::rename(file_path, broken_file_path);
 
     LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
 }
