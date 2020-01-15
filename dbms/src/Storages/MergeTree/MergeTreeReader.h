@@ -45,6 +45,9 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
+    /// Perform conversions TODO(alesap)
+    void performRequiredConversions(Columns & res_columns);
+
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
 
@@ -73,6 +76,8 @@ private:
 
     /// Columns that are read.
     NamesAndTypesList columns;
+
+    std::unordered_map<String, DataTypePtr> columns_from_part;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;

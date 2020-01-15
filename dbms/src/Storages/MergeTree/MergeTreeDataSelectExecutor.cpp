@@ -644,6 +644,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
     else
     {
+        std::cerr << "Spreading marks among streams\n";
         res = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
             num_streams,
@@ -763,6 +764,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, query_info.prewhere_info, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
+        std::cerr << "POOL HEADER:" << pool->getHeader().dumpStructure() << std::endl;
         /// Let's estimate total number of rows for progress bar.
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
@@ -790,6 +792,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             RangesInDataPart & part = parts[part_index];
 
+            std::cerr << "Creating sequential stream from part:" << part_index << std::endl;
             auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,

@@ -19,6 +19,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -172,7 +173,9 @@ MutationsInterpreter::MutationsInterpreter(
     , context(context_)
     , can_execute(can_execute_)
 {
+    std::cerr << "STORAGE IS NULLPTR:" << (storage == nullptr) << std::endl;
     mutation_ast = prepare(!can_execute);
+    std::cerr << "Mutations ast:" << queryToString(mutation_ast) << std::endl;
     SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
 }
@@ -259,15 +262,22 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
+    std::cerr << "PREPARING\n";
+
     const ColumnsDescription & columns_desc = storage->getColumns();
     const IndicesDescription & indices_desc = storage->getIndices();
+    std::cerr << "COLUMNS RECEIVED:" << columns_desc.toString() << std::endl;
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
+    std::cerr << "COMMANDS SIZE:" << commands.size() << std::endl;
     NameSet updated_columns;
     for (const MutationCommand & command : commands)
     {
         for (const auto & kv : command.column_to_update_expression)
+        {
+            std::cerr << "COLUMN:" << kv.first << std::endl;
             updated_columns.insert(kv.first);
+        }
     }
 
     /// We need to know which columns affect which MATERIALIZED columns and data skipping indices
@@ -311,6 +321,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
+        std::cerr << "Processing command:" << command.ast << std::endl;
         if (command.type == MutationCommand::DELETE)
         {
             if (stages.empty() || !stages.back().column_to_updated.empty())
@@ -381,9 +392,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             const auto required_columns = syntax_result->requiredSourceColumns();
             affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
-        else if (command.type == MutationCommand::CAST)
+        else if (command.type == MutationCommand::READ)
         {
-            stages.back().column_to_updated.emplace(command.column_name, makeASTFunction("CAST", command.column_name, command.type_name));
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            /// TODO(alesap)
+            if (command.data_type)
+                stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
@@ -427,6 +445,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
+    std::cerr << "Prepare interpreter storage columns:" << all_columns.toString() << std::endl;
+
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)

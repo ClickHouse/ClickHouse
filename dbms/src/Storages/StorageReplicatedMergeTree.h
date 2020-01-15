@@ -288,9 +288,6 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    ReplicatedMergeTreeAlterThread alter_thread;
-
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 

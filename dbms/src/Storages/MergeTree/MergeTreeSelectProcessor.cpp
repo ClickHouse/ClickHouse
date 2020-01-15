@@ -11,25 +11,25 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return std::move(header);
-}
+//static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
+//{
+//    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+//    /// NOTE: We may use similar code to implement non blocking ALTERs.
+//    for (const auto & name_type : data_part->columns)
+//    {
+//        if (header.has(name_type.name))
+//        {
+//            auto & elem = header.getByName(name_type.name);
+//            if (!elem.type->equals(*name_type.type))
+//            {
+//                elem.type = name_type.type;
+//                elem.column = elem.type->createColumn();
+//            }
+//        }
+//    }
+//
+//    return std::move(header);
+//}
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
@@ -51,7 +51,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
+        storage_.getSampleBlockForColumns(required_columns_),
         storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_, min_bytes_to_use_mmap_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},

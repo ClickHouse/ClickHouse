@@ -39,6 +39,7 @@ public:
         for (auto & pipe : pipes)
             streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
+        //std::cerr << "Streams header:" << streams.back()->getHeader().dumpStructure() << std::endl;
         return streams;
     }
 

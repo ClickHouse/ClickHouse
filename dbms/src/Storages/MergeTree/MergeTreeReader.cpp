@@ -56,10 +56,32 @@ MergeTreeReader::MergeTreeReader(
     , mmap_threshold(mmap_threshold_)
     , max_read_buffer_size(max_read_buffer_size_)
 {
+    //std::cerr << "Merge tree reader created for part:" << data_part->name << std::endl;
     try
     {
+        for (const NameAndTypePair & column_from_part : data_part->columns)
+        {
+            columns_from_part[column_from_part.name] = column_from_part.type;
+        }
+
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, profile_callback_, clock_type_);
+        {
+            //std::cerr << "Column name to read:" << column.name << std::endl;
+            if (columns_from_part.count(column.name))
+            {
+                //std::cerr << "With type:" << columns_from_part[column.name]->getName() <<    std::endl;
+                //std::cerr << "Original type:" << column.type->getName() << std::endl;
+
+                addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
+            }
+            else
+            {
+                //std::cerr << "Original type:" << column.type->getName() << std::endl;
+                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+            }
+
+        }
+        //std::cerr << "COLUMNS IN CONSTRUCTOR:" << columns.toString() << std::endl;
     }
     catch (...)
     {
@@ -95,12 +117,17 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto & [name, type] = *name_and_type;
+            String & name = name_and_type->name;
+            DataTypePtr type;
+            if (columns_from_part.count(name))
+                type = columns_from_part[name];
+            else
+                type = name_and_type->type;
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = name_and_type->type->createColumn();
+                res_columns[pos] = type->createColumn();
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
             MutableColumnPtr column = res_columns[pos]->assumeMutable();
@@ -214,6 +241,7 @@ void MergeTreeReader::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
+    //std::cerr << "READ DATA:" << name << " with type:" << type.getName() << std::endl;
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
         return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
@@ -370,7 +398,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns 
         size_t num_columns = columns.size();
 
         if (res_columns.size() != num_columns)
-            throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
+            throw Exception("invalid number of columns passed to MergeTreeReader::evaluateMissingDefaults. "
                             "Expected " + toString(num_columns) + ", "
                             "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
 
@@ -400,4 +428,65 @@ void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns 
     }
 }
 
+void MergeTreeReader::performRequiredConversions(Columns & res_columns)
+{
+    try
+    {
+        size_t num_columns = columns.size();
+
+        if (res_columns.size() != num_columns)
+        {
+            throw Exception(
+                "invalid number of columns passed to MergeTreeReader::performRequiredConversions. "
+                "Expected "
+                    + toString(num_columns)
+                    + ", "
+                      "got "
+                    + toString(res_columns.size()),
+                ErrorCodes::LOGICAL_ERROR);
+        }
+
+        Block copy_block;
+        auto name_and_type = columns.begin();
+        //std::cerr << "DATAPART NAMES AND TYPES:" << data_part->columns.toString() << std::endl;
+        //std::cerr << "REQUIRED COLUMNS NAMES AND TYPES:" << columns.toString() << std::endl;
+        //std::cerr << "RES COLUMNS SIZE:" << res_columns.size() << std::endl;
+        //std::cerr << "RES COLUMNS STRUCTURE:\n";
+        //for (const auto & column : res_columns)
+        //{
+        //    std::cerr << column->dumpStructure() << std::endl;
+        //}
+
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            //std::cerr << "POS:" << pos << std::endl;
+            if (res_columns[pos] == nullptr)
+                continue;
+
+            //std::cerr << "POS NAME:" << name_and_type->name << std::endl;
+            //std::cerr << "POS TYPE:" << name_and_type->type->getName() << std::endl;
+            if (columns_from_part.count(name_and_type->name))
+                copy_block.insert({res_columns[pos], columns_from_part[name_and_type->name], name_and_type->name});
+            else
+                copy_block.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+        }
+
+        //std::cerr << "Copy block: " << copy_block.dumpStructure() << std::endl;
+        DB::performRequiredConversions(copy_block, columns, storage.global_context);
+        std::cerr << "Result copy block: " << copy_block.dumpStructure() << std::endl;
+
+        /// Move columns from block.
+        name_and_type = columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
+        }
+    }
+    catch(Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
 }

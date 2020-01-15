@@ -49,7 +49,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::ADD_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
@@ -90,7 +90,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         command.if_exists = command_ast->if_exists;
@@ -99,7 +99,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
@@ -135,7 +135,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
@@ -146,7 +146,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_ORDER_BY;
         command.order_by = command_ast->order_by;
         return command;
@@ -154,7 +154,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.index_decl = command_ast->index_decl;
         command.type = AlterCommand::ADD_INDEX;
 
@@ -172,7 +172,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.constraint_decl = command_ast->constraint_decl;
         command.type = AlterCommand::ADD_CONSTRAINT;
 
@@ -190,7 +190,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.if_exists = command_ast->if_exists;
         command.type = AlterCommand::DROP_CONSTRAINT;
         command.constraint_name = command_ast->constraint->as<ASTIdentifier &>().name;
@@ -203,7 +203,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             throw Exception("\"ALTER TABLE table CLEAR INDEX index\" queries are not supported yet. Use \"CLEAR INDEX index IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_INDEX;
         command.index_name = command_ast->index->as<ASTIdentifier &>().name;
         command.if_exists = command_ast->if_exists;
@@ -213,7 +213,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_TTL)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_TTL;
         command.ttl = command_ast->ttl;
         return command;
@@ -221,7 +221,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_SETTING)
     {
         AlterCommand command;
-        command.ast = command_ast;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
@@ -499,12 +499,18 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
 {
+    if (ignore)
+        return false;
+
+    if (type == DROP_COLUMN)
+        return true;
+
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
 
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.name == column_name && !isMetadataOnlyConversion(column.type, data_type))
+        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get()))
             return true;
     }
     return false;
@@ -534,11 +540,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
 
     MutationCommand result;
 
-    result.type = MutationCommand::Type::CAST;
+    result.type = MutationCommand::Type::READ;
     result.column_name = column_name;
     result.data_type = data_type;
     result.predicate = nullptr;
-    result.ast = ast;
+    result.ast = ast->clone();
     return result;
 }
 
@@ -835,7 +841,7 @@ bool AlterCommands::isCommentAlter() const
 }
 
 
-MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const
+MutationCommands AlterCommands::getMutationCommands(const StorageInMemoryMetadata & metadata) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)

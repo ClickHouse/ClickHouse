@@ -1536,15 +1536,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
         }
     }
 
-    if (commands.isModifyingData())
-    {
-        /// Check that type conversions are possible.
-        ExpressionActionsPtr unused_expression;
-        NameToNameMap unused_map;
-        bool unused_bool;
-        createConvertExpression(nullptr, getColumns().getAllPhysical(), metadata.columns.getAllPhysical(),
-                getIndices().indices, metadata.indices.indices, unused_expression, unused_map, unused_bool);
-    }
+    //if (commands.isModifyingData())
+    //{
+    //    /// Check that type conversions are possible.
+    //    ExpressionActionsPtr unused_expression;
+    //    NameToNameMap unused_map;
+    //    bool unused_bool;
+    //    createConvertExpression(nullptr, getColumns().getAllPhysical(), metadata.columns.getAllPhysical(),
+    //            getIndices().indices, metadata.indices.indices, unused_expression, unused_map, unused_bool);
+    //}
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns,

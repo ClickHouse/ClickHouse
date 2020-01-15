@@ -962,6 +962,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
         data, space_reservation->getDisk(), future_part.name, future_part.part_info);
+
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -988,6 +989,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const auto data_settings = data.getSettings();
 
     Block in_header = in->getHeader();
+    std::cerr << "Mutations header:" << in_header.dumpStructure() << std::endl;
 
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
@@ -1069,6 +1071,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         /// Don't change granularity type while mutating subset of columns
         auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
+
+        /// Skip updated files
         for (const auto & entry : updated_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
@@ -1087,6 +1091,33 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             files_to_skip.insert(index->getFileName() + mrk_extension);
         }
 
+        /// TODO(alesap) better
+        for (const auto & part_column : source_part->columns)
+        {
+            bool found = false;
+            for (const auto & all_column : all_columns)
+            {
+                if (part_column.name == all_column.name)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                std::cerr << "REMOVING COLUMN:" << part_column.name << std::endl;
+                IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+                {
+                    String stream_name = IDataType::getFileNameForStream(part_column.name, substream_path);
+                    files_to_skip.insert(stream_name + ".bin");
+                    files_to_skip.insert(stream_name + mrk_extension);
+                };
+
+                IDataType::SubstreamPath stream_path;
+                part_column.type->enumerateStreams(callback, stream_path);
+            }
+        }
+
         Poco::DirectoryIterator dir_end;
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
         {
@@ -1101,37 +1132,46 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
-        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
-        MergedColumnOnlyOutputStream out(
-            data,
-            updated_header,
-            new_part_tmp_path,
-            /* sync = */ false,
-            compression_codec,
-            /* skip_offsets = */ false,
-            std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
-            unused_written_offsets,
-            source_part->index_granularity,
-            &source_part->index_granularity_info
-        );
-
-        in->readPrefix();
-        out.writePrefix();
-
-        Block block;
-        while (check_not_cancelled() && (block = in->read()))
+        new_data_part->checksums = source_part->checksums;
+        if (updated_header.columns() != 0)
         {
-            out.write(block);
+            IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+            MergedColumnOnlyOutputStream out(
+                data,
+                updated_header,
+                new_part_tmp_path,
+                /* sync = */ false,
+                compression_codec,
+                /* skip_offsets = */ false,
+                std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
+                unused_written_offsets,
+                source_part->index_granularity,
+                &source_part->index_granularity_info
+            );
 
-            merge_entry->rows_written += block.rows();
-            merge_entry->bytes_written_uncompressed += block.bytes();
+            in->readPrefix();
+            out.writePrefix();
+
+            Block block;
+            while (check_not_cancelled() && (block = in->read()))
+            {
+                out.write(block);
+
+                merge_entry->rows_written += block.rows();
+                merge_entry->bytes_written_uncompressed += block.bytes();
+            }
+
+            in->readSuffix();
+
+            auto changed_checksums = out.writeSuffixAndGetChecksums();
+
+            new_data_part->checksums.add(std::move(changed_checksums));
         }
 
-        in->readSuffix();
-        auto changed_checksums = out.writeSuffixAndGetChecksums();
+        for (const String & file_to_skip : files_to_skip)
+            if (new_data_part->checksums.files.count(file_to_skip))
+                new_data_part->checksums.files.erase(file_to_skip);
 
-        new_data_part->checksums = source_part->checksums;
-        new_data_part->checksums.add(std::move(changed_checksums));
         {
             /// Write file with checksums.
             WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);
@@ -1144,8 +1184,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
         for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
         {
-            if (source_columns_name_set.count(it->name) || updated_header.has(it->name))
+            if (updated_header.has(it->name))
+            {
+                auto updated_type = updated_header.getByName(it->name).type;
+                if (updated_type != it->type)
+                    it->type = updated_type;
                 ++it;
+            }
+            else if (source_columns_name_set.count(it->name))
+            {
+                ++it;
+            }
             else
                 it = new_data_part->columns.erase(it);
         }

@@ -89,6 +89,9 @@ struct ReplicatedMergeTreeLogEntryData
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
+    /// For ALTER TODO(alesap)
+    String required_mutation_znode;
+
     /// REPLACE PARTITION FROM command
     struct ReplaceRangeEntry
     {
@@ -111,6 +114,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames() const
     {
+        /// Doesn't produce any part
+        if (type == FINISH_ALTER)
+            return {};
+
         /// DROP_RANGE does not add a real part, but we must disable merges in that range
         if (type == DROP_RANGE)
             return {new_part_name};

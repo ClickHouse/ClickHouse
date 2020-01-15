@@ -517,6 +517,8 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
             }
             catch (...)
             {
+                std::cerr << "DIE HERE:\n";
+                tryLogCurrentException(log);
                 /// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
                 /// This is possible only if there is an unknown logical error.
                 std::terminate();
@@ -532,7 +534,8 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 }
 
 
-static Names getPartNamesToMutate(
+namespace {
+Names getPartNamesToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts)
 {
     Names result;
@@ -556,8 +559,9 @@ static Names getPartNamesToMutate(
     return result;
 }
 
+}
 
-Names getPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const
+Names ReplicatedMergeTreeQueue::getCurrentPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const
 {
     return getPartNamesToMutate(entry, current_parts);
 }
@@ -1008,16 +1012,12 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::FINISH_ALTER)
     {
-        for (const auto & name : entry.source_parts)
-        {
-            if (future_parts.count(name))
-            {
-                String reason = "Not altering storage because part " + name
-                    + " is not ready yet (log entry for that part is being processed).";
-                LOG_TRACE(log, reason);
-                out_postpone_reason = reason;
-                return false;
-            }
+        std::cerr << "Entry finish alter\n";
+        if (mutations_by_znode.count(entry.required_mutation_znode) && !mutations_by_znode.at(entry.required_mutation_znode).is_done) {
+            String reason = "Not altering storage because mutation " + entry.required_mutation_znode + " is not ready yet (mutation is beeing processed).";
+            LOG_TRACE(log, reason);
+            out_postpone_reason = reason;
+            return false;
         }
     }
 

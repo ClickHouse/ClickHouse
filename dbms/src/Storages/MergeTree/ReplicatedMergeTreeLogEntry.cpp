@@ -67,10 +67,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
         case FINISH_ALTER: /// Just make local /metadata and /columns consistent with global
             out << "alter\n";
-                for (const String & s : source_parts)
-                    out << s << '\n';
-            out << "finish";
+            out << required_mutation_znode << "\n";
+            out << "finish\n";
             break;
+
         default:
             throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
     }
@@ -161,17 +161,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     else if (type_str == "alter")
     {
         type = FINISH_ALTER;
-        while (!in.eof())
-        {
-            String s;
-            in >> s >> "\n";
-            if (s == "finish")
-                break;
-            source_parts.push_back(s);
-        }
+        in >> required_mutation_znode >> "\nfinish\n";
     }
 
+    std::cerr << "Read backn\n";
     in >> "\n";
+
+    std::cerr << "Readed\n";
 
     /// Optional field.
     if (!in.eof())
