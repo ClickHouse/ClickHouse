@@ -98,12 +98,13 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 
         if (rows_to_write)
             data_written = true;
-        /// There could already be enough data to compress into the new block.
-        if (stream->compressed.offset() >= settings.min_compress_block_size)
-             stream->compressed.next();
 
         for (const auto & column : columns_list)
         {
+            /// There could already be enough data to compress into the new block.
+            if (stream->compressed.offset() >= settings.min_compress_block_size)
+                stream->compressed.next();
+
             size_t old_uncompressed_size = stream->compressed.count();
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
