@@ -2,6 +2,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Poco/File.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -31,9 +32,9 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
-    stringToUUID(query.uuid);   /// Check UUID is valid
+    //stringToUUID(query.uuid);   /// Check UUID is valid
     const size_t uuid_prefix_len = 3;
-    return data_path + query.uuid.substr(0, uuid_prefix_len) + '/' + query.uuid + '/';
+    return data_path + toString(query.uuid).substr(0, uuid_prefix_len) + '/' + toString(query.uuid) + '/';
 }
 
 void DatabaseAtomic::drop(const Context &)

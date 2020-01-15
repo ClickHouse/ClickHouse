@@ -30,7 +30,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context_);
+    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context);
 
     void createTable(
         const Context & context,
@@ -48,7 +48,7 @@ public:
         IDatabase & to_database,
         const String & to_table_name) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
+    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     void drop(const Context & context) override;
 
@@ -70,8 +70,8 @@ protected:
         const String & table_name,
         bool throw_on_error) const override;
 
-    ASTPtr parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
-    ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
+    ASTPtr parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
+    ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
 
 
     const String metadata_path;

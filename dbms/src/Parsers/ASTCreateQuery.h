@@ -66,7 +66,8 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of dictionary
     ASTExpressionList * tables = nullptr;
-    StorageID to_table_id;   /// For CREATE MATERIALIZED VIEW mv TO table.
+    //FIXME
+    StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;

@@ -25,10 +25,7 @@ public:
     void alterTable(
         const Context & context,
         const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ConstraintsDescription & constraints,
-        const ASTModifier & engine_modifier) override;
+        const StorageInMemoryMetadata & metadata) override;
 
 private:
 

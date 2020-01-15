@@ -30,9 +30,10 @@
 #include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/queryToString.h>
-#include <Storages/StorageID.h>
+#include <boost/algorithm/string.hpp>
 #include "ASTColumnsMatcher.h"
 
+#include <Storages/StorageID.h>
 
 namespace DB
 {
@@ -227,7 +228,8 @@ bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected)
 
     tryGetIdentifierNameInto(database, res.database_name);
     tryGetIdentifierNameInto(table, res.table_name);
-    res.uuid = uuid ? uuid->as<ASTLiteral>()->value.get<String>() : "";
+    //FIXME
+    res.uuid = uuid ? parseFromString<UUID>(uuid->as<ASTLiteral>()->value.get<String>()) : UUID(UInt128(0, 0));
     return true;
 }
 

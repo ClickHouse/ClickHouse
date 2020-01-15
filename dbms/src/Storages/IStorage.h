@@ -5,7 +5,6 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
-#include <IO/CompressionMethod.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
@@ -14,6 +13,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -88,7 +88,7 @@ public:
     virtual std::string getName() const = 0;
 
     /// The name of the table.
-    StorageID getStorageID(std::unique_lock<std::mutex> * lock = nullptr) const;
+    StorageID getStorageID() const;
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -128,6 +128,10 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
 
+    /// Returns storage metadata copy. Direct modification of
+    /// result structure doesn't affect storage.
+    virtual StorageInMemoryMetadata getInMemoryMetadata() const;
+
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
     virtual NameAndTypePair getColumn(const String & column_name) const;
@@ -153,9 +157,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
-    /// Check storage has setting and setting can be modified.
-    virtual void checkSettingCanBeChanged(const String & setting_name) const;
-
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
@@ -163,8 +164,6 @@ protected: /// still thread-unsafe part.
     /// Initially reserved virtual column name may be shadowed by real column.
     virtual bool isVirtualColumn(const String & column_name) const;
 
-    /// Returns modifier of settings in storage definition
-    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
     StorageID storage_id;
@@ -315,15 +314,20 @@ public:
 
     /**
      * Just updates names of database and table without moving any data on disk
-     * Can be called only from DatabaseAtomic.
+     * Can be called directly only from DatabaseAtomic.
      */
-    virtual void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr);
+    virtual void renameInMemory(const String & new_database_name, const String & new_table_name);
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
     virtual void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder);
+
+    /** Checks that alter commands can be applied to storage. For example, columns can be modified,
+      * or primary key can be changes, etc.
+      */
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
@@ -443,8 +447,6 @@ public:
     {
         return {};
     }
-
-    static DB::CompressionMethod chooseCompressionMethod(const String & uri, const String & compression_method);
 
 private:
     /// You always need to take the next three locks in this order.

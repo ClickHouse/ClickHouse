@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
-    extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -97,10 +96,7 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 void DatabaseLazy::alterTable(
     const Context & /* context */,
     const String & /* table_name */,
-    const ColumnsDescription & /* columns */,
-    const IndicesDescription & /* indices */,
-    const ConstraintsDescription & /* constraints */,
-    const ASTModifier & /* storage_modifier */)
+    const StorageInMemoryMetadata & /* metadata */)
 {
     clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
@@ -232,7 +228,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         StoragePtr table;
         Context context_copy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(context, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
             auto & ast_create = ast->as<const ASTCreateQuery &>();
@@ -256,10 +252,10 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
             return it->second.table = table;
         }
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
-        throw Exception("Cannot create table from metadata file " + table_metadata_path + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e, DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        e.addMessage("Cannot create table from metadata file " + table_metadata_path);
+        throw;
     }
 }
 

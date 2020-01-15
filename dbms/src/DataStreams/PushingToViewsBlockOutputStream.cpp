@@ -58,7 +58,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             query = materialized_view->getInnerQuery();
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
-            insert->table = inner_table_id.table_name;         //FIXME add uuid
+            insert->table = inner_table_id.table_name;
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();
@@ -126,7 +126,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.scheduleOrThrowOnError([=]
+            pool.scheduleOrThrowOnError([=, this]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)

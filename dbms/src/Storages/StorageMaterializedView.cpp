@@ -36,38 +36,35 @@ static inline String generateInnerTableName(const String & table_name)
     return ".inner." + table_name;
 }
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view /*= false*/, bool need_visitor /*= true*/)
+static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool add_default_db = true)
 {
-    if (need_visitor)
+    if (add_default_db)
     {
         AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase(), nullptr);
         visitor.visit(query);
     }
-    auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = extractTableExpression(query, 0);
 
-    if (!db_and_table && !subquery)
-        return {};  //FIXME in which cases we cannot get table name?
-
-    if (db_and_table)
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
     {
-        //TODO uuid
         return StorageID(db_and_table->database, db_and_table->table/*, db_and_table->uuid*/);
     }
-    else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
+    else if (auto subquery = extractTableExpression(query, 0))
     {
+        auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
+        if (!ast_select)
+            throw Exception("Logical error while creating StorageMaterializedView. "
+                            "Could not retrieve table name from select query.",
+                            DB::ErrorCodes::LOGICAL_ERROR);
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception(String("UNION is not supported for ") + (is_live_view ? "LIVE VIEW" : "MATERIALIZED VIEW"),
-                  is_live_view ? ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW : ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+            throw Exception("UNION is not supported for MATERIALIZED VIEW",
+                  ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, is_live_view, false);
+        return extractDependentTableFromSelectQuery(inner_query->as<ASTSelectQuery &>(), context, false);
     }
     else
-        throw Exception(String("Logical error while creating Storage") + (is_live_view ? "Live" : "Materialized") +
-            "View. Could not retrieve table name from select query.",
-            DB::ErrorCodes::LOGICAL_ERROR);
+        return StorageID::createEmpty();
 }
 
 
@@ -126,7 +123,6 @@ StorageMaterializedView::StorageMaterializedView(
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        //TODO use uuid
         target_table_id = StorageID(table_id_.database_name, generateInnerTableName(table_id_.table_name));
     }
     else
@@ -216,7 +212,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
-    global_context.removeDependency(select_table_id, table_id);
+    if (!select_table_id.empty())
+        global_context.removeDependency(select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
@@ -254,10 +251,8 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
     getTargetTable()->mutate(commands, context);
 }
 
-void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> *)
+void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
-    //FIXME
-
     if (has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_name);
@@ -280,23 +275,22 @@ void StorageMaterializedView::renameInMemory(const String & new_database_name, c
         target_table_id.table_name = new_target_table_name;
     }
 
+    /// Global lock on server context, so there will not be point between removing and adding dependency
+    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     auto lock = global_context.getLock();
-    std::unique_lock<std::mutex> name_lock;
-    auto table_id = getStorageID(&name_lock);
 
-    global_context.removeDependencyUnsafe(select_table_id, table_id);
-
-    IStorage::renameInMemory(new_database_name, new_table_name, &name_lock);
-
-    auto new_table_id = getStorageID(&name_lock);
-    global_context.addDependencyUnsafe(select_table_id, new_table_id);
+    if (!select_table_id.empty())
+        global_context.removeDependencyUnsafe(select_table_id, getStorageID());
+    IStorage::renameInMemory(new_database_name, new_table_name);
+    if (!select_table_id.empty())
+        global_context.addDependencyUnsafe(select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
-    auto table_id = getStorageID();
     /// Make sure the dependency is removed after DETACH TABLE
-    global_context.removeDependency(select_table_id, table_id);
+    if (!select_table_id.empty())
+        global_context.removeDependency(select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

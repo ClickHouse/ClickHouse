@@ -13,7 +13,6 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
-#include <Storages/StorageID.h>
 
 
 namespace DB
@@ -354,7 +353,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserFunction table_function_p;
     ParserNameList names_p;
 
-    StorageID table_id;
+    StorageID table_id = StorageID::createEmpty();
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -495,8 +494,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
-    StorageID table_id;
-    StorageID to_table_id;
+    StorageID table_id = StorageID::createEmpty();
+    StorageID to_table_id = StorageID::createEmpty();
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -666,8 +665,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserNameList names_p;
     ParserStringLiteral uuid_p;
 
-    StorageID table_id;
-    StorageID to_table_id;
+    StorageID table_id = StorageID::createEmpty();
+    StorageID to_table_id = StorageID::createEmpty();
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;

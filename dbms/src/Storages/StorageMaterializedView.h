@@ -9,9 +9,6 @@
 namespace DB
 {
 
-StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, Context & context, bool is_live_view = false, bool need_visitor = true);
-
-
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
@@ -44,7 +41,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr) override;
+    void renameInMemory(const String & new_database_name, const String & new_table_name) override;
 
     void shutdown() override;
 
@@ -69,8 +66,11 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    StorageID select_table_id;
-    StorageID target_table_id;
+    /// Can be empty if SELECT query doesn't contain table
+    StorageID select_table_id = StorageID::createEmpty();
+    /// Will be initialized in constructor
+    StorageID target_table_id = StorageID::createEmpty();
+
     ASTPtr inner_query;
     Context & global_context;
     bool has_inner_table = false;

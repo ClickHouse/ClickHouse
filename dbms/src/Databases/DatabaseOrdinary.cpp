@@ -10,14 +10,15 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTSetQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
+#include <Parsers/queryToString.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
@@ -35,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
@@ -64,13 +64,10 @@ namespace
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot attach table '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -85,13 +82,10 @@ namespace
         {
             database.attachDictionary(query.table, context);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot create dictionary '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_DICTIONARY_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -125,12 +119,12 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -138,10 +132,10 @@ void DatabaseOrdinary::loadStoredObjects(
                 total_dictionaries += create_query->is_dictionary;
             }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
+            e.addMessage("Cannot parse definition from metadata file " + full_path);
+            throw;
         }
 
     });
@@ -175,12 +169,8 @@ void DatabaseOrdinary::loadStoredObjects(
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
 
-    /// Add database as repository
-    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    auto & external_loader = context.getExternalDictionariesLoader();
-    external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
-
     /// Attach dictionaries.
+    attachToExternalDictionariesLoader(context);
     for (const auto & name_with_query : file_names)
     {
         auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
@@ -228,10 +218,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
-    const ColumnsDescription & columns,
-    const IndicesDescription & indices,
-    const ConstraintsDescription & constraints,
-    const ASTModifier & storage_modifier)
+    const StorageInMemoryMetadata & metadata)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
@@ -249,19 +236,30 @@ void DatabaseOrdinary::alterTable(
 
     const auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
     ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
 
-    if (storage_modifier)
-        storage_modifier(*ast_create_query.storage);
+    ASTStorage & storage_ast = *ast_create_query.storage;
+    /// ORDER BY may change, but cannot appear, it's required construction
+    if (metadata.order_by_ast && storage_ast.order_by)
+        storage_ast.set(storage_ast.order_by, metadata.order_by_ast);
+
+    if (metadata.primary_key_ast)
+        storage_ast.set(storage_ast.primary_key, metadata.primary_key_ast);
+
+    if (metadata.ttl_for_table_ast)
+        storage_ast.set(storage_ast.ttl_table, metadata.ttl_for_table_ast);
+
+    if (metadata.settings_ast)
+        storage_ast.set(storage_ast.settings, metadata.settings_ast);
+
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-
     {
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);

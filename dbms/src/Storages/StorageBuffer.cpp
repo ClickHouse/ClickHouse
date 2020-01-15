@@ -447,7 +447,7 @@ void StorageBuffer::startup()
     if (global_context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
-            << " Set apropriate system_profile to fix this.");
+            << " Set appropriate system_profile to fix this.");
     }
 
     flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
@@ -708,22 +708,33 @@ void StorageBuffer::flushThread()
     } while (!shutdown_event.tryWait(1000));
 }
 
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto table_id = getStorageID();
+    checkAlterIsPossible(params, context.getSettingsRef());
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_columns, new_indices, new_constraints, {});   //FIXME
-    setColumns(std::move(new_columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 
