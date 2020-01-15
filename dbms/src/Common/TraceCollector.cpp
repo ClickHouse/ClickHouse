@@ -102,13 +102,13 @@ void TraceCollector::run()
             trace.emplace_back(UInt64(addr));
         }
 
-        TimerType timer_type;
-        readPODBinary(timer_type, in);
+        TraceType trace_type;
+        readPODBinary(trace_type, in);
 
         UInt32 thread_number;
         readPODBinary(thread_number, in);
 
-        TraceLogElement element{std::time(nullptr), timer_type, thread_number, query_id, trace};
+        TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace};
         trace_log->add(element);
     }
 }

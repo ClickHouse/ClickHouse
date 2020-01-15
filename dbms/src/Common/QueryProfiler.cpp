@@ -34,7 +34,7 @@ namespace
     thread_local size_t write_trace_iteration = 0;
 #endif
 
-    void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
+    void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
 #if defined(OS_LINUX)
         /// Quickly drop if signal handler is called too frequently.
@@ -62,7 +62,7 @@ namespace
                                     QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
                                     sizeof(UInt8) + // number of stack frames
                                     sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
-                                    sizeof(TimerType) + // timer type
+                                    sizeof(TraceType) + // timer type
                                     sizeof(UInt32); // thread_number
         char buffer[buf_size];
         WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
@@ -84,7 +84,7 @@ namespace
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
             writePODBinary(stack_trace.getFrames()[i], out);
 
-        writePODBinary(timer_type, out);
+        writePODBinary(trace_type, out);
         writePODBinary(thread_number, out);
         out.next();
     }
@@ -198,7 +198,7 @@ QueryProfilerReal::QueryProfilerReal(const Int32 thread_id, const UInt32 period)
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Real, sig, info, context);
+    writeTraceInfo(TraceType::REAL_TIME, sig, info, context);
 }
 
 QueryProfilerCpu::QueryProfilerCpu(const Int32 thread_id, const UInt32 period)
@@ -207,7 +207,7 @@ QueryProfilerCpu::QueryProfilerCpu(const Int32 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Cpu, sig, info, context);
+    writeTraceInfo(TraceType::CPU_TIME, sig, info, context);
 }
 
 }
