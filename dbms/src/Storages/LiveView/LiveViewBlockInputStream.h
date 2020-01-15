@@ -149,7 +149,7 @@ protected:
                     }
                     while (true)
                     {
-                        UInt64 timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+                        UInt64 timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
 
                         /// Or spurious wakeup.
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
@@ -166,7 +166,7 @@ protected:
                         else
                         {
                             // heartbeat
-                            last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+                            last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
                             return { getHeader(), true };
                         }
                     }
@@ -185,7 +185,7 @@ protected:
             num_updates += 1;
         }
 
-        last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
+        last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
         return { res, true };
     }
 
@@ -207,7 +207,6 @@ private:
     UInt64 heartbeat_interval_usec;
     UInt64 temporary_live_view_timeout_sec;
     UInt64 last_event_timestamp_usec = 0;
-    Poco::Timestamp timestamp;
 };
 
 }

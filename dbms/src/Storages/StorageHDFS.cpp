@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -41,7 +42,14 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_,
+               ColumnsDescription({
+                                          {"_path", std::make_shared<DataTypeString>()},
+                                          {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
     , uri(uri_)
     , format_name(format_name_)
     , context(context_)
@@ -59,6 +67,8 @@ class HDFSBlockInputStream : public IBlockInputStream
 {
 public:
     HDFSBlockInputStream(const String & uri,
+        bool need_path,
+        bool need_file,
         const String & format,
         const Block & sample_block,
         const Context & context,
@@ -66,7 +76,9 @@ public:
         const CompressionMethod compression_method)
     {
         auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri), compression_method);
-
+        file_path = uri;
+        with_file_column = need_file;
+        with_path_column = need_path;
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
     }
@@ -78,12 +90,34 @@ public:
 
     Block readImpl() override
     {
-        return reader->read();
+        auto res = reader->read();
+        if (res)
+        {
+            if (with_path_column)
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path)->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                        "_path"});  /// construction with const is for probably generating less code
+            if (with_file_column)
+            {
+                size_t last_slash_pos = file_path.find_last_of('/');
+                res.insert({DataTypeString().createColumnConst(res.rows(), file_path.substr(
+                        last_slash_pos + 1))->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                            "_file"});
+            }
+        }
+        return res;
     }
 
     Block getHeader() const override
     {
-        return reader->getHeader();
+        auto res = reader->getHeader();
+        if (res)
+        {
+            if (with_path_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            if (with_file_column)
+                res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+        }
+        return res;
     }
 
     void readPrefixImpl() override
@@ -98,6 +132,9 @@ public:
 
 private:
     BlockInputStreamPtr reader;
+    String file_path;
+    bool with_path_column = false;
+    bool with_file_column = false;
 };
 
 class HDFSBlockOutputStream : public IBlockOutputStream
@@ -192,7 +229,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 
 
 BlockInputStreams StorageHDFS::read(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
@@ -208,9 +245,18 @@ BlockInputStreams StorageHDFS::read(
 
     const Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
     BlockInputStreams result;
+    bool need_path_column = false;
+    bool need_file_column = false;
+    for (const auto & column : column_names)
+    {
+        if (column == "_path")
+            need_path_column = true;
+        if (column == "_file")
+            need_file_column = true;
+    }
     for (const auto & res_path : res_paths)
     {
-        result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
+        result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, need_path_column, need_file_column, format_name, getSampleBlock(), context_,
                                                                max_block_size, chooseCompressionMethod(res_path, compression_method)));
     }
 

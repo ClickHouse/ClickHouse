@@ -235,7 +235,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
     ASTPtr ast;
 
     auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-    ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
+    ast = getCreateQueryFromMetadata(context, dictionary_metadata_path, throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
