@@ -522,69 +522,6 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
         bg::correct(multi_polygon);
 }
 
-IPolygonDictionary::Point IPolygonDictionary::fieldToPoint(const Field &field)
-{
-    if (field.getType() == Field::Types::Array)
-    {
-        auto coordinate_array = field.get<Array>();
-        if (coordinate_array.size() != DIM)
-            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::BAD_ARGUMENTS};
-        Float64 values[DIM];
-        for (size_t i = 0; i < DIM; ++i)
-        {
-            if (coordinate_array[i].getType() != Field::Types::Float64)
-                throw Exception{"Coordinates should be Float64", ErrorCodes::TYPE_MISMATCH};
-            values[i] = coordinate_array[i].get<Float64>();
-        }
-        return {values[0], values[1]};
-    }
-    else
-        throw Exception{"Point is not represented by an array", ErrorCodes::TYPE_MISMATCH};
-}
-
-IPolygonDictionary::Polygon IPolygonDictionary::fieldToPolygon(const Field & field)
-{
-    Polygon result;
-    if (field.getType() == Field::Types::Array)
-    {
-        const auto & ring_array = field.get<Array>();
-        if (ring_array.empty())
-            throw Exception{"Empty polygons are not allowed", ErrorCodes::BAD_ARGUMENTS};
-        result.inners().resize(ring_array.size() - 1);
-        if (ring_array[0].getType() != Field::Types::Array)
-            throw Exception{"Outer polygon ring is not represented by an array", ErrorCodes::TYPE_MISMATCH};
-        for (const auto & point : ring_array[0].get<Array>())
-            bg::append(result.outer(), fieldToPoint(point));
-        for (size_t i = 0; i < result.inners().size(); ++i)
-        {
-            if (ring_array[i + 1].getType() != Field::Types::Array)
-                throw Exception{"Inner polygon ring is not represented by an array", ErrorCodes::TYPE_MISMATCH};
-            for (const auto & point : ring_array[i + 1].get<Array>())
-                bg::append(result.inners()[i], fieldToPoint(point));
-        }
-    }
-    else
-        throw Exception{"Polygon is not represented by an array", ErrorCodes::TYPE_MISMATCH};
-    bg::correct(result);
-    return result;
-}
-
-// TODO: Do this more efficiently by casting to the corresponding Column and avoiding Fields.
-IPolygonDictionary::MultiPolygon IPolygonDictionary::fieldToMultiPolygon(const Field &field)
-{
-    MultiPolygon result;
-    if (field.getType() == Field::Types::Array)
-    {
-        const auto& polygon_array = field.get<Array>();
-        result.reserve(polygon_array.size());
-        for (const auto & polygon : polygon_array)
-            result.push_back(fieldToPolygon(polygon));
-    }
-    else
-        throw Exception{"MultiPolygon is not represented by an array", ErrorCodes::TYPE_MISMATCH};
-    return result;
-}
-
 SimplePolygonDictionary::SimplePolygonDictionary(
     const std::string & database_,
     const std::string & name_,
@@ -636,11 +573,20 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
         const String database = config.getString(config_prefix + ".database", "");
         const String name = config.getString(config_prefix + ".name");
 
-        // TODO: Check that there is only one key and it is of the correct type.
+        if (!dict_struct.key)
+            throw Exception{"'key' is required for dictionary of layout 'polygon'", ErrorCodes::BAD_ARGUMENTS};
+        if (dict_struct.key->size() != 1)
+            throw Exception{"The 'key' should consist of a single attribute for dictionary of layout 'polygon'",
+                            ErrorCodes::BAD_ARGUMENTS};
+        // TODO: Once arrays are fully supported this should be changed to a more reasonable check.
+        if ((*dict_struct.key)[0].type->getName() != "Array(Array(Array(Array(Float64))))")
+            throw Exception{"The 'key' should be a 4-dimensional array of Float64 for dictionary of layout 'polygon'",
+                            ErrorCodes::BAD_ARGUMENTS};
+
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
                             + ": elements .structure.range_min and .structure.range_max should be defined only "
-                              "for a dictionary of layout 'range_hashed'",
+                              "for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
