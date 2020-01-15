@@ -65,7 +65,7 @@ public:
     void drop(TableStructureWriteLockHolder &) override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
@@ -138,6 +138,7 @@ private:
     void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
     /// Just checks versions of each active data part
@@ -158,17 +159,10 @@ protected:
     StorageMergeTree(
         const StorageID & table_id_,
         const String & relative_data_path_,
-        const ColumnsDescription & columns_,
-        const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
+        const StorageInMemoryMetadata & metadata,
         bool attach,
         Context & context_,
         const String & date_column_name,
-        const ASTPtr & partition_by_ast_,
-        const ASTPtr & order_by_ast_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-        const ASTPtr & ttl_table_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);

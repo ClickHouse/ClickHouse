@@ -13,6 +13,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace DB
@@ -98,7 +99,6 @@ public:
 protected:
     Block readImpl() override
     {
-        //FIXME add uuids
         if (done)
             return {};
 

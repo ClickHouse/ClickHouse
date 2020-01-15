@@ -28,12 +28,11 @@
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/QuotaContext.h>
+#include <Access/RowPolicyContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -112,7 +111,7 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
-    /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
+    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
@@ -192,7 +191,7 @@ struct ContextShared
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::unique_ptr<Clusters> clusters;
-    ConfigurationPtr clusters_config;                        /// Soteres updated configs
+    ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
 #if USE_EMBEDDED_COMPILER
@@ -333,6 +332,7 @@ Context Context::createGlobal()
 {
     Context res;
     res.quota = std::make_shared<QuotaContext>();
+    res.row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -626,6 +626,13 @@ void Context::checkQuotaManagementIsAllowed()
             "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
+void Context::checkRowPolicyManagementIsAllowed()
+{
+    if (!is_row_policy_management_allowed)
+        throw Exception(
+            "User " + client_info.current_user + " doesn't have enough privileges to manage row policies", ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -638,34 +645,6 @@ ConfigurationPtr Context::getUsersConfig()
 {
     auto lock = getLock();
     return shared->users_config;
-}
-
-bool Context::hasUserProperty(const StorageID & table_id, const String & name) const
-{
-    auto lock = getLock();
-
-    // No user - no properties.
-    if (client_info.current_user.empty())
-        return false;
-
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-
-    auto db = props.find(table_id.database_name);
-    if (db == props.end())
-        return false;
-
-    auto table_props = db->second.find(table_id.table_name);
-    if (table_props == db->second.end())
-        return false;
-
-    return !!table_props->second.count(name);
-}
-
-const String & Context::getUserProperty(const StorageID & table_id, const String & name) const
-{
-    auto lock = getLock();
-    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(table_id.database_name).at(table_id.table_name).at(name);
 }
 
 void Context::calculateUserSettings()
@@ -692,6 +671,8 @@ void Context::calculateUserSettings()
     quota = getAccessControlManager().createQuotaContext(
         client_info.current_user, client_info.current_address.host(), client_info.quota_key);
     is_quota_management_allowed = user->is_quota_management_allowed;
+    row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
+    is_row_policy_management_allowed = user->is_row_policy_management_allowed;
 }
 
 
@@ -811,7 +792,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
         checkDatabaseAccessRightsImpl(db);
     }
 
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
     if (iter == shared->view_dependencies.end())
         return {};
 
@@ -947,25 +928,25 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 
 StoragePtr Context::getTable(const StorageID & table_id) const
 {
-    Exception exc;
+    std::optional<Exception> exc;
     auto res = getTableImpl(table_id, &exc);
     if (!res)
-        throw exc;
+        throw *exc;
     return res;
 }
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return tryGetTable(StorageID(database_name, table_name));
+    return getTableImpl(StorageID(database_name, table_name), {});
 }
 
 StoragePtr Context::tryGetTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, nullptr);
+    return getTableImpl(table_id, {});
 }
 
 
-StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * exception) const
+StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
 {
     String db;
     DatabasePtr database;
@@ -980,7 +961,6 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * excepti
                 return res;
         }
 
-        //FIXME what if table was moved to another database?
         db = resolveDatabase(table_id.database_name, current_database);
         checkDatabaseAccessRightsImpl(db);
 
@@ -988,7 +968,7 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * excepti
         if (shared->databases.end() == it)
         {
             if (exception)
-                *exception = Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             return {};
         }
 
@@ -999,7 +979,7 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, Exception * excepti
     if (!table)
     {
         if (exception)
-            *exception = Exception("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 
@@ -1116,7 +1096,6 @@ DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
     auto res = getDatabase(database_name);
-    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
 
     return res;
@@ -1464,7 +1443,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 

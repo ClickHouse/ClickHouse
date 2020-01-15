@@ -390,7 +390,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
                 offsets_to[i] = write_buffer.count();
             }
 
-            write_buffer.finish();
+            write_buffer.finalize();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -430,7 +430,7 @@ struct ConvertImplGenericToString
             offsets_to[i] = write_buffer.count();
         }
 
-        write_buffer.finish();
+        write_buffer.finalize();
         block.getByPosition(result).column = std::move(col_to);
     }
 };
@@ -918,16 +918,25 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentTypeValidators mandatory_args = {{[](const auto &) {return true;}, "ANY TYPE"}};
-        FunctionArgumentTypeValidators optional_args;
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
+        FunctionArgumentDescriptors optional_args;
 
         if constexpr (to_decimal || to_datetime64)
         {
-            mandatory_args.push_back(FunctionArgumentTypeValidator{&isNativeInteger, "Integer"}); // scale
+            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
         }
-        else
+        // toString(DateTime or DateTime64, [timezone: String])
+        if ((std::is_same_v<Name, NameToString> && arguments.size() > 0 && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
+            // toUnixTimestamp(value[, timezone : String])
+            || std::is_same_v<Name, NameToUnixTimestamp>
+            // toDate(value[, timezone : String])
+            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this arument is ignored below.
+            // toDateTime(value[, timezone: String])
+            || std::is_same_v<ToDataType, DataTypeDateTime>
+            // toDateTime64(value, scale : Integer[, timezone: String])
+            || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back(FunctionArgumentTypeValidator{&isString, "String"}); // timezone
+            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -938,8 +947,8 @@ public:
         }
         else if constexpr (to_decimal)
         {
-            if (!arguments[1].column)
-                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+//            if (!arguments[1].column)
+//                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
             UInt64 scale = extractToDecimalScale(arguments[1]);
 

@@ -234,9 +234,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-        if (!uuid.empty())
+        if (uuid != UUID(UInt128(0, 0)))
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-                          << quoteString(uuid);
+                          << quoteString(toString(uuid));
         formatOnCluster(settings);
     }
     else

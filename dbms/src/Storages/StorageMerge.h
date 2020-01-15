@@ -40,10 +40,11 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
+
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(
-        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
@@ -52,11 +53,12 @@ private:
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
 
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockHolder>>;
+    using StorageWithLockAndName = std::tuple<StoragePtr, TableStructureReadLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
     StorageListWithLocks getSelectedTables(const String & query_id) const;
 
-    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const;
+    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
@@ -75,8 +77,8 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                          const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
+                                          const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+                                          Names & real_column_names,
                                           Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                           bool concat_streams = false);
 

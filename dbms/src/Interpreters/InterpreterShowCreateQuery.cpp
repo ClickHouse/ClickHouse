@@ -57,7 +57,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery();
+        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
@@ -68,10 +68,6 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 
     if (!create_query && show_query && show_query->temporary)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
-
-    //FIXME temporary print create query without UUID for tests (remove it)
-    auto & create = create_query->as<ASTCreateQuery &>();
-    create.uuid.clear();
 
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);

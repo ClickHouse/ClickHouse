@@ -112,7 +112,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     create->format = nullptr;
     create->out_file = nullptr;
 
-    if (!create->uuid.empty())
+    if (create->uuid != UUID(UInt128(0, 0)))
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     std::ostringstream statement_stream;
@@ -121,12 +121,12 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
-DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context_)
+DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context)
     : DatabaseWithOwnTablesBase(name, logger)
     , metadata_path(metadata_path_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {
-    Poco::File(context_.getPath() + getDataPath()).createDirectories();
+    Poco::File(context.getPath() + getDataPath()).createDirectories();
     Poco::File(getMetadataPath()).createDirectories();
 }
 
@@ -241,13 +241,13 @@ void DatabaseOnDisk::renameTable(
 
     auto table_lock = table->lockExclusively(context.getCurrentQueryId());
 
-    ASTPtr ast = parseQueryFromMetadata(getObjectMetadataPath(table_name));
+    ASTPtr ast = parseQueryFromMetadata(context, getObjectMetadataPath(table_name));
     auto & create = ast->as<ASTCreateQuery &>();
     create.table = to_table_name;
     if (from_ordinary_to_atomic)
-        create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+        create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
     if (from_atomic_to_ordinary)
-        create.uuid.clear();
+        create.uuid = UUID(UInt128(0, 0));
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
@@ -276,7 +276,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     ASTPtr ast;
 
     auto table_metadata_path = getObjectMetadataPath(table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+    ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
@@ -292,20 +292,21 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
 {
     ASTPtr ast;
 
+    auto settings = context.getSettingsRef();
     auto metadata_dir_path = getMetadataPath();
     auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
-    ast = getCreateQueryFromMetadata(database_metadata_path, true);
+    ast = getCreateQueryFromMetadata(context, database_metadata_path, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
     return ast;
@@ -386,7 +387,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const Ite
     }
 }
 
-ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error /*= true*/, bool remove_empty /*= false*/) const
 {
     String query;
 
@@ -413,11 +414,12 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
         return nullptr;
     }
 
+    auto settings = context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0);
+                             "in file " + getMetadataPath(), /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -425,7 +427,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (!create.uuid.empty())
+    if (create.uuid != UUID(UInt128(0, 0)))
     {
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
@@ -437,9 +439,9 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const String & metadata_file_path,
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(context, database_metadata_path, throw_on_error);
 
     if (ast)
     {

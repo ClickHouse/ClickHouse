@@ -49,7 +49,7 @@ namespace
             const String & key)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadBufferFromS3>(compression_method, client, bucket, key);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -98,7 +98,8 @@ namespace
             const String & key)
             : sample_block(sample_block_)
         {
-            write_buf = getWriteBuffer<WriteBufferFromS3>(compression_method, client, bucket, key, min_upload_part_size);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -143,7 +144,7 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage({table_id_}, columns_)
+    : IStorage(table_id_, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
@@ -171,7 +172,7 @@ BlockInputStreams StorageS3::read(
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client,
         uri.bucket,
         uri.key);
@@ -186,7 +187,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & 
 {
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name, min_upload_part_size, getSampleBlock(), context_global,
-        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 

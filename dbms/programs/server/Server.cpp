@@ -294,7 +294,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         global_context->shutdown();
 
-        LOG_DEBUG(log, "Shutted down storages.");
+        LOG_DEBUG(log, "Shut down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -550,8 +550,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// It also cannot work with sanitizers.
     /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
-    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
-    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    /// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
     ///  and query profiler decide to unwind stack with libunwind at this moment.
     ///
     /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
@@ -720,7 +720,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
                 if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handler_factory,
@@ -850,7 +850,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handler_factory->addHandler<PrometeusHandlerFactory>(async_metrics);
+                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handler_factory,
                     server_pool,
@@ -943,6 +943,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         });
 
         /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls, models_xmls;
         try
         {
             if (!config().getBool("dictionaries_lazy_load", true))
@@ -950,12 +951,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->tryCreateEmbeddedDictionaries();
                 global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
-
-            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
-            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
-
-            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
-            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
         }
         catch (...)
         {

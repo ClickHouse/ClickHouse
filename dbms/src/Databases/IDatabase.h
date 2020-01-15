@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Exception.h>
 
@@ -227,10 +228,7 @@ public:
     virtual void alterTable(
         const Context & /*context*/,
         const String & /*name*/,
-        const ColumnsDescription & /*columns*/,
-        const IndicesDescription & /*indices*/,
-        const ConstraintsDescription & /*constraints*/,
-        const ASTModifier & /*engine_modifier*/)
+        const StorageInMemoryMetadata & /*metadata*/)
     {
         throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -264,7 +262,7 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }

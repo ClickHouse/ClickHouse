@@ -246,7 +246,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    String generateFilterActions(ExpressionActionsPtr & actions, const Names & prerequisite_columns = {}) const;
+    String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);
@@ -297,7 +297,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    std::optional<StorageID> table_id;
+    StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.

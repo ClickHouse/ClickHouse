@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -45,6 +44,7 @@ namespace DB
 struct ContextShared;
 class Context;
 class QuotaContext;
+class RowPolicyContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -82,6 +82,12 @@ class SettingsConstraints;
 struct StorageID;
 class RemoteHostFilter;
 struct StorageID;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class DiskSelector;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -125,7 +131,6 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
-///TODO remove syntax sugar and legacy methods from Context (e.g.  getInputFormat(...) which just returns object from factory)
 class Context
 {
 private:
@@ -140,6 +145,8 @@ private:
 
     std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
     bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
+    std::shared_ptr<RowPolicyContext> row_policy;
+    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -210,6 +217,8 @@ public:
     const AccessControlManager & getAccessControlManager() const;
     std::shared_ptr<QuotaContext> getQuota() const { return quota; }
     void checkQuotaManagementIsAllowed();
+    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
+    void checkRowPolicyManagementIsAllowed();
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -217,10 +226,6 @@ public:
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
-
-    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
-    bool hasUserProperty(const StorageID & table_id, const String & name) const;
-    const String & getUserProperty(const StorageID & table_id, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -249,8 +254,6 @@ public:
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
-
-    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
@@ -592,7 +595,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const StorageID & table_id, Exception * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

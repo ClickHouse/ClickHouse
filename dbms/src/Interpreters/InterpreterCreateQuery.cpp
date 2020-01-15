@@ -8,6 +8,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -526,14 +527,21 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         ASTPtr as_create_ptr = context.getDatabase(as_database_name)->getCreateTableQuery(context, as_table_name);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
+        const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
         if (as_create.is_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
+                "Cannot CREATE a table AS " + qualified_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
         if (as_create.is_live_view)
             throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Live View",
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_dictionary)
+            throw Exception(
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Dictionary",
                 ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());
@@ -612,19 +620,19 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         if (database->getEngineName() == "Atomic")
         {
             //TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
-            if (create.attach && create.uuid.empty())
+            if (create.attach && create.uuid == UUID(UInt128(0, 0)))
                 throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
-            if (!create.attach && create.uuid.empty())
-                create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+            if (!create.attach && create.uuid == UUID(UInt128(0, 0)))
+                create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
         }
         else
         {
-            if (!create.uuid.empty())
+            if (create.uuid != UUID(UInt128(0, 0)))
                 throw Exception("Table UUID specified, but engine of database " + database_name + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
         }
 
-        if (!create.attach && create.uuid.empty() && database->getEngineName() == "Atomic")
-            create.uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+        if (!create.attach && create.uuid == UUID(UInt128(0, 0)) && database->getEngineName() == "Atomic")
+            create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
 
         data_path = database->getTableDataPath(create);
 
@@ -728,7 +736,9 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     String dictionary_name = create.table;
 
-    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
+    if (create.database.empty())
+        create.database = context.getCurrentDatabase();
+    const String & database_name = create.database;
 
     auto guard = context.getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = context.getDatabase(database_name);
