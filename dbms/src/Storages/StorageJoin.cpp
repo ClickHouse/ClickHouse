@@ -30,8 +30,7 @@ namespace ErrorCodes
 
 StorageJoin::StorageJoin(
     const String & relative_path_,
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
@@ -41,7 +40,7 @@ StorageJoin::StorageJoin(
     const ConstraintsDescription & constraints_,
     bool overwrite,
     const Context & context_)
-    : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_}
+    : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -72,11 +71,11 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
 HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
 {
     if (kind != analyzed_join->kind() || strictness != analyzed_join->strictness())
-        throw Exception("Table " + backQuote(table_name) + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+        throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
-        throw Exception("Table " + backQuote(table_name) + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
+        throw Exception("Table " + getStorageID().getNameForLogs() + " needs the same join_use_nulls setting as present in LEFT or FULL JOIN.",
                         ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     /// TODO: check key columns
@@ -200,8 +199,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         return StorageJoin::create(
             args.relative_data_path,
-            args.database_name,
-            args.table_name,
+            args.table_id,
             key_names,
             join_use_nulls,
             SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},

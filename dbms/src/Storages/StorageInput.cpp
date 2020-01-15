@@ -15,8 +15,8 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
-StorageInput::StorageInput(const String &table_name_, const ColumnsDescription & columns_)
-    : IStorage(columns_), table_name(table_name_)
+StorageInput::StorageInput(const String & table_name_, const ColumnsDescription & columns_)
+    : IStorage({"", table_name_}, columns_)
 {
     setColumns(columns_);
 }
