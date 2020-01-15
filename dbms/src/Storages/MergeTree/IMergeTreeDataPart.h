@@ -29,6 +29,8 @@ namespace DB
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
+class IReservation;
+using ReservationPtr = std::unique_ptr<IReservation>;
 
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;

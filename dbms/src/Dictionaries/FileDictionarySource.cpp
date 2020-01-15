@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
