@@ -70,6 +70,8 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
 
+    void remove(const String & path, bool recursive) override;
+
 private:
     bool tryReserve(UInt64 bytes);
 

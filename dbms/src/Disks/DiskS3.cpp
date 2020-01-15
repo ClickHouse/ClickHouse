@@ -19,6 +19,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int CANNOT_DELETE_DIRECTORY;
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int PATH_ACCESS_DENIED;
@@ -155,7 +156,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         Poco::File tmp_file(metadata_path + to_path + ".old");
         to_file.renameTo(tmp_file.path());
         from_file.renameTo(metadata_path + to_path);
-        remove(to_path + ".old");
+        remove(to_path + ".old", false);
     }
     else
         from_file.renameTo(to_file.path());
@@ -164,7 +165,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
 void DiskS3::copyFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
-        remove(to_path);
+        remove(to_path, false);
 
     String s3_from_path;
     String s3_to_path = s3_root_path + to_path + getRandomSuffix();
@@ -199,6 +200,30 @@ std::unique_ptr<WriteBuffer> DiskS3::writeFile(const String & path, size_t buf_s
         while (!read_buffer.eof())
             writeBuffer->write(buffer.data(), read_buffer.read(buffer.data(), buf_size));
         return writeBuffer;
+    }
+}
+
+void DiskS3::remove(const String & path, bool recursive)
+{
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        Aws::S3::Model::DeleteObjectRequest request;
+        request.SetBucket(bucket);
+        request.SetKey(getS3Path(path));
+        throwIfError(client->DeleteObject(request));
+
+        Poco::File(metadata_path + path).remove(true);
+    }
+    else
+    {
+        auto it{iterateDirectory(path)};
+        if (!recursive && it->isValid())
+            throw Exception("Directory " + path + "is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+
+        for (; it->isValid(); it->next())
+            remove(it->path(), true);
+        file.remove(false);
     }
 }
 
@@ -247,19 +272,6 @@ bool DiskS3::tryReserve(UInt64 bytes)
     return false;
 }
 
-void DiskS3::remove(const String & path)
-{
-    if (exists(path))
-    {
-        Aws::S3::Model::DeleteObjectRequest request;
-        request.SetBucket(bucket);
-        request.SetKey(getS3Path(path));
-        throwIfError(client->DeleteObject(request));
-
-        Poco::File(metadata_path + path).remove(true);
-    }
-}
-
 DiskS3Reservation::~DiskS3Reservation()
 {
     try
@@ -297,7 +309,9 @@ void registerDiskS3(DiskFactory & factory)
 
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
         auto client = S3::ClientFactory::instance().create(
-            uri.endpoint, config.getString(config_prefix + ".access_key_id"), config.getString(config_prefix + ".secret_access_key"));
+            uri.endpoint,
+            config.getString(config_prefix + ".access_key_id", ""),
+            config.getString(config_prefix + ".secret_access_key", ""));
 
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
