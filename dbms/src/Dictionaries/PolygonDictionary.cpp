@@ -574,13 +574,13 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
         const String name = config.getString(config_prefix + ".name");
 
         if (!dict_struct.key)
-            throw Exception{"'key' is required for dictionary of layout 'polygon'", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"'key' is required for a dictionary of layout 'polygon'", ErrorCodes::BAD_ARGUMENTS};
         if (dict_struct.key->size() != 1)
-            throw Exception{"The 'key' should consist of a single attribute for dictionary of layout 'polygon'",
+            throw Exception{"The 'key' should consist of a single attribute for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
         // TODO: Once arrays are fully supported this should be changed to a more reasonable check.
         if ((*dict_struct.key)[0].type->getName() != "Array(Array(Array(Array(Float64))))")
-            throw Exception{"The 'key' should be a 4-dimensional array of Float64 for dictionary of layout 'polygon'",
+            throw Exception{"The 'key' attribute should be a 4-dimensional array of Float64s for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
 
         if (dict_struct.range_min || dict_struct.range_max)
