@@ -313,7 +313,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab))
+        if (!checkDependencies(StorageID(db_tab.database_name, db_tab.table_name)))
             return false;
     }
 

@@ -315,7 +315,7 @@ public:
 
     /**
      * Just updates names of database and table without moving any data on disk
-     * Can be called directly only from DatabaseAtomic.
+     * Can be called only from DatabaseAtomic.
      */
     virtual void renameInMemory(const String & new_database_name, const String & new_table_name, std::unique_lock<std::mutex> * id_lock = nullptr);
 
