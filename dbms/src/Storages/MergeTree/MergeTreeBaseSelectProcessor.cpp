@@ -44,7 +44,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     save_marks_in_cache(save_marks_in_cache_),
     virt_column_names(virt_column_names_)
 {
-    //std::cerr << "HEADER IN SELECT PROCESSOR:" << getPort().getHeader().dumpStructure() << std::endl;
+    std::cerr << "HEADER IN SELECT PROCESSOR:" << getPort().getHeader().dumpStructure() << std::endl;
     //std::cerr <<    "STACK:" <<   StackTrace().toString() << std::endl;
     header_without_virtual_columns = getPort().getHeader();
 
@@ -103,6 +103,7 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
 
 Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 {
+    std::cerr << "Reading from part impl\n";
     if (task->size_predictor)
         task->size_predictor->startBlock();
 
@@ -151,6 +152,11 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
+    std::cerr << "Read result:\n";
+    for (const auto & column : read_result.columns)
+    {
+        std::cerr <<  "Column:" << column->dumpStructure() << std::endl;
+    }
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)

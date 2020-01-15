@@ -4352,7 +4352,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     mutateImpl(commands, query_context);
 }
 
-ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands, const Context & query_context)
+ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const MutationCommands & commands, const Context & /*query_context*/)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -4460,8 +4460,8 @@ ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const Mu
     //if (query_context.getSettingsRef().mutations_sync != 0)
     //{
         Strings replicas;
-        if (query_context.getSettingsRef().mutations_sync == 2) /// wait for all replicas
-            replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
+        //if (query_context.getSettingsRef().mutations_sync == ) /// wait for all replicas
+        replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
         //else if (query_context.getSettingsRef().mutations_sync == 1) /// just wait for ourself
         //    replicas.push_back(replica_path);
 

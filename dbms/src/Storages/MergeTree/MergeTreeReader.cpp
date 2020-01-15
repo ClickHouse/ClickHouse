@@ -393,6 +393,7 @@ void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_ev
 
 void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
 {
+    std::cerr << "EVALUATING\n";
     try
     {
         size_t num_columns = columns.size();
@@ -413,7 +414,9 @@ void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns 
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
+        std::cerr << "additional columns before:" << additional_columns.dumpStructure() << std::endl;
         DB::evaluateMissingDefaults(additional_columns, columns, storage.getColumns().getDefaults(), storage.global_context);
+        std::cerr << "additional columns after:" << additional_columns.dumpStructure() << std::endl;
 
         /// Move columns from block.
         name_and_type = columns.begin();
