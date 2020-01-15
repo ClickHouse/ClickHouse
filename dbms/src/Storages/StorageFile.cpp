@@ -182,9 +182,17 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(ColumnsDescription({{"_path", std::make_shared<DataTypeString>()}, {"_file", std::make_shared<DataTypeString>()}}, true))
-    , table_name(args.table_name), database_name(args.database_name), format_name(args.format_name)
-    , compression_method(args.compression_method), base_path(args.context.getPath())
+    : IStorage(args.table_id,
+               ColumnsDescription({
+                                      {"_path", std::make_shared<DataTypeString>()},
+                                      {"_file", std::make_shared<DataTypeString>()}
+                                  },
+                                  true    /// all_virtuals
+                                 )
+              )
+    , format_name(args.format_name)
+    , compression_method(args.compression_method)
+    , base_path(args.context.getPath())
 {
     if (args.format_name != "Distributed")
         setColumns(args.columns);
@@ -360,7 +368,7 @@ public:
         else
         {
             if (storage.paths.size() != 1)
-                throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
                 compression_method, 3);
@@ -412,17 +420,17 @@ BlockOutputStreamPtr StorageFile::write(
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
-        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -431,14 +439,13 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
 {
     if (paths.size() != 1)
-        throw Exception("Can't truncate table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -473,7 +480,7 @@ void registerStorageFile(StorageFactory & factory)
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
-        StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name, compression_method,
+        StorageFile::CommonArguments common_args{args.table_id, format_name, compression_method,
                                                  args.columns, args.constraints, args.context};
 
         if (engine_args.size() == 1)    /// Table in database
