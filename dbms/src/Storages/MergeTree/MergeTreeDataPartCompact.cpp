@@ -30,10 +30,6 @@
 namespace DB
 {
 
-// namespace
-// {
-// }
-
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
@@ -46,11 +42,6 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
-
-// static ReadBufferFromFile openForReading(const String & path)
-// {
-//     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-// }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
        MergeTreeData & storage_,
@@ -107,55 +98,21 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         default_codec, writer_settings, computed_index_granularity);
 }
 
-ColumnSize MergeTreeDataPartCompact::getColumnSize(const String & column_name, const IDataType & /* type */) const
-{
-    auto column_size = columns_sizes.find(column_name);
-    if (column_size == columns_sizes.end())
-        return {};
-    return column_size->second;
-}
-
 ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
 {
-    ColumnSize totals;
-    size_t marks_size = 0;
-    for (const auto & column : columns)
+    ColumnSize total_size;
+    auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
+    if (bin_checksum != checksums.files.end())
     {
-        auto column_size = getColumnSize(column.name, *column.type);
-        totals.add(column_size);
-        if (!marks_size && column_size.marks)
-            marks_size = column_size.marks;
-    }
-    /// Marks are shared between all columns
-    totals.marks = marks_size;
-    return totals;
-}
-
-/** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-  * If no checksums are present returns the name of the first physically existing column.
-  */
-String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
-{
-    const auto & storage_columns = storage.getColumns().getAllPhysical();
-    const std::string * minimum_size_column = nullptr;
-    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
-    for (const auto & column : storage_columns)
-    {
-        if (!getColumnPosition(column.name))
-            continue;
-
-        auto size = getColumnSize(column.name, *column.type).data_compressed;
-        if (size < minimum_size)
-        {
-            minimum_size = size;
-            minimum_size_column = &column.name;
-        }
+        total_size.data_compressed += bin_checksum->second.file_size;
+        total_size.data_compressed += bin_checksum->second.uncompressed_size;
     }
 
-    if (!minimum_size_column)
-        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
+    auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);
+    if (mrk_checksum != checksums.files.end())
+        total_size.marks += mrk_checksum->second.file_size;
 
-    return *minimum_size_column;
+    return total_size;
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularity()

@@ -92,8 +92,6 @@ public:
         return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     }
 
-    const MergeTreeData::ColumnSizeByName & getColumnsSizes() const { return columns_sizes; }
-
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;
@@ -157,8 +155,6 @@ protected:
     bool data_written = false;
     bool primary_index_initialized = false;
     bool skip_indices_initialized = false;
-
-    MergeTreeData::ColumnSizeByName columns_sizes;
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;

@@ -113,7 +113,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         else if (rows_count)
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+    }
 
+    {
         WriteBufferFromFile count_out(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(count_out);
         writeIntText(rows_count, count_out_hashing);
@@ -130,22 +132,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-    }
-
-    const auto & columns_sizes = writer->getColumnsSizes();
-    if (!columns_sizes.empty())
-    {
-        WriteBufferFromFile out(part_path + "columns_sizes.txt", 4096);
-        HashingWriteBuffer out_hashing(out);
-        for (const auto & column : columns_list)
-        {
-            auto it = columns_sizes.find(column.name);
-            if (it == columns_sizes.end())
-                throw Exception("Not found size for column " + column.name, ErrorCodes::LOGICAL_ERROR);
-            writePODBinary(it->second, out_hashing);
-            checksums.files["columns_sizes.txt"].file_size = out_hashing.count();
-            checksums.files["columns_sizes.txt"].file_hash = out_hashing.getHash();
-        }
     }
 
     {
@@ -166,7 +152,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->columns_sizes = columns_sizes;
 }
 
 void MergedBlockOutputStream::init()

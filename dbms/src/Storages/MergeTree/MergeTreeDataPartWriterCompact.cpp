@@ -105,15 +105,10 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
             if (stream->compressed.offset() >= settings.min_compress_block_size)
                 stream->compressed.next();
 
-            size_t old_uncompressed_size = stream->compressed.count();
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
 
             writeColumnSingleGranule(block.getByName(column.name), current_row, rows_to_write);
-
-             /// We can't calculate compressed size by single column in compact format.
-            size_t uncompressed_size = stream->compressed.count();
-            columns_sizes[column.name].add(ColumnSize{0, 0, uncompressed_size - old_uncompressed_size});
         }
 
         ++from_mark;
@@ -162,10 +157,6 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
         }
         writeIntBinary(0ULL, stream->marks);
     }
-
-    size_t marks_size = stream->marks.count();
-    for (auto it = columns_sizes.begin(); it != columns_sizes.end(); ++it)
-        it->second.marks = marks_size;
 
     stream->finalize();
     if (sync)
