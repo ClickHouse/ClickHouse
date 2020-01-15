@@ -57,8 +57,9 @@ public:
 private:
     struct NotProcessed : public ExtraBlock
     {
-        size_t next_left_position;
-        size_t next_right_block;
+        size_t left_position;
+        size_t right_position;
+        size_t right_block;
     };
 
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
@@ -103,7 +104,7 @@ private:
 
     template <bool is_all>
     ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                             size_t position, size_t right_block_number);
+                             size_t left_position, size_t right_position, size_t right_block_number);
 
     void mergeRightBlocks();
 
@@ -116,10 +117,10 @@ private:
 
     template <bool is_all>
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
     template <bool is_all>
     bool innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
     bool saveRightBlock(Block && block);
     void flushRightBlocks();
