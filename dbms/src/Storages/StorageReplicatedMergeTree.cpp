@@ -3536,6 +3536,12 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
+                    case PartitionCommand::MoveDestinationType::TABLE:
+                        checkPartitionCanBeDropped(command.partition);
+                        String dest_database = command.to_database.empty() ? query_context.getCurrentDatabase() : command.to_database;
+                        auto dest_storage = query_context.getTable(dest_database, command.to_table);
+                        movePartitionToTable(dest_storage, command.partition, query_context);
+                        break;
                 }
             }
             break;
@@ -5076,6 +5082,198 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         lock2.release();
         lock1.release();
         waitForAllReplicasToProcessLogEntry(entry);
+    }
+}
+
+void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
+{
+    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
+
+    auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
+    if (!dest_table_storage)
+        throw Exception("Table " + this->getTableName() + " supports attachPartitionFrom only for ReplicatedMergeTree family of table engines."
+                        " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
+    if (dest_table_storage->getStoragePolicy() != this->getStoragePolicy())
+        throw Exception("Destination table " + dest_table_storage->getTableName() + " should have the same storage policy of source table " + this->getTableName() + ". " +
+                        this->getTableName() + ": " + this->getStoragePolicy()->getName() +
+                        ", " + dest_table_storage->getTableName() + ": " + dest_table_storage->getStoragePolicy()->getName(), ErrorCodes::LOGICAL_ERROR);
+
+    Stopwatch watch;
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(this);
+    String partition_id = getPartitionIDFromQuery(partition, context);
+
+    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts;
+    MutableDataPartsVector dst_parts;
+    Strings block_id_paths;
+    Strings part_checksums;
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
+
+    LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
+
+    static const String TMP_PREFIX = "tmp_replace_from_";
+    auto zookeeper = getZooKeeper();
+
+    MergeTreePartInfo drop_range;
+    drop_range.partition_id = partition_id;
+    drop_range.max_block = allocateBlockNumber(partition_id, zookeeper)->getNumber();
+    drop_range.min_block = 0;
+    drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+
+    String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+
+    if (drop_range.getBlocksCount() > 1)
+    {
+        std::lock_guard merge_selecting_lock(merge_selecting_mutex);
+        queue.disableMergesInBlockRange(drop_range_fake_part_name);
+    }
+
+    for (size_t i = 0; i < src_all_parts.size(); ++i)
+    {
+        auto & src_part = src_all_parts[i];
+
+        if (!dest_table_storage->canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
+        String hash_hex = src_part->checksums.getTotalChecksumHex();
+        String block_id_path = "";
+
+        auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
+        if (!lock)
+        {
+            LOG_INFO(log, "Part " << src_part->name << " (hash " << hash_hex << ") has been already attached");
+            continue;
+        }
+
+        UInt64 index = lock->getNumber();
+        MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info);
+
+        src_parts.emplace_back(src_part);
+        dst_parts.emplace_back(dst_part);
+        ephemeral_locks.emplace_back(std::move(*lock));
+        block_id_paths.emplace_back(block_id_path);
+        part_checksums.emplace_back(hash_hex);
+    }
+
+    ReplicatedMergeTreeLogEntryData entry_delete;
+    {
+        entry_delete.type = LogEntry::DROP_RANGE;
+        entry_delete.source_replica = replica_name;
+        entry_delete.new_part_name = drop_range_fake_part_name;
+        entry_delete.detach = false;
+        entry_delete.create_time = time(nullptr);
+    }
+
+    ReplicatedMergeTreeLogEntryData entry;
+    {
+        MergeTreePartInfo drop_range_dest;
+        drop_range_dest.partition_id = drop_range.partition_id;
+        drop_range_dest.max_block = drop_range.max_block;
+        drop_range_dest.min_block = drop_range.max_block;
+        drop_range_dest.level = drop_range.level;
+
+        entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
+        entry.source_replica = dest_table_storage->replica_name;
+        entry.create_time = time(nullptr);
+        entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
+
+        auto & entry_replace = *entry.replace_range_entry;
+        entry_replace.drop_range_part_name = getPartNamePossiblyFake(format_version, drop_range_dest);
+        entry_replace.from_database = src_data.database_name;
+        entry_replace.from_table = src_data.table_name;
+        for (const auto & part : src_parts)
+            entry_replace.src_part_names.emplace_back(part->name);
+        for (const auto & part : dst_parts)
+            entry_replace.new_part_names.emplace_back(part->name);
+        for (const String & checksum : part_checksums)
+            entry_replace.part_names_checksums.emplace_back(checksum);
+        entry_replace.columns_version = columns_version;
+    }
+
+    queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
+
+    clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
+    DataPartsVector parts_to_remove;
+    Coordination::Responses op_results;
+
+    try
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < dst_parts.size(); ++i)
+        {
+            dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+            ephemeral_locks[i].getUnlockOps(ops);
+
+            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            {
+                zookeeper->multi(ops);
+                ops.clear();
+            }
+        }
+
+        ops.emplace_back(zkutil::makeCreateRequest(dest_table_storage->zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        {
+            Transaction transaction(*dest_table_storage);
+
+            auto src_data_parts_lock = lockParts();
+            auto dest_data_parts_lock = dest_table_storage->lockParts();
+
+            std::mutex mutex;
+            DataPartsLock lock(mutex);
+
+            for (MutableDataPartPtr & part : dst_parts)
+                dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, lock);
+
+            op_results = zookeeper->multi(ops);
+
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, lock);
+            transaction.commit(&lock);
+        }
+
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    for (auto & lock : ephemeral_locks)
+        lock.assumeUnlocked();
+
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+
+    parts_to_remove.clear();
+    cleanup_thread.wakeup();
+
+    if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock2.release();
+        dest_table_storage->waitForAllReplicasToProcessLogEntry(entry);
+    }
+
+    Coordination::Requests ops_dest;
+
+    ops_dest.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
+
+    op_results = zookeeper->multi(ops_dest);
+
+    log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock1.release();
+        waitForAllReplicasToProcessLogEntry(entry_delete);
     }
 }
 
