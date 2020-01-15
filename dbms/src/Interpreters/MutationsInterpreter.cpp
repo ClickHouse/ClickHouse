@@ -399,7 +399,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
-            /// TODO(alesap)
             if (command.data_type)
                 stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }

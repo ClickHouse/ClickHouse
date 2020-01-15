@@ -3394,6 +3394,7 @@ void StorageReplicatedMergeTree::alter(
     {
         std::cerr << "We have mutation commands:" << maybe_mutation_commands.size() << std::endl;
         ReplicatedMergeTreeMutationEntry mutation_entry = mutateImpl(maybe_mutation_commands, query_context);
+        std::cerr << "Mutation finished\n";
     }
 }
 
@@ -4465,7 +4466,7 @@ ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const Mu
         //    replicas.push_back(replica_path);
 
         waitMutationToFinishOnReplicas(replicas, entry.znode_name);
-    //}
+        //}
 
     return entry;
 }

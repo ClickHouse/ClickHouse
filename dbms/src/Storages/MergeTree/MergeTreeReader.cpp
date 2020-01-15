@@ -473,7 +473,7 @@ void MergeTreeReader::performRequiredConversions(Columns & res_columns)
 
         //std::cerr << "Copy block: " << copy_block.dumpStructure() << std::endl;
         DB::performRequiredConversions(copy_block, columns, storage.global_context);
-        std::cerr << "Result copy block: " << copy_block.dumpStructure() << std::endl;
+        //std::cerr << "Result copy block: " << copy_block.dumpStructure() << std::endl;
 
         /// Move columns from block.
         name_and_type = columns.begin();
