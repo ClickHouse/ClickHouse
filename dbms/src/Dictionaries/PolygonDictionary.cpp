@@ -200,16 +200,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block)
             attributes[i] = column.column;
     }
     polygons.reserve(polygons.size() + rows);
-
     const auto & key = block.safeGetByPosition(0).column;
-
-    /*for (const auto row : ext::range(0, rows))
-    {
-        const auto & field = (*key)[row];
-        // TODO: Get data more efficiently using
-        polygons.push_back(fieldToMultiPolygon(field));
-    }*/
-
     extractMultiPolygons(key, polygons);
 }
 
