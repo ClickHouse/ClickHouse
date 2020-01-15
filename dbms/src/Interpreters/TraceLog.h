@@ -10,14 +10,14 @@ namespace DB
 
 struct TraceLogElement
 {
-    using TimerDataType = DataTypeEnum8;
-    static const TimerDataType::Values timer_values;
+    using TraceDataType = DataTypeEnum8;
+    static const TraceDataType::Values trace_values;
 
-    time_t event_time{};
-    TimerType timer_type{};
-    UInt32 thread_number{};
-    String query_id{};
-    Array trace{};
+    time_t event_time;
+    TraceType trace_type;
+    UInt32 thread_number;
+    String query_id;
+    Array trace;
 
     static std::string name() { return "TraceLog"; }
     static Block createBlock();

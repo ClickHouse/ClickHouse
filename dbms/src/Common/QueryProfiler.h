@@ -15,10 +15,11 @@ namespace Poco
 namespace DB
 {
 
-enum class TimerType : UInt8
+enum class TraceType : UInt8
 {
-    Real,
-    Cpu,
+    REAL_TIME,
+    CPU_TIME,
+    MEMORY,
 };
 
 /**

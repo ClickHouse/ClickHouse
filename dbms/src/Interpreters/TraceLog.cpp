@@ -9,11 +9,12 @@
 
 using namespace DB;
 
-using TimerDataType = TraceLogElement::TimerDataType;
+using TraceDataType = TraceLogElement::TraceDataType;
 
-const TimerDataType::Values TraceLogElement::timer_values = {
-    {"Real", static_cast<UInt8>(TimerType::Real)},
-    {"CPU",  static_cast<UInt8>(TimerType::Cpu)}
+const TraceDataType::Values TraceLogElement::trace_values = {
+    {"Real", static_cast<UInt8>(TraceType::REAL_TIME)},
+    {"CPU", static_cast<UInt8>(TraceType::CPU_TIME)},
+    {"Memory", static_cast<UInt8>(TraceType::MEMORY)},
 };
 
 Block TraceLogElement::createBlock()
@@ -23,7 +24,7 @@ Block TraceLogElement::createBlock()
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
-        {std::make_shared<TimerDataType>(timer_values),                       "timer_type"},
+        {std::make_shared<TraceDataType>(trace_values),                       "trace_type"},
         {std::make_shared<DataTypeUInt32>(),                                  "thread_number"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"}
@@ -39,7 +40,7 @@ void TraceLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(ClickHouseRevision::get());
-    columns[i++]->insert(static_cast<UInt8>(timer_type));
+    columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_number);
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
