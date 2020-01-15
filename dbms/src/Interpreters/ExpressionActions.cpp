@@ -346,7 +346,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 }
 
 
-Block ExpressionAction::execute(Block & block, bool dry_run) const
+void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
 {
     size_t input_rows_count = block.rows();
 
@@ -477,9 +477,8 @@ Block ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            Block not_processed;
             join->joinBlock(block, not_processed);
-            return not_processed;
+            break;
         }
 
         case PROJECT:
@@ -538,8 +537,6 @@ Block ExpressionAction::execute(Block & block, bool dry_run) const
 
             break;
     }
-
-    return {};
 }
 
 
@@ -765,18 +762,19 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
-size_t ExpressionActions::execute(Block & block, size_t start_action, Block & not_processed) const
+/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
 {
-    for (size_t i = start_action; i < actions.size(); ++i)
+    size_t i = start_action;
+    start_action = 0;
+    for (; i < actions.size(); ++i)
     {
-        not_processed = actions[i].execute(block, false);
+        actions[i].execute(block, false, not_processed);
         checkLimits(block);
 
         if (not_processed)
-            return i;
+            start_action = i;
     }
-
-    return 0;
 }
 
 bool ExpressionActions::hasTotalsInJoin() const

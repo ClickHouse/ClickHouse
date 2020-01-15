@@ -295,20 +295,33 @@ void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to
 }
 
 template <bool is_all>
-void joinEquals(const Block & left_block, const Block & right_block, const Block & right_columns_to_add,
-                MutableColumns & left_columns, MutableColumns & right_columns, const Range & range)
+bool joinEquals(const Block & left_block, const Block & right_block, const Block & right_columns_to_add,
+                MutableColumns & left_columns, MutableColumns & right_columns, Range & range, size_t max_rows [[maybe_unused]])
 {
-    size_t left_rows_to_add = range.left_length;
-    size_t right_rows_to_add = 1;
-    if constexpr (is_all)
-        right_rows_to_add = range.right_length;
+    bool one_more = true;
 
-    size_t row_position = range.right_start;
-    for (size_t right_row = 0; right_row < right_rows_to_add; ++right_row, ++row_position)
+    if constexpr (is_all)
     {
-        copyLeftRange(left_block, left_columns, range.left_start, left_rows_to_add);
-        copyRightRange(right_block, right_columns_to_add, right_columns, row_position, left_rows_to_add);
+        size_t range_rows = range.left_length * range.right_length;
+        if (range_rows > max_rows)
+            one_more = false;
+
+        size_t left_rows_to_add = range.left_length;
+        size_t row_position = range.right_start;
+        for (size_t right_row = 0; right_row < range.right_length; ++right_row, ++row_position)
+        {
+            copyLeftRange(left_block, left_columns, range.left_start, left_rows_to_add);
+            copyRightRange(right_block, right_columns_to_add, right_columns, row_position, left_rows_to_add);
+        }
     }
+    else
+    {
+        size_t left_rows_to_add = range.left_length;
+        copyLeftRange(left_block, left_columns, range.left_start, left_rows_to_add);
+        copyRightRange(right_block, right_columns_to_add, right_columns, range.right_start, left_rows_to_add);
+    }
+
+    return one_more;
 }
 
 template <bool copy_left>
@@ -569,7 +582,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block)
     return saveRightBlock(std::move(block));
 }
 
-void MergeJoin::joinBlock(Block & block, Block & not_processed)
+void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
     materializeBlockInplace(block);
@@ -593,7 +606,7 @@ void MergeJoin::joinBlock(Block & block, Block & not_processed)
 }
 
 template <bool in_memory, bool is_all>
-void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
+void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     std::shared_lock lock(rwlock);
 
@@ -604,9 +617,18 @@ void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
     size_t left_key_tail = 0;
     size_t right_blocks_count = rightBlocksCount<in_memory>();
 
+    size_t starting_right_block = 0;
+    if (not_processed)
+    {
+        auto & continuation = static_cast<NotProcessed &>(*not_processed);
+        starting_right_block = continuation.next_right_block;
+        left_cursor.nextN(continuation.next_left_position);
+        not_processed.reset();
+    }
+
     if (is_left)
     {
-        for (size_t i = 0; i < right_blocks_count; ++i)
+        for (size_t i = starting_right_block; i < right_blocks_count; ++i)
         {
             if (left_cursor.atEnd())
                 break;
@@ -622,15 +644,10 @@ void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
 
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
-            leftJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
-
-            if constexpr (is_all)
+            if (!leftJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail))
             {
-                if (max_joined_block_size && left_columns.size() > max_joined_block_size)
-                {
-                    splitResultBlock(block, not_processed, left_cursor.position(), std::move(left_columns), std::move(right_columns));
-                    return;
-                }
+                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns), left_cursor.position(), i);
+                return;
             }
         }
 
@@ -643,7 +660,7 @@ void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
     }
     else if (is_inner)
     {
-        for (size_t i = 0; i < right_blocks_count; ++i)
+        for (size_t i = starting_right_block; i < right_blocks_count; ++i)
         {
             if (left_cursor.atEnd())
                 break;
@@ -659,15 +676,10 @@ void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
 
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
-            innerJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
-
-            if constexpr (is_all)
+            if (!innerJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail))
             {
-                if (max_joined_block_size && left_columns.size() > max_joined_block_size)
-                {
-                    splitResultBlock(block, not_processed, left_cursor.position(), std::move(left_columns), std::move(right_columns));
-                    return;
-                }
+                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns), left_cursor.position(), i);
+                return;
             }
         }
 
@@ -677,8 +689,17 @@ void MergeJoin::joinSortedBlock(Block & block, Block & not_processed)
     }
 }
 
+static size_t maxRangeRows(size_t current_rows, size_t max_rows)
+{
+    if (!max_rows)
+        return std::numeric_limits<size_t>::max();
+    if (current_rows >= max_rows)
+        return 0;
+    return max_rows - current_rows;
+}
+
 template <bool is_all>
-void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -699,7 +720,14 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
             break;
 
         if constexpr (is_all)
-            joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range);
+        {
+            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_size);
+            if (!max_rows)
+                return false;
+
+            if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
+                return false;
+        }
         else
             joinEqualsAnyLeft(right_block, right_columns_to_add, right_columns, range);
 
@@ -716,10 +744,12 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         }
         left_cursor.nextN(range.left_length);
     }
+
+    return true;
 }
 
 template <bool is_all>
-void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+bool MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                           MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -731,7 +761,18 @@ void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
         if (range.empty())
             break;
 
-        joinEquals<is_all>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range);
+        if constexpr (is_all)
+        {
+            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_size);
+            if (!max_rows)
+                return false;
+
+            if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
+                return false;
+        }
+        else
+            joinEquals<false>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, 0);
+
         right_cursor.nextN(range.right_length);
 
         /// Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
@@ -745,6 +786,8 @@ void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
         }
         left_cursor.nextN(range.left_length);
     }
+
+    return true;
 }
 
 void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns)
@@ -764,27 +807,22 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 }
 
 /// Split block into processed (result) and not processed. Not processed block would be joined next time.
-void MergeJoin::splitResultBlock(Block & processed, Block & not_processed, size_t position,
-                                 MutableColumns && left_columns, MutableColumns && right_columns)
+template <bool is_all>
+ExtraBlockPtr MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+                                    size_t left_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
 {
-    if (position < processed.rows())
+    ExtraBlockPtr not_processed;
+
+    if constexpr (is_all)
     {
-        not_processed = processed.cloneEmpty();
+        not_processed = std::make_shared<NotProcessed>(NotProcessed{{processed.cloneEmpty()}, left_position, right_block_number + 1});
+        not_processed->block.swap(processed);
 
-        /// @note it's not OK for ANY JOIN. @sa changeLeftColumns()
-        MutableColumns columns = processed.mutateColumns();
-        for (auto & col : columns)
-        {
-            auto tmp = col->cloneEmpty();
-            tmp->insertRangeFrom(*col, position, processed.rows() - position);
-            col = std::move(tmp);
-        }
-
-        not_processed.setColumns(std::move(columns));
+        changeLeftColumns(processed, std::move(left_columns));
+        addRightColumns(processed, std::move(right_columns));
     }
 
-    changeLeftColumns(processed, std::move(left_columns));
-    addRightColumns(processed, std::move(right_columns));
+    return not_processed;
 }
 
 template <bool in_memory>

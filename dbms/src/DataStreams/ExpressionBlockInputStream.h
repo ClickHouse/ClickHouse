@@ -46,7 +46,7 @@ protected:
     Block readImpl() override;
 
 private:
-    Block not_processed;
+    ExtraBlockPtr not_processed;
     size_t action_number = 0;
 };
 
