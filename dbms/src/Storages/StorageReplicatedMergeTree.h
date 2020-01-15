@@ -83,8 +83,6 @@ public:
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
@@ -544,7 +542,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & database_name_, const String & name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         Context & context_,

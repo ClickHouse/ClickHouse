@@ -23,8 +23,6 @@ class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 
 public:
     String getName() const override { return "Log"; }
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -55,9 +53,8 @@ protected:
       */
     StorageLog(
         DiskPtr disk_,
-        const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const std::string & relative_path_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         size_t max_compress_block_size_);
@@ -87,8 +84,6 @@ private:
 
     DiskPtr disk;
     String table_path;
-    String database_name;
-    String table_name;
 
     mutable std::shared_mutex rwlock;
 
@@ -112,9 +107,6 @@ private:
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     /// You can not call with a write locked `rwlock`.
     void loadMarks();
-
-    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files

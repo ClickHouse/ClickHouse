@@ -68,9 +68,12 @@ std::pair<String, StoragePtr> createTableFromAST(
         ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
-            table_data_path_relative, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns, constraints,
-            true, has_force_restore_data_flag)
+            table_data_path_relative,
+            context,
+            context.getGlobalContext(),
+            columns,
+            constraints,
+            has_force_restore_data_flag)
     };
 }
 

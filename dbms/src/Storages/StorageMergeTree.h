@@ -32,8 +32,6 @@ public:
     ~StorageMergeTree() override;
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -159,8 +157,7 @@ protected:
       * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
