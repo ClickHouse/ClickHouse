@@ -3773,7 +3773,7 @@ bool MergeTreeData::selectPartsAndMove()
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
-    return storage_policy->getVolumes().size() > 1;
+    return storage_policy->getVolumes().size() > 1 || move_ttl_entries.size() > 0;
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)
