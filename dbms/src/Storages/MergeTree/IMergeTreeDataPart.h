@@ -318,7 +318,7 @@ protected:
     Type part_type;
     void removeIfNeeded();
     virtual void checkConsistency(bool require_part_metadata) const;
-    void checkConsistencyBase(bool require_part_metadata) const;
+    void checkConsistencyBase() const;
 
 private:
     /// In compact parts order of columns is necessary
