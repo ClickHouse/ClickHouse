@@ -538,7 +538,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num == num_threads ? 0 : (thread_num + 1));
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
                         if (threads_queue.has(thread_to_wake))
                             threads_queue.pop(thread_to_wake);
@@ -630,7 +630,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!threads_queue.empty() /* && task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num == num_threads ? 0 : (thread_num + 1));
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
                         if (threads_queue.has(thread_to_wake))
                             threads_queue.pop(thread_to_wake);
