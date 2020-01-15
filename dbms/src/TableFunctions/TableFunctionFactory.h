@@ -3,7 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
-
+#include <Common/IDocumentation.h>
 
 #include <functional>
 #include <memory>
@@ -24,21 +24,20 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionCreator>
 {
 public:
-
     static TableFunctionFactory & instance();
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(const std::string & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerFunction(const std::string & name, DocumentationPtr documentation, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
-    void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(DocumentationPtr documentation, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         auto creator = [] () -> TableFunctionPtr
         {
             return std::make_shared<Function>();
         };
-        registerFunction(Function::name, std::move(creator), case_sensitiveness);
+        registerFunction(Function::name, std::move(documentation), std::move(creator), case_sensitiveness);
     }
 
     /// Throws an exception if not found.
@@ -53,7 +52,6 @@ private:
     using TableFunctions = std::unordered_map<std::string, Creator>;
 
     const TableFunctions & getCreatorMap() const override { return table_functions; }
-
     const TableFunctions & getCaseInsensitiveCreatorMap() const override { return case_insensitive_table_functions; }
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
