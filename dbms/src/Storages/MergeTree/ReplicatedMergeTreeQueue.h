@@ -117,6 +117,7 @@ private:
         String latest_fail_reason;
     };
 
+    /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
@@ -339,7 +340,7 @@ public:
     /// Adds a subscriber
     SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
-    Names getPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const;
+    Names getCurrentPartNamesToMutate(ReplicatedMergeTreeMutationEntry & entry) const;
 
     struct Status
     {

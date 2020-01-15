@@ -241,10 +241,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
     {
         /// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
         /// This may be not true in case of ALTER MODIFY.
-        if (!pre_column_names.empty())
-            storage.check(data_part->columns, pre_column_names);
-        if (!column_names.empty())
-            storage.check(data_part->columns, column_names);
+        //if (!pre_column_names.empty())
+        //    storage.check(data_part->columns, pre_column_names);
+        //if (!column_names.empty())
+        //    storage.check(data_part->columns, column_names);
 
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         result.pre_columns = physical_columns.addTypes(pre_column_names);

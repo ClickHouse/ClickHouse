@@ -2,12 +2,14 @@
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -19,7 +21,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
+std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_modify)
 {
     if (command->type == ASTAlterCommand::DELETE)
     {
@@ -55,6 +57,24 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
+    else if (parse_modify && command->type == ASTAlterCommand::MODIFY_COLUMN)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::READ;
+        const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
+        res.column_name = ast_col_decl.name;
+        res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
+        return res;
+    }
+    else if (parse_modify && command->type == ASTAlterCommand::DROP_COLUMN)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::READ;
+        res.column_name = getIdentifierName(command->column);
+        return res;
+    }
     else
         return {};
 }
@@ -85,7 +105,7 @@ void MutationCommands::readText(ReadBuffer & in)
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
     for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
-        auto command = MutationCommand::parse(command_ast);
+        auto command = MutationCommand::parse(command_ast, true);
         if (!command)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
         push_back(std::move(*command));

@@ -35,18 +35,20 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     addTotalRowsApprox(data_part->rows_count);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
-    fixHeader(header);
+    //fixHeader(header);
 
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
+        std::cerr << "Taking columns from storage\n";
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
     {
+        std::cerr << "Taking columns from data part\n";
         /// take columns from data_part
         columns_for_reader = data_part->columns.addTypes(columns_to_read);
     }
@@ -106,6 +108,8 @@ try
 
             if (should_evaluate_missing_defaults)
                 reader->evaluateMissingDefaults({}, columns);
+
+            reader->performRequiredConversions(columns);
 
             res = header.cloneEmpty();
 

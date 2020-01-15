@@ -27,7 +27,7 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        CAST      /// for ALTER MODIFY column
+        READ
     };
 
     Type type = EMPTY;
@@ -46,7 +46,7 @@ struct MutationCommand
     String column_name;
     DataTypePtr data_type;
 
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command);
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_modify=false);
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
