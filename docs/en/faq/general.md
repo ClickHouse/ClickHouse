@@ -21,7 +21,7 @@ If you use Oracle through the ODBC driver as a source of external dictionaries, 
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
-## How Do I Export Data from ClickHouse to a File?
+## How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
 
 ### Using INTO OUTFILE Clause
 
