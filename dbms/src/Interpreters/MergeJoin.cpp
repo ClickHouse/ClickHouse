@@ -304,7 +304,12 @@ bool joinEquals(const Block & left_block, const Block & right_block, const Block
     {
         size_t range_rows = range.left_length * range.right_length;
         if (range_rows > max_rows)
+        {
+            range.right_length = max_rows / range.left_length;
+            if (!range.right_length)
+                range.right_length = 1;
             one_more = false;
+        }
 
         size_t left_rows_to_add = range.left_length;
         size_t row_position = range.right_start;
@@ -615,14 +620,16 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
     MergeJoinCursor left_cursor(block, left_merge_description);
     size_t left_key_tail = 0;
+    size_t skip_right = 0;
     size_t right_blocks_count = rightBlocksCount<in_memory>();
 
     size_t starting_right_block = 0;
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessed &>(*not_processed);
-        starting_right_block = continuation.next_right_block;
-        left_cursor.nextN(continuation.next_left_position);
+        left_cursor.nextN(continuation.left_position);
+        skip_right = continuation.right_position;
+        starting_right_block = continuation.right_block;
         not_processed.reset();
     }
 
@@ -644,9 +651,10 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
-            if (!leftJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail))
+            if (!leftJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail, skip_right))
             {
-                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns), left_cursor.position(), i);
+                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
+                                                   left_cursor.position(), skip_right, i);
                 return;
             }
         }
@@ -676,9 +684,10 @@ void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
 
             std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
 
-            if (!innerJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail))
+            if (!innerJoin<is_all>(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail, skip_right))
             {
-                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns), left_cursor.position(), i);
+                not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
+                                                   left_cursor.position(), skip_right, i);
                 return;
             }
         }
@@ -700,10 +709,18 @@ static size_t maxRangeRows(size_t current_rows, size_t max_rows)
 
 template <bool is_all>
 bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail,
+                         size_t & skip_right [[maybe_unused]])
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
     left_cursor.setCompareNullability(right_cursor);
+
+    /// Set right cursor position in first continuation right block
+    if constexpr (is_all)
+    {
+        right_cursor.nextN(skip_right);
+        skip_right = 0;
+    }
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
@@ -726,7 +743,11 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
                 return false;
 
             if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
+            {
+                right_cursor.nextN(range.right_length);
+                skip_right = right_cursor.position();
                 return false;
+            }
         }
         else
             joinEqualsAnyLeft(right_block, right_columns_to_add, right_columns, range);
@@ -750,10 +771,18 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
 template <bool is_all>
 bool MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail,
+                          size_t & skip_right [[maybe_unused]])
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
     left_cursor.setCompareNullability(right_cursor);
+
+    /// Set right cursor position in first continuation right block
+    if constexpr (is_all)
+    {
+        right_cursor.nextN(skip_right);
+        skip_right = 0;
+    }
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
@@ -768,7 +797,11 @@ bool MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
                 return false;
 
             if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
+            {
+                right_cursor.nextN(range.right_length);
+                skip_right = right_cursor.position();
                 return false;
+            }
         }
         else
             joinEquals<false>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, 0);
@@ -809,13 +842,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 /// Split block into processed (result) and not processed. Not processed block would be joined next time.
 template <bool is_all>
 ExtraBlockPtr MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                                    size_t left_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
+                                    size_t left_position [[maybe_unused]], size_t right_position [[maybe_unused]],
+                                    size_t right_block_number [[maybe_unused]])
 {
     ExtraBlockPtr not_processed;
 
     if constexpr (is_all)
     {
-        not_processed = std::make_shared<NotProcessed>(NotProcessed{{processed.cloneEmpty()}, left_position, right_block_number + 1});
+        not_processed = std::make_shared<NotProcessed>(
+            NotProcessed{{processed.cloneEmpty()}, left_position, right_position, right_block_number});
         not_processed->block.swap(processed);
 
         changeLeftColumns(processed, std::move(left_columns));
