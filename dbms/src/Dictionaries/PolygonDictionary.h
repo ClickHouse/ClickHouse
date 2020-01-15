@@ -155,8 +155,10 @@ public:
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
 protected:
-    /** A simple two-dimensional point in Euclidean coordinates. */
-    using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
+    /** The number of dimensions used. Change with great caution, some extra work will be required. */
+    static constexpr size_t DIM = 2;
+    /** A point in Euclidean coordinates. */
+    using Point = bg::model::point<Float64, DIM, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
     /** A multi_polygon in boost is a collection of polygons. */
@@ -228,6 +230,15 @@ private:
     size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
+    /** Extracts a list of multi-polygons from a column of 4-dimensional arrays of Float64 values. The results are
+     *  written to dest.
+     *  The structure is as follows:
+     *      - A multi-polygon is represented by a nonempty array of polygons.
+     *      - A polygon is represented by a nonempty array of rings. The first element represents the outer ring. Zero
+     *        or more following rings are cut out from the polygon.
+     *      - A ring is represented by a nonempty array of points.
+     *      - A point is represented by an array of coordinates.
+     */
     static void extractMultiPolygons(const ColumnPtr & column, std::vector<MultiPolygon> & dest);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
@@ -243,14 +254,12 @@ private:
 
     /** Converts an array of polygons (see above) to a multi-polygon. */
     static MultiPolygon fieldToMultiPolygon(const Field & field);
-
-    /** The number of dimensions used. Change with great caution. */
-    static constexpr size_t DIM = 2;
 };
 
 /** Simple implementation of the polygon dictionary. Doesn't generate anything during its construction.
  *  Iterates over all stored polygons for each query, checking each of them in linear time.
- *  Retrieves the first polygon in the dictionary containing a given point.
+ *  Retrieves the polygon with the smallest area containing the given point. If there is more than one any such polygon
+ *  may be returned.
  */
 class SimplePolygonDictionary : public IPolygonDictionary
 {
