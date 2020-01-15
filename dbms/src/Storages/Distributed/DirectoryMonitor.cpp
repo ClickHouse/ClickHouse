@@ -21,7 +21,6 @@
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 
-#include <Poco/DirectoryIterator.h>
 #include <filesystem>
 
 
@@ -223,14 +222,14 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
 
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it{path}; it != end; ++it)
+    std::filesystem::directory_iterator end;
+    for (std::filesystem::directory_iterator it{path}; it != end; ++it)
     {
         const auto & file_path_str = it->path();
-        Poco::Path file_path{file_path_str};
+        const std::filesystem::path file_path{file_path_str};
 
-        if (!it->isDirectory() && startsWith(file_path.getExtension().data(), "bin"))
-            files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
+        if (it->is_regular_file() && file_path.extension() == "bin")
+            files[parse<UInt64>(file_path.stem().string())] = file_path_str;
     }
 
     if (files.empty())
@@ -284,7 +283,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    std::filesystem::remove_all(file_path);
+    std::filesystem::remove(file_path);
 
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
