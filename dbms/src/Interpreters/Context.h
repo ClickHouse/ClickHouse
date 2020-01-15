@@ -250,6 +250,8 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
+    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
+
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
     Dependencies getDependencies(const StorageID & from) const;
