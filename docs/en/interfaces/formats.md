@@ -964,11 +964,11 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with Hadoop, use [HDFS table engine](../operations/table_engines/hdfs.md).
+To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse only supports read operations for this format.
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports only read operations for this format.
 
 ### Data Types Matching
 
@@ -991,11 +991,11 @@ The table below shows supported data types and how they match ClickHouse [data t
 | `STRING`, `BINARY` | [String](../data_types/string.md) |
 | `DECIMAL` | [Decimal](../data_types/decimal.md) |
 
-ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
+ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
 Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don't have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+Data types of a ClickHouse table columns can differ from the corresponding fields of the ORC data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting Data
 
