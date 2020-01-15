@@ -25,14 +25,14 @@ if infinite_sign is not None:
     raise Exception('Looks like the test is infinite (sign 1)')
 
 # Open connections
-servers = [{'host': 'localhost', 'port': 9000, 'client_name': 'left'}, {'host': 'localhost', 'port': 9001, 'client_name': 'right'}]
+servers = [{'host': 'localhost', 'port': 9001, 'client_name': 'left'}, {'host': 'localhost', 'port': 9002, 'client_name': 'right'}]
 connections = [clickhouse_driver.Client(**server) for server in servers]
 
 # Check tables that should exist
 tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
     for c in connections:
-        res = c.execute("select 1 from {}".format(t))
+        res = c.execute("show create table {}".format(t))
 
 # Apply settings
 settings = root.findall('settings/*')
