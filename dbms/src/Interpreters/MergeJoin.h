@@ -48,13 +48,19 @@ public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block) override;
-    void joinBlock(Block &, Block & not_processed) override;
+    void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 
 private:
+    struct NotProcessed : public ExtraBlock
+    {
+        size_t next_left_position;
+        size_t next_right_block;
+    };
+
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
     /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
@@ -94,23 +100,25 @@ private:
 
     void changeLeftColumns(Block & block, MutableColumns && columns);
     void addRightColumns(Block & block, MutableColumns && columns);
-    void splitResultBlock(Block & processed, Block & not_processed, size_t position,
-                          MutableColumns && left_columns, MutableColumns && right_columns);
+
+    template <bool is_all>
+    ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+                             size_t position, size_t right_block_number);
 
     void mergeRightBlocks();
 
     template <bool in_memory>
     size_t rightBlocksCount();
     template <bool in_memory, bool is_all>
-    void joinSortedBlock(Block & block, Block & not_processed);
+    void joinSortedBlock(Block & block, ExtraBlockPtr & not_processed);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
 
     template <bool is_all>
-    void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+    bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
     template <bool is_all>
-    void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+    bool innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                    MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
 
     bool saveRightBlock(Block && block);

@@ -1091,7 +1091,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, Block &)
+void Join::joinBlock(Block & block, ExtraBlockPtr &)
 {
     std::shared_lock lock(data->rwlock);
 

@@ -58,13 +58,14 @@ Block SplittingExpressionBlockInputStream::readImpl()
     if (likely(!not_processed))
     {
         res = children.back()->read();
-        if (!res)
-            return res;
+        if (res)
+            expression->execute(res, not_processed, action_number);
     }
     else
-        res.swap(not_processed);
-
-    action_number = expression->execute(res, action_number, not_processed);
+    {
+        res = std::move(not_processed->block);
+        expression->execute(res, not_processed, action_number);
+    }
     return res;
 }
 
