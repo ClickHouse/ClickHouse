@@ -315,7 +315,7 @@ void PerformanceTest::runQueries(
                     stop_conditions.reportIterations(iteration);
                     if (stop_conditions.areFulfilled())
                     {
-                        LOG_INFO(log, "Stop conditions fullfilled");
+                        LOG_INFO(log, "Stop conditions fulfilled");
                         break;
                     }
 

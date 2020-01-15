@@ -113,8 +113,7 @@ namespace
 
 
 MergeTreeData::MergeTreeData(
-    const String & database_,
-    const String & table_,
+    const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata,
     Context & context_,
@@ -124,17 +123,16 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : global_context(context_)
+    : IStorage(table_id_)
+    , global_context(context_)
     , merging_params(merging_params_)
     , partition_by_ast(metadata.partition_by_ast)
     , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
-    , database_name(database_)
-    , table_name(table_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(database_name + "." + table_name)
+    , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
@@ -690,6 +688,57 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 }
 
 
+void MergeTreeData::setStoragePolicy(const String & new_storage_policy_name, bool only_check)
+{
+    const auto old_storage_policy = getStoragePolicy();
+    const auto & new_storage_policy = global_context.getStoragePolicySelector()[new_storage_policy_name];
+
+    std::unordered_set<String> new_volume_names;
+    for (const auto & volume : new_storage_policy->getVolumes())
+        new_volume_names.insert(volume->getName());
+
+    for (const auto & volume : old_storage_policy->getVolumes())
+    {
+        if (new_volume_names.count(volume->getName()) == 0)
+            throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
+
+        std::unordered_set<String> new_disk_names;
+        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->disks)
+            new_disk_names.insert(disk->getName());
+
+        for (const auto & disk : volume->disks)
+            if (new_disk_names.count(disk->getName()) == 0)
+                throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    std::unordered_set<String> all_diff_disk_names;
+    for (const auto & disk : new_storage_policy->getDisks())
+        all_diff_disk_names.insert(disk->getName());
+    for (const auto & disk : old_storage_policy->getDisks())
+        all_diff_disk_names.erase(disk->getName());
+
+    for (const String & disk_name : all_diff_disk_names)
+    {
+        const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+        if (Poco::File(path).exists())
+            throw Exception("New storage policy contain disks which already contain data of a table with the same name", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (!only_check)
+    {
+        for (const String & disk_name : all_diff_disk_names)
+        {
+            const auto & path = getFullPathOnDisk(new_storage_policy->getDiskByName(disk_name));
+            Poco::File(path).createDirectories();
+            Poco::File(path + "detached").createDirectory();
+        }
+
+        storage_policy = new_storage_policy;
+        /// TODO: Query lock is fine but what about background moves??? And downloading of parts?
+    }
+}
+
+
 void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) const
 {
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
@@ -1138,7 +1187,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
+MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
     DataPartsVector res;
 
@@ -1161,8 +1210,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
-                part_remove_time < now &&
-                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
+                ((part_remove_time < now &&
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds()) || force))
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1214,7 +1263,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = global_context.getPartLog(database_name))
+
+    auto table_id = getStorageID();
+    if (auto part_log = global_context.getPartLog(table_id.database_name))
     {
         PartLogElement part_log_elem;
 
@@ -1222,8 +1273,8 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         part_log_elem.event_time = time(nullptr);
         part_log_elem.duration_ms = 0;
 
-        part_log_elem.database_name = database_name;
-        part_log_elem.table_name = table_name;
+        part_log_elem.database_name = table_id.database_name;
+        part_log_elem.table_name = table_id.table_name;
 
         for (auto & part : parts)
         {
@@ -1237,9 +1288,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-void MergeTreeData::clearOldPartsFromFilesystem()
+void MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
-    DataPartsVector parts_to_remove = grabOldParts();
+    DataPartsVector parts_to_remove = grabOldParts(force);
     clearPartsFromFilesystem(parts_to_remove);
     removePartsFinally(parts_to_remove);
 }
@@ -1292,14 +1343,13 @@ void MergeTreeData::rename(
     {
         auto new_table_path_parent = Poco::Path(new_table_path).makeParent().toString();
         disk->createDirectory(new_table_path_parent);
-        disk->moveFile(relative_data_path, new_table_path);
+        disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
 
     relative_data_path = new_table_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void MergeTreeData::dropAllData()
@@ -1487,6 +1537,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 throw Exception{"Setting '" + changed_setting.name + "' is readonly for storage '" + getName() + "'",
                                  ErrorCodes::READONLY_SETTING};
             }
+
+            if (changed_setting.name == "storage_policy")
+                setStoragePolicy(changed_setting.value.safeGet<String>(), /* only_check = */ true);
         }
     }
 
@@ -1821,6 +1874,10 @@ void MergeTreeData::changeSettings(
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         settings_ast = new_settings;
         checkCanUsePolymorphicParts(false);
+
+        for (const auto & change : new_changes)
+            if (change.name == "storage_policy")
+                setStoragePolicy(change.value.safeGet<String>());
     }
 }
 
@@ -3222,18 +3279,20 @@ ReservationPtr MergeTreeData::tryReserveSpace(UInt64 expected_size, SpacePtr spa
 
 ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move) const
+        time_t time_of_move,
+        size_t min_volume_index) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(expected_size, ttl_infos, time_of_move, min_volume_index);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
 
 ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_size,
         const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move) const
+        time_t time_of_move,
+        size_t min_volume_index) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
@@ -3259,10 +3318,19 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             reservation = destination_ptr->reserve(expected_size);
             if (reservation)
                 return reservation;
+            else
+                if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                    LOG_WARNING(log, "Would like to reserve space on volume '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
+                else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                    LOG_WARNING(log, "Would like to reserve space on disk '"
+                            << ttl_entry->destination_name << "' by TTL rule of table '"
+                            << log_name << "' but there is not enough space");
         }
     }
 
-    reservation = storage_policy->reserve(expected_size);
+    reservation = storage_policy->reserve(expected_size, min_volume_index);
 
     return reservation;
 }
@@ -3458,11 +3526,12 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage * source_table) const
 {
-    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table.get());
+    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table);
     if (!src_data)
-        throw Exception("Table " + table_name + " supports attachPartitionFrom only for MergeTree family of table engines."
+        throw Exception("Table " + source_table->getStorageID().getNameForLogs() +
+                        " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + source_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
 
     if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
@@ -3483,6 +3552,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         throw Exception("Tables have different format_version", ErrorCodes::BAD_ARGUMENTS);
 
     return *src_data;
+}
+
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+{
+    return checkStructureAndGetMergeTreeData(source_table.get());
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,
@@ -3621,7 +3695,8 @@ void MergeTreeData::writePartLog(
     const MergeListEntry * merge_entry)
 try
 {
-    auto part_log = global_context.getPartLog(database_name);
+    auto table_id = getStorageID();
+    auto part_log = global_context.getPartLog(table_id.database_name);
     if (!part_log)
         return;
 
@@ -3636,8 +3711,8 @@ try
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
     part_log_elem.duration_ms = elapsed_ns / 1000000;
 
-    part_log_elem.database_name = database_name;
-    part_log_elem.table_name = table_name;
+    part_log_elem.database_name = table_id.database_name;
+    part_log_elem.table_name = table_id.table_name;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
