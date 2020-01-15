@@ -15,6 +15,7 @@ DROP DATABASE testlazy;
 CREATE DATABASE testlazy ENGINE = Lazy(10);
 DROP TABLE IF EXISTS testlazy.test;
 CREATE TABLE IF NOT EXISTS testlazy.test (a UInt64, b UInt64) ENGINE = Log;
+CREATE TABLE IF NOT EXISTS testlazy.test (a UInt64, b UInt64) ENGINE = Log;
 INSERT INTO testlazy.test VALUES (1, 1);
 SELECT * FROM testlazy.test;
 DROP TABLE IF EXISTS testlazy.test;
