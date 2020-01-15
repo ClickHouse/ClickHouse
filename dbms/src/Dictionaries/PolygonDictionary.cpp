@@ -475,7 +475,9 @@ void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vect
     if (!ptr_coord)
         throw Exception{"Expected a column containing Float64s when reading coordinates", ErrorCodes::TYPE_MISMATCH};
     const auto & coordinates = ptr_points->getOffsets();
-    makeDifferences(polygons), makeDifferences(rings), makeDifferences(points);
+    makeDifferences(polygons);
+    makeDifferences(rings);
+    makeDifferences(points);
     IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
     dest.emplace_back();
     dest.back().emplace_back();
