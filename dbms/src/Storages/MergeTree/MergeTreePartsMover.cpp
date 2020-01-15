@@ -127,14 +127,14 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        const MergeTreeData::TTLEntry * ttl_entry_ptr = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
+        auto ttl_entry = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
         auto to_insert = need_to_move.find(part->disk);
         ReservationPtr reservation;
-        if (ttl_entry_ptr)
+        if (ttl_entry)
         {
-            auto destination = ttl_entry_ptr->getDestination(policy);
-            if (destination && !ttl_entry_ptr->isPartInDestination(policy, *part))
-                reservation = part->storage.tryReserveSpace(part->bytes_on_disk, ttl_entry_ptr->getDestination(policy));
+            auto destination = ttl_entry->getDestination(policy);
+            if (destination && !ttl_entry->isPartInDestination(policy, *part))
+                reservation = part->storage.tryReserveSpace(part->bytes_on_disk, ttl_entry->getDestination(policy));
         }
 
         if (reservation) /// Found reservation by TTL rule.
