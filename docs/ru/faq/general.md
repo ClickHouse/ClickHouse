@@ -33,7 +33,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-По умолчанию, для выдачи данных ClickHouse используе формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../query_language/select/#format-clause).
+По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../query_language/select/#format-clause).
 
 Например:
 
