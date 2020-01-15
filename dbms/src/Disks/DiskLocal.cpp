@@ -161,6 +161,11 @@ std::unique_ptr<WriteBuffer> DiskLocal::writeFile(const String & path, size_t bu
     return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
+void DiskLocal::remove(const String & path, bool recursive)
+{
+    Poco::File(disk_path + path).remove(recursive);
+}
+
 void DiskLocalReservation::update(UInt64 new_size)
 {
     std::lock_guard lock(IDisk::reservationMutex);

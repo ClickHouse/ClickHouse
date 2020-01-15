@@ -47,7 +47,8 @@ public:
     void clearDirectory(const String & path) override
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            remove(it->path());
+            if(isFile(it->path()))
+                remove(it->path(), false);
     }
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
@@ -64,14 +65,14 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
+    virtual void remove(const String & path, bool recursive) override;
+
 private:
     String getS3Path(const String & path) const;
 
     String getRandomSuffix() const;
 
     bool tryReserve(UInt64 bytes);
-
-    void remove(const String & path);
 
 private:
     const String name;
