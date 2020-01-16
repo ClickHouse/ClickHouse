@@ -628,7 +628,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() /* && task_queue.quota() > threads_queue.size()*/)
+                    if (!threads_queue.empty() && !finished /* && task_queue.quota() > threads_queue.size()*/)
                     {
                         auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
 
