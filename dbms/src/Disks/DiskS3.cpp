@@ -168,7 +168,7 @@ void DiskS3::copyFile(const String & from_path, const String & to_path)
         remove(to_path, false);
 
     String s3_from_path;
-    String s3_to_path = s3_root_path + to_path + getRandomSuffix();
+    String s3_to_path = s3_root_path + getRandomName();
     Poco::FileInputStream(metadata_path + from_path) >> s3_from_path;
 
     Aws::S3::Model::CopyObjectRequest req;
@@ -188,7 +188,7 @@ std::unique_ptr<WriteBuffer> DiskS3::writeFile(const String & path, size_t buf_s
 {
     if (!exists(path) || mode == WriteMode::Rewrite)
     {
-        String new_s3_path = s3_root_path + path + '.' + getRandomSuffix();
+        String new_s3_path = s3_root_path + getRandomName();
         return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata_path + path, new_s3_path, buf_size);
     }
     else
@@ -237,7 +237,7 @@ String DiskS3::getS3Path(const String & path) const
     return s3_path;
 }
 
-String DiskS3::getRandomSuffix() const
+String DiskS3::getRandomName() const
 {
     std::mt19937 random{std::random_device{}()};
     std::uniform_int_distribution<int> distribution('a', 'z');

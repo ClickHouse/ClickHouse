@@ -11,6 +11,11 @@
 
 namespace DB
 {
+/**
+ * Storage for persisting data in S3 and metadata on the local disk.
+ * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
+ * that contains S3 object key with actual data.
+ */
 class DiskS3 : public IDisk
 {
 public:
@@ -47,7 +52,7 @@ public:
     void clearDirectory(const String & path) override
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            if(isFile(it->path()))
+            if (isFile(it->path()))
                 remove(it->path(), false);
     }
 
@@ -70,7 +75,7 @@ public:
 private:
     String getS3Path(const String & path) const;
 
-    String getRandomSuffix() const;
+    String getRandomName() const;
 
     bool tryReserve(UInt64 bytes);
 

@@ -41,13 +41,9 @@ def test_tinylog_s3(cluster):
     node.query("CREATE TABLE s3_test (id UInt64) Engine=TinyLog")
     node.query("INSERT INTO s3_test SELECT number FROM numbers(3)")
     assert node.query("SELECT * FROM s3_test") == "0\n1\n2\n"
-    assert list(map(lambda obj: obj.object_name[:-17],
-                    minio.list_objects(cluster.minio_bucket, 'data/data/default/s3_test/'))) == [
-               'data/data/default/s3_test/id.bin', 'data/data/default/s3_test/tmp_sizes.json']
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 2
     node.query("INSERT INTO s3_test SELECT number + 3 FROM numbers(3)")
     assert node.query("SELECT * FROM s3_test") == "0\n1\n2\n3\n4\n5\n"
-    assert list(map(lambda obj: obj.object_name[:-17],
-                    minio.list_objects(cluster.minio_bucket, 'data/data/default/s3_test/'))) == [
-               'data/data/default/s3_test/id.bin', 'data/data/default/s3_test/tmp_sizes.json']
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 2
     node.query("DROP TABLE s3_test")
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/data/default/s3_test/'))) == 0
+    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
