@@ -439,6 +439,9 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::NeedData;
     }
 
+    if (is_consume_finished)
+        input.setNeeded();
+
     current_chunk = input.pull(/*set_not_needed = */ !is_consume_finished);
     read_current_chunk = true;
 
