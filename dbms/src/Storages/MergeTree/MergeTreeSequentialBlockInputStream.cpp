@@ -88,6 +88,7 @@ Block MergeTreeSequentialBlockInputStream::getHeader() const
 Block MergeTreeSequentialBlockInputStream::readImpl()
 try
 {
+    //std::cerr << "READING\n";
     Block res;
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -105,9 +106,12 @@ try
 
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
+            //std::cerr << "Should evaluate missing defaults:" << should_evaluate_missing_defaults << std::endl;
 
             if (should_evaluate_missing_defaults)
+            {
                 reader->evaluateMissingDefaults({}, columns);
+            }
 
             reader->performRequiredConversions(columns);
 
