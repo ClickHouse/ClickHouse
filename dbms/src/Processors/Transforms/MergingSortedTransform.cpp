@@ -157,6 +157,10 @@ IProcessor::Status MergingSortedTransform::prepare()
     {
         if (is_finished)
         {
+
+            if (is_port_full)
+                return Status::PortFull;
+
             for (auto & input : inputs)
                 input.close();
 
