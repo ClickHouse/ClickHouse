@@ -606,7 +606,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                     /// If exception was thrown during pipeline execution, skip it while processing other exception.
                 }
 
-                pipeline = QueryPipeline()
+                /// pipeline = QueryPipeline()
         );
 
         while (true)
