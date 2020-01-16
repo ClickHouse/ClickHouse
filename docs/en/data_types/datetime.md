@@ -50,7 +50,7 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London (UTC+0)` time zone, but the `timestamp` column stores values in the `Europe/Moscow (UTC+3)` timezone, so the value inserted as Unix timestamp represents the `2019-01-01 03:00:00` date and time.
+Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London` (UTC+0) time zone, but the `timestamp` column stores values in the `Europe/Moscow` (UTC+3) timezone, so the value inserted as Unix timestamp is formatted as `2019-01-01 03:00:00`.
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
