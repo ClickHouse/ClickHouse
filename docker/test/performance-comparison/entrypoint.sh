@@ -16,7 +16,7 @@ echo Reference SHA is $ref_sha
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST > compare.log 2>&1
+../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST > compare.log 2>&1 ||:
 
 7z a /output/output.7z *.log *.tsv
 cp compare.log /output
