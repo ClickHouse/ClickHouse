@@ -19,9 +19,6 @@ class StorageSetOrJoinBase : public IStorage
     friend class SetOrJoinBlockOutputStream;
 
 public:
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
-
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
@@ -31,16 +28,13 @@ public:
 protected:
     StorageSetOrJoinBase(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);
 
     String base_path;
     String path;
-    String table_name;
-    String database_name;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -85,8 +79,7 @@ private:
 protected:
     StorageSet(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_);

@@ -222,7 +222,7 @@ StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const Context & contex
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(database_name, table_name, ColumnsDescription{columns}, context, true, dict_name);
+        return StorageDictionary::create(StorageID(database_name, table_name), ColumnsDescription{columns}, context, true, dict_name);
     }
     return nullptr;
 }
@@ -235,7 +235,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
     ASTPtr ast;
 
     auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-    ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
+    ast = getCreateQueryFromMetadata(context, dictionary_metadata_path, throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.

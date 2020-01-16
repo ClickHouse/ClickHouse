@@ -75,8 +75,7 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const std::string & table_name_,
-    const std::string & database_name_,
+    const StorageID & table_id_,
     Context & context_,
     const ColumnsDescription & columns_,
     const String & brokers_,
@@ -89,14 +88,12 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(
+    : IStorage(table_id_,
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
                             {"_offset", std::make_shared<DataTypeUInt64>()},
                             {"_partition", std::make_shared<DataTypeUInt64>()},
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
-    , table_name(table_name_)
-    , database_name(database_name_)
     , global_context(context_.getGlobalContext())
     , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
@@ -107,7 +104,7 @@ StorageKafka::StorageKafka(
     , schema_name(global_context.getMacros()->expand(schema_name_))
     , num_consumers(num_consumers_)
     , max_block_size(max_block_size_)
-    , log(&Logger::get("StorageKafka (" + table_name_ + ")"))
+    , log(&Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers_)
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
@@ -194,14 +191,6 @@ void StorageKafka::shutdown()
 
     task->deactivate();
 }
-
-
-void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
-}
-
 
 void StorageKafka::updateDependencies()
 {
@@ -303,17 +292,17 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     }
 }
 
-bool StorageKafka::checkDependencies(const String & current_database_name, const String & current_table_name)
+bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(current_database_name, current_table_name);
+    auto dependencies = global_context.getDependencies(table_id);
     if (dependencies.size() == 0)
         return true;
 
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = global_context.tryGetTable(db_tab.first, db_tab.second);
+        auto table = global_context.tryGetTable(db_tab);
         if (!table)
             return false;
 
@@ -323,7 +312,7 @@ bool StorageKafka::checkDependencies(const String & current_database_name, const
             return false;
 
         // Check all its dependencies
-        if (!checkDependencies(db_tab.first, db_tab.second))
+        if (!checkDependencies(db_tab))
             return false;
     }
 
@@ -334,13 +323,14 @@ void StorageKafka::threadFunc()
 {
     try
     {
+        auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(database_name, table_name);
+        auto dependencies = global_context.getDependencies(table_id);
 
         // Keep streaming as long as there are attached views and streaming is not cancelled
         while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
         {
-            if (!checkDependencies(database_name, table_name))
+            if (!checkDependencies(table_id))
                 break;
 
             LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
@@ -363,14 +353,15 @@ void StorageKafka::threadFunc()
 
 bool StorageKafka::streamToViews()
 {
-    auto table = global_context.getTable(database_name, table_name);
+    auto table_id = getStorageID();
+    auto table = global_context.getTable(table_id);
     if (!table)
-        throw Exception("Engine table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->database = database_name;
-    insert->table = table_name;
+    insert->database = table_id.database_name;
+    insert->table = table_id.table_name;
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -643,7 +634,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         return StorageKafka::create(
-            args.table_name, args.database_name, args.context, args.columns,
+            args.table_id, args.context, args.columns,
             brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
     });
 }
