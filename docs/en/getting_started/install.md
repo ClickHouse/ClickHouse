@@ -37,6 +37,15 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
+#### Packages
+
+- clickhouse-client
+- clickhouse-server
+- clickhouse-common
+- clickhouse-common-static-dbg
+- clickhouse-tests
+
+
 ### From RPM Packages
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
