@@ -140,10 +140,10 @@ Settings:
 - interval – The interval for sending, in seconds.
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
-- metrics – Sending data from a [system.metrics](../system_tables.md#system_tables-metrics) table.
-- events – Sending deltas data accumulated for the time period from a [system.events](../system_tables.md#system_tables-events) table.
-- events_cumulative – Sending cumulative data from a [system.events](../system_tables.md#system_tables-events) table.
-- asynchronous_metrics – Sending data from a [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
+- metrics – Sending data from the [system.metrics](../system_tables.md#system_tables-metrics) table.
+- events – Sending deltas data accumulated for the time period from the [system.events](../system_tables.md#system_tables-events) table.
+- events_cumulative – Sending cumulative data from the [system.events](../system_tables.md#system_tables-events) table.
+- asynchronous_metrics – Sending data from the [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 

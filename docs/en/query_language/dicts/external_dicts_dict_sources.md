@@ -435,22 +435,16 @@ SOURCE(MYSQL(
 Setting fields:
 
 - `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-
 - `replica` – Section of replica configurations. There can be multiple sections.
-    - `replica/host` – The MySQL host.
 
-    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    - `replica/host` – The MySQL host.
+    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
-
 - `table` – Name of the table.
-
-- `where ` – The selection criteria. Optional parameter.
-
+- `where ` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
