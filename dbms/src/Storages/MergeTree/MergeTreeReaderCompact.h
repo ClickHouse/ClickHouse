@@ -9,9 +9,7 @@
 namespace DB
 {
 
-/// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
-/// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
-/// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).ca
+/// Reader for compact parts
 class MergeTreeReaderCompact : public IMergeTreeReader
 {
 public:
@@ -39,7 +37,9 @@ private:
     MergeTreeMarksLoader marks_loader;
 
     using ColumnPosition = std::optional<size_t>;
+    /// Positions of columns in part structe.
     std::vector<ColumnPosition> column_positions;
+    /// Should we read full column or only it's offsets
     std::vector<bool> read_only_offsets;
 
     size_t next_mark = 0;
@@ -52,10 +52,6 @@ private:
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
 
     ColumnPosition findColumnForOffsets(const String & column_name);
-
-    /// Columns that are read.
-
-    friend class MergeTreeRangeReader::DelayedStream;
 };
 
 }

@@ -71,8 +71,6 @@ public:
 
     ColumnSize getTotalColumnsSize() const override;
 
-    void checkConsistency(bool /* require_part_metadata */) const override {}
-
     bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
@@ -84,10 +82,10 @@ public:
     ~MergeTreeDataPartCompact() override;
 
 private:
+    void checkConsistency(bool require_part_metadata) const override;
+
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
-
-    void checkConsistency(bool require_part_metadata);
 };
 
 

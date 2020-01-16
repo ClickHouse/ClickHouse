@@ -101,7 +101,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
 
         using State =IMergeTreeDataPart::State;
 
-        for (const auto & column : part->columns)
+        for (const auto & column : part->getColumns())
 
         {
             size_t j = 0;

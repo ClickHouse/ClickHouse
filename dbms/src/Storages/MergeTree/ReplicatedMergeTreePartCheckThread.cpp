@@ -206,7 +206,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-            part->columns, part->checksums);
+            part->getColumns(), part->checksums);
 
         String part_path = storage.replica_path + "/parts/" + part_name;
         String part_znode;

@@ -1707,10 +1707,10 @@ void MergeTreeData::alterDataPart(
     const auto settings = getSettings();
     const auto & part = transaction->getDataPart();
 
-    auto res = analyzeAlterConversions(part->columns, new_columns, getIndices().indices, new_indices);
+    auto res = analyzeAlterConversions(part->getColumns(), new_columns, getIndices().indices, new_indices);
 
     NamesAndTypesList additional_columns;
-    transaction->rename_map = part->createRenameMapForAlter(res, part->columns);
+    transaction->rename_map = part->createRenameMapForAlter(res, part->getColumns());
 
     if (!transaction->rename_map.empty())
     {
@@ -1853,7 +1853,7 @@ void MergeTreeData::alterDataPart(
 
     /// Write the new column list to the temporary file.
     {
-        transaction->new_columns = new_columns.filter(part->columns.getNames());
+        transaction->new_columns = new_columns.filter(part->getColumns().getNames());
         WriteBufferFromFile columns_file(part->getFullPath() + "columns.txt.tmp", 4096);
         transaction->new_columns.writeText(columns_file);
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
@@ -1888,7 +1888,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
         return;
 
     NamesAndTypesList new_columns;
-    for (const auto & [name, type] : data_part->columns)
+    for (const auto & [name, type] : data_part->getColumns())
         if (!empty_columns.count(name))
             new_columns.emplace_back(name, type);
 
@@ -2762,7 +2762,6 @@ void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of  columns was written incorrectly. Delete it and re-create.
-    /// FIXME looks not right
     if (isWidePart(part))
         if (Poco::File(full_part_path + "columns.txt").exists())
             Poco::File(full_part_path + "columns.txt").remove();
@@ -2799,7 +2798,7 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
     std::shared_lock<std::shared_mutex> lock(part->columns_lock);
 
-    for (const auto & column : part->columns)
+    for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
         ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
@@ -2811,7 +2810,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 {
     std::shared_lock<std::shared_mutex> lock(part->columns_lock);
 
-    for (const auto & column : part->columns)
+    for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
         ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);

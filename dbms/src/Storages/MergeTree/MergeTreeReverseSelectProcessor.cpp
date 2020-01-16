@@ -15,7 +15,7 @@ static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & da
 {
     /// Types may be different during ALTER (when this stream is used to perform an ALTER).
     /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
+    for (const auto & name_type : data_part->getColumns())
     {
         if (header.has(name_type.name))
         {

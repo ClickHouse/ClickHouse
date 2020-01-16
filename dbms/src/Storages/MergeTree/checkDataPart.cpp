@@ -138,7 +138,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 {
     return checkDataPart(
         data_part->getFullPath(),
-        data_part->columns,
+        data_part->getColumns(),
         data_part->getType(),
         require_checksums,
         is_cancelled);

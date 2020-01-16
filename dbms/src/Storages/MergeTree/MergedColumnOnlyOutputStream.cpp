@@ -27,7 +27,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
-    std::set<String> skip_indexes_column_names_set;
+    std::unordered_set<String> skip_indexes_column_names_set;
     for (const auto & index : writer->getSkipIndices())
         std::copy(index->columns.cbegin(), index->columns.cend(),
                   std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));

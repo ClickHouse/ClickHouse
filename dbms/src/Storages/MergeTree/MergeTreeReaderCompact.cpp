@@ -74,8 +74,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
 
 size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
-    /// FIXME compute correct granularity
-
     if (continue_reading)
         from_mark = next_mark;
 
@@ -155,7 +153,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 MergeTreeReaderCompact::ColumnPosition MergeTreeReaderCompact::findColumnForOffsets(const String & column_name)
 {
     String table_name = Nested::extractTableName(column_name);
-    for (const auto & part_column : data_part->columns)
+    for (const auto & part_column : data_part->getColumns())
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
@@ -206,7 +204,7 @@ void MergeTreeReaderCompact::initMarksLoader()
     if (marks_loader.initialized())
         return;
 
-    size_t columns_num = data_part->columns.size();
+    size_t columns_num = data_part->getColumns().size();
 
     auto load = [this, columns_num](const String & mrk_path) -> MarkCache::MappedPtr
     {
@@ -273,7 +271,7 @@ bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_posi
         return false;
     const auto & [last_mark, last_column] = *last_read_granule;
     return (mark == last_mark && column_position == last_column + 1)
-        || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->columns.size() - 1);
+        || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->getColumns().size() - 1);
 }
 
 }

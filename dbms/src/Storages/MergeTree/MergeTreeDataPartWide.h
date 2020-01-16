@@ -82,10 +82,9 @@ public:
 
     bool hasColumnFiles(const String & column, const IDataType & type) const override;
 
-protected:
+private:
     void checkConsistency(bool require_part_metadata) const override;
 
-private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 

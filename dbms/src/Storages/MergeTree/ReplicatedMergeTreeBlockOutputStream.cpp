@@ -202,7 +202,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 
 void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
-    storage.check(part->columns);
+    storage.check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.

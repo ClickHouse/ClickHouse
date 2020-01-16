@@ -48,7 +48,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     else
     {
         /// take columns from data_part
-        columns_for_reader = data_part->columns.addTypes(columns_to_read);
+        columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
     MergeTreeReaderSettings reader_settings =
@@ -68,7 +68,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
 void MergeTreeSequentialBlockInputStream::fixHeader(Block & header_block) const
 {
     /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    for (const auto & name_type : data_part->columns)
+    for (const auto & name_type : data_part->getColumns())
     {
         if (header_block.has(name_type.name))
         {
