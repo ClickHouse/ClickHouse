@@ -13,7 +13,7 @@ Range of values: [1970-01-01 00:00:00, 2105-12-31 23:59:59].
 Resolution: 1 second.
 
 
-## Usage remarks
+## Usage Remarks
 
 A moment of time is stored as Unix timestamp, independently of time zones and daylight savings. Additionally `DateTime` can store time zone, that affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
 
