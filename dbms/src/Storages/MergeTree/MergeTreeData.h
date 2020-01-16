@@ -330,7 +330,7 @@ public:
     ///
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(const String & database_, const String & table_,
+    MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata,
                   Context & context_,
@@ -395,9 +395,6 @@ public:
             || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
-
-    String getDatabaseName() const override { return database_name; }
-    String getTableName() const override { return table_name; }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -787,8 +784,6 @@ protected:
 
     bool require_part_metadata;
 
-    String database_name;
-    String table_name;
     String relative_data_path;
 
 
