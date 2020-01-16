@@ -239,15 +239,23 @@ void DiskMemory::remove(const String & path, bool recursive)
     if (fileIt == files.end())
         return;
 
-    if (fileIt->second.type == FileType::Directory)
+    if (fileIt->second.type == FileType::File)
     {
-        if (recursive)
-            clearDirectory(path);
-        else if (std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
-            throw Exception("Directory " + path + "is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+        files.erase(fileIt);
+        return;
     }
 
-    files.erase(fileIt);
+    if (!recursive && std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
+        throw Exception("Directory " + path + "is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+
+    if (recursive)
+        for (auto iter = files.begin(); iter != files.end();)
+        {
+            if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
+                iter = files.erase(iter);
+            else
+                ++iter;
+        }
 }
 
 void registerDiskMemory(DiskFactory & factory)
