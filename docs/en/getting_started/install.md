@@ -14,7 +14,7 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 
 ## Available Installation Options
 
-### From DEB Packages
+### From DEB Packages {#install-from-deb-packages}
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
 
@@ -39,12 +39,10 @@ You can also download and install packages manually from here: <https://repo.yan
 
 #### Packages
 
-- clickhouse-client
-- clickhouse-server
-- clickhouse-common
-- clickhouse-common-static-dbg
-- clickhouse-tests
-
+- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+- `clickhouse-server` — Creates symbolic link for `clickhouse-server`. Installs server configuration.
+- `clickhouse-client` — Creates symbolic link for `clickhouse-client `. Installs client configurations.
+- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages
 
