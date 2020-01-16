@@ -182,7 +182,11 @@ def run_tests_array(all_tests_with_params):
                     or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
-            elif not args.no_long and 'long' in name:
+            elif not args.no_long and ('long' in name
+                    # Tests for races and deadlocks usually are runned in loop
+                    #  for significant amount of time
+                    or 'deadlock' in name
+                    or 'race' in name):
                 print(MSG_SKIPPED + " - no long")
                 skipped_total += 1
             else:

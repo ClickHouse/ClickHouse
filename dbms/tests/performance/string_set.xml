@@ -7,12 +7,9 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <rows_per_second />
-    </main_metric>
 
     <preconditions>
-        <table_exists>default.hits_10m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
     </preconditions>
 
     <create_query>CREATE TABLE hits_10m_words (word String, UserID UInt64) ENGINE Memory</create_query>

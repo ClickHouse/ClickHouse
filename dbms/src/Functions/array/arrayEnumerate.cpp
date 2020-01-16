@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB

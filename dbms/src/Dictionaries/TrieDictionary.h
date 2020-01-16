@@ -23,6 +23,7 @@ class TrieDictionary final : public IDictionaryBase
 {
 public:
     TrieDictionary(
+        const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -33,7 +34,9 @@ public:
 
     std::string getKeyDescription() const { return key_description; }
 
-    std::string getName() const override { return name; }
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "Trie"; }
 
@@ -49,7 +52,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<TrieDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<TrieDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -232,7 +235,9 @@ private:
 
     Columns getKeyColumns() const;
 
+    const std::string database;
     const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
