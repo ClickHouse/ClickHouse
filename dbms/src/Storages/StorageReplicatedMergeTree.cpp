@@ -767,11 +767,11 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
     if (part_name.empty())
         part_name = part->name;
 
-    check(part->columns);
+    check(part->getColumns());
     int expected_columns_version = columns_version;
 
     auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-        part->columns, part->checksums);
+        part->getColumns(), part->checksums);
 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
@@ -853,7 +853,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path, "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
-                part_path + "/columns", part->columns.toString(), zkutil::CreateMode::Persistent));
+                part_path + "/columns", part->getColumns().toString(), zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(
                 part_path + "/checksums", getChecksumsForZooKeeper(part->checksums), zkutil::CreateMode::Persistent));
         }
@@ -5323,7 +5323,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     {
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name,
-            ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->columns, part->checksums).toString(),
+            ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(),
             zkutil::CreateMode::Persistent));
     }
     else
@@ -5334,7 +5334,7 @@ void StorageReplicatedMergeTree::getCommitPartOps(
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name + "/columns",
-            part->columns.toString(),
+            part->getColumns().toString(),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(
             replica_path + "/parts/" + part->name + "/checksums",

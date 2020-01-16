@@ -294,7 +294,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
         {
             if (!serialization_states.empty())
             {
-                /// FIXME maybe we need skip_offsets=false in some cases
                 serialize_settings.getter = createStreamGetter(it->name, written_offset_columns ? *written_offset_columns : offset_columns);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }

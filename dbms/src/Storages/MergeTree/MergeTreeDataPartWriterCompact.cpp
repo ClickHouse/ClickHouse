@@ -42,7 +42,6 @@ void MergeTreeDataPartWriterCompact::write(
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
-    /// FIXME maybe it's wrong at this stage.
     if (compute_granularity)
         fillIndexGranularity(block);
 

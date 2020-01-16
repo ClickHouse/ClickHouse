@@ -229,7 +229,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 }, stream_path);
             }
         }
-        
+
     }
     else
     {

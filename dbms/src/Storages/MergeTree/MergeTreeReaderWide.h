@@ -8,9 +8,7 @@
 namespace DB
 {
 
-/// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
-/// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
-/// Avoids loading the marks file if it is not needed (e.g. when reading the whole part).
+/// Reader for Wide parts.
 class MergeTreeReaderWide : public IMergeTreeReader
 {
 public:
@@ -35,8 +33,6 @@ private:
 
     FileStreams streams;
 
-    /// Columns that are read.
-
     void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
@@ -44,8 +40,6 @@ private:
         const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
         bool read_offsets = true);
-
-    friend class MergeTreeRangeReader::DelayedStream;
 };
 
 }

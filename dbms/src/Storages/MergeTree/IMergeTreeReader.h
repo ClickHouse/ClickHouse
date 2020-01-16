@@ -68,7 +68,6 @@ protected:
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
-    /// If save_marks_in_cache is false, then, if marks are not in cache, we will load them but won't save in the cache, to avoid evicting other data.
 
     MergeTreeReaderSettings settings;
 

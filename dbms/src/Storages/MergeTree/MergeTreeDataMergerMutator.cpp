@@ -965,7 +965,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             });
 
     if (isCompactPart(source_part))
-        commands_for_part.additional_columns = source_part->columns.getNames();
+        commands_for_part.additional_columns = source_part->getColumns().getNames();
 
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
@@ -981,7 +981,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
-    const auto & source_column_names = source_part->columns.getNames();
+    const auto & source_column_names = source_part->getColumns().getNames();
     const auto & updated_column_names = updated_header.getNames();
 
     NameSet new_columns_set(source_column_names.begin(), source_column_names.end());
@@ -1170,7 +1170,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
-            new_data_part->columns.writeText(out_columns);
+            new_data_part->getColumns().writeText(out_columns);
         }
 
         new_data_part->rows_count = source_part->rows_count;

@@ -209,7 +209,7 @@ NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
     return rename_map;
 }
 
-void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
+void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();
     String path = getFullPath();
@@ -220,7 +220,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
         /// count.txt should be present even in non custom-partitioned parts
         if (!checksums.files.count("count.txt"))
             throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
-        
+
         if (require_part_metadata)
         {
             if (!checksums.files.count(mrk_file_name))
@@ -237,7 +237,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
             if (!file.exists() || file.getSize() == 0)
                 throw Exception("Part " + path + " is broken: " + file.path() + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
-        
+
         /// Check that marks are nonempty and have the consistent size with columns number.
         Poco::File file(path + mrk_file_name);
 
@@ -247,13 +247,12 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata)
              if (!file_size)
                 throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-            
+
             UInt64 expected_file_size = index_granularity_info.getMarkSizeInBytes(columns.size()) * index_granularity.getMarksCount();
             if (expected_file_size != file_size)
                 throw Exception(
                     "Part " + path + " is broken: bad size of marks file '" + file.path() + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-    
         }
     }
 }

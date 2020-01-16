@@ -81,13 +81,7 @@ public:
 
     virtual ColumnSize getTotalColumnsSize() const { return {}; }
 
-    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize() const;
-
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
-
-    void setColumns(const NamesAndTypesList & columns_);
 
     virtual NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & /* analysis_result */,
@@ -95,17 +89,8 @@ public:
 
     virtual ~IMergeTreeDataPart();
 
-    // virtual Checksums check(
-    //     bool require_checksums,
-    //     const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
-    //     const MergeTreeIndices & indices = {}, /// Check skip indices
-    //     std::function<bool()> is_cancelled = []{ return false; })
-    // {
-    //     return {};
-    // }
-
     using ColumnToSize = std::map<std::string, UInt64>;
-    virtual void accumulateColumnSizes(ColumnToSize & column_to_size) const;
+    virtual void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const {}
 
     using Type = MergeTreeDataPartType;
     Type getType() const { return part_type; }
@@ -128,6 +113,10 @@ public:
         const std::optional<String> & relative_path,
         Type part_type_);
 
+    void setColumns(const NamesAndTypesList & new_columns);
+
+    const NamesAndTypesList & getColumns() const { return columns; }
+
     void assertOnDisk() const;
 
     void remove() const;
@@ -142,8 +131,11 @@ public:
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
-    // Block sample_block;
     std::optional<size_t> getColumnPosition(const String & column_name) const;
+
+    /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+    /// If no checksums are present returns the name of the first physically existing column.
+    String getColumnNameWithMinumumCompressedSize() const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -284,9 +276,6 @@ public:
 
     Checksums checksums;
 
-    /// Columns description.
-    NamesAndTypesList columns;
-
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
@@ -315,9 +304,13 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
 protected:
+    /// Columns description.
+    NamesAndTypesList columns;
     Type part_type;
+
     void removeIfNeeded();
-    virtual void checkConsistency(bool require_part_metadata) const;
+
+    virtual void checkConsistency(bool require_part_metadata) const = 0;
     void checkConsistencyBase() const;
 
 private:

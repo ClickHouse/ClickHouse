@@ -787,16 +787,6 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
-void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & /* column_to_size */) const
-{
-    throw Exception("Method 'accumulateColumnSizes' is not supported for data part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
-{
-    throw Exception("Method 'checkConsistency' is not supported for data part with type " + typeToString(getType()), ErrorCodes::NOT_IMPLEMENTED);
-}
-
 String IMergeTreeDataPart::typeToString(Type type)
 {
     switch (type)

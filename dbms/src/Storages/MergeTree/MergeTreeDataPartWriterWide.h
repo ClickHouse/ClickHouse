@@ -6,7 +6,6 @@ namespace DB
 class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
 {
 public:
-
     using ColumnToSize = std::map<std::string, UInt64>;
 
     MergeTreeDataPartWriterWide(
@@ -26,6 +25,7 @@ public:
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
 
+private:
     /// Write data of one column.
     /// Return how many marks were written and
     /// how many rows were written for last mark
@@ -35,7 +35,6 @@ public:
         const IColumn & column,
         WrittenOffsetColumns & offset_columns);
 
-private:
     /// Write single granule of one column (rows between 2 marks)
     size_t writeSingleGranule(
         const String & name,
