@@ -1049,7 +1049,7 @@ Default value: 0.
 
 ## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the query profiler. Real clock timer counts wall-clock time.
+Sets the period for a real clock timer of the [query profiler](../performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
 Possible values:
 
@@ -1068,11 +1068,11 @@ Default value: 1000000000 nanoseconds (once a second).
 
 **See Also**
 
-- [system.trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the query profiler. This timer counts only CPU time.
+Sets the period for a CPU clock timer of the [query profiler](../performance/sampling_query_profiler.md). This timer counts only CPU time.
 
 Possible values:
 
@@ -1091,7 +1091,7 @@ Default value: 1000000000 nanoseconds.
 
 **See Also**
 
-- [system.trace_log](../system_tables.md#system_tables-trace_log)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -1103,6 +1103,11 @@ Possible values:
 - 0 — Introspection functions disabled.
 
 Default value: 0.
+
+**See Also**
+
+- [Sampling Query Profiler](../performance/sampling_query_profiler.md)
+- System table [trace_log](../system_tables.md#system_tables-trace_log)
 
 ## input_format_parallel_parsing
 
