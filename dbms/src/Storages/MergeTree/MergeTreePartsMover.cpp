@@ -221,7 +221,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
         return;
     }
 
-    cloned_part->renameTo(active_part->name);
+    cloned_part->renameTo(active_part->name, false);
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 
