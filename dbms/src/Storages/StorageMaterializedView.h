@@ -14,8 +14,6 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
@@ -68,12 +66,11 @@ public:
     Strings getDataPaths() const override;
 
 private:
-    String select_database_name;
-    String select_table_name;
-    String target_database_name;
-    String target_table_name;
-    String table_name;
-    String database_name;
+    /// Can be empty if SELECT query doesn't contain table
+    StorageID select_table_id = StorageID::createEmpty();
+    /// Will be initialized in constructor
+    StorageID target_table_id = StorageID::createEmpty();
+
     ASTPtr inner_query;
     Context & global_context;
     bool has_inner_table = false;
@@ -82,8 +79,7 @@ private:
 
 protected:
     StorageMaterializedView(
-        const String & table_name_,
-        const String & database_name_,
+        const StorageID & table_id_,
         Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
