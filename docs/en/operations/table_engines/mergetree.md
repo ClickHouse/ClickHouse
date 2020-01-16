@@ -504,21 +504,25 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 Configuration structure:
 
 ```xml
-<disks>
-    <disk_name_1> <!-- disk name -->
-        <path>/mnt/fast_ssd/clickhouse</path>
-    </disk_name_1>
-    <disk_name_2>
-        <path>/mnt/hdd1/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_2>
-    <disk_name_3>
-        <path>/mnt/hdd2/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_3>
+<storage_configuration>
+    <disks>
+        <disk_name_1> <!-- disk name -->
+            <path>/mnt/fast_ssd/clickhouse</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
 
+        ...
+    </disks>
+    
     ...
-</disks>
+</storage_configuration>
 ```
 
 Tags:
@@ -532,26 +536,30 @@ The order of the disk definition is not important.
 Storage policies configuration markup:
 
 ```xml
-<policies>
-    <policy_name_1>
-        <volumes>
-            <volume_name_1>
-                <disk>disk_name_from_disks_configuration</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </volume_name_1>
-            <volume_name_2>
-                <!-- configuration -->
-            </volume_name_2>
-            <!-- more volumes -->
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </policy_name_1>
-    <policy_name_2>
-        <!-- configuration -->
-    </policy_name_2>
+<storage_configuration>
+    ...
+    <policies>
+        <policy_name_1>
+            <volumes>
+                <volume_name_1>
+                    <disk>disk_name_from_disks_configuration</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </volume_name_1>
+                <volume_name_2>
+                    <!-- configuration -->
+                </volume_name_2>
+                <!-- more volumes -->
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </policy_name_1>
+        <policy_name_2>
+            <!-- configuration -->
+        </policy_name_2>
 
-    <!-- more policies -->
-</policies>
+        <!-- more policies -->
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 Tags:
@@ -565,29 +573,33 @@ Tags:
 Cofiguration examples:
 
 ```xml
-<policies>
-    <hdd_in_order> <!-- policy name -->
-        <volumes>
-            <single> <!-- volume name -->
-                <disk>disk1</disk>
-                <disk>disk2</disk>
-            </single>
-        </volumes>
-    </hdd_in_order>
+<storage_configuration>
+    ...
+    <policies>
+        <hdd_in_order> <!-- policy name -->
+            <volumes>
+                <single> <!-- volume name -->
+                    <disk>disk1</disk>
+                    <disk>disk2</disk>
+                </single>
+            </volumes>
+        </hdd_in_order>
 
-    <moving_from_ssd_to_hdd>
-        <volumes>
-            <hot>
-                <disk>fast_ssd</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </hot>
-            <cold>
-                <disk>disk1</disk>
-            </cold>            
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </moving_from_ssd_to_hdd>
-</policies>
+        <moving_from_ssd_to_hdd>
+            <volumes>
+                <hot>
+                    <disk>fast_ssd</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </hot>
+                <cold>
+                    <disk>disk1</disk>
+                </cold>            
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </moving_from_ssd_to_hdd>
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 In given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Thus this policy defines only one volume (`single`), the data parts are stored on all its disks in circular order. Such policy can be quite useful if there are several similar disks are mounted to the system, but RAID is not configured. Keep in mind that each individual disk drive is not reliable and you might want to compensate it with replication factor of 3 or more.

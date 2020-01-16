@@ -31,7 +31,7 @@ public:
 
 
 template <typename HandlerType>
-class PrometeusRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+class PrometheusRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
     IServer & server;
@@ -39,7 +39,7 @@ private:
     PrometheusMetricsWriter metrics_writer;
 
 public:
-    PrometeusRequestHandlerFactory(IServer & server_, const AsynchronousMetrics & async_metrics_)
+    PrometheusRequestHandlerFactory(IServer & server_, const AsynchronousMetrics & async_metrics_)
         : server(server_)
         , endpoint_path(server_.config().getString("prometheus.endpoint", "/metrics"))
         , metrics_writer(server_.config(), "prometheus", async_metrics_)
@@ -56,6 +56,6 @@ public:
     }
 };
 
-using PrometeusHandlerFactory = PrometeusRequestHandlerFactory<PrometheusRequestHandler>;
+using PrometheusHandlerFactory = PrometheusRequestHandlerFactory<PrometheusRequestHandler>;
 
 }

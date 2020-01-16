@@ -1,19 +1,66 @@
 # Conditional functions
 
-## if(cond, then, else), cond ? operator then : else
+## `if` function
 
-Returns `then` if `cond != 0`, or `else` if `cond = 0`.
-`cond` must be of type `UInt8`, and `then` and `else` must have the lowest common type.
+Syntax: `if(cond, then, else)`
 
-`then` and `else` can be `NULL`
+Returns `then` if the `cond` is truthy(greater than zero), otherwise returns `else`.
+
+* `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+
+* `then` and `else` can be `NULL`
+
+**Example:**
+
+Take this `LEFT_RIGHT` table:
+
+```sql
+SELECT *
+FROM LEFT_RIGHT
+
+┌─left─┬─right─┐
+│ ᴺᵁᴸᴸ │     4 │
+│    1 │     3 │
+│    2 │     2 │
+│    3 │     1 │
+│    4 │  ᴺᵁᴸᴸ │
+└──────┴───────┘
+```
+The following query compares `left` and `right` values:
+
+```sql
+SELECT
+    left,
+    right,
+    if(left < right, 'left is smaller than right', 'right is greater or equal than left') AS is_smaller
+FROM LEFT_RIGHT
+WHERE isNotNull(left) AND isNotNull(right)
+
+┌─left─┬─right─┬─is_smaller──────────────────────────┐
+│    1 │     3 │ left is smaller than right          │
+│    2 │     2 │ right is greater or equal than left │
+│    3 │     1 │ right is greater or equal than left │
+└──────┴───────┴─────────────────────────────────────┘
+```
+Note: `NULL` values are not used in this example, check [NULL values in conditionals](#null-values-in-conditionals) section.
+
+## Ternary operator 
+
+It works same as `if` function.
+
+Syntax: `cond ? then : else`
+
+Returns `then` if the `cond` is truthy(greater than zero), otherwise returns `else`.
+
+* `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+
+* `then` and `else` can be `NULL`
 
 ## multiIf
 
 Allows you to write the [CASE](../operators.md#operator_case) operator more compactly in the query.
 
-```sql
-multiIf(cond_1, then_1, cond_2, then_2...else)
-```
+Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
 **Parameters:**
 
@@ -29,22 +76,76 @@ The function returns one of the values `then_N` or `else`, depending on the cond
 
 **Example**
 
-Take the table
+Again using `LEFT_RIGHT` table.
 
-```text
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-│ 2 │    3 │
-└───┴──────┘
+```sql
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'left is greater', left = right, 'Both equal', 'Null value') AS result
+FROM LEFT_RIGHT
+
+┌─left─┬─right─┬─result──────────┐
+│ ᴺᵁᴸᴸ │     4 │ Null value      │
+│    1 │     3 │ left is smaller │
+│    2 │     2 │ Both equal      │
+│    3 │     1 │ left is greater │
+│    4 │  ᴺᵁᴸᴸ │ Null value      │
+└──────┴───────┴─────────────────┘
+```
+## Using conditional results directly
+
+Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
+
+```sql
+SELECT left < right AS is_small
+FROM LEFT_RIGHT
+
+┌─is_small─┐
+│     ᴺᵁᴸᴸ │
+│        1 │
+│        0 │
+│        0 │
+│     ᴺᵁᴸᴸ │
+└──────────┘
 ```
 
-Run the query `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`. Result:
 
-```text
-┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
-│                                          1 │
-│                                       ᴺᵁᴸᴸ │
-└────────────────────────────────────────────┘
+## NULL values in conditionals
+
+When `NULL` values are involved in conditionals, the result will also be `NULL`.
+
+```sql
+SELECT
+    NULL < 1,
+    2 < NULL,
+    NULL < NULL,
+    NULL = NULL
+
+┌─less(NULL, 1)─┬─less(2, NULL)─┬─less(NULL, NULL)─┬─equals(NULL, NULL)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ               │
+└───────────────┴───────────────┴──────────────────┴────────────────────┘
 ```
+
+So you should construct your queries carefully if the types are `Nullable`.
+
+The following example demonstrates this by failing to add equals condition to `multiIf`.
+
+```sql
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'right is smaller', 'Both equal') AS faulty_result
+FROM LEFT_RIGHT
+
+┌─left─┬─right─┬─faulty_result────┐
+│ ᴺᵁᴸᴸ │     4 │ Both equal       │
+│    1 │     3 │ left is smaller  │
+│    2 │     2 │ Both equal       │
+│    3 │     1 │ right is smaller │
+│    4 │  ᴺᵁᴸᴸ │ Both equal       │
+└──────┴───────┴──────────────────┘
+```
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/conditional_functions/) <!--hide-->

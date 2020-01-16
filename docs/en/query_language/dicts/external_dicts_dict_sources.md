@@ -137,9 +137,9 @@ Setting fields:
 
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
-- `credentials` – Basic HTTP authentification. Optional parameter.
-    - `user` – Username required for the authentification.
-    - `password` – Password required for the authentification.
+- `credentials` – Basic HTTP authentication. Optional parameter.
+    - `user` – Username required for the authentication.
+    - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
     - `header` – Single HTTP header entry.
         - `name` – Identifiant name used for the header send on the request.

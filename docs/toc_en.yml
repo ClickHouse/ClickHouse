@@ -199,6 +199,7 @@ nav:
   - 'System Tables': 'operations/system_tables.md'
   - 'Optimizing Performance':
     - 'Query Profiling': operations/performance/sampling_query_profiler.md
+  - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server Settings': 'operations/server_settings/settings.md'
@@ -217,10 +218,6 @@ nav:
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
   - 'Usage Recommendations': 'operations/tips.md'
   
-- 'Guides':
-  - 'Overview': 'guides/index.md'
-  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
-
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'

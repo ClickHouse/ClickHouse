@@ -40,7 +40,4 @@
     <query><![CDATA[select sum(MobilePhoneModel in (select MobilePhoneModel from hits_1000m_single where MobilePhoneModel != '')) from hits_1000m_single]]></query>
     <query><![CDATA[select sum((MobilePhoneModel, UserID + 1) in (select MobilePhoneModel, UserID from hits_1000m_single where MobilePhoneModel != '')) from hits_1000m_single]]></query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

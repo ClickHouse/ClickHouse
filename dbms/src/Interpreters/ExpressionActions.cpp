@@ -954,7 +954,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// remote table (doesn't know anything about it).
     ///
     /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
-    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// so generated streams with these actions will have different headers. To avoid this we additionally rename our "redundant" column
     /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
     /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
 
