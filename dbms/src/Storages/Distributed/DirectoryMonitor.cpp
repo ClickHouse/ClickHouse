@@ -228,7 +228,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
         const auto & file_path_str = it->path();
         const std::filesystem::path file_path{file_path_str};
 
-        if (it->is_regular_file() && file_path.extension() == "bin")
+        if (it->is_regular_file() && file_path.extension() == ".bin")
             files[parse<UInt64>(file_path.stem().string())] = file_path_str;
     }
 
