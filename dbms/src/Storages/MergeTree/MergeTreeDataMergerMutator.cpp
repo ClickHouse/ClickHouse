@@ -1095,6 +1095,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             files_to_skip.insert(index->getFileName() + mrk_extension);
         }
 
+        /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
+        std::map<String, size_t> stream_counts;
+        for (const NameAndTypePair & column : source_part->columns)
+        {
+            column.type->enumerateStreams(
+                [&](const IDataType::SubstreamPath & substream_path) {
+                    ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+                },
+                {});
+        }
+
+
         std::unordered_set<String> removed_columns;
         /// TODO(alesap) better
         for (const auto & part_column : source_part->columns)
@@ -1115,8 +1127,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
                 {
                     String stream_name = IDataType::getFileNameForStream(part_column.name, substream_path);
-                    removed_columns.insert(stream_name + ".bin");
-                    removed_columns.insert(stream_name + mrk_extension);
+                    /// Delete files if they are no longer shared with another column.
+                    if (--stream_counts[stream_name] == 0)
+                    {
+                        removed_columns.insert(stream_name + ".bin");
+                        removed_columns.insert(stream_name + mrk_extension);
+                    }
                 };
 
                 IDataType::SubstreamPath stream_path;
@@ -1127,10 +1143,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         Poco::DirectoryIterator dir_end;
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
         {
-            if (files_to_skip.count(dir_it.name()))
+            if (files_to_skip.count(dir_it.name()) || removed_columns.count(dir_it.name()))
                 continue;
 
             Poco::Path destination(new_part_tmp_path);
+            std::cerr << "HARDLINKING FROM:" << dir_it.path().toString() << " TO " << destination.toString() << std::endl;
             destination.append(dir_it.name());
 
             createHardLink(dir_it.path().toString(), destination.toString());

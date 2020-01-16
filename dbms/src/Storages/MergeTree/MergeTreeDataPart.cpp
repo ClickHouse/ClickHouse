@@ -464,6 +464,12 @@ void MergeTreeDataPart::remove() const
 
         LOG_ERROR(storage.log, "Cannot quickly remove directory " << to << " by removing files; fallback to recursive removal. Reason: "
             << getCurrentExceptionMessage(false));
+        std::vector<std::string> files;
+        to_dir.list(files);
+        for (const auto & f : files)
+        {
+            std::cerr <<  "NOT REMOVED FILE:" << f << std::endl;
+        }
 
         to_dir.remove(true);
     }
