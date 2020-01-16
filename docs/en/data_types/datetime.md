@@ -8,12 +8,12 @@ Syntax:
 DateTime([timezone])
 ```
 
-Range of values: [1970-01-01 00:00:00, 2105-12-31 23:59:59].
+Supported range of values: [1970-01-01 00:00:00, 2105-12-31 23:59:59].
 
 Resolution: 1 second.
 
 
-## Usage remarks
+## Usage Remarks
 
 A moment of time is stored as [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), independently of time zones and daylight savings. Additionally `DateTime` can store time zone, that affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
 
@@ -50,7 +50,7 @@ SELECT * FROM dt
 └─────────────────────┴──────────┘
 ```
 
-Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London (UTC+0)` time zone, but the `timestamp` column stores values in the `Europe/Moscow (UTC+3)` timezone, so the value inserted as Unix timestamp represents the `2019-01-01 03:00:00` date and time.
+Unix timestamp `1546300800` represents the `'2019-01-01 00:00:00'` date and time in `Europe/London` (UTC+0) time zone, but the `timestamp` column stores values in the `Europe/Moscow` (UTC+3) timezone, so the value inserted as Unix timestamp is formatted as `2019-01-01 03:00:00`.
 
 ```sql
 SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
