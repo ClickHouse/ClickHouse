@@ -739,49 +739,50 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+
+void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
+    checkDatabaseAccessRightsImpl(from.database_name);
+    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     addDependencyUnsafe(from, where);
 }
 
-void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.first);
-    checkDatabaseAccessRightsImpl(where.first);
+    checkDatabaseAccessRightsImpl(from.database_name);
+    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
-    auto table = tryGetTable(from.first, from.second);
+    auto table = tryGetTable(from);
     if (table != nullptr)
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::removeDependency(const StorageID & from, const StorageID & where)
 {
     auto lock = getLock();
     removeDependencyUnsafe(from, where);
 }
 
-Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
+Dependencies Context::getDependencies(const StorageID & from) const
 {
     auto lock = getLock();
 
-    String db = resolveDatabase(database_name, current_database);
+    String db = resolveDatabase(from.database_name, current_database);
 
-    if (database_name.empty() && tryGetExternalTable(table_name))
+    if (from.database_name.empty() && tryGetExternalTable(from.table_name))
     {
         /// Table is temporary. Access granted.
     }
@@ -790,7 +791,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
         checkDatabaseAccessRightsImpl(db);
     }
 
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
     if (iter == shared->view_dependencies.end())
         return {};
 
@@ -919,24 +920,32 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
     return jt->second.first;
 }
 
-
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
+    return getTable(StorageID(database_name, table_name));
+}
+
+StoragePtr Context::getTable(const StorageID & table_id) const
+{
     std::optional<Exception> exc;
-    auto res = getTableImpl(database_name, table_name, &exc);
+    auto res = getTableImpl(table_id, &exc);
     if (!res)
         throw *exc;
     return res;
 }
 
-
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
-    return getTableImpl(database_name, table_name, {});
+    return getTableImpl(StorageID(database_name, table_name), {});
+}
+
+StoragePtr Context::tryGetTable(const StorageID & table_id) const
+{
+    return getTableImpl(table_id, {});
 }
 
 
-StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, std::optional<Exception> * exception) const
+StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
 {
     String db;
     DatabasePtr database;
@@ -944,14 +953,14 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     {
         auto lock = getLock();
 
-        if (database_name.empty())
+        if (table_id.database_name.empty())
         {
-            StoragePtr res = tryGetExternalTable(table_name);
+            StoragePtr res = tryGetExternalTable(table_id.table_name);
             if (res)
                 return res;
         }
 
-        db = resolveDatabase(database_name, current_database);
+        db = resolveDatabase(table_id.database_name, current_database);
         checkDatabaseAccessRightsImpl(db);
 
         Databases::const_iterator it = shared->databases.find(db);
@@ -965,11 +974,11 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
         database = it->second;
     }
 
-    auto table = database->tryGetTable(*this, table_name);
+    auto table = database->tryGetTable(*this, table_id.table_name);
     if (!table)
     {
         if (exception)
-            exception->emplace("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         return {};
     }
 

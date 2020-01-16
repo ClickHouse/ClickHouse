@@ -197,16 +197,17 @@ private:
 StorageStripeLog::StorageStripeLog(
     DiskPtr disk_,
     const String & relative_path_,
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : disk(std::move(disk_)), table_path(relative_path_), database_name(database_name_), table_name(table_name_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(disk, table_path + "sizes.json"),
-    log(&Logger::get("StorageStripeLog"))
+    : IStorage(table_id_)
+    , disk(std::move(disk_))
+    , table_path(relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(disk, table_path + "sizes.json")
+    , log(&Logger::get("StorageStripeLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -229,9 +230,8 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Strin
     disk->moveDirectory(table_path, new_path_to_table_data);
 
     table_path = new_path_to_table_data;
-    database_name = new_database_name;
-    table_name = new_table_name;
     file_checker.setPath(table_path + "sizes.json");
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
@@ -295,9 +295,6 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Conte
 
 void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (table_name.empty())
-        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
-
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     disk->clearDirectory(table_path);
@@ -316,7 +313,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageStripeLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }
