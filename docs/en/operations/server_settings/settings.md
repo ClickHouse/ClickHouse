@@ -16,33 +16,40 @@ Default value: 3600.
 ```
 
 
-## compression
+## compression {#server-settings-compression}
 
-Data compression settings.
+Data compression settings for [MergeTree](../table_engines/mergetree.md)-engine tables.
 
 !!! warning
     Don't use it if you have just started using ClickHouse.
 
-The configuration looks like this:
+Configuration template:
 
 ```xml
 <compression>
     <case>
-      <parameters/>
+      <min_part_size>...</min_part_size>
+      <min_part_size_ratio>...</min_part_size_ratio>
+      <method>...</method>
     </case>
     ...
 </compression>
 ```
 
-You can configure multiple sections `<case>`.
+`<case>` fields:
 
-Block field `<case>`:
+- `min_part_size` – The minimum size of a data part.
+- `min_part_size_ratio` – The ratio of the data part size to the table size.
+- `method` – Compression method. Acceptable values: `lz4` or `zstd`.
 
-- ``min_part_size`` – The minimum size of a table part.
-- ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
-- ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
+You can configure multiple `<case>` sections.
 
-ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+Actions when conditions are met:
+
+- If a data part matches a condition set, ClickHouse uses the specified compression method.
+- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+
+If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 **Example**
 

@@ -4,9 +4,9 @@ ClickHouse runs sampling profiler that allows to analyse query execution. Using 
 
 To use profiler:
 
-- Setup the [trace_log][../server_settings/settings.md#server_settings-trace_log] section of the server configuration.
+- Setup the [trace_log](../server_settings/settings.md#server_settings-trace_log) section of the server configuration.
 
-    This section configures the [trace_log][../system_tables.md#system_tables-trace_log] system table containing the results of the profiler functioning. It is configured by default.
+    This section configures the [trace_log](../system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default.
 
 - Setup the [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) and [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings.
 
@@ -16,7 +16,7 @@ Default sampling frequency is one sample per second. This frequency allows to ca
 
 To analyze the `trace_log` system table:
 
-- Install the `clickhouse-common-static-dbg` package.
+- Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting_started/install.md#install-from-deb-packages).
 - Allow introspection functions.
 
     For security reasons introspection functions are disabled by default.
