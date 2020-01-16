@@ -32,6 +32,7 @@ void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
 void registerFunctionArrayFlatten(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
+void registerFunctionAUC(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -64,6 +65,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayDistinct(factory);
     registerFunctionArrayFlatten(factory);
     registerFunctionArrayWithConstant(factory);
+    registerFunctionAUC(factory);
 }
 
 }
