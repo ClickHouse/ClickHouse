@@ -15,13 +15,6 @@ namespace Poco
 namespace DB
 {
 
-enum class TraceType : UInt8
-{
-    REAL_TIME,
-    CPU_TIME,
-    MEMORY,
-};
-
 /**
   * Query profiler implementation for selected thread.
   *
