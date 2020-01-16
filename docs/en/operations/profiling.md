@@ -1,3 +1,0 @@
-# Query profiling {#query-profiling}
-
- 
