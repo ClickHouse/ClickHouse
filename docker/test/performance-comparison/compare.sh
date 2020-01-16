@@ -118,7 +118,8 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm test-times.tsv ||:
+    # FIXME remove some broken long tests
+    rm left/performance/IPv* ||:
 
     # Run the tests
     for test in left/performance/*.xml
@@ -126,8 +127,11 @@ function run_tests
         test_name=$(basename $test ".xml")
         echo test $test_name
         TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
         time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" || continue
-        right/clickhouse local --file "$test_name-raw.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
+        grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
+        grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
+        right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
     done
 }
 run_tests
@@ -136,4 +140,5 @@ run_tests
 result_structure="left float, right float, diff float, rd Array(float), query text"
 right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff < 0.05 and rd[3] > 0.05 order by rd[3] desc" > flap-prone.tsv
 right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff > 0.05 and diff > rd[3] order by diff desc" > bad-perf.tsv
+right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select *, floor(client/server, 3) p from table order by p desc" > client-time.tsv
 grep Exception:[^:] *-err.log > run-errors.log
