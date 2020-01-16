@@ -1,12 +1,15 @@
-#include <cstdlib>
-
 #include "MemoryTracker.h"
-#include <common/likely.h>
-#include <common/logger_useful.h>
+
+#include <IO/WriteHelpers.h>
+#include "Common/TraceCollector.h"
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
+#include <common/likely.h>
+#include <common/logger_useful.h>
+#include <common/singleton.h>
+
+#include <cstdlib>
 
 
 namespace DB
@@ -73,7 +76,7 @@ void MemoryTracker::alloc(Int64 size)
         return;
 
     /** Using memory_order_relaxed means that if allocations are done simultaneously,
-      *  we allow exception about memory limit exceeded to be thrown only on next allocation.
+      * we allow exception about memory limit exceeded to be thrown only on next allocation.
       * So, we allow over-allocations.
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
@@ -207,10 +210,13 @@ namespace CurrentMemoryTracker
             if (untracked > untracked_memory_limit)
             {
                 /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
-                /// more. It could be usefull for enlarge Exception message in rethrow logic.
+                /// more. It could be useful to enlarge Exception message in rethrow logic.
                 Int64 tmp = untracked;
                 untracked = 0;
                 memory_tracker->alloc(tmp);
+
+                auto no_track = memory_tracker->blocker.cancel();
+                Singleton<DB::TraceCollector>()->collect(tmp);
             }
         }
     }
@@ -218,10 +224,7 @@ namespace CurrentMemoryTracker
     void realloc(Int64 old_size, Int64 new_size)
     {
         Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
+        addition > 0 ? alloc(addition) : free(-addition);
     }
 
     void free(Int64 size)

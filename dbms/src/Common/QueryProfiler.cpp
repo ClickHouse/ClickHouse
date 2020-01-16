@@ -1,92 +1,38 @@
 #include "QueryProfiler.h"
 
-#include <random>
-#include <common/phdr_cache.h>
-#include <common/config_common.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
+#include <Common/Exception.h>
+#include <Common/StackTrace.h>
+#include <Common/TraceCollector.h>
+#include <Common/thread_local_rng.h>
+#include <common/StringRef.h>
+#include <common/config_common.h>
+#include <common/logger_useful.h>
+#include <common/phdr_cache.h>
+#include <common/singleton.h>
 
+#include <random>
 
-namespace ProfileEvents
-{
-    extern const Event QueryProfilerSignalOverruns;
-}
 
 namespace DB
 {
 
-extern LazyPipeFDs trace_pipe;
-
 namespace
 {
-    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr size_t QUERY_ID_MAX_LEN = 1024;
-
-#if defined(OS_LINUX)
-    thread_local size_t write_trace_iteration = 0;
-#endif
-
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        int overrun_count = 0;
 #if defined(OS_LINUX)
-        /// Quickly drop if signal handler is called too frequently.
-        /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
-        ++write_trace_iteration;
-        if (info && info->si_overrun > 0)
-        {
-            /// But pass with some frequency to avoid drop of all traces.
-            if (write_trace_iteration % info->si_overrun == 0)
-            {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun);
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun + 1);
-                return;
-            }
-        }
+        if (info)
+            overrun_count = info->si_overrun;
 #else
         UNUSED(info);
 #endif
 
-        constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
-                                    8 * sizeof(char) + // maximum VarUInt length for string size
-                                    QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
-                                    sizeof(UInt8) + // number of stack frames
-                                    sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
-                                    sizeof(TraceType) + // timer type
-                                    sizeof(UInt32); // thread_number
-        char buffer[buf_size];
-        WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
-
-        StringRef query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
-
-        UInt32 thread_number = CurrentThread::get().thread_number;
-
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        writeChar(false, out);
-        writeStringBinary(query_id, out);
-
-        size_t stack_trace_size = stack_trace.getSize();
-        size_t stack_trace_offset = stack_trace.getOffset();
-        writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-            writePODBinary(stack_trace.getFrames()[i], out);
-
-        writePODBinary(trace_type, out);
-        writePODBinary(thread_number, out);
-        out.next();
+        Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
     }
 
     [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
