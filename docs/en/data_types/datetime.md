@@ -12,10 +12,15 @@ Supported range of values: [1970-01-01 00:00:00, 2105-12-31 23:59:59].
 
 Resolution: 1 second.
 
+SELECT toDateTime(0)
+FORMAT TSV
+
+0000-00-00 00:00:00
+
 
 ## Usage Remarks
 
-A moment of time is stored as [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), independently of time zones and daylight savings. Additionally `DateTime` can store time zone, that affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. You can find the list of supported time zones in the [IANA Time Zone Database](https://www.iana.org/time-zones).
+A moment of time is stored as [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), independently of time zones and daylight savings. Additionally `DateTime` can store time zone, that affects how `DateTime` values are displayed in text format and how input strings are parsed for storage. The `tzdata` package, containing [IANA Time Zone Database](https://www.iana.org/time-zones), should be installed in the system. Use the `timedatectl list-timezones` command to list timezones known by a local system.
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. If the time zone isn't set, ClickHouse uses the value of the [timezone](../operations/server_settings/settings.md#server_settings-timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
