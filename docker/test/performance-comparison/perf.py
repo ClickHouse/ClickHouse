@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import sys
 import itertools
 import clickhouse_driver
 import xml.etree.ElementTree as et
