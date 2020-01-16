@@ -1334,7 +1334,7 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = Poco::Path(new_table_path).makeParent().toString();
-        disk->createDirectory(new_table_path_parent);
+        disk->createDirectories(new_table_path_parent);
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 

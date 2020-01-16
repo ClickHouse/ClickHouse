@@ -745,7 +745,9 @@ void Context::addDependencyUnsafe(const StorageID & from, const StorageID & wher
 {
     checkDatabaseAccessRightsImpl(from.database_name);
     checkDatabaseAccessRightsImpl(where.database_name);
-    shared->view_dependencies[from].insert(where);
+    // FIXME when loading metadata storage may not know UUIDs of it's dependencies, because they are not loaded yet,
+    // so UUID of `from` is not used here.
+    shared->view_dependencies[{from.database_name, from.table_name}].insert(where);
 
     // Notify table of dependencies change
     auto table = tryGetTable(from);
@@ -763,7 +765,7 @@ void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & w
 {
     checkDatabaseAccessRightsImpl(from.database_name);
     checkDatabaseAccessRightsImpl(where.database_name);
-    shared->view_dependencies[from].erase(where);
+    shared->view_dependencies[{from.database_name, from.table_name}].erase(where);
 
     // Notify table of dependencies change
     auto table = tryGetTable(from);
@@ -792,7 +794,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
         checkDatabaseAccessRightsImpl(db);
     }
 
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
+    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name));
     if (iter == shared->view_dependencies.end())
         return {};
 

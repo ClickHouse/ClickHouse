@@ -62,7 +62,7 @@ namespace
             StoragePtr table;
             std::tie(table_name, table)
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
-            database.attachTable(table_name, table);
+            database.attachTable(table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {

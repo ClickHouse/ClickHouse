@@ -27,14 +27,18 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
     auto it = table_name_to_path.find(table_name);
     if (it == table_name_to_path.end())
         throw Exception("Table " + table_name + " not found in database " + getDatabaseName(), ErrorCodes::UNKNOWN_TABLE);
-    return data_path + it->second;
+    assert(it->second != data_path && !it->second.empty());
+    return it->second;
 }
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
     //stringToUUID(query.uuid);   /// Check UUID is valid
     const size_t uuid_prefix_len = 3;
-    return data_path + toString(query.uuid).substr(0, uuid_prefix_len) + '/' + toString(query.uuid) + '/';
+    auto tmp = data_path + toString(query.uuid).substr(0, uuid_prefix_len) + '/' + toString(query.uuid) + '/';
+    assert(tmp != data_path && !tmp.empty());
+    return tmp;
+
 }
 
 void DatabaseAtomic::drop(const Context &)
@@ -44,6 +48,7 @@ void DatabaseAtomic::drop(const Context &)
 
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
+    assert(relative_table_path != data_path && !relative_table_path.empty());
     DatabaseWithDictionaries::attachTable(name, table, relative_table_path);
     std::lock_guard lock(mutex);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
