@@ -100,7 +100,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
             out.sync();
         out.close();
     }
-    
+
     bool succeeded = false;
     SCOPE_EXIT({
         if (!succeeded)

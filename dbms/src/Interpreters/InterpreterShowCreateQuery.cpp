@@ -69,6 +69,10 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     if (!create_query && show_query && show_query->temporary)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
+    //FIXME temporary print create query without UUID for tests (remove it)
+    auto & create = create_query->as<ASTCreateQuery &>();
+    create.uuid = UUID{UInt128{0, 0}};
+
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);
     String res = stream.str();
