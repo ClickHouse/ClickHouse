@@ -80,8 +80,15 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_)
-    : storage(storage_), pool{pool_}, path{storage.path + name_ + '/'}
+    StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
+    /// It's important to initialize members before `thread` to avoid race.
+    : storage(storage_)
+    , pool(std::move(pool_))
+    , name(std::move(name_))
+    , path{storage.path + name + '/'}
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
@@ -89,10 +96,6 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
 {
-    const Settings & settings = storage.global_context.getSettingsRef();
-    should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
-    min_batched_block_size_rows = settings.min_insert_block_size_rows;
-    min_batched_block_size_bytes = settings.min_insert_block_size_bytes;
 }
 
 
@@ -266,7 +269,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         Settings insert_settings;
         std::string insert_query;
-        readHeader(in, insert_settings, insert_query);
+        readHeader(in, insert_settings, insert_query, log);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
 
@@ -286,7 +289,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
-    ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, Logger * log)
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
@@ -446,7 +449,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                parent.readHeader(in, insert_settings, insert_query);
+                parent.readHeader(in, insert_settings, insert_query, parent.log);
 
                 if (first)
                 {
@@ -517,6 +520,53 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 };
 
+class DirectoryMonitorBlockInputStream : public IBlockInputStream
+{
+public:
+    explicit DirectoryMonitorBlockInputStream(const String & file_name)
+        : in(file_name)
+        , decompressing_in(in)
+        , block_in(decompressing_in, ClickHouseRevision::get())
+        , log{&Logger::get("DirectoryMonitorBlockInputStream")}
+    {
+        Settings insert_settings;
+        String insert_query;
+        StorageDistributedDirectoryMonitor::readHeader(in, insert_settings, insert_query, log);
+
+        block_in.readPrefix();
+        first_block = block_in.read();
+        header = first_block.cloneEmpty();
+    }
+
+    String getName() const override { return "DirectoryMonitor"; }
+
+protected:
+    Block getHeader() const override { return header; }
+    Block readImpl() override
+    {
+        if (first_block)
+            return std::move(first_block);
+
+        return block_in.read();
+    }
+
+    void readSuffix() override { block_in.readSuffix(); }
+
+private:
+    ReadBufferFromFile in;
+    CompressedReadBuffer decompressing_in;
+    NativeBlockInputStream block_in;
+
+    Block first_block;
+    Block header;
+
+    Logger * log;
+};
+
+BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
+{
+    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
+}
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
@@ -554,7 +604,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readHeader(in, insert_settings, insert_query);
+            readHeader(in, insert_settings, insert_query, log);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -639,7 +689,14 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
-    return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
+    return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
+}
+
+void StorageDistributedDirectoryMonitor::updatePath()
+{
+    std::lock_guard lock{mutex};
+    path = storage.path + name + '/';
+    current_batch_file_path = path + "current_batch.txt";
 }
 
 }

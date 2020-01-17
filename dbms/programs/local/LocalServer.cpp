@@ -32,6 +32,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
@@ -75,7 +76,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
     if (config().has("logger") || config().has("logger.level") || config().has("logger.log"))
     {
         // sensitive data rules are not used here
-        buildLoggers(config(), logger());
+        buildLoggers(config(), logger(), self.commandName());
     }
     else
     {
@@ -152,6 +153,7 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -162,7 +164,7 @@ try
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// Threre are no need for concurrent threads, override max_concurrent_queries.
+    /// There is no need for concurrent threads, override max_concurrent_queries.
     context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
@@ -180,7 +182,7 @@ try
     context->setDefaultProfiles(config());
 
     /** Init dummy default DB
-      * NOTE: We force using isolated default database to avoid conflicts with default database from server enviroment
+      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
@@ -441,7 +443,7 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
-    if (options.count("help"))
+    if (options.empty() || options.count("help"))
     {
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
@@ -496,6 +498,9 @@ void LocalServer::applyCmdOptions()
 }
 
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

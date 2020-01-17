@@ -73,7 +73,7 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursors and calls to virtual functions.
      */
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Output to result rows for the current primary key.
     void insertRows(MutableColumns & merged_columns, size_t block_size, MergeStopCondition & condition);

@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
@@ -88,14 +88,18 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
     parts = std::move(parts_);
 
     UInt32 max_level = 0;
+    Int64 max_mutation = 0;
     for (const auto & part : parts)
+    {
         max_level = std::max(max_level, part->info.level);
+        max_mutation = std::max(max_mutation, part->info.mutation);
+    }
 
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
-    part_info.mutation = parts.front()->info.mutation;
+    part_info.mutation = max_mutation;
 
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -120,7 +124,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         name = part_info.getPartName();
 }
 
-void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const DiskSpace::ReservationPtr & reservation)
+void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const ReservationPtr & reservation)
 {
     path = storage.getFullPathOnDisk(reservation->getDisk()) + name + "/";
 }
@@ -165,9 +169,12 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
     const auto data_settings = data.getSettings();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
+    /// DataPart can be store only at one disk. Get Max of free space at all disks
+    UInt64 disk_space = data.storage_policy->getMaxUnreservedFreeSpace();
+
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
-        return static_cast<UInt64>(data.storage_policy->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
 }
@@ -538,7 +545,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
-    time_t time_of_merge, DiskSpace::Reservation * space_reservation, bool deduplicate, bool force_ttl)
+    time_t time_of_merge, const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -812,7 +819,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
                 + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0);
+        CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0, 0);
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
@@ -912,7 +919,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
     const Context & context,
-    DiskSpace::Reservation * space_reservation,
+    const ReservationPtr & space_reservation,
     TableStructureReadLockHolder & table_lock_holder)
 {
     auto check_not_cancelled = [&]()
@@ -934,7 +941,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
-    context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_for_reading.getSettingsRef().max_streams_to_max_threads_ratio = 1;
     context_for_reading.getSettingsRef().max_threads = 1;
 
     std::vector<MutationCommand> commands_for_part;

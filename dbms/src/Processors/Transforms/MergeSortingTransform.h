@@ -1,24 +1,13 @@
 #pragma once
+
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-
 #include <common/logger_useful.h>
 
-#include <queue>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_ENOUGH_SPACE;
-}
-class MergeSorter;
 
 class MergeSortingTransform : public SortingTransform
 {

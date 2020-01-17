@@ -42,6 +42,8 @@ public:
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);
 
+    void enableQuota();
+
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }
 

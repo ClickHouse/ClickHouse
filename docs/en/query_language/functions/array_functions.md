@@ -380,7 +380,7 @@ arrayPushFront(array, single_value)
 **Example**
 
 ```sql
-SELECT arrayPushBack(['b'], 'a') AS res
+SELECT arrayPushFront(['b'], 'a') AS res
 ```
 ```text
 ┌─res───────┐
@@ -794,19 +794,16 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 
-Converts array of arrays to a flat array.
+Converts an array of arrays to a flat array.
 
 Function:
 
-- Applies for any depth of nested arrays, but all the elements should lay at the same level.
-
-    For example, the `[[[1]], [[2], [3]]]` array can be flattened, but the `[[1], [[2], [3]]]` array can't be flattened.
-
+- Applies to any depth of nested arrays.
 - Does not change arrays that are already flat.
 
 The flattened array contains all the elements from all source arrays.
 
-**Syntax** 
+**Syntax**
 
 ```sql
 flatten(array_of_arrays)
@@ -863,6 +860,40 @@ Result:
 ```text
 ┌─arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])─┐
 │ [1,nan,nan,2,3]                            │
+└────────────────────────────────────────────┘
+```
+
+## arrayZip {#arrayzip}
+
+Combine multiple Array type columns into one Array[Tuple(...)] column
+
+**Syntax**
+
+```sql
+arrayZip(arr1, arr2, ..., arrN)
+```
+
+**Parameters**
+
+`arr` — Any number of [array](../../data_types/array.md) type columns to combine.
+
+**Returned value**
+
+The result of Array[Tuple(...)] type after the combination of these arrays
+
+**Example**
+
+Query:
+
+```sql
+SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
+```
+
+Result:
+
+```text
+┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
+│ [('a','d'),('b','e'),('c','f')]            │
 └────────────────────────────────────────────┘
 ```
 

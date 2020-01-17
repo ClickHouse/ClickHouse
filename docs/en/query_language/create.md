@@ -127,7 +127,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Column Compression Codecs
+### Column Compression Codecs {#codecs}
 
 By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -259,7 +259,9 @@ SELECT a, b, c FROM (SELECT ...)
 
 Materialized views store data transformed by the corresponding SELECT query.
 
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+When creating a materialized view without `TO [db].[table]`, you must specify ENGINE – the table engine for storing data.
+
+When creating a materialized view with `TO [db].[table]`, you must not use `POPULATE`. 
 
 A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 

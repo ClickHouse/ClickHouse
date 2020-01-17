@@ -12,6 +12,7 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 
@@ -25,7 +26,8 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
+
+#include <ryu/ryu.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -115,21 +117,108 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
-template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+
+struct DecomposedFloat64
 {
-    using Converter = DoubleConverter<false>;
-    double_conversion::StringBuilder builder{buffer, len};
+    DecomposedFloat64(double x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
 
-    bool result = false;
+    uint64_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 63;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 52) & 0x7FF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 1023;
+    }
+
+    uint64_t mantissa() const
+    {
+        return x_uint & 0x5affffffffffffful;
+    }
+
+    /// NOTE Probably floating point instructions can be better.
+    bool is_inside_int64() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
+                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+struct DecomposedFloat32
+{
+    DecomposedFloat32(float x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    uint32_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 31;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 23) & 0xFF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 127;
+    }
+
+    uint32_t mantissa() const
+    {
+        return x_uint & 0x7fffff;
+    }
+
+    bool is_inside_int32() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
+                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+template <typename T>
+inline size_t writeFloatTextFastPath(T x, char * buffer)
+{
+    int result = 0;
+
     if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
+    {
+        /// The library Ryu has low performance on integers.
+        /// This workaround improves performance 6..10 times.
 
-    if (!result)
+        if (DecomposedFloat64(x).is_inside_int64())
+            result = itoa(Int64(x), buffer) - buffer;
+        else
+            result = d2s_buffered_n(x, buffer);
+    }
+    else
+    {
+        if (DecomposedFloat32(x).is_inside_int32())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = f2s_buffered_n(x, buffer);
+    }
+
+    if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-    return builder.position();
+    return result;
 }
 
 template <typename T>
@@ -140,23 +229,13 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        buf.position() += writeFloatTextFastPath(x, buf.position());
         return;
     }
 
     Converter::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    bool result = false;
-    if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
-    buf.write(buffer, builder.position());
+    size_t result = writeFloatTextFastPath(x, buffer);
+    buf.write(buffer, result);
 }
 
 
@@ -694,6 +773,46 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
             date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
 }
 
+/// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
+template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
+inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+    if (unlikely(!datetime64))
+    {
+        static const char s[] =
+        {
+            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+            between_date_time_delimiter,
+            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
+            fractional_time_delimiter,
+            // Exactly MaxScale zeroes
+            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
+        };
+        buf.write(s, sizeof(s) - (MaxScale - scale));
+        return;
+    }
+    auto c = DecimalUtils::split(datetime64, scale);
+    const auto & values = date_lut.getValues(c.whole);
+    writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
+        LocalDateTime(values.year, values.month, values.day_of_month,
+            date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
+
+    if (scale > 0)
+    {
+        buf.write(fractional_time_delimiter);
+
+        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+        static_assert(sizeof(data) >= MaxScale);
+
+        auto fractional = c.fractional;
+        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+            data[pos] += fractional % DateTime64(10);
+
+        writeString(&data[0], static_cast<size_t>(scale), buf);
+    }
+}
 
 /// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
 /// This is needed for HTTP requests.
@@ -772,9 +891,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    T whole_part = value;
-    if (scale)
-        whole_part = value / Decimal<T>::getScaleMultiplier(scale);
+    const T whole_part = DecimalUtils::getWholePart(value, scale);
 
     writeIntText(whole_part, ostr);
     if (scale)
@@ -915,17 +1032,6 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
-}
-
-template <class TWriteBuffer, class... Types>
-std::unique_ptr<WriteBuffer> getWriteBuffer(const DB::CompressionMethod method, Types&&... args)
-{
-    if (method == DB::CompressionMethod::Gzip)
-    {
-        auto write_buf = std::make_unique<TWriteBuffer>(std::forward<Types>(args)...);
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
-    }
-    return std::make_unique<TWriteBuffer>(args...);
 }
 
 }

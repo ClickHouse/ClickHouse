@@ -26,10 +26,10 @@ These actions are described in detail below.
 #### ADD COLUMN {#alter_add-column}
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](create.md#codecs) and `default_expr` (see the section [Default expressions](create.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -189,8 +189,10 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
+- [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
+- [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -282,6 +284,23 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
+
+#### MOVE PARTITION {#alter_move-partition}
+
+``` sql
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+This query move the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
+
+For the query to run successfully, the following conditions must be met:
+
+- Both tables must have the same structure.
+- Both tables must have the same partition key.
+- Both tables must be the same engine family. (replicated or non-replicated)
+- Both tables must have the same storage policy.
+
+
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 

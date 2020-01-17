@@ -20,8 +20,6 @@ class StorageSystemOne : public ext::shared_ptr_helper<StorageSystemOne>, public
     friend struct ext::shared_ptr_helper<StorageSystemOne>;
 public:
     std::string getName() const override { return "SystemOne"; }
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -30,9 +28,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-private:
-    const std::string name;
 
 protected:
     StorageSystemOne(const std::string & name_);

@@ -254,7 +254,7 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT recieved.\n";
+                std::cout << "Stopping launch of queries. SIGINT received.\n";
                 return false;
             }
 
@@ -504,6 +504,7 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
