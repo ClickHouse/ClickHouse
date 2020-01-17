@@ -32,7 +32,8 @@ public:
         Block source_header_,
         Block result_header_,
         MatchColumnsMode mode_,
-        const Context & context_);
+        const Context & context_,
+        bool allow_different_constant_values = false);
 
     String getName() const override { return "Converting"; }
 
@@ -44,6 +45,7 @@ private:
 
     /// How to construct result block. Position in source block, where to get each column.
     ColumnNumbers conversion;
+    bool allow_different_constant_values;
 };
 
 }
