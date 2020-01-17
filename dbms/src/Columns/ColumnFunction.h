@@ -5,12 +5,12 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
-
 
 namespace DB
 {
+
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
 /** A column containing a lambda expression.

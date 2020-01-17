@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFunction.h>
+#include <Columns/ColumnFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -31,6 +32,11 @@ std::string DataTypeFunction::doGetName() const
 bool DataTypeFunction::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+}
+
+MutableColumnPtr DataTypeFunction::createColumn() const
+{
+    return ColumnFunction::create(0, nullptr, ColumnsWithTypeAndName());
 }
 
 }

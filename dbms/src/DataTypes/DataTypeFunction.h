@@ -36,6 +36,9 @@ public:
         return return_type;
     }
 
+    // Used for expressions analysis.
+    MutableColumnPtr createColumn() const override;
+
     bool equals(const IDataType & rhs) const override;
 };
 
