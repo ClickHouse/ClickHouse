@@ -1061,8 +1061,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (!indices_to_recalc.empty())
         {
+            std::cerr << "Updated header:" << updated_header.dumpStructure()    << std::endl;
             auto indices_recalc_syntax
-                = SyntaxAnalyzer(context, {}).analyze(indices_recalc_expr_list, updated_header.getNamesAndTypesList());
+                = SyntaxAnalyzer(context, {}).analyze(indices_recalc_expr_list, in->getHeader().getNamesAndTypesList());
             auto indices_recalc_expr = ExpressionAnalyzer(
                     indices_recalc_expr_list,
                     indices_recalc_syntax, context).getActions(false);

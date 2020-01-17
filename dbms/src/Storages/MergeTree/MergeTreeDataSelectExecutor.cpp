@@ -184,6 +184,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     for (const String & name : column_names_to_return)
     {
+        std::cerr << "Column name to return:" << name << std::endl;
         if (name == "_part")
         {
             part_column_queried = true;
@@ -644,7 +645,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
     else
     {
-        std::cerr << "Spreading marks among streams\n";
+        std::cerr << "Spreading marks among streams columns size:" << column_names_to_read.size() << std::endl;
         res = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
             num_streams,
