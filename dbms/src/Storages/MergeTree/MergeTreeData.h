@@ -747,6 +747,7 @@ public:
     /// This mutex is required for background move operations which do not obtain global locks.
     mutable std::mutex move_ttl_entries_mutex;
 
+    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
     std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;

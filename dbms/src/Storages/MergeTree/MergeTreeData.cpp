@@ -633,13 +633,9 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 
     if (new_ttl_table_ast)
     {
-        std::unique_lock<std::mutex> move_ttl_entries_lock;
-        if (!only_check)
-        {
-            move_ttl_entries_lock = std::unique_lock<std::mutex>(move_ttl_entries_mutex);
-            move_ttl_entries.clear();
-            ttl_table_ast = nullptr;
-        }
+        std::vector<TTLEntry> update_move_ttl_entries;
+        ASTPtr update_ttl_table_ast = nullptr;
+        TTLEntry update_ttl_table_entry;
 
         bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
@@ -655,8 +651,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
-                    ttl_table_ast = ttl_element.children[0];
-                    ttl_table_entry = new_ttl_table_entry;
+                    update_ttl_table_ast = ttl_element.children[0];
+                    update_ttl_table_entry = new_ttl_table_entry;
                 }
 
                 seen_delete_ttl = true;
@@ -679,8 +675,17 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 }
 
                 if (!only_check)
-                    move_ttl_entries.emplace_back(std::move(new_ttl_entry));
+                    update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
             }
+        }
+
+        if (!only_check)
+        {
+            ttl_table_entry = update_ttl_table_entry;
+            ttl_table_ast = update_ttl_table_ast;
+
+            auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
+            move_ttl_entries = update_move_ttl_entries;
         }
     }
 }
