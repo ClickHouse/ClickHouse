@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Columns/ColumnArray.h>
 #include <port/clock.h>
 
 
@@ -19,7 +18,9 @@ public:
         MarkCache * mark_cache_,
         const MarkRanges & mark_ranges_,
         const MergeTreeReaderSettings & settings_,
-        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
+        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
@@ -37,7 +38,7 @@ private:
     MergeTreeMarksLoader marks_loader;
 
     using ColumnPosition = std::optional<size_t>;
-    /// Positions of columns in part structe.
+    /// Positions of columns in part structure.
     std::vector<ColumnPosition> column_positions;
     /// Should we read full column or only it's offsets
     std::vector<bool> read_only_offsets;
@@ -48,7 +49,7 @@ private:
     void initMarksLoader();
     void seekToMark(size_t row_index, size_t column_index);
 
-    void readData(IColumn & column, const IDataType & type,
+    void readData(const String & name, IColumn & column, const IDataType & type,
         size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets = false);
 
     ColumnPosition findColumnForOffsets(const String & column_name);

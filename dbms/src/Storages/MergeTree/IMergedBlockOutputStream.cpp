@@ -6,18 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    // constexpr auto DATA_FILE_EXTENSION = ".bin";
-    // constexpr auto INDEX_FILE_EXTENSION = ".idx";
-}
-
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part)
     : storage(data_part->storage)

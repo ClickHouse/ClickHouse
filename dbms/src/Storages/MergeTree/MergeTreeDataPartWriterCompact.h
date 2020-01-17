@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <DataStreams/SquashingTransform.h>
 
 namespace DB
 {

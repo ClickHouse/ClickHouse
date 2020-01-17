@@ -1,30 +1,8 @@
 #include "MergeTreeDataPartCompact.h"
-
-#include <optional>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/HashingWriteBuffer.h>
-#include <Core/Defines.h>
-#include <Common/SipHash.h>
-#include <Common/escapeForFileName.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/localBackup.h>
-#include <Compression/CompressionInfo.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
-#include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
-#include <common/JSON.h>
-
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -32,14 +10,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
-    extern const int EXPECTED_END_OF_FILE;
-    extern const int CORRUPTED_DATA;
-    extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int BAD_TTL_FILE;
-    extern const int CANNOT_UNLINK;
 }
 
 
@@ -69,12 +41,13 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     MarkCache * mark_cache,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & /* profile_callback */) const
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
     /// FIXME maybe avoid shared_from_this
     return std::make_unique<MergeTreeReaderCompact>(
         shared_from_this(), columns_to_read, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings, avg_value_size_hints);
+        mark_cache, mark_ranges, reader_settings,
+        avg_value_size_hints, profile_callback);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(

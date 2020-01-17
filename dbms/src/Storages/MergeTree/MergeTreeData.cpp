@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
+    extern const int UNKNOWN_PART_TYPE;
 }
 
 
@@ -2272,13 +2273,13 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
 
     for (const DataPartPtr & part : remove)
     {
-        if (part->state ==IMergeTreeDataPart::State::Committed)
+        if (part->state == IMergeTreeDataPart::State::Committed)
             removePartContributionToColumnSizes(part);
 
-        if (part->state ==IMergeTreeDataPart::State::Committed || clear_without_timeout)
+        if (part->state == IMergeTreeDataPart::State::Committed || clear_without_timeout)
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
-        if (part->state !=IMergeTreeDataPart::State::Outdated)
+        if (part->state != IMergeTreeDataPart::State::Outdated)
             modifyPartState(part,IMergeTreeDataPart::State::Outdated);
     }
 }
@@ -2762,9 +2763,9 @@ void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of  columns was written incorrectly. Delete it and re-create.
-    if (isWidePart(part))
-        if (Poco::File(full_part_path + "columns.txt").exists())
-            Poco::File(full_part_path + "columns.txt").remove();
+    /// But in compact parts we can't get list of columns without this file.
+    if (isWidePart(part) && Poco::File(full_part_path + "columns.txt").exists())
+        Poco::File(full_part_path + "columns.txt").remove();
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
@@ -3746,7 +3747,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
     : parts_to_move(std::move(moving_parts_)), data(data_)
 {
     for (const auto & moving_part : parts_to_move)
-        if (!data.currently_moving_parts.emplace(moving_part.part->name).second)
+        if (!data.currently_moving_parts.emplace(moving_part.part).second)
             throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -3756,9 +3757,9 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     for (const auto & moving_part : parts_to_move)
     {
         /// Something went completely wrong
-        if (!data.currently_moving_parts.count(moving_part.part->name))
+        if (!data.currently_moving_parts.count(moving_part.part))
             std::terminate();
-        data.currently_moving_parts.erase(moving_part.part->name);
+        data.currently_moving_parts.erase(moving_part.part);
     }
 }
 
@@ -3802,7 +3803,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
             *reason = "part already assigned to background operation.";
             return false;
         }
-        if (currently_moving_parts.count(part->name))
+        if (currently_moving_parts.count(part))
         {
             *reason = "part is already moving.";
             return false;
@@ -3836,7 +3837,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
                 "Move is not possible: " + path_to_clone + part->name + " already exists",
                 ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-        if (currently_moving_parts.count(part->name) || partIsAssignedToBackgroundOperation(part))
+        if (currently_moving_parts.count(part) || partIsAssignedToBackgroundOperation(part))
             throw Exception(
                 "Cannot move part '" + part->name + "' because it's participating in background process",
                 ErrorCodes::PART_IS_TEMPORARILY_LOCKED);

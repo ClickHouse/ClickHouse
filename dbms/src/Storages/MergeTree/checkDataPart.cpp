@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_PART_TYPE;
 }
 
 

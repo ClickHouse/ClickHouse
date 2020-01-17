@@ -80,20 +80,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     const IColumn::Permutation * permutation,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    // if (serialization_states.empty())
-    // {
-    //     serialization_states.reserve(columns_list.size());
-    //     WrittenOffsetColumns tmp_offset_columns;
-    //     IDataType::SerializeBinaryBulkSettings serialize_settings;
-
-    //     for (const auto & col : columns_list)
-    //     {
-    //         serialize_settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-    //         serialization_states.emplace_back(nullptr);
-    //         col.type->serializeBinaryBulkStatePrefix(serialize_settings, serialization_states.back());
-    //     }
-    // }
-
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
@@ -294,6 +280,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
         {
             if (!serialization_states.empty())
             {
+                /// FIXME maybe we need skip_offsets=false in some cases
                 serialize_settings.getter = createStreamGetter(it->name, written_offset_columns ? *written_offset_columns : offset_columns);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }

@@ -1,29 +1,6 @@
 #include "MergeTreeDataPartWide.h"
-
-#include <optional>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/HashingWriteBuffer.h>
-#include <Core/Defines.h>
-#include <Common/SipHash.h>
-#include <Common/escapeForFileName.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/localBackup.h>
-#include <Compression/CompressionInfo.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Poco/File.h>
-#include <Poco/Path.h>
-#include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
-#include <common/JSON.h>
-
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
@@ -33,21 +10,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
-    extern const int EXPECTED_END_OF_FILE;
-    extern const int CORRUPTED_DATA;
-    extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int BAD_TTL_FILE;
-    extern const int CANNOT_UNLINK;
 }
 
-
-// static ReadBufferFromFile openForReading(const String & path)
-// {
-//     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-// }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,

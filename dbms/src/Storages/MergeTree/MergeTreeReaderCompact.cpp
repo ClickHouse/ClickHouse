@@ -17,7 +17,8 @@ namespace ErrorCodes
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_, UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-    const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_)
+    const MarkRanges & mark_ranges_, const MergeTreeReaderSettings & settings_, const ValueSizeMap & avg_value_size_hints_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_)
     : IMergeTreeReader(data_part_, columns_
     , uncompressed_cache_, mark_cache_, mark_ranges_
     , settings_, avg_value_size_hints_)
@@ -31,8 +32,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             full_data_path, uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
-        // if (profile_callback)
-        //     buffer->setProfileCallback(profile_callback, clock_type);
+        if (profile_callback_)
+            buffer->setProfileCallback(profile_callback_, clock_type_);
 
         cached_buffer = std::move(buffer);
         data_buffer = cached_buffer.get();
@@ -42,8 +43,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
             full_data_path, 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
-        // if (profile_callback)
-        //     buffer->setProfileCallback(profile_callback, clock_type);
+        if (profile_callback_)
+            buffer->setProfileCallback(profile_callback_, clock_type_);
 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
@@ -110,19 +111,13 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             {
                 size_t column_size_before_reading = column->size();
 
-                readData(*column, *type, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(name, *column, *type, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
 
                 if (read_rows_in_column < rows_to_read)
                     throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
                         ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
-
-                /// For elements of Nested, column_size_before_reading may be greater than column size
-                ///  if offsets are not empty and were already read, but elements are empty.
-                /// FIXME
-                // if (column->size())
-                //     read_rows_in_mark = std::max(read_rows, column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
@@ -168,7 +163,7 @@ MergeTreeReaderCompact::ColumnPosition MergeTreeReaderCompact::findColumnForOffs
 
 
 void MergeTreeReaderCompact::readData(
-    IColumn & column, const IDataType & type,
+    const String & name, IColumn & column, const IDataType & type,
     size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
     if (!isContinuousReading(from_mark, column_position))
@@ -184,7 +179,7 @@ void MergeTreeReaderCompact::readData(
 
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.getter = buffer_getter;
-    // deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+    deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
     deserialize_settings.position_independent_encoding = true;
 
     IDataType::DeserializeBinaryBulkStatePtr state;
