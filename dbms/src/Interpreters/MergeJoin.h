@@ -96,7 +96,7 @@ private:
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
-    const size_t max_joined_block_size;
+    const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
 
     void changeLeftColumns(Block & block, MutableColumns && columns);

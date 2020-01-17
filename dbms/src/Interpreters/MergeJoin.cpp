@@ -450,7 +450,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
-    , max_joined_block_size(table_join->maxJoinedBlockSize())
+    , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
@@ -738,7 +738,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         if constexpr (is_all)
         {
-            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_size);
+            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_rows);
             if (!max_rows)
                 return false;
 
@@ -792,7 +792,7 @@ bool MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
 
         if constexpr (is_all)
         {
-            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_size);
+            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_rows);
             if (!max_rows)
                 return false;
 
