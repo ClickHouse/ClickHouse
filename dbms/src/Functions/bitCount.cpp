@@ -25,7 +25,7 @@ struct BitCountImpl
 };
 
 struct NameBitCount { static constexpr auto name = "bitCount"; };
-using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, false>;
+using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, false /* is injective */>;
 
 /// The function has no ranges of monotonicity.
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
