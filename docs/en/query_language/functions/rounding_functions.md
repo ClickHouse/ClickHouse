@@ -84,7 +84,7 @@ round(3.65, 1) = 3.6
 
 ## roundBankers {#roundbankers}
 
-Rounds a number.
+Rounds a number to a specified decimal position.
 
 - If rounding number is a half between two numbers, the function uses banker's rounding.
 
