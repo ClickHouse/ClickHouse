@@ -304,6 +304,8 @@ void registerFunctionVisitParamExtractBool(FunctionFactory & factory);
 void registerFunctionVisitParamExtractRaw(FunctionFactory & factory);
 void registerFunctionVisitParamExtractString(FunctionFactory & factory);
 
+void registerFunctionHttpFunc(FunctionFactory & factory);
+
 void registerFunctions();
 
 }

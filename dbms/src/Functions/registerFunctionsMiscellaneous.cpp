@@ -55,6 +55,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
     registerFunctionGetScalar(factory);
+    registerFunctionHttpFunc(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
