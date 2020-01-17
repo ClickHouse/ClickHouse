@@ -114,6 +114,11 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
+    void splitMutationCommands(
+        MergeTreeData::DataPartPtr part,
+        const std::vector<MutationCommand> & commands,
+        std::vector<MutationCommand> & for_interpreter,
+        std::vector<MutationCommand> & for_file_renames);
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);

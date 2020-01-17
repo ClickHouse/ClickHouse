@@ -74,6 +74,8 @@ public:
     NamesAndTypesList addTypes(const Names & names) const;
 
     bool contains(const String & name) const;
+
+    std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 };
 
 }

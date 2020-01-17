@@ -540,10 +540,26 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
 
     MutationCommand result;
 
-    result.type = MutationCommand::Type::READ;
-    result.column_name = column_name;
-    result.data_type = data_type;
-    result.predicate = nullptr;
+    if (type == MODIFY_COLUMN)
+    {
+        result.type = MutationCommand::Type::READ_COLUMN;
+        result.column_name = column_name;
+        result.data_type = data_type;
+        result.predicate = nullptr;
+    }
+    else if (type == DROP_COLUMN)
+    {
+        result.type = MutationCommand::Type::DROP_COLUMN;
+        result.column_name = column_name;
+        result.predicate = nullptr;
+    }
+    else if (type == DROP_INDEX)
+    {
+        result.type = MutationCommand::Type::DROP_INDEX;
+        result.column_name = column_name;
+        result.predicate = nullptr;
+    }
+
     result.ast = ast->clone();
     return result;
 }

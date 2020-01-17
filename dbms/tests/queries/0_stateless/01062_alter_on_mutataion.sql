@@ -69,4 +69,4 @@ ALTER TABLE nested_alter DROP COLUMN `n.d`;
 
 SELECT * FROM nested_alter;
 
---DROP TABLE nested_alter;
+DROP TABLE nested_alter;
