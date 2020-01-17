@@ -760,11 +760,18 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
                     command->default_expression->clone(),
                     std::make_shared<ASTLiteral>(explicit_type->getName()));
 
-                //TODO(alesap)
-                //command->ast = std::make_shared<ASTAlterCommand>();
-                //command->type = ASTAlterCommand::MODIFY_COLUMN;
-                //command->col_decl = std::make_shared<ASTColumnDeclaration>();
-                //command->col_decl->name = column.name;
+                if (!command->ast)
+                {
+                    //TODO(alesap) Understand how we get heere
+                    auto ast = std::make_shared<ASTAlterCommand>();
+                    ast->type = ASTAlterCommand::MODIFY_COLUMN;
+                    auto col_decl = std::make_shared<ASTColumnDeclaration>();
+                    col_decl->name = column.name;
+                    col_decl->default_specifier = toString(command->default_kind);
+                    col_decl->default_expression = command->default_expression->clone();
+                    ast->col_decl = col_decl;
+                    command->ast = ast;
+                }
             }
         }
         else
@@ -796,6 +803,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 if (!metadata.columns.has(column_name))
                     if (!command.if_exists)
                         throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+
             }
 
         }
