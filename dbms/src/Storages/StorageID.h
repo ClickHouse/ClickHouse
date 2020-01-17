@@ -19,10 +19,10 @@ struct StorageID
 {
     String database_name;
     String table_name;
-    UUID uuid = UUID{UInt128(0, 0)};
+    UUID uuid = UUIDHelpers::Nil;
 
 
-    StorageID(const String & database, const String & table, UUID uuid_ = UUID{UInt128(0, 0)})
+    StorageID(const String & database, const String & table, UUID uuid_ = UUIDHelpers::Nil)
             : database_name(database), table_name(table), uuid(uuid_)
     {
         assertNotEmpty();
@@ -60,7 +60,7 @@ struct StorageID
 
     bool hasUUID() const
     {
-        return uuid != UUID{UInt128(0, 0)};
+        return uuid != UUIDHelpers::Nil;
     }
 
     bool operator<(const StorageID & rhs) const

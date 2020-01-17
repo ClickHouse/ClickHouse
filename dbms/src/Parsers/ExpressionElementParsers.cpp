@@ -229,7 +229,7 @@ bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected)
     tryGetIdentifierNameInto(database, res.database_name);
     tryGetIdentifierNameInto(table, res.table_name);
     //FIXME
-    res.uuid = uuid ? parseFromString<UUID>(uuid->as<ASTLiteral>()->value.get<String>()) : UUID(UInt128(0, 0));
+    res.uuid = uuid ? parseFromString<UUID>(uuid->as<ASTLiteral>()->value.get<String>()) : UUIDHelpers::Nil;
     return true;
 }
 
