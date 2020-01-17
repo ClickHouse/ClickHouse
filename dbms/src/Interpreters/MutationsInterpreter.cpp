@@ -178,6 +178,7 @@ MutationsInterpreter::MutationsInterpreter(
     std::cerr << "Mutations ast:" << queryToString(mutation_ast) << std::endl;
     SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
+    std::cerr << "HEADER:" << select_interpreter->getSampleBlock().dumpStructure() << std::endl;
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage)
@@ -405,6 +406,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
+    std::cerr << "AFFECTED INDICES COLUMN:" << affected_indices_columns.size() << std::endl;
     /// We cares about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete
     if (!affected_indices_columns.empty())
@@ -422,6 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             }
 
             const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
+            std::cerr << "SELECT query for index:" << queryToString(select_query) << std::endl;
             InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
             auto first_stage_header = interpreter.getSampleBlock();
@@ -431,8 +434,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         /// Special step to recalculate affected indices.
         stages.emplace_back(context);
         for (const auto & column : affected_indices_columns)
+        {
+            std::cerr << "AFFECTED COLUMN:" << column << std::endl;
             stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
+        }
     }
 
     is_prepared = true;
@@ -611,9 +617,14 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     BlockInputStreamPtr in = select_interpreter->execute().in;
+    std::cerr << "INNNNNNNN HEADER:" << in->getHeader().dumpStructure() << std::endl;
     auto result_stream = addStreamsForLaterStages(stages, in);
+    std::cerr << "RESULTTTTT  HEADER:" << result_stream->getHeader().dumpStructure() << std::endl;
     if (!updated_header)
+    {
+        std::cerr << "Saving updated header\n";
         updated_header = std::make_unique<Block>(result_stream->getHeader());
+    }
     return result_stream;
 }
 

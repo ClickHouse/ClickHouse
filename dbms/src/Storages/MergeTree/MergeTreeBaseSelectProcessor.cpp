@@ -44,6 +44,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     save_marks_in_cache(save_marks_in_cache_),
     virt_column_names(virt_column_names_)
 {
+    std::cerr << "Processor header:" << header.dumpStructure() << std::endl;
     std::cerr << "HEADER IN SELECT PROCESSOR:" << getPort().getHeader().dumpStructure() << std::endl;
     //std::cerr <<    "STACK:" <<   StackTrace().toString() << std::endl;
     header_without_virtual_columns = getPort().getHeader();
