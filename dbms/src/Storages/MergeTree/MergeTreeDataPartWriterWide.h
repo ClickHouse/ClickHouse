@@ -6,6 +6,7 @@ namespace DB
 class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
 {
 public:
+
     using ColumnToSize = std::map<std::string, UInt64>;
 
     MergeTreeDataPartWriterWide(

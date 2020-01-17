@@ -20,7 +20,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     writer_settings.filename_suffix = filename_suffix;
     writer_settings.skip_offsets = skip_offsets_;
 
-    writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc, default_codec, writer_settings, index_granularity);
+    writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc,
+        default_codec,std::move(writer_settings), index_granularity);
     writer->setWrittenOffsetColumns(offset_columns_);
     writer->initSkipIndices();
 }

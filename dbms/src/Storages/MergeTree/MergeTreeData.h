@@ -80,7 +80,7 @@ namespace ErrorCodes
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
 /// partition.dat - contains the value of the partitioning expression.
-/// minmax_[Column].idx - MinMax indexes (seeIMergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
+/// minmax_[Column].idx - MinMax indexes (see IMergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
@@ -184,7 +184,7 @@ public:
 
     /// After this methods setColumns must be called
     MutableDataPartPtr createPart(const String & name,
-        const MergeTreePartInfo & part_info,const DiskPtr & disk,
+        const MergeTreePartInfo & part_info, const DiskPtr & disk,
         const NamesAndTypesList & columns,
         size_t bytes_on_disk, size_t rows_num,
         const String & relative_path) const;
@@ -789,7 +789,7 @@ public:
     /// if we decide to move some part to another disk, than we
     /// assuredly will choose this disk for containing part, which will appear
     /// as result of merge or mutation.
-    NameSet currently_moving_parts;
+    DataParts currently_moving_parts;
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
@@ -797,8 +797,6 @@ public:
 protected:
 
     friend class IMergeTreeDataPart;
-    friend class MergeTreeDataPartWide;
-    friend class MergeTreeDataPartCompact;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
     friend struct ReplicatedMergeTreeTableMetadata;
@@ -935,8 +933,6 @@ protected:
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
-    /// Expression for column type conversion.
-    /// If no conversions are needed, out_expression=nullptr.
     /// out_rename_map maps column files for the out_expression onto new table files.
     /// out_force_update_metadata denotes if metadata must be changed even if out_rename_map is empty (used
     /// for transformation-free changing of Enum values list).

@@ -83,6 +83,8 @@ public:
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
+    /// Returns rename map of column files for the alter converting expression onto new table files.
+    /// Files to be deleted are mapped to an empty string in rename map.
     virtual NameToNameMap createRenameMapForAlter(
         AlterAnalysisResult & /* analysis_result */,
         const NamesAndTypesList & /* old_columns */) const { return {}; }
@@ -306,7 +308,7 @@ public:
 protected:
     /// Columns description.
     NamesAndTypesList columns;
-    Type part_type;
+    const Type part_type;
 
     void removeIfNeeded();
 

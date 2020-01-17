@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_PART_TYPE;
-}
-
 class MergeTreeData;
 
 /// Meta information about index granularity

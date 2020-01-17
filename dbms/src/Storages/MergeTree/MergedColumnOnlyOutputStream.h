@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 
 namespace DB
 {

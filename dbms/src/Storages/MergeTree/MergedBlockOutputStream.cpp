@@ -1,12 +1,4 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <IO/createWriteBufferFromFileBase.h>
-#include <Common/escapeForFileName.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataStreams/MarkInCompressedFile.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/MemoryTracker.h>
 #include <Poco/File.h>
 
 
@@ -29,7 +21,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
-    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
+
+    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, std::move(writer_settings));
     init();
 }
 
