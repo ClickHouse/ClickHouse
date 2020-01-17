@@ -622,7 +622,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
  - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 Временная зона сервера.
 
