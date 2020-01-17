@@ -620,19 +620,19 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         if (database->getEngineName() == "Atomic")
         {
             //TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
-            if (create.attach && create.uuid == UUID(UInt128(0, 0)))
+            if (create.attach && create.uuid == UUIDHelpers::Nil)
                 throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
-            if (!create.attach && create.uuid == UUID(UInt128(0, 0)))
-                create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
+            if (!create.attach && create.uuid == UUIDHelpers::Nil)
+                create.uuid = UUIDHelpers::generateV4();
         }
         else
         {
-            if (create.uuid != UUID(UInt128(0, 0)))
+            if (create.uuid != UUIDHelpers::Nil)
                 throw Exception("Table UUID specified, but engine of database " + database_name + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
         }
 
-        if (!create.attach && create.uuid == UUID(UInt128(0, 0)) && database->getEngineName() == "Atomic")
-            create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
+        if (!create.attach && create.uuid == UUIDHelpers::Nil && database->getEngineName() == "Atomic")
+            create.uuid = UUIDHelpers::generateV4();
 
         data_path = database->getTableDataPath(create);
 

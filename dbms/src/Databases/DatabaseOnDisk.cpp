@@ -112,7 +112,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     create->format = nullptr;
     create->out_file = nullptr;
 
-    if (create->uuid != UUID(UInt128(0, 0)))
+    if (create->uuid != UUIDHelpers::Nil)
         create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     std::ostringstream statement_stream;
@@ -245,9 +245,9 @@ void DatabaseOnDisk::renameTable(
     auto & create = ast->as<ASTCreateQuery &>();
     create.table = to_table_name;
     if (from_ordinary_to_atomic)
-        create.uuid = parseFromString<UUID>(boost::uuids::to_string(boost::uuids::random_generator()()));
+        create.uuid = UUIDHelpers::generateV4();
     if (from_atomic_to_ordinary)
-        create.uuid = UUID(UInt128(0, 0));
+        create.uuid = UUIDHelpers::Nil;
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
@@ -427,7 +427,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid != UUID(UInt128(0, 0)))
+    if (create.uuid != UUIDHelpers::Nil)
     {
         String table_name = Poco::Path(metadata_file_path).makeFile().getBaseName();
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)

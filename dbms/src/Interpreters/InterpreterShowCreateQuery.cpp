@@ -71,7 +71,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 
     //FIXME temporary print create query without UUID for tests (remove it)
     auto & create = create_query->as<ASTCreateQuery &>();
-    create.uuid = UUID{UInt128{0, 0}};
+    create.uuid = UUIDHelpers::Nil;
 
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);
