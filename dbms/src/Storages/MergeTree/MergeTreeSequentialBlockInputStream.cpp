@@ -42,13 +42,13 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        std::cerr << "Taking columns from storage\n";
+        //std::cerr << "Taking columns from storage\n";
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
     {
-        std::cerr << "Taking columns from data part\n";
+        //std::cerr << "Taking columns from data part\n";
         /// take columns from data_part
         columns_for_reader = data_part->columns.addTypes(columns_to_read);
     }
@@ -88,7 +88,7 @@ Block MergeTreeSequentialBlockInputStream::getHeader() const
 Block MergeTreeSequentialBlockInputStream::readImpl()
 try
 {
-    //std::cerr << "READING\n";
+    ////std::cerr << "READING\n";
     Block res;
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -106,7 +106,7 @@ try
 
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
-            //std::cerr << "Should evaluate missing defaults:" << should_evaluate_missing_defaults << std::endl;
+            ////std::cerr << "Should evaluate missing defaults:" << should_evaluate_missing_defaults << std::endl;
 
             if (should_evaluate_missing_defaults)
             {

@@ -517,7 +517,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
             }
             catch (...)
             {
-                std::cerr << "DIE HERE:\n";
+                //std::cerr << "DIE HERE:\n";
                 tryLogCurrentException(log);
                 /// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
                 /// This is possible only if there is an unknown logical error.
@@ -1012,7 +1012,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
     if (entry.type == LogEntry::FINISH_ALTER)
     {
-        std::cerr << "Entry finish alter\n";
+        //std::cerr << "Entry finish alter\n";
         if (mutations_by_znode.count(entry.required_mutation_znode) && !mutations_by_znode.at(entry.required_mutation_znode).is_done) {
             String reason = "Not altering storage because mutation " + entry.required_mutation_znode + " is not ready yet (mutation is beeing processed).";
             LOG_TRACE(log, reason);

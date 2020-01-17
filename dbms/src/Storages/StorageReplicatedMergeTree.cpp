@@ -1158,7 +1158,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & /*entry*/)
 {
-    std::cerr << "Trying to finish alter\n";
+    ////std::cerr << "Trying to finish alter\n";
     auto zookeeper = getZooKeeper();
 
     String columns_path = zookeeper_path + "/columns";
@@ -1179,20 +1179,20 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     const bool changed_columns_version = (columns_version_zk != this->columns_version);
     const bool changed_metadata_version = (metadata_version_zk != this->metadata_version);
 
-    std::cerr << "Versions changed: columns:" << changed_columns_version << " metadata:" << changed_metadata_version << std::endl;
+    ////std::cerr << "Versions changed: columns:" << changed_columns_version << " metadata:" << changed_metadata_version << std::endl;
 
     if (!(changed_columns_version || changed_metadata_version))
     {
-        std::cerr << "Nothing changed\n";
+        ////std::cerr << "Nothing changed\n";
         return true;
     }
 
-    std::cerr << "Receiving metadata from zookeeper\n";
+    ////std::cerr << "Receiving metadata from zookeeper\n";
     auto columns_in_zk = ColumnsDescription::parse(columns_str);
     auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
     auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 
-    std::cerr << "Metadata received\n";
+    ////std::cerr << "Metadata received\n";
 
     MergeTreeData::DataParts parts;
 
@@ -1219,29 +1219,22 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
             LOG_INFO(log, "Applied changes to the metadata of the table.");
         }
 
-        std::cerr << "Columns version before:" << columns_version << std::endl;
-        std::cerr << "Columns version after:" << columns_version_zk << std::endl;
+        ////std::cerr << "Columns version before:" << columns_version << std::endl;
+        ////std::cerr << "Columns version after:" << columns_version_zk << std::endl;
         columns_version = columns_version_zk;
         metadata_version = metadata_version_zk;
 
-        std::cerr << "Recalculating columns sizes\n";
+        ////std::cerr << "Recalculating columns sizes\n";
         recalculateColumnSizes();
         /// Update metadata ZK nodes for a specific replica.
         if (changed_columns_version)
-        {
             zookeeper->set(replica_path + "/columns", columns_str);
-        }
-        else
-        {
-        }
         if (changed_metadata_version)
-        {
             zookeeper->set(replica_path + "/metadata", metadata_str);
-        }
 
-        std::cerr << "Nodes in zk updated\n";
+        ////std::cerr << "Nodes in zk updated\n";
     }
-    std::cerr << "Done\n";
+    ////std::cerr << "Done\n";
     return true;
 }
 
@@ -3336,7 +3329,7 @@ void StorageReplicatedMergeTree::alter(
         return queryToString(query);
     };
 
-    std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
+    //std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
 
     /// /columns and /metadata nodes
     std::vector<ChangedNode> changed_nodes;
@@ -3399,7 +3392,7 @@ void StorageReplicatedMergeTree::alter(
     entry.type = LogEntry::FINISH_ALTER;
     entry.source_replica = replica_name;
 
-    //std::cerr << " Columns before mutation:" << getColumns().getAllPhysical().toString() << std::endl;
+    ////std::cerr << " Columns before mutation:" << getColumns().getAllPhysical().toString() << std::endl;
 
     entry.new_part_name = "";
     entry.create_time = time(nullptr);
@@ -3407,18 +3400,18 @@ void StorageReplicatedMergeTree::alter(
     String path_created = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
-    std::cerr << "Waiting for replicas\n";
+    ////std::cerr << "Waiting for replicas\n";
     auto unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
 
-    std::cerr << "Replicas done";
+    ////std::cerr << "Replicas done";
 
     if (!maybe_mutation_commands.empty())
     {
-        std::cerr << "We have mutation commands:" << maybe_mutation_commands.size() << std::endl;
+        ////std::cerr << "We have mutation commands:" << maybe_mutation_commands.size() << std::endl;
         Context copy_context = query_context;
         copy_context.getSettingsRef().mutations_sync = 2;
         ReplicatedMergeTreeMutationEntry mutation_entry = mutateImpl(maybe_mutation_commands, copy_context);
-        std::cerr << "Mutation finished\n";
+        ////std::cerr << "Mutation finished\n";
     }
 
     if (!unwaited.empty())
@@ -4500,7 +4493,7 @@ ReplicatedMergeTreeMutationEntry StorageReplicatedMergeTree::mutateImpl(const Mu
         else if (query_context.getSettingsRef().mutations_sync == 1) /// just wait for ourself
             replicas.push_back(replica_path);
 
-        std::cerr << "Waiting for mutation on replicas:" << replicas.size() << std::endl;
+        //std::cerr << "Waiting for mutation on replicas:" << replicas.size() << std::endl;
         waitMutationToFinishOnReplicas(replicas, entry.znode_name);
     }
 

@@ -173,12 +173,12 @@ MutationsInterpreter::MutationsInterpreter(
     , context(context_)
     , can_execute(can_execute_)
 {
-    std::cerr << "STORAGE IS NULLPTR:" << (storage == nullptr) << std::endl;
+    //std::cerr << "STORAGE IS NULLPTR:" << (storage == nullptr) << std::endl;
     mutation_ast = prepare(!can_execute);
-    std::cerr << "Mutations ast:" << queryToString(mutation_ast) << std::endl;
+    //std::cerr << "Mutations ast:" << queryToString(mutation_ast) << std::endl;
     SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
     select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
-    std::cerr << "HEADER:" << select_interpreter->getSampleBlock().dumpStructure() << std::endl;
+    //std::cerr << "HEADER:" << select_interpreter->getSampleBlock().dumpStructure() << std::endl;
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage)
@@ -263,20 +263,20 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
-    std::cerr << "PREPARING\n";
+    //std::cerr << "PREPARING\n";
 
     const ColumnsDescription & columns_desc = storage->getColumns();
     const IndicesDescription & indices_desc = storage->getIndices();
-    std::cerr << "COLUMNS RECEIVED:" << columns_desc.toString() << std::endl;
+    //std::cerr << "COLUMNS RECEIVED:" << columns_desc.toString() << std::endl;
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
-    std::cerr << "COMMANDS SIZE:" << commands.size() << std::endl;
+    //std::cerr << "COMMANDS SIZE:" << commands.size() << std::endl;
     NameSet updated_columns;
     for (const MutationCommand & command : commands)
     {
         for (const auto & kv : command.column_to_update_expression)
         {
-            std::cerr << "COLUMN:" << kv.first << std::endl;
+            //std::cerr << "COLUMN:" << kv.first << std::endl;
             updated_columns.insert(kv.first);
         }
     }
@@ -322,7 +322,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
-        std::cerr << "Processing command:" << command.ast << std::endl;
+        //std::cerr << "Processing command:" << command.ast << std::endl;
         if (command.type == MutationCommand::DELETE)
         {
             if (stages.empty() || !stages.back().column_to_updated.empty())
@@ -406,7 +406,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
 
-    std::cerr << "AFFECTED INDICES COLUMN:" << affected_indices_columns.size() << std::endl;
+    //std::cerr << "AFFECTED INDICES COLUMN:" << affected_indices_columns.size() << std::endl;
     /// We cares about affected indices because we also need to rewrite them
     /// when one of index columns updated or filtered with delete
     if (!affected_indices_columns.empty())
@@ -424,7 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             }
 
             const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
-            std::cerr << "SELECT query for index:" << queryToString(select_query) << std::endl;
+            //std::cerr << "SELECT query for index:" << queryToString(select_query) << std::endl;
             InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
 
             auto first_stage_header = interpreter.getSampleBlock();
@@ -435,7 +435,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         stages.emplace_back(context);
         for (const auto & column : affected_indices_columns)
         {
-            std::cerr << "AFFECTED COLUMN:" << column << std::endl;
+            //std::cerr << "AFFECTED COLUMN:" << column << std::endl;
             stages.back().column_to_updated.emplace(
                     column, std::make_shared<ASTIdentifier>(column));
         }
@@ -449,7 +449,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
-    std::cerr << "Prepare interpreter storage columns:" << all_columns.toString() << std::endl;
+    //std::cerr << "Prepare interpreter storage columns:" << all_columns.toString() << std::endl;
 
 
     /// Next, for each stage calculate columns changed by this and previous stages.
@@ -617,12 +617,12 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     BlockInputStreamPtr in = select_interpreter->execute().in;
-    std::cerr << "INNNNNNNN HEADER:" << in->getHeader().dumpStructure() << std::endl;
+    //std::cerr << "INNNNNNNN HEADER:" << in->getHeader().dumpStructure() << std::endl;
     auto result_stream = addStreamsForLaterStages(stages, in);
-    std::cerr << "RESULTTTTT  HEADER:" << result_stream->getHeader().dumpStructure() << std::endl;
+    //std::cerr << "RESULTTTTT  HEADER:" << result_stream->getHeader().dumpStructure() << std::endl;
     if (!updated_header)
     {
-        std::cerr << "Saving updated header\n";
+        //std::cerr << "Saving updated header\n";
         updated_header = std::make_unique<Block>(result_stream->getHeader());
     }
     return result_stream;
