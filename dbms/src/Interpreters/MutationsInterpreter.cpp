@@ -392,15 +392,14 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             const auto required_columns = syntax_result->requiredSourceColumns();
             affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
-        else if (command.type == MutationCommand::READ)
+        else if (command.type == MutationCommand::READ_COLUMN)
         {
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
-            if (command.data_type)
-                stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
+            stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);

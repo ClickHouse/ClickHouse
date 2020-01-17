@@ -27,7 +27,9 @@ struct MutationCommand
         DELETE,
         UPDATE,
         MATERIALIZE_INDEX,
-        READ
+        READ_COLUMN,
+        DROP_COLUMN,
+        DROP_INDEX,
     };
 
     Type type = EMPTY;
@@ -42,11 +44,12 @@ struct MutationCommand
     String index_name;
     ASTPtr partition;
 
-    /// For cast
+    /// For reads, drops and etc.
     String column_name;
     DataTypePtr data_type;
 
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_modify=false);
+    /// If from_zookeeper, than consider more Alter commands as mutation commands
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool from_zookeeper=false);
 };
 
 /// Multiple mutation commands, possible from different ALTER queries

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_modify)
+std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool from_zookeeper)
 {
     if (command->type == ASTAlterCommand::DELETE)
     {
@@ -57,22 +57,30 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
-    else if (parse_modify && command->type == ASTAlterCommand::MODIFY_COLUMN)
+    else if (from_zookeeper && command->type == ASTAlterCommand::MODIFY_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
-        res.type = MutationCommand::Type::READ;
+        res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
         res.column_name = ast_col_decl.name;
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;
     }
-    else if (parse_modify && command->type == ASTAlterCommand::DROP_COLUMN)
+    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_COLUMN)
     {
         MutationCommand res;
         res.ast = command->ptr();
-        res.type = MutationCommand::Type::READ;
+        res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command->column);
+        return res;
+    }
+    else if (from_zookeeper && command->type == ASTAlterCommand::DROP_INDEX)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::DROP_INDEX;
+        res.column_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
     else

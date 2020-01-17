@@ -982,14 +982,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     Poco::File(new_part_tmp_path).createDirectories();
     BlockInputStreamPtr in = nullptr;
     Block updated_header;
+    std::optional<MutationsInterpreter> interpreter;
 
-    if(!std::all_of(commands_for_part.begin(), commands_for_part.end(), [](const auto & cmd) { return cmd.type == MutationCommand::Type::READ && cmd.data_type == nullptr;}))
-     {
-         MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
-         in = mutations_interpreter.execute(table_lock_holder);
-         updated_header = mutations_interpreter.getUpdatedHeader();
-     }
+    std::vector<MutationCommand> for_interpreter;
+    std::vector<MutationCommand> for_file_renames;
 
+    splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
+
+    if (!for_interpreter.empty())
+    {
+        interpreter.emplace(storage_from_source_part, for_interpreter, context_for_reading, true);
+        in = interpreter->execute(table_lock_holder);
+        updated_header = interpreter->getUpdatedHeader();
+    }
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
@@ -1107,43 +1112,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
 
-        std::unordered_set<String> removed_columns;
-        /// TODO(alesap) better
-        for (const auto & part_column : source_part->columns)
+        std::unordered_set<String> remove_files;
+        /// Remove old indices
+        for (const auto & command : for_file_renames)
         {
-            bool found = false;
-            for (const auto & all_column : all_columns)
+            if (command.type == MutationCommand::Type::DROP_INDEX)
             {
-                if (part_column.name == all_column.name)
-                {
-                    found = true;
-                    break;
-                }
+                remove_files.emplace("skp_idx_" + command.column_name + ".idx");
+                remove_files.emplace("skp_idx_" + command.column_name + mrk_extension);
             }
-            if (!found)
+            else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                std::cerr << "REMOVING COLUMN:" << part_column.name << std::endl;
-
-                IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
-                {
-                    String stream_name = IDataType::getFileNameForStream(part_column.name, substream_path);
+                IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path) {
+                    String stream_name = IDataType::getFileNameForStream(command.column_name, substream_path);
                     /// Delete files if they are no longer shared with another column.
                     if (--stream_counts[stream_name] == 0)
                     {
-                        removed_columns.insert(stream_name + ".bin");
-                        removed_columns.insert(stream_name + mrk_extension);
+                        remove_files.emplace(stream_name + ".bin");
+                        remove_files.emplace(stream_name + mrk_extension);
                     }
                 };
 
                 IDataType::SubstreamPath stream_path;
-                part_column.type->enumerateStreams(callback, stream_path);
+                auto column = source_part->columns.tryGetByName(command.column_name);
+                if (column)
+                    column->type->enumerateStreams(callback, stream_path);
             }
         }
 
         Poco::DirectoryIterator dir_end;
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
         {
-            if (files_to_skip.count(dir_it.name()) || removed_columns.count(dir_it.name()))
+            if (files_to_skip.count(dir_it.name()) || remove_files.count(dir_it.name()))
                 continue;
 
             Poco::Path destination(new_part_tmp_path);
@@ -1198,7 +1198,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             std::cerr << "Updated header empty\n";
         }
 
-        for (const String & removed_file : removed_columns)
+        for (const String & removed_file : remove_files)
             if (new_data_part->checksums.files.count(removed_file))
                 new_data_part->checksums.files.erase(removed_file);
 
@@ -1338,6 +1338,36 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
         res += part->bytes_on_disk;
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+}
+
+void MergeTreeDataMergerMutator::splitMutationCommands(
+    MergeTreeData::DataPartPtr part,
+    const std::vector<MutationCommand> & commands,
+    std::vector<MutationCommand> & for_interpreter,
+    std::vector<MutationCommand> & for_file_renames)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::DELETE
+            || command.type == MutationCommand::Type::UPDATE
+            || command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+        {
+            for_interpreter.push_back(command);
+        }
+        else if (command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            /// If we don't have this column in source part, than we don't
+            /// need to materialize it
+            if (part->columns.contains(command.column_name))
+                for_interpreter.push_back(command);
+            else
+                for_file_renames.push_back(command);
+        }
+        else
+        {
+            for_file_renames.push_back(command);
+        }
+    }
 }
 
 }
