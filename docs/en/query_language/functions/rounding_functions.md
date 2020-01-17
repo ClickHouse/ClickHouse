@@ -96,8 +96,8 @@ Using banker's rounding, you can reduce the effect of rounding numbers on the re
 
 For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 
-- No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12
-- Banker's rounding:  2 + 2 + 4 + 4 = 12
+- No rounding: 1.5 + 2.5 + 3.5 + 4.5 = 12.
+- Banker's rounding:  2 + 2 + 4 + 4 = 12.
 - Rounding to the nearest integer:  2 + 3 + 4 + 5 = 14.
 
 **Syntax** 
