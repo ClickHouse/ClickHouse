@@ -13,6 +13,7 @@ namespace
         switch (kind)
         {
             case Kind::QUOTA: return "QUOTA";
+            case Kind::ROW_POLICY: return "POLICY";
         }
         __builtin_unreachable();
     }
@@ -44,13 +45,32 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
-    bool need_comma = false;
-    for (const auto & name : names)
+    if (kind == Kind::ROW_POLICY)
     {
-        if (need_comma)
-            settings.ostr << ',';
-        need_comma = true;
-        settings.ostr << ' ' << backQuoteIfNeed(name);
+        bool need_comma = false;
+        for (const auto & row_policy_name : row_policies_names)
+        {
+            if (need_comma)
+                settings.ostr << ',';
+            need_comma = true;
+            const String & database = row_policy_name.database;
+            const String & table_name = row_policy_name.table_name;
+            const String & policy_name = row_policy_name.policy_name;
+            settings.ostr << ' ' << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+                          << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
+                          << backQuoteIfNeed(table_name);
+        }
+    }
+    else
+    {
+        bool need_comma = false;
+        for (const auto & name : names)
+        {
+            if (need_comma)
+                settings.ostr << ',';
+            need_comma = true;
+            settings.ostr << ' ' << backQuoteIfNeed(name);
+        }
     }
 }
 }

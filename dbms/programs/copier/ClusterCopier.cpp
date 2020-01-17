@@ -65,6 +65,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
 
@@ -1281,10 +1282,66 @@ protected:
         return res;
     }
 
+    /** Allows to compare two incremental counters of type UInt32 in presence of possible overflow.
+      * We assume that we compare values that are not too far away.
+      * For example, when we increment 0xFFFFFFFF, we get 0. So, 0xFFFFFFFF is less than 0.
+      */
+    class WrappingUInt32
+    {
+    public:
+        UInt32 value;
+
+        WrappingUInt32(UInt32 _value)
+            : value(_value)
+        {}
+
+        bool operator<(const WrappingUInt32 & other) const
+        {
+            return value != other.value && *this <= other;
+        }
+
+        bool operator<=(const WrappingUInt32 & other) const
+        {
+            const UInt32 HALF = 1 << 31;
+            return (value <= other.value && other.value - value < HALF)
+                || (value > other.value && value - other.value > HALF);
+        }
+
+        bool operator==(const WrappingUInt32 & other) const
+        {
+            return value == other.value;
+        }
+    };
+
+    /** Conforming Zxid definition.
+      * cf. https://github.com/apache/zookeeper/blob/631d1b284f0edb1c4f6b0fb221bf2428aec71aaa/zookeeper-docs/src/main/resources/markdown/zookeeperInternals.md#guarantees-properties-and-definitions
+      */
+    class Zxid
+    {
+    public:
+        WrappingUInt32 epoch;
+        WrappingUInt32 counter;
+        Zxid(UInt64 _zxid)
+            : epoch(_zxid >> 32)
+            , counter(_zxid)
+        {}
+
+        bool operator<=(const Zxid & other) const
+        {
+            return (epoch < other.epoch)
+                || (epoch == other.epoch && counter <= other.counter);
+        }
+
+        bool operator==(const Zxid & other) const
+        {
+            return epoch == other.epoch && counter == other.counter;
+        }
+    };
+
     class LogicalClock
     {
     public:
-        std::optional<UInt64> zxid;
+        std::optional<Zxid> zxid;
 
         LogicalClock() = default;
 
@@ -1300,11 +1357,8 @@ protected:
         // happens-before relation with a reasonable time bound
         bool happensBefore(const LogicalClock & other) const
         {
-            const UInt64 HALF = 1ull << 63;
-            return
-                !zxid ||
-                (other.zxid && *zxid <= *other.zxid && *other.zxid - *zxid < HALF) ||
-                (other.zxid && *zxid >= *other.zxid && *zxid - *other.zxid > HALF);
+            return !zxid
+                || (other.zxid && *zxid <= *other.zxid);
         }
 
         bool operator<=(const LogicalClock & other) const
@@ -2376,7 +2430,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("copy-fault-probability").binding("copy-fault-probability"));
     options.addOption(Poco::Util::Option("log-level", "", "sets log level")
                           .argument("log-level").binding("log-level"));
-    options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consequitive copier launches will populate /base-dir/launch_id/* directories")
+    options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
                           .argument("base-dir").binding("base-dir"));
 
     using Me = std::decay_t<decltype(*this)>;
@@ -2410,6 +2464,7 @@ void ClusterCopierApp::mainImpl()
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     static const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
@@ -2458,6 +2513,8 @@ int ClusterCopierApp::main(const std::vector<std::string> &)
 
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClusterCopier(int argc, char ** argv)
 {

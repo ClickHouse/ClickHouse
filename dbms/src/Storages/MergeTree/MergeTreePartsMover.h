@@ -1,11 +1,11 @@
 #pragma once
 
 #include <functional>
-#include <vector>
 #include <optional>
+#include <vector>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Common/ActionBlocker.h>
-#include <Common/DiskSpaceMonitor.h>
 
 namespace DB
 {
@@ -16,9 +16,9 @@ namespace DB
 struct MergeTreeMoveEntry
 {
     std::shared_ptr<const MergeTreeDataPart> part;
-    DiskSpace::ReservationPtr reserved_space;
+    ReservationPtr reserved_space;
 
-    MergeTreeMoveEntry(const std::shared_ptr<const MergeTreeDataPart> & part_, DiskSpace::ReservationPtr reservation_)
+    MergeTreeMoveEntry(const std::shared_ptr<const MergeTreeDataPart> & part_, ReservationPtr reservation_)
         : part(part_), reserved_space(std::move(reservation_))
     {
     }
@@ -49,7 +49,7 @@ public:
         const AllowedMovingPredicate & can_move,
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
-    /// Copies part to selected reservation in detached folder. Throws exception if part alredy exists.
+    /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
     std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.

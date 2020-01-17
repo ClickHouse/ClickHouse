@@ -65,7 +65,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
          */
         ReadBuffer read_buffer(unit.segment.data(), unit.segment.size(), 0);
         auto parser = std::make_unique<InputStreamFromInputFormat>(
-            input_processor_creator(read_buffer, header, context,
+                input_processor_creator(read_buffer, header,
                 row_input_format_params, format_settings));
 
         unit.block_ext.block.clear();

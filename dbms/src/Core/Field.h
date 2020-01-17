@@ -525,6 +525,11 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
+// gcc 8.2.1
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
             case Types::Int64:   return f(field.template get<Int64>());
@@ -532,6 +537,9 @@ public:
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
@@ -686,11 +694,25 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 
+inline constexpr bool isInt64FieldType(Field::Types::Which t)
+{
+    return t == Field::Types::Int64
+        || t == Field::Types::UInt64;
+}
+
+// Field value getter with type checking in debug builds.
 template <typename T>
 T & Field::get()
 {
     using ValueType = std::decay_t<T>;
-    //assert(TypeToEnum<NearestFieldType<ValueType>>::value == which);
+
+#ifndef NDEBUG
+    // Disregard signedness when converting between int64 types.
+    constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
+    assert(target == which
+           || (isInt64FieldType(target) && isInt64FieldType(which)));
+#endif
+
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
     return *ptr;
 }

@@ -1,5 +1,6 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
+#include <Access/RowPolicy.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -15,6 +16,8 @@ namespace
     {
         if (type == typeid(Quota))
             return 'Q';
+        if (type == typeid(RowPolicy))
+            return 'P';
         return 0;
     }
 
@@ -112,6 +115,69 @@ namespace
         }
         return quotas;
     }
+
+
+    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    {
+        std::vector<AccessEntityPtr> policies;
+        Poco::Util::AbstractConfiguration::Keys user_names;
+        config.keys("users", user_names);
+
+        for (const String & user_name : user_names)
+        {
+            const String databases_config = "users." + user_name + ".databases";
+            if (config.has(databases_config))
+            {
+                Poco::Util::AbstractConfiguration::Keys databases;
+                config.keys(databases_config, databases);
+
+                /// Read tables within databases
+                for (const String & database : databases)
+                {
+                    const String database_config = databases_config + "." + database;
+                    Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
+                    config.keys(database_config, keys_in_database_config);
+
+                    /// Read table properties
+                    for (const String & key_in_database_config : keys_in_database_config)
+                    {
+                        String table_name = key_in_database_config;
+                        String filter_config = database_config + "." + table_name + ".filter";
+
+                        if (key_in_database_config.starts_with("table["))
+                        {
+                            const auto table_name_config = database_config + "." + table_name + "[@name]";
+                            if (config.has(table_name_config))
+                            {
+                                table_name = config.getString(table_name_config);
+                                filter_config = database_config + ".table[@name='" + table_name + "']";
+                            }
+                        }
+
+                        if (config.has(filter_config))
+                        {
+                            try
+                            {
+                                auto policy = std::make_shared<RowPolicy>();
+                                policy->setFullName(database, table_name, user_name);
+                                policy->conditions[RowPolicy::SELECT_FILTER] = config.getString(filter_config);
+                                policy->roles.push_back(user_name);
+                                policies.push_back(policy);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(
+                                    log,
+                                    "Could not parse row policy " + backQuote(user_name) + " on table " + backQuoteIfNeed(database) + "."
+                                        + backQuoteIfNeed(table_name));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return policies;
+    }
 }
 
 
@@ -127,6 +193,8 @@ void UsersConfigAccessStorage::loadFromConfig(const Poco::Util::AbstractConfigur
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
     for (const auto & entity : parseQuotas(config, getLogger()))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }

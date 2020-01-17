@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/registerStorages.h>
 #include <unordered_map>
 
 
@@ -14,6 +15,7 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+struct StorageID;
 
 
 /** Allows to create a table by the name and parameters of the engine.
@@ -32,9 +34,10 @@ public:
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
-        const String & data_path;
-        const String & table_name;
-        const String & database_name;
+        /// Path to table data.
+        /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
+        const String & relative_data_path;
+        const StorageID & table_id;
         Context & local_context;
         Context & context;
         const ColumnsDescription & columns;
@@ -46,15 +49,12 @@ public:
     using Creator = std::function<StoragePtr(const Arguments & arguments)>;
 
     StoragePtr get(
-        ASTCreateQuery & query,
-        const String & data_path,
-        const String & table_name,
-        const String & database_name,
+        const ASTCreateQuery & query,
+        const String & relative_data_path,
         Context & local_context,
         Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool attach,
         bool has_force_restore_data_flag) const;
 
     /// Register a table engine by its name.

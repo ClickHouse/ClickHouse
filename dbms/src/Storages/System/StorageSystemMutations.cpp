@@ -24,6 +24,7 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
         { "create_time",                std::make_shared<DataTypeDateTime>() },
         { "block_numbers.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
         { "block_numbers.number",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()) },
+        { "parts_to_do_names",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
         { "parts_to_do",                std::make_shared<DataTypeInt64>() },
         { "is_done",                    std::make_shared<DataTypeUInt8>() },
         { "latest_failed_part",         std::make_shared<DataTypeString>() },
@@ -103,6 +104,10 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
                 block_partition_ids.emplace_back(pair.first);
                 block_numbers.emplace_back(pair.second);
             }
+            Array parts_to_do_names;
+            parts_to_do_names.reserve(status.parts_to_do_names.size());
+            for (const String & part_name : status.parts_to_do_names)
+                parts_to_do_names.emplace_back(part_name);
 
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
@@ -113,7 +118,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
             res_columns[col_num++]->insert(UInt64(status.create_time));
             res_columns[col_num++]->insert(block_partition_ids);
             res_columns[col_num++]->insert(block_numbers);
-            res_columns[col_num++]->insert(status.parts_to_do);
+            res_columns[col_num++]->insert(parts_to_do_names);
+            res_columns[col_num++]->insert(parts_to_do_names.size());
             res_columns[col_num++]->insert(status.is_done);
             res_columns[col_num++]->insert(status.latest_failed_part);
             res_columns[col_num++]->insert(UInt64(status.latest_fail_time));

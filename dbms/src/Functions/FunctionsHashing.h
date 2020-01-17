@@ -36,7 +36,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
@@ -371,7 +371,7 @@ struct JavaHashUTF16LEImpl
         }
 
         if (size % 2 != 0)
-            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::BAD_ARGUMENTS);
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)

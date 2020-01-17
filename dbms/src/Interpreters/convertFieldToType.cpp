@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -146,12 +147,32 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
+DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
+{
+    ReadBufferFromString in(s);
+    DateTime64 datetime64 {0};
+
+    readDateTime64Text(datetime64, scale, in);
+    if (!in.eof())
+        throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
+
+    return datetime64.value;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
+    {
         which_from_type = WhichDataType(*from_type_hint);
+
+        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
+        if (from_type_hint && from_type_hint->equals(type))
+        {
+            return src;
+        }
+    }
 
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
@@ -187,11 +208,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if (which_type.isDateOrDateTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateOrDateTime() && !which_type.isDateTime64() && src.getType() == Field::Types::UInt64)
         {
             /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
         }
+        // TODO (vnemkov): extra cases for DateTime64: converting from integer, converting from Decimal
 
         if (src.getType() == Field::Types::String)
         {
@@ -204,6 +226,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
                 return stringToDateTime(src.get<const String &>());
+            }
+            else if (which_type.isDateTime64())
+            {
+                const auto date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
+                /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
+                return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
             }
             else if (which_type.isUUID())
             {

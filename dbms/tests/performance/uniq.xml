@@ -13,9 +13,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
@@ -55,5 +52,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k</query>
+    <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
 </test>
