@@ -594,7 +594,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, num_rows);
         }
 
-        std::cerr << "SHOULD eVALUATE:" << should_evaluate_missing_defaults << std::endl;
         if (!columns.empty() && should_evaluate_missing_defaults)
         {
             auto block = prev_reader->sample_block.cloneWithColumns(read_result.columns);
