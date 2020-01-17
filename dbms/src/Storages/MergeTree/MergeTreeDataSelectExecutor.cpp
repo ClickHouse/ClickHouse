@@ -184,7 +184,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     for (const String & name : column_names_to_return)
     {
-        std::cerr << "Column name to return:" << name << std::endl;
+        //std::cerr << "Column name to return:" << name << std::endl;
         if (name == "_part")
         {
             part_column_queried = true;
@@ -432,7 +432,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (upper_limit_rational < size_of_universum)
             has_upper_limit = true;
 
-        /*std::cerr << std::fixed << std::setprecision(100)
+        /*//std::cerr << std::fixed << std::setprecision(100)
             << "relative_sample_size: " << relative_sample_size << "\n"
             << "relative_sample_offset: " << relative_sample_offset << "\n"
             << "lower_limit_float: " << lower_limit_rational << "\n"
@@ -645,7 +645,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     }
     else
     {
-        std::cerr << "Spreading marks among streams columns size:" << column_names_to_read.size() << std::endl;
+        //std::cerr << "Spreading marks among streams columns size:" << column_names_to_read.size() << std::endl;
         res = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
             num_streams,
@@ -765,7 +765,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, query_info.prewhere_info, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
-        std::cerr << "POOL HEADER:" << pool->getHeader().dumpStructure() << std::endl;
+        //std::cerr << "POOL HEADER:" << pool->getHeader().dumpStructure() << std::endl;
         /// Let's estimate total number of rows for progress bar.
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
@@ -793,7 +793,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             RangesInDataPart & part = parts[part_index];
 
-            std::cerr << "Creating sequential stream from part:" << part_index << std::endl;
+            //std::cerr << "Creating sequential stream from part:" << part_index << std::endl;
             auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,

@@ -164,10 +164,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         in >> required_mutation_znode >> "\nfinish\n";
     }
 
-    std::cerr << "Read backn\n";
+    //std::cerr << "Read backn\n";
     in >> "\n";
 
-    std::cerr << "Readed\n";
+    //std::cerr << "Readed\n";
 
     /// Optional field.
     if (!in.eof())
