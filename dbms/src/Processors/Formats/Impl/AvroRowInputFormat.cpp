@@ -623,6 +623,12 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
     });
 
 #if USE_POCO_JSON
+
+    /// AvroConfluent format is disabled for the following reasons:
+    /// 1. There is no test for it.
+    /// 2. RemoteHostFilter is not used to prevent CSRF attacks.
+
+#if 0
     factory.registerInputFormatProcessor("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,
@@ -631,6 +637,8 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
+#endif
+
 #endif
 
 }
