@@ -10,8 +10,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int DIRECTORY_DOESNT_EXIST;
