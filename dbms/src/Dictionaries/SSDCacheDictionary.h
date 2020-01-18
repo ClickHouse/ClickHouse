@@ -175,8 +175,8 @@ private:
     Attribute keys_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
 
-    std::optional<DB::Memory<>> memory;
-    std::optional<DB::WriteBuffer> write_buffer;
+    std::optional<Memory<>> memory;
+    std::optional<WriteBuffer> write_buffer;
 
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
@@ -212,7 +212,6 @@ public:
             std::chrono::system_clock::time_point now) const;
 
     // getString();
-
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
