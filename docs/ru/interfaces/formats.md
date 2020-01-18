@@ -28,6 +28,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
+| [ORC](#data-format-orc) | ✔ | ✗ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
@@ -941,7 +942,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
-### Inserting and Selecting Data
+### Вставка и выборка данных
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
@@ -955,7 +956,49 @@ $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Pa
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md) и `URL`.
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md).
+
+
+## ORC {#data-format-orc}
+
+[Apache ORC](https://orc.apache.org/) столбцовое хранилище, распространённое в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
+
+### Соответствие типов данных
+
+Таблица показывает поддержанные типы данных и их соответствие [типам данных](../data_types/index.md) ClickHouse для запросов `INSERT`.
+
+| Тип данных ORC (`INSERT`) | Тип данных ClickHouse |
+| -------------------- | ------------------ |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) |
+| `INT8` | [Int8](../data_types/int_uint.md) |
+| `UINT16` | [UInt16](../data_types/int_uint.md) |
+| `INT16` | [Int16](../data_types/int_uint.md) |
+| `UINT32` | [UInt32](../data_types/int_uint.md) |
+| `INT32` | [Int32](../data_types/int_uint.md) |
+| `UINT64` | [UInt64](../data_types/int_uint.md) |
+| `INT64` | [Int64](../data_types/int_uint.md) |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) |
+| `DOUBLE` | [Float64](../data_types/float.md) |
+| `DATE32` | [Date](../data_types/date.md) |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) |
+| `STRING`, `BINARY` | [String](../data_types/string.md) |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) |
+
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+
+Неподдержанные типы данных ORC: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+
+### Вставка данных
+
+Данные ORC можно вставить в таблицу ClickHouse командой:
+
+```bash
+$ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
+```
+
+Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../operations/table_engines/hdfs.md).
 
 ## Схема формата {#formatschema}
 
