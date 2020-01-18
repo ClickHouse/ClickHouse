@@ -132,7 +132,7 @@ public:
 
 public:
     /// Used for reservation counters modification
-    static std::mutex reservationMutex;
+    static std::mutex reservation_mutex;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
