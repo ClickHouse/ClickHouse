@@ -1,5 +1,6 @@
 #pragma once
 #include "config_formats.h"
+#include "config_core.h"
 #if USE_AVRO
 
 #include <unordered_map>
@@ -46,7 +47,7 @@ private:
     AvroDeserializer deserializer;
 };
 
-#ifdef USE_POCO_JSON
+#if USE_POCO_JSON
 class AvroConfluentRowInputFormat : public IRowInputFormat
 {
 public:
