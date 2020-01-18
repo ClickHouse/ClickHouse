@@ -61,6 +61,10 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
     ReadBufferFromIStream body(request.stream());
 
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
+    /// Locked for read while query processing
+    std::shared_lock lock(endpoint->rwlock);
+    if (endpoint->blocker.isCancelled())
+        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     if (compress)
     {
