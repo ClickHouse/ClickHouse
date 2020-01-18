@@ -99,7 +99,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
 }
@@ -120,7 +119,7 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-    bool is_interactive = true;          /// Use either readline interface or batch mode.
+    bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
@@ -550,7 +549,7 @@ private:
                 SCOPE_EXIT({ Suggest::instance().finalize(); });
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 #else
-                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Command line suggestions cannot work without line editing library", ErrorCodes::BAD_ARGUMENTS);
 #endif
             }
 
