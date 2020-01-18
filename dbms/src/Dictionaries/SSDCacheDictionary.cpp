@@ -435,7 +435,7 @@ void CachePartition::getValueFromStorage(
     /// sort by (block_id, offset_in_block)
     std::sort(std::begin(index_to_out), std::end(index_to_out));
 
-    DB::Memory read_buffer(block_size * read_buffer_size, BUFFER_ALIGNMENT);
+    Memory read_buffer(block_size * read_buffer_size, BUFFER_ALIGNMENT);
 
     std::vector<iocb> requests;
     std::vector<iocb*> pointers;
@@ -503,7 +503,7 @@ void CachePartition::getValueFromStorage(
             for (const size_t idx : blocks_to_indices[request_id])
             {
                 const auto & [file_index, out_index] = index_to_out[idx];
-                DB::ReadBufferFromMemory buf(
+                ReadBufferFromMemory buf(
                         reinterpret_cast<char *>(request.aio_buf) + file_index.getAddressInBlock(),
                         block_size - file_index.getAddressInBlock());
                 readValueFromBuffer(attribute_index, out[out_index], buf);
