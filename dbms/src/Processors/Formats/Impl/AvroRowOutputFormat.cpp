@@ -342,7 +342,7 @@ void AvroRowOutputFormat::writeSuffix()
 
 void registerOutputFormatProcessorAvro(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Avro",[=](
+    factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
         FormatFactory::WriteCallback callback,
