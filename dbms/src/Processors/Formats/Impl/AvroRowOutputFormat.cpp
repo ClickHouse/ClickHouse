@@ -8,7 +8,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/verbosePrintString.h>
-
 #include <Formats/FormatFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -18,7 +17,6 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
