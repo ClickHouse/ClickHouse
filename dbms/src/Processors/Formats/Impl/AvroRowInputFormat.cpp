@@ -498,18 +498,20 @@ public:
         {
             base_url = base_url_;
         }
-        catch (Poco::SyntaxException & e)
+        catch (const Poco::SyntaxException & e)
         {
             throw Exception("Invalid Schema Registry URL: " + e.displayText(), ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
-    avro::ValidSchema getSchema(uint32_t id)
+    avro::ValidSchema getSchema(uint32_t id) const
     {
         try
         {
             try
             {
+                /// TODO Host checking to prevent SSRF
+
                 Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
                 Poco::Net::HTTPClientSession session(url.getHost(), url.getPort());
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery());
@@ -518,16 +520,16 @@ public:
                 auto & response_body = session.receiveResponse(response);
                 if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
                 {
-                    throw Exception("http code " + std::to_string(response.getStatus()), ErrorCodes::INCORRECT_DATA);
+                    throw Exception("HTTP code " + std::to_string(response.getStatus()), ErrorCodes::INCORRECT_DATA);
                 }
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
                 return avro::compileJsonSchemaFromString(schema);
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
-                throw e;
+                throw;
             }
             catch (const Poco::Exception & e)
             {
@@ -540,7 +542,7 @@ public:
         }
         catch (Exception & e)
         {
-            e.addMessage("while fetching schema id=" + std::to_string(id));
+            e.addMessage("while fetching schema id = " + std::to_string(id));
             throw;
         }
     }
