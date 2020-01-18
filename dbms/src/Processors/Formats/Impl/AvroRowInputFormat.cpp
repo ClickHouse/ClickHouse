@@ -553,16 +553,16 @@ private:
 
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
-    Poco::Buffer<char> buf(5);
-    in.readStrict(buf.begin(), buf.capacity());
-    Poco::MemoryBinaryReader binary_reader(buf, Poco::BinaryReader::BIG_ENDIAN_BYTE_ORDER);
-
     uint8_t magic;
     uint32_t schema_id;
-    binary_reader >> magic >> schema_id;
+
+    readBinaryBigEndian(magic, in);
+    readBinaryBigEndian(schema_id, in);
+
     if (magic != 0x00)
     {
-        throw Exception("Invalid magic byte", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Invalid magic byte before AvroConfluent schema identifier."
+            " Must be zero byte, found " + std::to_string(int(magic)) + " instead", ErrorCodes::INCORRECT_DATA);
     }
 
     return schema_id;
@@ -577,7 +577,6 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     , decoder(avro::binaryDecoder())
 
 {
-    (void)format_settings_;
     decoder->init(*input_stream);
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <byteswap.h>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -744,6 +745,23 @@ inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+{
+    readPODBinary(x, buf);
+
+    if constexpr (sizeof(x) == 1)
+        return;
+    else if constexpr (sizeof(x) == 2)
+        x = bswap_16(x);
+    else if constexpr (sizeof(x) == 4)
+        x = bswap_32(x);
+    else if constexpr (sizeof(x) == 8)
+        x = bswap_64(x);
+}
 
 
 /// Generic methods to read value in text tab-separated format.
