@@ -8,11 +8,8 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 
-
 #include <Formats/verbosePrintString.h>
-
 #include <Formats/FormatFactory.h>
-
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -27,13 +24,11 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-
 
 #include <avro/Compiler.hh>
 #include <avro/DataFile.hh>
@@ -414,7 +409,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
 }
 
 
-AvroDeserializer::AvroDeserializer(const DB::ColumnsWithTypeAndName & columns, avro::ValidSchema schema)
+AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema)
 {
     auto schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)

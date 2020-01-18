@@ -21,7 +21,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const DB::ColumnsWithTypeAndName & columns, avro::ValidSchema schema);
+    AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder);
 
 private:
@@ -56,7 +56,7 @@ public:
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
 private:
-    const DB::ColumnsWithTypeAndName header_columns;
+    const ColumnsWithTypeAndName header_columns;
 
     class SchemaRegistry;
     std::unique_ptr<SchemaRegistry> schema_registry;
