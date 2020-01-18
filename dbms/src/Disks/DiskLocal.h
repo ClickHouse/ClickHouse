@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <mutex>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
@@ -71,6 +70,8 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
 
+    void remove(const String & path, bool recursive) override;
+
 private:
     bool tryReserve(UInt64 bytes);
 
@@ -79,8 +80,6 @@ private:
     const String disk_path;
     const UInt64 keep_free_space_bytes;
 
-    /// Used for reservation counters modification
-    static std::mutex mutex;
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 };
