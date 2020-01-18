@@ -484,7 +484,7 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
     return false;
 }
 
-#ifdef USE_POCO_JSON
+#if USE_POCO_JSON
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:
@@ -616,7 +616,7 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         return std::make_shared<AvroRowInputFormat>(sample, buf, params);
     });
 
-#ifdef USE_POCO_JSON
+#if USE_POCO_JSON
     factory.registerInputFormatProcessor("AvroConfluent",[=](
         ReadBuffer & buf,
         const Block & sample,
