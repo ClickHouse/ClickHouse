@@ -84,57 +84,8 @@ private:
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
+
+    static std::mutex reservation_mutex;
 };
-
-using DiskLocalPtr = std::shared_ptr<DiskLocal>;
-
-
-class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
-{
-public:
-    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
-        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
-
-    String path() const override
-    {
-        if (iter->isDirectory())
-            return dir_path + iter.name() + '/';
-        else
-            return dir_path + iter.name();
-    }
-
-private:
-    String dir_path;
-    Poco::DirectoryIterator iter;
-};
-
-class DiskLocalReservation : public IReservation
-{
-public:
-    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
-
-    UInt64 getSize() const override { return size; }
-
-    DiskPtr getDisk() const override { return disk; }
-
-    void update(UInt64 new_size) override;
-
-    ~DiskLocalReservation() override;
-
-private:
-    DiskLocalPtr disk;
-    UInt64 size;
-    CurrentMetrics::Increment metric_increment;
-};
-
-class DiskFactory;
-void registerDiskLocal(DiskFactory & factory);
 
 }

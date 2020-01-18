@@ -93,6 +93,61 @@ namespace
     };
 }
 
+
+class DiskS3DirectoryIterator : public IDiskDirectoryIterator
+{
+public:
+    DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+
+    String path() const override
+    {
+        if (iter->isDirectory())
+            return folder_path + iter.name() + '/';
+        else
+            return folder_path + iter.name();
+    }
+
+private:
+    Poco::DirectoryIterator iter;
+    String folder_path;
+};
+
+
+using DiskS3Ptr = std::shared_ptr<DiskS3>;
+
+class DiskS3Reservation : public IReservation
+{
+public:
+    DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk() const override { return disk; }
+
+    void update(UInt64 new_size) override
+    {
+        std::lock_guard lock(disk->reservation_mutex);
+        disk->reserved_bytes -= size;
+        size = new_size;
+        disk->reserved_bytes += size;
+    }
+
+    ~DiskS3Reservation() override;
+
+private:
+    DiskS3Ptr disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+};
+
+
 DiskS3::DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_, String metadata_path_)
     : name(std::move(name_))
     , client(std::move(client_))
@@ -277,7 +332,7 @@ String DiskS3::getRandomName() const
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {
-    std::lock_guard lock(IDisk::reservation_mutex);
+    std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
         LOG_DEBUG(&Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk " << backQuote(name));
@@ -300,11 +355,12 @@ bool DiskS3::tryReserve(UInt64 bytes)
     return false;
 }
 
+
 DiskS3Reservation::~DiskS3Reservation()
 {
     try
     {
-        std::lock_guard lock(IDisk::reservation_mutex);
+        std::lock_guard lock(disk->reservation_mutex);
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;

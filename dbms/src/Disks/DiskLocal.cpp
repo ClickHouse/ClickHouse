@@ -15,6 +15,58 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+std::mutex DiskLocal::reservation_mutex;
+
+
+using DiskLocalPtr = std::shared_ptr<DiskLocal>;
+
+class DiskLocalReservation : public IReservation
+{
+public:
+    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk() const override { return disk; }
+
+    void update(UInt64 new_size) override;
+
+    ~DiskLocalReservation() override;
+
+private:
+    DiskLocalPtr disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+};
+
+
+class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
+{
+public:
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
+        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+
+    String path() const override
+    {
+        if (iter->isDirectory())
+            return dir_path + iter.name() + '/';
+        else
+            return dir_path + iter.name();
+    }
+
+private:
+    String dir_path;
+    Poco::DirectoryIterator iter;
+};
+
+
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
@@ -24,7 +76,7 @@ ReservationPtr DiskLocal::reserve(UInt64 bytes)
 
 bool DiskLocal::tryReserve(UInt64 bytes)
 {
-    std::lock_guard lock(IDisk::reservation_mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
         LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
@@ -69,7 +121,7 @@ UInt64 DiskLocal::getAvailableSpace() const
 
 UInt64 DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(IDisk::reservation_mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     auto available_space = getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
@@ -169,19 +221,21 @@ void DiskLocal::removeRecursive(const String & path)
     Poco::File(disk_path + path).remove(true);
 }
 
+
 void DiskLocalReservation::update(UInt64 new_size)
 {
-    std::lock_guard lock(IDisk::reservation_mutex);
+    std::lock_guard lock(DiskLocal::reservation_mutex);
     disk->reserved_bytes -= size;
     size = new_size;
     disk->reserved_bytes += size;
 }
 
+
 DiskLocalReservation::~DiskLocalReservation()
 {
     try
     {
-        std::lock_guard lock(IDisk::reservation_mutex);
+        std::lock_guard lock(DiskLocal::reservation_mutex);
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;

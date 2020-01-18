@@ -16,6 +16,27 @@ namespace ErrorCodes
     extern const int CANNOT_DELETE_DIRECTORY;
 }
 
+
+class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
+{
+public:
+    explicit DiskMemoryDirectoryIterator(std::vector<String> && dir_file_paths_)
+        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
+    {
+    }
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != dir_file_paths.end(); }
+
+    String path() const override { return *iter; }
+
+private:
+    std::vector<String> dir_file_paths;
+    std::vector<String>::iterator iter;
+};
+
+
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
     throw Exception("Method reserve is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
@@ -265,6 +286,10 @@ void DiskMemory::removeRecursive(const String & path)
             ++iter;
     }
 }
+
+
+using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
+
 
 void registerDiskMemory(DiskFactory & factory)
 {
