@@ -1,5 +1,5 @@
 #include <Processors/ResizeProcessor.h>
-
+#include <iostream>
 
 namespace DB
 {
@@ -317,6 +317,8 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
                 input.status = InputStatus::Finished;
                 ++num_finished_inputs;
 
+// std::cerr << "===================================\n";
+
                 waiting_outputs.push(input.waiting_output);
             }
             continue;
@@ -379,10 +381,20 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         waiting_outputs.pop();
     }
 
-    if (waiting_outputs.empty())
-        return Status::PortFull;
+    while (!waiting_outputs.empty())
+    {
+       auto & output = output_ports[waiting_outputs.front()];
+       waiting_outputs.pop();
 
-    return Status::NeedData;
+       output.status = OutputStatus::Finished;
+       output.port->finish();
+       ++num_finished_outputs;
+    }
+
+    if (disabled_input_ports.empty())
+        return Status::NeedData;
+
+    return Status::PortFull;
 }
 
 }
