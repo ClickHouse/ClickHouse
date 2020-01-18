@@ -438,7 +438,7 @@ AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro:
         catch (Exception & e)
         {
             e.addMessage("column " + column.name);
-            e.rethrow();
+            throw;
         }
         field_mapping[field_index] = i;
     }
