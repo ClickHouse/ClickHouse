@@ -56,4 +56,4 @@ WHERE
 ;
 
 
-SELECT 'OK'
+SELECT 'OK';
