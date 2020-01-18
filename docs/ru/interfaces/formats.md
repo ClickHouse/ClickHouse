@@ -133,28 +133,28 @@ world
 
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-  где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`), 
-  `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
+  где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`),
+  `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается),
   `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
-  
+
   - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
   - `Escaped` (как в `TSV`)
   - `Quoted` (как в `Values`)
   - `Raw` (без экранирования, как в `TSVRaw`)
   - `None` (тип экранирования отсутствует, см. далее)
-  
-  Если для столбца не указан тип экранирования, используется `None`. `XML` и `Raw` поддерживаются только для вывода. 
-  
-  Так, в форматной строке 
-  
+
+  Если для столбца не указан тип экранирования, используется `None`. `XML` и `Raw` поддерживаются только для вывода.
+
+  Так, в форматной строке
+
   `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
-  
+
   между разделителями `Search phrase: `, `, count: `, `, ad price: $` и `;` при выводе будут подставлены (при вводе - будут ожидаться) значения столбцов `SearchPhrase`, `c` и `price`, сериализованные как `Quoted`, `Escaped` и `JSON` соответственно, например:
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
-  
+
  Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
-  
+
 Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
  - `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
@@ -166,15 +166,15 @@ world
  - `time` - время выполнения запроса в секундах
  - `rows_read` - сколько строк было прочитано при выполнении запроса
  - `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
- 
+
  У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
  Если строка `format_template_resultset` пустая, то по-умолчанию используется `${data}`.
  Из всех перечисленных подстановок форматная строка `format_template_resultset` для ввода может содержать только `data`.
  Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
- 
+
  Пример вывода:
 ```sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS 
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
 ```
 `/some/path/resultset.format`:
@@ -226,7 +226,7 @@ Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185
 Total rows: 2
 ```
 ```sql
-INSERT INTO UserActivity FORMAT Template SETTINGS 
+INSERT INTO UserActivity FORMAT Template SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
 ```
 `/some/path/resultset.format`:
@@ -239,7 +239,7 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 ```
 `PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows: ` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
- 
+
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
 Подходит только для ввода. Отличается от формата `Template` тем, что пропускает пробельные символы между разделителями и значениями во входном потоке. Также в этом формате можно указать пустые подстановки с типом экранирования `None` (`${}` или `${:None}`), чтобы разбить разделители на несколько частей, пробелы между которыми должны игнорироваться. Такие подстановки используются только для пропуска пробелов. С помощью этого формата можно считывать `JSON`, если значения столбцов в нём всегда идут в одном порядке в каждой строке. Например, для вставки данных из примера вывода формата [JSON](#json) в таблицу со столбцами `phrase` и `cnt` можно использовать следующий запрос:
@@ -961,7 +961,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) столбцовое хранилище, распространённое в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
+[Apache ORC](https://orc.apache.org/) - это column-oriented формат данных, распространённый в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
 
 ### Соответствие типов данных
 
