@@ -8,6 +8,7 @@
 #include <Common/MemorySanitizer.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Poco/File.h>
+#include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <IO/AIO.h>
 #include <IO/ReadHelpers.h>
@@ -382,19 +383,16 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
     {
         if (found[i])
         {
-            Poco::Logger::get("kek").information("FOUND BEFORE:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
             indices[i].setNotExists();
         }
         else if (auto it = key_to_index_and_metadata.find(ids[i]);
                 it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
         {
-            Poco::Logger::get("kek").information(std::to_string(file_id) + " FOUND BEFORE: inmemory: " + std::to_string(it->second.index.inMemory()) + " " + std::to_string(it->second.index.getBlockId()) + " " + std::to_string(it->second.index.getAddressInBlock()));
             indices[i] = it->second.index;
             found[i] = true;
         }
         else
         {
-            Poco::Logger::get("kek").information("NF:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
             indices[i].setNotExists();
         }
     }
@@ -499,7 +497,9 @@ void CachePartition::getValueFromStorage(
             const auto request_id = events[i].data;
             const auto & request = requests[request_id];
             if (events[i].res != static_cast<ssize_t>(request.aio_nbytes))
-                throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". returned: " + std::to_string(events[i].res), ErrorCodes::AIO_WRITE_ERROR);
+                throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
+                    "request_id= " + std::to_string(request.aio_data) + ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
+                    "returned: " + std::to_string(events[i].res), ErrorCodes::AIO_WRITE_ERROR);
             for (const size_t idx : blocks_to_indices[request_id])
             {
                 const auto & [file_index, out_index] = index_to_out[idx];
@@ -602,7 +602,6 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
 
         if (it == std::end(key_to_index_and_metadata) || it->second.metadata.expiresAt() <= now)
         {
-            Poco::Logger::get("kek").information("NF:: Key :" + std::to_string(ids[i]) + " i: " + std::to_string(i));
             out[i] = HAS_NOT_FOUND;
         }
         else
@@ -615,6 +614,17 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
 size_t CachePartition::getId() const
 {
     return file_id;
+}
+
+PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chrono::system_clock::time_point now) const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+    PaddedPODArray<Key> array;
+    for (const auto & [key, index_and_metadata] : key_to_index_and_metadata)
+        if (!index_and_metadata.metadata.isDefault() && index_and_metadata.metadata.expiresAt() > now)
+            array.push_back(key);
+    return array;
 }
 
 void CachePartition::remove()
@@ -892,6 +902,22 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
+}
+
+PaddedPODArray<CachePartition::Key> CacheStorage::getCachedIds() const
+{
+    PaddedPODArray<Key> array;
+
+    const auto now = std::chrono::system_clock::now();
+
+    std::shared_lock lock(rw_lock);
+    for (auto & partition : partitions)
+    {
+        const auto cached_in_partition = partition->getCachedIds(now);
+        array.insert(std::begin(cached_in_partition), std::end(cached_in_partition));
+    }
+
+    return array;
 }
 
 void CacheStorage::collectGarbage()
@@ -1173,6 +1199,12 @@ void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UIn
             },
             getLifetime(),
             null_values);
+}
+
+BlockInputStreamPtr SSDCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using BlockInputStreamType = DictionaryBlockInputStream<SSDCacheDictionary, Key>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, storage.getCachedIds(), column_names);
 }
 
 size_t SSDCacheDictionary::getAttributeIndex(const std::string & attr_name) const

@@ -140,6 +140,8 @@ public:
 
     size_t getId() const;
 
+    PaddedPODArray<Key> getCachedIds(const std::chrono::system_clock::time_point now) const;
+
 private:
     template <typename Out>
     void getValueFromMemory(
@@ -219,6 +221,8 @@ public:
     void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
             PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
             const DictionaryLifetime lifetime, const std::vector<AttributeValueVariant> & null_values);
+
+    PaddedPODArray<Key> getCachedIds() const;
 
     //BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const;
 
@@ -388,12 +392,7 @@ public:
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override // TODO
-    {
-        UNUSED(column_names);
-        UNUSED(max_block_size);
-        return nullptr;
-    }
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     size_t getAttributeIndex(const std::string & attr_name) const;
