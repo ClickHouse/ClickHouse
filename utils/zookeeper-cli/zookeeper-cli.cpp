@@ -4,9 +4,14 @@
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <common/logger_useful.h>
-#include <common/LineReader.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+
+#ifdef USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
 
 
 void printStat(const Coordination::Stat & s)
@@ -69,7 +74,11 @@ int main(int argc, char ** argv)
         Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-        LineReader lr(nullptr, {}, '\\');
+#ifdef USE_REPLXX
+        ReplxxLineReader lr(nullptr, {}, '\\');
+#else
+        LineReader lr({}, '\\');
+#endif
 
         do
         {
