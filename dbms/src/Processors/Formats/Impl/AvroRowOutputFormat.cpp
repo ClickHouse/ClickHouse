@@ -271,7 +271,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
         catch (Exception & e)
         {
             e.addMessage("column " + column.name);
-            e.rethrow();
+            throw;
         }
     }
     schema.setSchema(record_schema);
