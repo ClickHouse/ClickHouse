@@ -98,7 +98,7 @@ public:
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const String & path) = 0;
 
-    /// Remove all files from the directory.
+    /// Remove all files from the directory. Directories are not removed.
     virtual void clearDirectory(const String & path) = 0;
 
     /// Move directory from `from_path` to `to_path`.
@@ -127,8 +127,11 @@ public:
     /// Open the file for write and return WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
 
-    /// Remove file or directory
-    virtual void remove(const String & path, bool recursive) = 0;
+    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
+    virtual void remove(const String & path) = 0;
+
+    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
+    virtual void removeRecursive(const String & path) = 0;
 
 public:
     /// Used for reservation counters modification
