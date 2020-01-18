@@ -246,9 +246,10 @@ void DiskMemory::remove(const String & path, bool recursive)
     }
 
     if (!recursive && std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
-        throw Exception("Directory " + path + "is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+        throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
 
     if (recursive)
+    {
         for (auto iter = files.begin(); iter != files.end();)
         {
             if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
@@ -256,6 +257,7 @@ void DiskMemory::remove(const String & path, bool recursive)
             else
                 ++iter;
         }
+    }
 }
 
 void registerDiskMemory(DiskFactory & factory)
