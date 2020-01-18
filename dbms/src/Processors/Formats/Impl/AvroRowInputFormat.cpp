@@ -5,8 +5,10 @@
 
 #include <Core/Defines.h>
 #include <Core/Field.h>
+
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <IO/HTTPCommon.h>
 
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
@@ -508,15 +510,23 @@ public:
                 /// TODO Host checking to prevent SSRF
 
                 Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
-                Poco::Net::HTTPClientSession session(url.getHost(), url.getPort());
+
+                /// One second for connect/send/receive. Just in case.
+                ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
+
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery());
-                session.sendRequest(request);
+
+                auto session = makePooledHTTPSession(url, timeouts, 1);
+                session->sendRequest(request);
+
                 Poco::Net::HTTPResponse response;
-                auto & response_body = session.receiveResponse(response);
+                auto & response_body = session->receiveResponse(response);
+
                 if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
                 {
                     throw Exception("HTTP code " + std::to_string(response.getStatus()), ErrorCodes::INCORRECT_DATA);
                 }
+
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
