@@ -1,9 +1,5 @@
 #include <common/LineReader.h>
 
-#ifdef USE_REPLXX
-#   include <replxx.hxx>
-#endif
-
 #include <iostream>
 
 #include <port/unistd.h>
@@ -43,40 +39,10 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
         });
 }
 
-LineReader::LineReader(const Suggest * suggest, const String & history_file_path_, char extender_, char delimiter_)
+LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
     : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
 {
-#ifdef USE_REPLXX
-    impl = new replxx::Replxx;
-    auto & rx = *(replxx::Replxx*)(impl);
-
-    if (!history_file_path.empty())
-        rx.history_load(history_file_path);
-
-    auto callback = [suggest] (const String & context, size_t context_size)
-    {
-        auto range = suggest->getCompletions(context, context_size);
-        return replxx::Replxx::completions_t(range.first, range.second);
-    };
-
-    if (suggest)
-    {
-        rx.set_completion_callback(callback);
-        rx.set_complete_on_empty(false);
-        rx.set_word_break_characters(" \t\n\r\"\\'`@$><=;|&{(.");
-    }
-#endif
     /// FIXME: check extender != delimiter
-}
-
-LineReader::~LineReader()
-{
-#ifdef USE_REPLXX
-    auto & rx = *(replxx::Replxx*)(impl);
-    if (!history_file_path.empty())
-        rx.history_save(history_file_path);
-    delete (replxx::Replxx *)impl;
-#endif
 }
 
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
@@ -127,27 +93,11 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-#ifdef USE_REPLXX
-    auto & rx = *(replxx::Replxx*)(impl);
-    const char* cinput = rx.input(prompt);
-    if (cinput == nullptr)
-        return (errno != EAGAIN) ? ABORT : RESET_LINE;
-    input = cinput;
-#else
     std::cout << prompt;
     std::getline(std::cin, input);
     if (!std::cin.good())
         return ABORT;
-#endif
 
     trim(input);
     return INPUT_LINE;
-}
-
-void LineReader::addToHistory(const String & line)
-{
-#ifdef USE_REPLXX
-    auto & rx = *(replxx::Replxx*)(impl);
-    rx.history_add(line);
-#endif
 }
