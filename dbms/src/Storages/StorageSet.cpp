@@ -9,7 +9,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
-#include <Poco/DirectoryIterator.h>
+#include <filesystem>
 
 
 namespace DB
@@ -75,7 +75,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
     compressed_backup_buf.next();
     backup_buf.next();
 
-    Poco::File(backup_tmp_path + backup_file_name).renameTo(backup_path + backup_file_name);
+    std::filesystem::rename(backup_tmp_path + backup_file_name, backup_path + backup_file_name);
 }
 
 
@@ -133,9 +133,8 @@ size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    Poco::File(path).remove(true);
-    Poco::File(path).createDirectories();
-    Poco::File(path + "tmp/").createDirectories();
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path + "tmp/");
 
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -148,31 +147,31 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
 void StorageSetOrJoinBase::restore()
 {
-    Poco::File tmp_dir(path + "tmp/");
-    if (!tmp_dir.exists())
+    std::filesystem::path tmp_dir(path + "tmp/");
+    if (!std::filesystem::exists(tmp_dir))
     {
-        tmp_dir.createDirectories();
+        std::filesystem::create_directories(tmp_dir);
         return;
     }
 
     static const auto file_suffix = ".bin";
-    static const auto file_suffix_size = strlen(".bin");
 
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
+    std::filesystem::directory_iterator dir_end;
+    for (std::filesystem::directory_iterator dir_it(path); dir_end != dir_it; ++dir_it)
     {
-        const auto & name = dir_it.name();
+        const std::filesystem::path file_path = dir_it->path();
+        const String& file_path_str{file_path};
 
-        if (dir_it->isFile()
-            && endsWith(name, file_suffix)
-            && dir_it->getSize() > 0)
+        if (dir_it->is_regular_file()
+            && file_path.extension() == file_suffix
+            && dir_it->file_size() > 0)
         {
             /// Calculate the maximum number of available files with a backup to add the following files with large numbers.
-            UInt64 file_num = parse<UInt64>(name.substr(0, name.size() - file_suffix_size));
+            UInt64 file_num = parse<UInt64>(file_path.stem().string());
             if (file_num > increment)
                 increment = file_num;
 
-            restoreFromFile(dir_it->path());
+            restoreFromFile(file_path_str);
         }
     }
 }
@@ -206,7 +205,7 @@ void StorageSetOrJoinBase::rename(
 {
     /// Rename directory with data.
     String new_path = base_path + new_path_to_table_data;
-    Poco::File(path).renameTo(new_path);
+    std::filesystem::rename(path, new_path);
 
     path = new_path;
     table_name = new_table_name;
