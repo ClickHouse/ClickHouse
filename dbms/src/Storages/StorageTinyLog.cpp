@@ -428,7 +428,7 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
 void StorageTinyLog::drop(TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
-    disk->remove(table_path, true);
+    disk->removeRecursive(table_path);
     files.clear();
 }
 

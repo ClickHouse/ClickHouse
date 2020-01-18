@@ -49,7 +49,7 @@ struct URI
     String bucket;
     String key;
 
-    explicit URI (const Poco::URI & uri_);
+    explicit URI(const Poco::URI & uri_);
 };
 
 }

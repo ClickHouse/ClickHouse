@@ -229,7 +229,7 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
         return std::make_unique<WriteBufferFromString>(iter->second.data);
 }
 
-void DiskMemory::remove(const String & path, bool recursive)
+void DiskMemory::remove(const String & path)
 {
     std::lock_guard lock(mutex);
 
@@ -237,24 +237,32 @@ void DiskMemory::remove(const String & path, bool recursive)
     if (file_it == files.end())
         throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
 
-    if (file_it->second.type == FileType::File)
+    if (file_it->second.type == FileType::Directory)
     {
         files.erase(file_it);
-        return;
+        if (std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
+            throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
     }
-
-    if (!recursive && std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
-        throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
-
-    if (recursive)
+    else
     {
-        for (auto iter = files.begin(); iter != files.end();)
-        {
-            if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
-                iter = files.erase(iter);
-            else
-                ++iter;
-        }
+        files.erase(file_it);
+    }
+}
+
+void DiskMemory::removeRecursive(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    for (auto iter = files.begin(); iter != files.end();)
+    {
+        if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
+            iter = files.erase(iter);
+        else
+            ++iter;
     }
 }
 
