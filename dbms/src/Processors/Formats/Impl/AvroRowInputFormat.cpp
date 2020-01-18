@@ -608,7 +608,7 @@ AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(SchemaId
 
 void registerInputFormatProcessorAvro(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Avro", [=](
+    factory.registerInputFormatProcessor("Avro", [](
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
@@ -618,7 +618,7 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
     });
 
 #if USE_POCO_JSON
-    factory.registerInputFormatProcessor("AvroConfluent",[=](
+    factory.registerInputFormatProcessor("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,
         const RowInputFormatParams & params,
