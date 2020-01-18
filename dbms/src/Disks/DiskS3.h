@@ -128,7 +128,7 @@ public:
 
     void update(UInt64 new_size) override
     {
-        std::lock_guard lock(IDisk::reservationMutex);
+        std::lock_guard lock(IDisk::reservation_mutex);
         disk->reserved_bytes -= size;
         size = new_size;
         disk->reserved_bytes += size;

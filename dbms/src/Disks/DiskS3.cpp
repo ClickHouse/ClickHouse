@@ -249,7 +249,7 @@ String DiskS3::getRandomName() const
 
 bool DiskS3::tryReserve(UInt64 bytes)
 {
-    std::lock_guard lock(IDisk::reservationMutex);
+    std::lock_guard lock(IDisk::reservation_mutex);
     if (bytes == 0)
     {
         LOG_DEBUG(&Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk " << backQuote(name));
@@ -276,7 +276,7 @@ DiskS3Reservation::~DiskS3Reservation()
 {
     try
     {
-        std::lock_guard lock(IDisk::reservationMutex);
+        std::lock_guard lock(IDisk::reservation_mutex);
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;

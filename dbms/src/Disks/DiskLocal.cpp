@@ -15,8 +15,6 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-std::mutex IDisk::reservationMutex;
-
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
@@ -26,7 +24,7 @@ ReservationPtr DiskLocal::reserve(UInt64 bytes)
 
 bool DiskLocal::tryReserve(UInt64 bytes)
 {
-    std::lock_guard lock(IDisk::reservationMutex);
+    std::lock_guard lock(IDisk::reservation_mutex);
     if (bytes == 0)
     {
         LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
@@ -71,7 +69,7 @@ UInt64 DiskLocal::getAvailableSpace() const
 
 UInt64 DiskLocal::getUnreservedSpace() const
 {
-    std::lock_guard lock(IDisk::reservationMutex);
+    std::lock_guard lock(IDisk::reservation_mutex);
     auto available_space = getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
@@ -168,7 +166,7 @@ void DiskLocal::remove(const String & path, bool recursive)
 
 void DiskLocalReservation::update(UInt64 new_size)
 {
-    std::lock_guard lock(IDisk::reservationMutex);
+    std::lock_guard lock(IDisk::reservation_mutex);
     disk->reserved_bytes -= size;
     size = new_size;
     disk->reserved_bytes += size;
@@ -178,7 +176,7 @@ DiskLocalReservation::~DiskLocalReservation()
 {
     try
     {
-        std::lock_guard lock(IDisk::reservationMutex);
+        std::lock_guard lock(IDisk::reservation_mutex);
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
