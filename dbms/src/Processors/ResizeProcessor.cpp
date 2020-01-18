@@ -266,11 +266,13 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         for (auto & input : inputs)
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive, .waiting_output = -1});
 
+        disabled_input_ports.init(inputs.size());
+
         for (UInt64 i = 0; i < input_ports.size(); ++i)
             disabled_input_ports.push(i);
 
         for (auto & output : outputs)
-            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive, .last_input = -1});
     }
 
     for (auto & output_number : updated_outputs)
@@ -371,14 +373,23 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     /// Enable more inputs if needed.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
-        auto & input = input_ports[disabled_input_ports.front()];
-        disabled_input_ports.pop();
+        auto output_number = waiting_outputs.front();
+        auto input_number = output_ports[output_number].last_input;
+
+        if (input_number != -1 && disabled_input_ports.has(input_number))
+            disabled_input_ports.pop(input_number);
+        else
+            input_number = disabled_input_ports.pop_any();
+
+        auto & input = input_ports[input_number];
+        /// disabled_input_ports.pop();
 
         input.port->setNeeded();
         input.status = InputStatus::NeedData;
         input.waiting_output = waiting_outputs.front();
 
         waiting_outputs.pop();
+        output_ports[output_number].last_input = input_number;
     }
 
     while (!waiting_outputs.empty())

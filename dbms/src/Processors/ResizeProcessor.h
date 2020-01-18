@@ -2,7 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <queue>
-
+#include <Processors/Executors/ThreadsQueue.h>
 
 namespace DB
 {
@@ -95,7 +95,7 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<UInt64> disabled_input_ports;
+    ThreadsQueue disabled_input_ports;
     std::queue<UInt64> waiting_outputs;
     bool initialized = false;
 
@@ -124,6 +124,7 @@ private:
     {
         OutputPort * port;
         OutputStatus status;
+        ssize_t last_input;
     };
 
     std::vector<InputPortWithStatus> input_ports;
