@@ -5,9 +5,11 @@
 #endif
 
 #include <iostream>
+#include <string_view>
 
 #include <port/unistd.h>
 #include <string.h>
+
 
 namespace
 {
@@ -29,6 +31,8 @@ bool hasInputData()
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
+constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
+
 }
 
 LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
@@ -36,10 +40,20 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
     if (!ready)
         return std::make_pair(words.end(), words.end());
 
+    std::string_view last_word;
+
+    auto last_word_pos = prefix.find_last_of(word_break_characters);
+    if (std::string::npos == last_word_pos)
+        last_word = prefix;
+    else
+        last_word = std::string_view(prefix).substr(last_word_pos + 1, std::string::npos);
+
+    /// last_word can be empty.
+
     return std::equal_range(
-        words.begin(), words.end(), prefix, [prefix_length](const std::string & s, const std::string & prefix_searched)
+        words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
         {
-            return strncmp(s.c_str(), prefix_searched.c_str(), prefix_length) < 0;
+            return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
         });
 }
 
@@ -63,7 +77,7 @@ LineReader::LineReader(const Suggest * suggest, const String & history_file_path
     {
         rx.set_completion_callback(callback);
         rx.set_complete_on_empty(false);
-        rx.set_word_break_characters(" \t\n\r\"\\'`@$><=;|&{(.");
+        rx.set_word_break_characters(word_break_characters);
     }
 #endif
     /// FIXME: check extender != delimiter
