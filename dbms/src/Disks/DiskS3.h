@@ -85,58 +85,7 @@ private:
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
-};
-
-using DiskS3Ptr = std::shared_ptr<DiskS3>;
-
-class DiskS3DirectoryIterator : public IDiskDirectoryIterator
-{
-public:
-    DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
-
-    String path() const override
-    {
-        if (iter->isDirectory())
-            return folder_path + iter.name() + '/';
-        else
-            return folder_path + iter.name();
-    }
-
-private:
-    Poco::DirectoryIterator iter;
-    String folder_path;
-};
-
-class DiskS3Reservation : public IReservation
-{
-public:
-    DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
-
-    UInt64 getSize() const override { return size; }
-
-    DiskPtr getDisk() const override { return disk; }
-
-    void update(UInt64 new_size) override
-    {
-        std::lock_guard lock(IDisk::reservation_mutex);
-        disk->reserved_bytes -= size;
-        size = new_size;
-        disk->reserved_bytes += size;
-    }
-
-    ~DiskS3Reservation() override;
-
-private:
-    DiskS3Ptr disk;
-    UInt64 size;
-    CurrentMetrics::Increment metric_increment;
+    std::mutex reservation_mutex;
 };
 
 }

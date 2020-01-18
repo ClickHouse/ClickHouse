@@ -132,10 +132,6 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
-
-public:
-    /// Used for reservation counters modification
-    static std::mutex reservation_mutex;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

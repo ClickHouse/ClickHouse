@@ -97,30 +97,4 @@ private:
     mutable std::mutex mutex;
 };
 
-using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
-
-
-class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
-{
-public:
-    explicit DiskMemoryDirectoryIterator(std::vector<String> && dir_file_paths_)
-        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
-    {
-    }
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != dir_file_paths.end(); }
-
-    String path() const override { return *iter; }
-
-private:
-    std::vector<String> dir_file_paths;
-    std::vector<String>::iterator iter;
-};
-
-
-class DiskFactory;
-void registerDiskMemory(DiskFactory & factory);
-
 }
