@@ -229,6 +229,34 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
         return std::make_unique<WriteBufferFromString>(iter->second.data);
 }
 
+void DiskMemory::remove(const String & path, bool recursive)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        return;
+
+    if (file_it->second.type == FileType::File)
+    {
+        files.erase(file_it);
+        return;
+    }
+
+    if (!recursive && std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
+        throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+
+    if (recursive)
+    {
+        for (auto iter = files.begin(); iter != files.end();)
+        {
+            if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
+                iter = files.erase(iter);
+            else
+                ++iter;
+        }
+    }
+}
 
 void registerDiskMemory(DiskFactory & factory)
 {

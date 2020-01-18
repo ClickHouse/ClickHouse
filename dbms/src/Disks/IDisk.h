@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
@@ -125,6 +126,13 @@ public:
 
     /// Open the file for write and return WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
+
+    /// Remove file or directory
+    virtual void remove(const String & path, bool recursive) = 0;
+
+public:
+    /// Used for reservation counters modification
+    static std::mutex reservationMutex;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -151,7 +159,7 @@ public:
 /**
  * Information about reserved size on particular disk.
  */
-class IReservation
+class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
