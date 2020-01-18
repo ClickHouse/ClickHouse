@@ -235,13 +235,13 @@ void DiskMemory::remove(const String & path, bool recursive)
 {
     std::lock_guard lock(mutex);
 
-    auto fileIt = files.find(path);
-    if (fileIt == files.end())
+    auto file_it = files.find(path);
+    if (file_it == files.end())
         return;
 
-    if (fileIt->second.type == FileType::File)
+    if (file_it->second.type == FileType::File)
     {
-        files.erase(fileIt);
+        files.erase(file_it);
         return;
     }
 
