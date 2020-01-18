@@ -220,7 +220,12 @@ size_t CachePartition::appendBlock(
     if (!memory)
         memory.emplace(block_size, BUFFER_ALIGNMENT);
     if (!write_buffer)
+    {
         write_buffer.emplace(memory->data(), block_size);
+        // codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
+        // compressed_buffer.emplace(*write_buffer, codec);
+        // hashing_buffer.emplace(*compressed_buffer);
+    }
 
     for (size_t index = begin; index < ids.size();)
     {
@@ -616,6 +621,18 @@ size_t CachePartition::getId() const
     return file_id;
 }
 
+double CachePartition::getLoadFactor() const
+{
+    std::shared_lock lock(rw_lock);
+    return static_cast<double>(current_file_block_id) / max_size;
+}
+
+size_t CachePartition::getElementCount() const
+{
+    std::shared_lock lock(rw_lock);
+    return key_to_index_and_metadata.size();
+}
+
 PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chrono::system_clock::time_point now) const
 {
     const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -665,25 +682,33 @@ void CacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<U
 {
     std::vector<bool> found(ids.size(), false);
 
-    std::shared_lock lock(rw_lock);
-    for (auto & partition : partitions)
-        partition->getValue<Out>(attribute_index, ids, out, found, now);
+    {
+        std::shared_lock lock(rw_lock);
+        for (auto & partition : partitions)
+            partition->getValue<Out>(attribute_index, ids, out, found, now);
 
-    for (size_t i = 0; i < ids.size(); ++i)
-        if (!found[i])
-            not_found[ids[i]].push_back(i);
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (!found[i])
+                not_found[ids[i]].push_back(i);
+    }
+    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
 }
 
 void CacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
      std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
 {
-    std::shared_lock lock(rw_lock);
-    for (auto & partition : partitions)
-        partition->has(ids, out, now);
+    {
+        std::shared_lock lock(rw_lock);
+        for (auto & partition : partitions)
+            partition->has(ids, out, now);
 
-    for (size_t i = 0; i < ids.size(); ++i)
-        if (out[i] == HAS_NOT_FOUND)
-            not_found[ids[i]].push_back(i);
+        for (size_t i = 0; i < ids.size(); ++i)
+            if (out[i] == HAS_NOT_FOUND)
+                not_found[ids[i]].push_back(i);
+    }
+    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
@@ -918,6 +943,24 @@ PaddedPODArray<CachePartition::Key> CacheStorage::getCachedIds() const
     }
 
     return array;
+}
+
+double CacheStorage::getLoadFactor() const
+{
+    double result = 0;
+    std::shared_lock lock(rw_lock);
+    for (const auto & partition : partitions)
+        result += partition->getLoadFactor();
+    return result / partitions.size();
+}
+
+size_t CacheStorage::getElementCount() const
+{
+    size_t result = 0;
+    std::shared_lock lock(rw_lock);
+    for (const auto & partition : partitions)
+        result += partition->getElementCount();
+    return result;
 }
 
 void CacheStorage::collectGarbage()

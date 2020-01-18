@@ -16,6 +16,8 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 #include <IO/WriteBufferAIO.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/HashingWriteBuffer.h>
 
 namespace DB
 {
@@ -142,6 +144,10 @@ public:
 
     PaddedPODArray<Key> getCachedIds(const std::chrono::system_clock::time_point now) const;
 
+    double getLoadFactor() const;
+
+    size_t getElementCount() const;
+
 private:
     template <typename Out>
     void getValueFromMemory(
@@ -177,11 +183,12 @@ private:
 
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
+    // std::optional<CompressedWriteBuffer> compressed_buffer;
+    // std::optional<HashingWriteBuffer> hashing_buffer;
+    // CompressionCodecPtr codec;
 
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
-
-    // mutable std::atomic<size_t> element_count{0};
 };
 
 using CachePartitionPtr = std::shared_ptr<CachePartition>;
@@ -229,6 +236,14 @@ public:
 
     const std::string & getPath() const { return path; }
 
+    size_t getQueryCount() const { return query_count.load(std::memory_order_relaxed); }
+
+    size_t getHitCount() const { return hit_count.load(std::memory_order_acquire); }
+
+    size_t getElementCount() const;
+
+    double getLoadFactor() const;
+
 private:
     CachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
@@ -258,7 +273,6 @@ private:
     // stats
     mutable size_t bytes_allocated = 0;
 
-    mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 };
@@ -284,16 +298,16 @@ public:
 
     size_t getBytesAllocated() const override { return 0; } // TODO: ?
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return storage.getQueryCount(); }
 
     double getHitRate() const override
     {
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
+        return static_cast<double>(storage.getHitCount()) / storage.getQueryCount();
     }
 
-    size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
+    size_t getElementCount() const override { return storage.getElementCount(); }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / partition_size; } // TODO: fix
+    double getLoadFactor() const override { return storage.getLoadFactor(); }
 
     bool supportUpdates() const override { return false; }
 
@@ -425,9 +439,6 @@ private:
     Logger * const log;
 
     mutable size_t bytes_allocated = 0;
-    mutable std::atomic<size_t> element_count{0};
-    mutable std::atomic<size_t> hit_count{0};
-    mutable std::atomic<size_t> query_count{0};
 };
 
 }
