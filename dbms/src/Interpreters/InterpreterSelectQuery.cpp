@@ -2351,6 +2351,9 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
     });
 
+    if (pipeline.getNumStreams() > 1)
+        pipeline.resize(pipeline.getNumStreams(), true, true);
+
     /// Merge the sorted blocks.
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
