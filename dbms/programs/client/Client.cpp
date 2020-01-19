@@ -479,7 +479,7 @@ private:
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
                 /// Load suggestion data from the server.
-                Suggest::instance()->load(connection_parameters, config().getInt("suggestion_limit"));
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 
             /// Load command history if present.
             if (config().has("history_file"))
@@ -543,17 +543,6 @@ private:
         }
         else
         {
-            /// This is intended for testing purposes.
-            if (config().getBool("always_load_suggestion_data", false))
-            {
-#if USE_REPLXX
-                SCOPE_EXIT({ Suggest::instance().finalize(); });
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
-#else
-                throw Exception("Command line suggestions cannot work without line editing library", ErrorCodes::BAD_ARGUMENTS);
-#endif
-            }
-
             query_id = config().getString("query_id", "");
             nonInteractive();
 
@@ -1823,13 +1812,6 @@ public:
             server_logs_file = options["server_logs_file"].as<std::string>();
         if (options.count("disable_suggestion"))
             config().setBool("disable_suggestion", true);
-        if (options.count("always_load_suggestion_data"))
-        {
-            if (options.count("disable_suggestion"))
-                throw Exception("Command line parameters disable_suggestion (-A) and always_load_suggestion_data cannot be specified simultaneously",
-                    ErrorCodes::BAD_ARGUMENTS);
-            config().setBool("always_load_suggestion_data", true);
-        }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
 

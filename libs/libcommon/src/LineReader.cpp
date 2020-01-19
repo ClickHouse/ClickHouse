@@ -58,7 +58,7 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
         });
 }
 
-LineReader::LineReader(const Suggest * suggest, const String & history_file_path_, char extender_, char delimiter_)
+LineReader::LineReader(const Suggest & suggest, const String & history_file_path_, char extender_, char delimiter_)
     : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
 {
 #if USE_REPLXX
@@ -68,18 +68,15 @@ LineReader::LineReader(const Suggest * suggest, const String & history_file_path
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
 
-    auto callback = [suggest] (const String & context, size_t context_size)
+    auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        auto range = suggest->getCompletions(context, context_size);
+        auto range = suggest.getCompletions(context, context_size);
         return replxx::Replxx::completions_t(range.first, range.second);
     };
 
-    if (suggest)
-    {
-        rx.set_completion_callback(callback);
-        rx.set_complete_on_empty(false);
-        rx.set_word_break_characters(word_break_characters);
-    }
+    rx.set_completion_callback(callback);
+    rx.set_complete_on_empty(false);
+    rx.set_word_break_characters(word_break_characters);
 #endif
     /// FIXME: check extender != delimiter
 }
