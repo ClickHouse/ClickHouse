@@ -12,7 +12,6 @@
 #include <common/logger_useful.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 
-
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
@@ -29,6 +28,8 @@ namespace ErrorCodes
 
 namespace ClusterProxy
 {
+
+using ShardQueries = RemoteBlockInputStream::ShardQueries;
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
@@ -119,11 +120,10 @@ static String formattedAST(const ASTPtr & ast)
 
 BlockInputStreams SelectStreamFactory::createStreams()
 {
-    const int max_group_size = 5;
     BlockInputStreams result;
     ShardQueries multiplexed_shards;
 
-    size_t multiplexed = 0;
+    size_t multiplexed_shards_count = 0;
     auto create_multiplexed_stream = [&]() {
         auto stream = std::make_shared<RemoteBlockInputStream>(
             multiplexed_shards, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
@@ -133,13 +133,13 @@ BlockInputStreams SelectStreamFactory::createStreams()
         result.push_back(stream);
         multiplexed_shards.clear();
 
-        multiplexed++;
+        multiplexed_shards_count++;
     };
 
     for (const auto & shard_info : cluster->getShardsInfo()) {
         createForShard(shard_info, result, multiplexed_shards);
 
-        if (multiplexed_shards.size() == max_group_size)
+        if (multiplexed_shards.size() == settings.max_remote_shards_group_size)
             create_multiplexed_stream();
     }
 
@@ -148,12 +148,10 @@ BlockInputStreams SelectStreamFactory::createStreams()
 
     LOG_INFO(
         &Logger::get("ClusterProxy::SelectStreamFactory"),
-        "Total shards: " << cluster->getShardCount() << " Stream groups: " << multiplexed << " Total streams: " << result.size()
+        "Total shards count: " << cluster->getShardCount() << std::endl
+        << "Remote stream groups count: " << multiplexed_shards_count << std::endl
+        << "Total streams count: " << result.size()
     );
-
-    // if (result.size() > 0) {
-    //     throw Exception("Halt", ErrorCodes::ALL_REPLICAS_ARE_STALE);
-    // }
 
     return result;
 }
@@ -174,12 +172,6 @@ void SelectStreamFactory::createForShard(const Cluster::ShardInfo & shard_info, 
     auto create_remote_stream = [&]()
     {
         multiplexed_shards.push_back({shard_info.pool, modified_query});
-        // auto stream = std::make_shared<RemoteBlockInputStream>(
-        //     shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
-        // stream->setPoolMode(PoolMode::GET_MANY);
-        // if (!table_func_ptr)
-        //     stream->setMainTable(main_table);
-        // return stream;
     };
 
     const bool canPreferLocalhostReplica = settings.prefer_localhost_replica && shard_info.isLocal();

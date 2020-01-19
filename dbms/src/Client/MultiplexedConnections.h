@@ -18,7 +18,7 @@ namespace DB
 class MultiplexedConnections final : private boost::noncopyable
 {
 public:
-    const size_t default_shard_num = 0;
+    const size_t default_shard_idx = 0;
 
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
@@ -47,7 +47,7 @@ public:
         bool with_pending_data = false);
 
     void sendQuery(
-        size_t shard_num,
+        size_t shard_idx,
         const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id = "",
@@ -95,17 +95,30 @@ private:
         ConnectionPool::Entry pool_entry;
     };
 
-    struct ReplicaRange
-    {
-        size_t start;
-        size_t count;
-    };
-
     /// Get a replica where you can read the data.
     ReplicaState & getReplicaForReading();
 
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
+
+    bool isQuerySent() const;
+
+    using ReplicaStates = std::vector<ReplicaState>;
+    struct ReplicaRange {
+        using Iter = ReplicaStates::const_iterator;
+        Iter begin_;
+        Iter end_;
+
+        Iter begin() const {
+            return begin_;
+        }
+
+        Iter end() const {
+            return end_;
+        }
+    };
+
+    const ReplicaRange& getShardReplicas(size_t shard_idx);
 
 private:
     const Settings & settings;
@@ -116,12 +129,13 @@ private:
     std::vector<ReplicaState> replica_states;
     std::unordered_map<int, size_t> fd_to_replica_state_idx;
 
-    std::unordered_map<size_t, ReplicaRange> shard_replicas;
+    std::unordered_map<size_t, ReplicaRange> shard_to_replica_range;
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
 
-    bool sent_query = false;
+    size_t sent_queries_count = 0;
+
     bool cancelled = false;
 
     /// A mutex for the sendCancel function to execute safely

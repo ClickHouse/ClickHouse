@@ -21,9 +21,9 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
     ReplicaState replica_state;
     replica_state.connection = &connection;
     replica_states.push_back(replica_state);
-    shard_replicas[default_shard_num] = {.start = 0, .count = replica_states.size()};
 
     active_connection_count = 1;
+    shard_to_replica_range[default_shard_idx] = ReplicaRange{replica_states.begin(), replica_states.end()};
 }
 
 MultiplexedConnections::MultiplexedConnections(
@@ -49,8 +49,8 @@ MultiplexedConnections::MultiplexedConnections(
         replica_states.push_back(std::move(replica_state));
     }
 
-    shard_replicas[default_shard_num] = {.start = 0, .count = replica_states.size()};
     active_connection_count = connections.size();
+    shard_to_replica_range[default_shard_idx] = ReplicaRange{replica_states.begin(), replica_states.end()};
 }
 
 MultiplexedConnections::MultiplexedConnections(
@@ -58,41 +58,41 @@ MultiplexedConnections::MultiplexedConnections(
         const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_)
 {
-    for (size_t i = 0; i < shard_connections.size(); ++i)
+    for (auto & connections : shard_connections)
     {
-        auto & connections = shard_connections[i];
         /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
         /// `skip_unavailable_shards` was set. Then just return.
         if (connections.empty())
             continue;
 
-        const size_t start = replica_states.size();
-
         // replica_states.reserve(connections.size());
-        for (size_t j = 0; j < connections.size(); ++j)
+        for (auto & pool_entry : connections)
         {
-            Connection * connection = &(*connections[j]);
+            Connection * connection = &(*pool_entry);
             connection->setThrottler(throttler);
 
-            ReplicaState replica_state;
-            replica_state.pool_entry = std::move(connections[j]);
-            replica_state.connection = connection;
-
-            replica_states.push_back(std::move(replica_state));
+            replica_states.push_back({
+                .pool_entry = std::move(pool_entry),
+                .connection = connection,
+            });
         }
-
-        const size_t end = replica_states.size();
-        shard_replicas[i] = {.start = start, .count = end - start};
     }
     active_connection_count = replica_states.size();
+
+    for (size_t i = 0, offset = 0; i < shard_connections.size(); i++) {
+        const auto begin = replica_states.begin() + offset;
+        const auto length = shard_connections[i].size();
+        shard_to_replica_range[i] = ReplicaRange{begin, begin + length};
+        offset += length;
+    }
 }
 
 void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
 
-    // if (!sent_query)
-    //     throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
+    if (!isQuerySent())
+        throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -106,8 +106,8 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 {
     std::lock_guard lock(cancel_mutex);
 
-    // if (!sent_query)
-    //     throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
+    if (!isQuerySent())
+        throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     if (data.size() != active_connection_count)
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
@@ -132,11 +132,11 @@ void MultiplexedConnections::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
-    sendQuery(default_shard_num, timeouts, query, query_id, stage, client_info, with_pending_data);
+    sendQuery(default_shard_idx, timeouts, query, query_id, stage, client_info, with_pending_data);
 }
 
 void MultiplexedConnections::sendQuery(
-        size_t shard_num,
+        size_t shard_idx,
         const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id,
@@ -145,15 +145,14 @@ void MultiplexedConnections::sendQuery(
         bool with_pending_data) {
     std::lock_guard lock(cancel_mutex);
 
-    // if (sent_query)
-    //     throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
+    if (isQuerySent())
+        throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
     Settings modified_settings = settings;
-    const auto & range = shard_replicas[shard_num];
 
-    for (size_t i = 0; i < range.count; i++)
+    const auto & replicas = getShardReplicas(shard_idx);
+    for (auto & replica : replicas)
     {
-        auto & replica = replica_states[range.start + i];
         if (!replica.connection)
             throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
@@ -165,26 +164,27 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    size_t num_replicas = range.count;
+    const size_t offset = replicas.begin() - replica_states.begin();
+    const size_t num_replicas = replicas.end() - replicas.end();
     if (num_replicas > 1)
     {
         /// Use multiple replicas for parallel query processing.
         modified_settings.parallel_replicas_count = num_replicas;
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            modified_settings.parallel_replica_offset = range.start + i;
-            replica_states[range.start + i].connection->sendQuery(timeouts, query, query_id,
+            modified_settings.parallel_replica_offset = offset + i;
+            replica_states[offset + i].connection->sendQuery(timeouts, query, query_id,
                                                     stage, &modified_settings, client_info, with_pending_data);
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[range.start].connection->sendQuery(timeouts, query, query_id, stage,
+        replica_states[offset].connection->sendQuery(timeouts, query, query_id, stage,
                                                 &modified_settings, client_info, with_pending_data);
     }
 
-    sent_query = true;
+    sent_queries_count++;
 }
 
 Packet MultiplexedConnections::receivePacket()
@@ -213,8 +213,8 @@ void MultiplexedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
 
-    // if (!sent_query || cancelled)
-    //     throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
+    if (!isQuerySent() || cancelled)
+        throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -286,8 +286,8 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 
 Packet MultiplexedConnections::receivePacketUnlocked()
 {
-    // if (!sent_query)
-    //     throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
+    if (!isQuerySent())
+        throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
     if (!hasActiveConnections())
         throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
@@ -380,6 +380,14 @@ void MultiplexedConnections::invalidateReplica(ReplicaState & state)
     state.connection = nullptr;
     state.pool_entry = IConnectionPool::Entry();
     --active_connection_count;
+}
+
+bool MultiplexedConnections::isQuerySent() const {
+    return sent_queries_count == shard_to_replica_range.size();
+}
+
+const MultiplexedConnections::ReplicaRange& MultiplexedConnections::getShardReplicas(size_t shard_idx) {
+    return shard_to_replica_range[shard_idx];
 }
 
 }

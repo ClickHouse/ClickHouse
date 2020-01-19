@@ -15,18 +15,18 @@
 namespace DB
 {
 
-struct ShardQuery {
-    ConnectionPoolWithFailoverPtr pool;
-    String query;
-};
-
-using ShardQueries = std::vector<ShardQuery>;
-
 /** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IBlockInputStream
 {
 public:
+    struct ShardQuery {
+        ConnectionPoolWithFailoverPtr pool;
+        String query;
+    };
+
+    using ShardQueries = std::vector<ShardQuery>;
+
     /// Takes already set connection.
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
@@ -115,7 +115,7 @@ private:
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
-    std::vector<String> query;
+    std::vector<String> shard_queries;
     String query_id = "";
     Context context;
 
@@ -141,7 +141,7 @@ private:
       * destruction, it's required to send cancel query request to replicas and
       * read all packets before EndOfStream
       */
-    std::atomic<size_t> finished { 0 };
+    std::atomic<size_t> finished_shards_count { 0 };
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:

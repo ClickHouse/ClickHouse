@@ -47,7 +47,10 @@ public:
     BlockInputStreams createStreams();
 
 private:
-    void createForShard(const Cluster::ShardInfo & shard_info, BlockInputStreams & result, ShardQueries & multiplexed_shards);
+    void createForShard(
+        const Cluster::ShardInfo & shard_info,
+        BlockInputStreams & result,
+        RemoteBlockInputStream::ShardQueries & multiplexed_shards);
 
     const Block header;
     QueryProcessingStage::Enum processed_stage;
