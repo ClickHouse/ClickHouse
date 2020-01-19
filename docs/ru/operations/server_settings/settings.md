@@ -661,6 +661,16 @@ TCP порт для защищённого обмена данными с кли
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
+## mysql_port {#server_settings-mysql_port}
+
+Порт для взаимодействия с клиентами по протоколу MySQL.
+
+Пример
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
 ## tmp_path
 
 Путь ко временным данным для обработки больших запросов.
