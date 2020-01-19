@@ -95,6 +95,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
 #include <Processors/Pipe.h>
+#include <Storages/System/StorageSystemNumbers.h>
 
 
 namespace DB
@@ -1950,7 +1951,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        pipeline.resize(pipeline.getNumStreams(), true, true);
+        if (!(storage && typeid_cast<const StorageSystemNumbers *>(storage.get())))
+            pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
