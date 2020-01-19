@@ -83,14 +83,40 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     switch (data_type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return {avro::BoolSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                encoder.encodeBool(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
+                encoder.encodeInt(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::Int8:
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeInt(assert_cast<const ColumnInt8 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::UInt16:
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeInt(assert_cast<const ColumnUInt16 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::Int16:
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeInt(assert_cast<const ColumnInt16 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::DateTime:
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeInt(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
             }};
         case TypeIndex::Int32:
             return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 encoder.encodeInt(assert_cast<const ColumnInt32 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::UInt64:
+            return {avro::LongSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeLong(assert_cast<const ColumnUInt64 &>(column).getElement(row_num));
             }};
         case TypeIndex::Int64:
             return {avro::LongSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
@@ -136,7 +162,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             }};
         }
         case TypeIndex::String:
-            return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
                 encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data), s.size);
