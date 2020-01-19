@@ -92,7 +92,8 @@ public:
             const size_t file_id,
             const size_t max_size,
             const size_t block_size,
-            const size_t read_buffer_size);
+            const size_t read_buffer_size,
+            const size_t write_buffer_size);
 
     ~CachePartition();
 
@@ -164,6 +165,7 @@ private:
     const size_t max_size;
     const size_t block_size;
     const size_t read_buffer_size;
+    const size_t write_buffer_size;
     const std::string path;
 
     mutable std::shared_mutex rw_lock;
@@ -201,12 +203,13 @@ public:
     using Key = CachePartition::Key;
 
     CacheStorage(
-            const AttributeTypes & attributes_structure_,
-            const std::string & path_,
-            const size_t max_partitions_count_,
-            const size_t partition_size_,
-            const size_t block_size_,
-            const size_t read_buffer_size_);
+            const AttributeTypes & attributes_structure,
+            const std::string & path,
+            const size_t max_partitions_count,
+            const size_t partition_size,
+            const size_t block_size,
+            const size_t read_buffer_size,
+            const size_t write_buffer_size);
 
     ~CacheStorage();
 
@@ -257,6 +260,7 @@ private:
     const size_t partition_size;
     const size_t block_size;
     const size_t read_buffer_size;
+    const size_t write_buffer_size;
 
     mutable std::shared_mutex rw_lock;
     std::list<CachePartitionPtr> partitions;
@@ -290,7 +294,8 @@ public:
             const size_t max_partitions_count_,
             const size_t partition_size_,
             const size_t block_size_,
-            const size_t read_buffer_size_);
+            const size_t read_buffer_size_,
+            const size_t write_buffer_size_);
 
     std::string getName() const override { return name; }
 
@@ -314,7 +319,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
-                max_partitions_count, partition_size, block_size, read_buffer_size);
+                max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -432,6 +437,7 @@ private:
     const size_t partition_size;
     const size_t block_size;
     const size_t read_buffer_size;
+    const size_t write_buffer_size;
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<AttributeValueVariant> null_values;

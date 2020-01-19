@@ -68,10 +68,9 @@ namespace
     constexpr size_t DEFAULT_FILE_SIZE = 4 * 1024 * 1024 * 1024ULL;
     constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
     constexpr size_t DEFAULT_READ_BUFFER_SIZE = 16 * DEFAULT_SSD_BLOCK_SIZE;
+    constexpr size_t DEFAULT_WRITE_BUFFER_SIZE = DEFAULT_SSD_BLOCK_SIZE;
 
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
-
-    constexpr size_t WRITE_BUFFER_SIZE_BLOCKS = 1; // TODO: в параметры
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
@@ -165,11 +164,13 @@ CachePartition::CachePartition(
         const size_t file_id_,
         const size_t max_size_,
         const size_t block_size_,
-        const size_t read_buffer_size_)
+        const size_t read_buffer_size_,
+        const size_t write_buffer_size_)
     : file_id(file_id_)
     , max_size(max_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
+    , write_buffer_size(write_buffer_size_)
     , path(dir_path + "/" + std::to_string(file_id))
     , attributes_structure(attributes_structure_)
 {
@@ -221,7 +222,7 @@ size_t CachePartition::appendBlock(
         memory.emplace(block_size, BUFFER_ALIGNMENT);
     if (!write_buffer)
     {
-        write_buffer.emplace(memory->data(), block_size);
+        write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
         // codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
         // compressed_buffer.emplace(*write_buffer, codec);
         // hashing_buffer.emplace(*compressed_buffer);
@@ -247,7 +248,9 @@ size_t CachePartition::appendBlock(
                 { \
                     if (sizeof(TYPE) > write_buffer->available()) \
                     { \
-                        flush(); \
+                        write_buffer.reset(); \
+                        if (++current_memory_block_id == write_buffer_size) \
+                            flush(); \
                         flushed = true; \
                         continue; \
                     } \
@@ -287,14 +290,14 @@ size_t CachePartition::appendBlock(
             ids_buffer.push_back(ids[index]);
             ++index;
         }
-        else if (current_file_block_id < max_size)
+        else if (current_file_block_id < max_size) // next block in write buffer or flushed to ssd
         {
-            write_buffer.emplace(memory->data(), block_size);
+            write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
         }
-        else
+        else // flushed to ssd, end of current file
         {
             memory.reset();
-            return index - begin; // End of current file.
+            return index - begin;
         }
     }
     return ids.size() - begin;
@@ -302,7 +305,6 @@ size_t CachePartition::appendBlock(
 
 void CachePartition::flush()
 {
-    write_buffer.reset();
     const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
     if (ids.empty())
         return;
@@ -324,7 +326,7 @@ void CachePartition::flush()
     write_request.aio_lio_opcode = IOCB_CMD_PWRITE;
     write_request.aio_fildes = fd;
     write_request.aio_buf = reinterpret_cast<UInt64>(memory->data());
-    write_request.aio_nbytes = block_size;
+    write_request.aio_nbytes = block_size * write_buffer_size;
     write_request.aio_offset = block_size * current_file_block_id;
 #endif
 
@@ -367,11 +369,16 @@ void CachePartition::flush()
     /// commit changes in index
     for (size_t row = 0; row < ids.size(); ++row)
     {
-        key_to_index_and_metadata[ids[row]].index.setInMemory(false);
-        key_to_index_and_metadata[ids[row]].index.setBlockId(current_file_block_id);
+        auto & index = key_to_index_and_metadata[ids[row]].index;
+        if (index.getInMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
+        {
+            index.setInMemory(false);
+            index.setBlockId(current_file_block_id + index.getBlockId());
+        }
     }
 
-    ++current_file_block_id;
+    current_file_block_id += write_buffer_size;
+    current_memory_block_id = 0;
 
     /// clear buffer
     std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
@@ -415,9 +422,9 @@ void CachePartition::getValueFromMemory(
         const auto & index = indices[i];
         if (index.exists() && index.inMemory())
         {
-            const size_t offset = index.getAddressInBlock();
+            const size_t offset = index.getBlockId() * block_size + index.getAddressInBlock();
 
-            ReadBufferFromMemory read_buffer(memory->data() + offset, block_size - offset);
+            ReadBufferFromMemory read_buffer(memory->data() + offset, block_size * write_buffer_size - offset);
             readValueFromBuffer(attribute_index, out[i], read_buffer);
         }
     }
@@ -647,7 +654,7 @@ PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chro
 void CachePartition::remove()
 {
     std::unique_lock lock(rw_lock);
-    Poco::File(path + BIN_FILE_EXT).remove();
+    //Poco::File(path + BIN_FILE_EXT).remove();
     //std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
 }
 
@@ -657,13 +664,15 @@ CacheStorage::CacheStorage(
         const size_t max_partitions_count_,
         const size_t partition_size_,
         const size_t block_size_,
-        const size_t read_buffer_size_)
+        const size_t read_buffer_size_,
+        const size_t write_buffer_size_)
     : attributes_structure(attributes_structure_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
     , partition_size(partition_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
+    , write_buffer_size(write_buffer_size_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
 }
@@ -729,7 +738,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                 partitions.emplace_front(std::make_unique<CachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size));
+                        partition_size, block_size, read_buffer_size, write_buffer_size));
             }
         }
 
@@ -1036,7 +1045,8 @@ SSDCacheDictionary::SSDCacheDictionary(
     const size_t max_partitions_count_,
     const size_t partition_size_,
     const size_t block_size_,
-    const size_t read_buffer_size_)
+    const size_t read_buffer_size_,
+    const size_t write_buffer_size_)
     : name(name_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
@@ -1046,8 +1056,9 @@ SSDCacheDictionary::SSDCacheDictionary(
     , partition_size(partition_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
+    , write_buffer_size(write_buffer_size_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, max_partitions_count, partition_size, block_size, read_buffer_size)
+            path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     if (!this->source_ptr->supportsSelectiveLoad())
@@ -1358,6 +1369,12 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (read_buffer_size % block_size != 0)
             throw Exception{name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
+        const auto write_buffer_size = config.getInt64(layout_prefix + ".ssd.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
+        if (write_buffer_size <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) write_buffer_size", ErrorCodes::BAD_ARGUMENTS};
+        if (write_buffer_size % block_size != 0)
+            throw Exception{name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+
         const auto path = config.getString(layout_prefix + ".ssd.path");
         if (path.empty())
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
@@ -1366,7 +1383,8 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, path,
-                max_partitions_count, partition_size / block_size, block_size, read_buffer_size / block_size);
+                max_partitions_count, partition_size / block_size, block_size,
+                read_buffer_size / block_size, write_buffer_size / block_size);
     };
     factory.registerLayout("ssd", create_layout, false);
 }
