@@ -1,6 +1,6 @@
-option (ENABLE_READLINE "Enable readline support" ${ENABLE_LIBRARIES})
+option (ENABLE_REPLXX "Enable replxx support" ${ENABLE_LIBRARIES})
 
-if (ENABLE_READLINE)
+if (ENABLE_REPLXX)
     option (USE_INTERNAL_REPLXX "Use internal replxx library" ${NOT_UNBUNDLED})
 
     if (USE_INTERNAL_REPLXX)
@@ -47,7 +47,9 @@ if (ENABLE_READLINE)
         endif ()
     endif ()
 
-    target_compile_definitions(replxx PUBLIC USE_REPLXX)
+    set(USE_REPLXX 1)
 
     message (STATUS "Using replxx")
+else ()
+    set(USE_REPLXX 0)
 endif ()

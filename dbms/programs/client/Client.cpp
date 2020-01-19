@@ -19,6 +19,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
+#include <common/config_common.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
@@ -545,7 +546,7 @@ private:
             /// This is intended for testing purposes.
             if (config().getBool("always_load_suggestion_data", false))
             {
-#ifdef USE_REPLXX
+#if USE_REPLXX
                 SCOPE_EXIT({ Suggest::instance().finalize(); });
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 #else
