@@ -353,6 +353,7 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
+include (cmake/find/replxx.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
