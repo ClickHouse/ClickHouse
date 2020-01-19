@@ -1,6 +1,5 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -120,14 +119,46 @@ static String formattedAST(const ASTPtr & ast)
 
 BlockInputStreams SelectStreamFactory::createStreams()
 {
+    const int max_group_size = 5;
     BlockInputStreams result;
+    ShardQueries multiplexed_shards;
+
+    size_t multiplexed = 0;
+    auto create_multiplexed_stream = [&]() {
+        auto stream = std::make_shared<RemoteBlockInputStream>(
+            multiplexed_shards, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+        stream->setPoolMode(PoolMode::GET_MANY);
+        if (!table_func_ptr)
+            stream->setMainTable(main_table);
+        result.push_back(stream);
+        multiplexed_shards.clear();
+
+        multiplexed++;
+    };
+
     for (const auto & shard_info : cluster->getShardsInfo()) {
-        result.push_back(createForShard(shard_info));
+        createForShard(shard_info, result, multiplexed_shards);
+
+        if (multiplexed_shards.size() == max_group_size)
+            create_multiplexed_stream();
     }
+
+    if (!multiplexed_shards.empty())
+        create_multiplexed_stream();
+
+    LOG_INFO(
+        &Logger::get("ClusterProxy::SelectStreamFactory"),
+        "Total shards: " << cluster->getShardCount() << " Stream groups: " << multiplexed << " Total streams: " << result.size()
+    );
+
+    // if (result.size() > 0) {
+    //     throw Exception("Halt", ErrorCodes::ALL_REPLICAS_ARE_STALE);
+    // }
+
     return result;
 }
 
-BlockInputStreamPtr SelectStreamFactory::createForShard(const Cluster::ShardInfo & shard_info)
+void SelectStreamFactory::createForShard(const Cluster::ShardInfo & shard_info, BlockInputStreams & result, ShardQueries & multiplexed_shards)
 {
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
@@ -135,23 +166,25 @@ BlockInputStreamPtr SelectStreamFactory::createForShard(const Cluster::ShardInfo
 
     auto create_local_stream = [&]()
     {
-        return createLocalStream(modified_query_ast, header, context, processed_stage);
+        result.push_back(createLocalStream(modified_query_ast, header, context, processed_stage));
     };
 
     String modified_query = formattedAST(modified_query_ast);
 
     auto create_remote_stream = [&]()
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(
-            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
-        stream->setPoolMode(PoolMode::GET_MANY);
-        if (!table_func_ptr)
-            stream->setMainTable(main_table);
-        return stream;
+        multiplexed_shards.push_back({shard_info.pool, modified_query});
+        // auto stream = std::make_shared<RemoteBlockInputStream>(
+        //     shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+        // stream->setPoolMode(PoolMode::GET_MANY);
+        // if (!table_func_ptr)
+        //     stream->setMainTable(main_table);
+        // return stream;
     };
 
     const bool canPreferLocalhostReplica = settings.prefer_localhost_replica && shard_info.isLocal();
-    if (!canPreferLocalhostReplica) {
+    if (!canPreferLocalhostReplica)
+    {
         return create_remote_stream();
     }
 
@@ -275,7 +308,7 @@ BlockInputStreamPtr SelectStreamFactory::createForShard(const Cluster::ShardInfo
         }
     };
 
-    return std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
+    result.push_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
 }
 
 }

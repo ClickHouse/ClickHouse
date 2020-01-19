@@ -9,7 +9,6 @@
 namespace DB
 {
 
-
 /** To retrieve data directly from multiple replicas (connections) from one shard
   * within a single thread. As a degenerate case, it can also work with one connection.
   * It is assumed that all functions except sendCancel are always executed in one thread.
@@ -19,12 +18,18 @@ namespace DB
 class MultiplexedConnections final : private boost::noncopyable
 {
 public:
+    const size_t default_shard_num = 0;
+
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
         std::vector<IConnectionPool::Entry> && connections,
+        const Settings & settings_, const ThrottlerPtr & throttler_);
+
+    MultiplexedConnections(
+        std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Send all scalars to replicas.
@@ -34,6 +39,15 @@ public:
 
     /// Send request to replicas.
     void sendQuery(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const String & query_id = "",
+        UInt64 stage = QueryProcessingStage::Complete,
+        const ClientInfo * client_info = nullptr,
+        bool with_pending_data = false);
+
+    void sendQuery(
+        size_t shard_num,
         const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id = "",
@@ -81,6 +95,12 @@ private:
         ConnectionPool::Entry pool_entry;
     };
 
+    struct ReplicaRange
+    {
+        size_t start;
+        size_t count;
+    };
+
     /// Get a replica where you can read the data.
     ReplicaState & getReplicaForReading();
 
@@ -95,6 +115,8 @@ private:
 
     std::vector<ReplicaState> replica_states;
     std::unordered_map<int, size_t> fd_to_replica_state_idx;
+
+    std::unordered_map<size_t, ReplicaRange> shard_replicas;
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;

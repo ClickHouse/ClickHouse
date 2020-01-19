@@ -15,6 +15,13 @@
 namespace DB
 {
 
+struct ShardQuery {
+    ConnectionPoolWithFailoverPtr pool;
+    String query;
+};
+
+using ShardQueries = std::vector<ShardQuery>;
+
 /** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IBlockInputStream
@@ -41,6 +48,12 @@ public:
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
+            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+
+    RemoteBlockInputStream(
+            const ShardQueries & multiplexed_shards_,
+            const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -102,7 +115,7 @@ private:
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
-    const String query;
+    std::vector<String> query;
     String query_id = "";
     Context context;
 
@@ -128,7 +141,7 @@ private:
       * destruction, it's required to send cancel query request to replicas and
       * read all packets before EndOfStream
       */
-    std::atomic<bool> finished { false };
+    std::atomic<size_t> finished { 0 };
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:

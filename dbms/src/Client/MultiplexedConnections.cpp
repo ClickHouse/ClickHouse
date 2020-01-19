@@ -21,6 +21,7 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
     ReplicaState replica_state;
     replica_state.connection = &connection;
     replica_states.push_back(replica_state);
+    shard_replicas[default_shard_num] = {.start = 0, .count = replica_states.size()};
 
     active_connection_count = 1;
 }
@@ -48,15 +49,50 @@ MultiplexedConnections::MultiplexedConnections(
         replica_states.push_back(std::move(replica_state));
     }
 
+    shard_replicas[default_shard_num] = {.start = 0, .count = replica_states.size()};
     active_connection_count = connections.size();
+}
+
+MultiplexedConnections::MultiplexedConnections(
+        std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
+        const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_)
+{
+    for (size_t i = 0; i < shard_connections.size(); ++i)
+    {
+        auto & connections = shard_connections[i];
+        /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
+        /// `skip_unavailable_shards` was set. Then just return.
+        if (connections.empty())
+            continue;
+
+        const size_t start = replica_states.size();
+
+        // replica_states.reserve(connections.size());
+        for (size_t j = 0; j < connections.size(); ++j)
+        {
+            Connection * connection = &(*connections[j]);
+            connection->setThrottler(throttler);
+
+            ReplicaState replica_state;
+            replica_state.pool_entry = std::move(connections[j]);
+            replica_state.connection = connection;
+
+            replica_states.push_back(std::move(replica_state));
+        }
+
+        const size_t end = replica_states.size();
+        shard_replicas[i] = {.start = start, .count = end - start};
+    }
+    active_connection_count = replica_states.size();
 }
 
 void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
 
-    if (!sent_query)
-        throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
+    // if (!sent_query)
+    //     throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -70,8 +106,8 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
 {
     std::lock_guard lock(cancel_mutex);
 
-    if (!sent_query)
-        throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
+    // if (!sent_query)
+    //     throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     if (data.size() != active_connection_count)
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
@@ -96,15 +132,28 @@ void MultiplexedConnections::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
+    sendQuery(default_shard_num, timeouts, query, query_id, stage, client_info, with_pending_data);
+}
+
+void MultiplexedConnections::sendQuery(
+        size_t shard_num,
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const String & query_id,
+        UInt64 stage,
+        const ClientInfo * client_info,
+        bool with_pending_data) {
     std::lock_guard lock(cancel_mutex);
 
-    if (sent_query)
-        throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
+    // if (sent_query)
+    //     throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
     Settings modified_settings = settings;
+    const auto & range = shard_replicas[shard_num];
 
-    for (auto & replica : replica_states)
+    for (size_t i = 0; i < range.count; i++)
     {
+        auto & replica = replica_states[range.start + i];
         if (!replica.connection)
             throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
@@ -116,22 +165,22 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    size_t num_replicas = replica_states.size();
+    size_t num_replicas = range.count;
     if (num_replicas > 1)
     {
         /// Use multiple replicas for parallel query processing.
         modified_settings.parallel_replicas_count = num_replicas;
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            modified_settings.parallel_replica_offset = i;
-            replica_states[i].connection->sendQuery(timeouts, query, query_id,
+            modified_settings.parallel_replica_offset = range.start + i;
+            replica_states[range.start + i].connection->sendQuery(timeouts, query, query_id,
                                                     stage, &modified_settings, client_info, with_pending_data);
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id, stage,
+        replica_states[range.start].connection->sendQuery(timeouts, query, query_id, stage,
                                                 &modified_settings, client_info, with_pending_data);
     }
 
@@ -164,8 +213,8 @@ void MultiplexedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
 
-    if (!sent_query || cancelled)
-        throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
+    // if (!sent_query || cancelled)
+    //     throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -237,8 +286,8 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 
 Packet MultiplexedConnections::receivePacketUnlocked()
 {
-    if (!sent_query)
-        throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
+    // if (!sent_query)
+    //     throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
     if (!hasActiveConnections())
         throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
