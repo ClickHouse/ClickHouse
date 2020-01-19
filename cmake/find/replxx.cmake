@@ -1,4 +1,4 @@
-option (ENABLE_REPLXX "Enable replxx support" ${ENABLE_LIBRARIES})
+option (ENABLE_REPLXX "Enable replxx support" ${NOT_UNBUNDLED})
 
 if (ENABLE_REPLXX)
     option (USE_INTERNAL_REPLXX "Use internal replxx library" ${NOT_UNBUNDLED})
