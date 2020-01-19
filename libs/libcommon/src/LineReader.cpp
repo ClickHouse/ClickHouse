@@ -2,7 +2,14 @@
 #include <common/LineReader.h>
 
 #if USE_REPLXX
-#   include <replxx.hxx>
+#include <replxx.hxx>
+#else
+
+/// We can detect if code is linked with one or another readline variants or open the library dynamically.
+#include <dlfcn.h>
+extern "C" char * readline(const char *) __attribute__((__weak__));
+extern "C" char * (*readline_ptr)(const char *);
+
 #endif
 
 #include <iostream>
@@ -146,10 +153,36 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;
 #else
-    std::cout << prompt;
-    std::getline(std::cin, input);
-    if (!std::cin.good())
-        return ABORT;
+
+    if (!readline_ptr)
+    {
+        if (readline)
+        {
+            readline_ptr = readline;
+        }
+        else
+        {
+            void * dl_handle = dlopen("libreadline.so", RTLD_LAZY);
+            if (dl_handle)
+                readline_ptr = dlsym(dl_handle, "readline");
+        }
+    }
+
+    /// Minimal support for readline
+    if (readline_ptr)
+    {
+        char * line_read = (*readline_ptr)(prompt.c_str());
+        if (!line_read)
+            return ABORT;
+        input = line_read;
+    }
+    else
+    {
+        std::cout << prompt;
+        std::getline(std::cin, input);
+        if (!std::cin.good())
+            return ABORT;
+    }
 #endif
 
     trim(input);
