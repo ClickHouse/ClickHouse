@@ -157,6 +157,12 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 //            if (stream_type == StreamType::Main)
 //                transform->setStream(stream_num);
 
+            if (auto * simple = dynamic_cast<ISimpleTransform *>(transform.get()))
+            {
+                if (streams.size() > 1)
+                    simple->setInputNotNeededAfterRead(true);
+            }
+
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
             processors.emplace_back(std::move(transform));

@@ -22,7 +22,7 @@ protected:
     const bool skip_empty_chunks;
 
     /// Set input port NotNeeded after chunk was pulled.
-    /// Input port will become needed again only after data was transformed.
+    /// Input port will become needed again only after next transform set it.
     /// This allows to escape caching chunks in input port, which can lead to uneven data distribution.
     bool set_input_not_needed_after_read = false;
 

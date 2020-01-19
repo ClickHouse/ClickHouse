@@ -24,7 +24,9 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
     if (!output.canPush())
     {
-        input.setNotNeeded();
+        if (set_input_not_needed_after_read)
+            input.setNotNeeded();
+
         return Status::PortFull;
     }
 
@@ -62,7 +64,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             return Status::NeedData;
         }
 
-        current_data = input.pullData(true);
+        current_data = input.pullData(set_input_not_needed_after_read);
         has_input = true;
 
         if (current_data.exception)
@@ -74,9 +76,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             /// No more data needed. Exception will be thrown (or swallowed) later.
             input.setNotNeeded();
         }
-
-        if (set_input_not_needed_after_read)
-            input.setNotNeeded();
     }
 
     /// Now transform.
