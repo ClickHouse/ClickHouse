@@ -7,8 +7,11 @@
 
 /// We can detect if code is linked with one or another readline variants or open the library dynamically.
 #include <dlfcn.h>
-extern "C" char * readline(const char *) __attribute__((__weak__));
-extern "C" char * (*readline_ptr)(const char *);
+extern "C"
+{
+    char * readline(const char *) __attribute__((__weak__));
+    char * (*readline_ptr)(const char *) = readline;
+}
 
 #endif
 
@@ -156,20 +159,15 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 
     if (!readline_ptr)
     {
-        if (readline)
+        for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
         {
-            readline_ptr = readline;
-        }
-        else
-        {
-            for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
+            void * dl_handle = dlopen(name, RTLD_LAZY);
+            if (dl_handle)
             {
-                void * dl_handle = dlopen(name, RTLD_LAZY);
-                if (dl_handle)
+                readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
+                if (readline_ptr)
                 {
-                    readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
-                    if (readline_ptr)
-                        break;
+                    break;
                 }
             }
         }
