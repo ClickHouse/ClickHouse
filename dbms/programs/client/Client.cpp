@@ -496,7 +496,7 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-            LineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+            LineReader lr(&Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 
             do
             {
