@@ -18,10 +18,10 @@ namespace ErrorCodes
 class Suggest : public LineReader::Suggest, boost::noncopyable
 {
 public:
-    static Suggest * instance()
+    static Suggest & instance()
     {
         static Suggest instance;
-        return &instance;
+        return instance;
     }
 
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
