@@ -1,6 +1,6 @@
 # MySQL-интерфейс {#mysql_interface}
 
-ClickHouse поддерживает взаимодействие по протоколу MySQL. Для включения этой опции необходимо добавить в конфигурационный файл настройку [mysql_port](../operations/server_settings/settings.md#server_settings-mysql_port):
+ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql_port](../operations/server_settings/settings.md#server_settings-mysql_port) в конфигурационном файле:
 ```xml
 <mysql_port>9004</mysql_port>
 ```
@@ -28,7 +28,7 @@ mysql>
 ```
 
 Для совместимости со всеми клиентами рекомендуется задавать пароль пользователя в конфигурационном файле с помощью двойного хэша [SHA1](../operations/settings/settings_users.md#password_double_sha1_hex).
-При указании пароля с помощью [SHA256](../operations/settings/settings_users.md#password_sha256_hex) некоторые клиенты не смогут пройти аутентификацию (mysqljs и старые версии стандартного клиента mysql).
+В случае указания пароля с помощью [SHA256](../operations/settings/settings_users.md#password_sha256_hex) некоторые клиенты не смогут пройти аутентификацию (mysqljs и старые версии стандартного клиента mysql).
 
 Ограничения:
 - не поддерживаются подготовленные запросы
