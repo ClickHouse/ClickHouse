@@ -370,7 +370,7 @@ void CachePartition::flush()
     for (size_t row = 0; row < ids.size(); ++row)
     {
         auto & index = key_to_index_and_metadata[ids[row]].index;
-        if (index.getInMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
+        if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
         {
             index.setInMemory(false);
             index.setBlockId(current_file_block_id + index.getBlockId());
@@ -491,6 +491,8 @@ void CachePartition::getValueFromStorage(
 
     std::vector<bool> processed(requests.size(), false);
     std::vector<io_event> events(requests.size());
+    for (auto & event : events)
+        event.res = -1; // TODO: remove
 
     size_t to_push = 0;
     size_t to_pop = 0;
@@ -501,7 +503,7 @@ void CachePartition::getValueFromStorage(
         while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) < 0)
         {
             if (errno != EINTR)
-                throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
+                throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
         for (size_t i = to_pop; i < to_pop + popped; ++i)
