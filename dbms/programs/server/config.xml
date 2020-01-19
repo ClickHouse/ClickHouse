@@ -133,6 +133,17 @@
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
+    <!-- Policy from the <storage_configuration> for the temporary files.
+         If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
+
+         Notes:
+         - move_factor              is ignored
+         - keep_free_space_bytes    is ignored
+         - max_data_part_size_bytes is ignored
+         - you must have exactly one volume in that policy
+    -->
+    <!-- <tmp_policy>tmp</tmp_policy> -->
+
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
