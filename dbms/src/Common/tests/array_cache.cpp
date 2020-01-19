@@ -2,14 +2,14 @@
 #include <cstring>
 #include <thread>
 #include <pcg_random.hpp>
-#include <Common/ArrayCache.h>
+#include <Common/CachingAllocator.h>
 #include <IO/ReadHelpers.h>
 
 
 template <typename Cache>
 void printStats(const Cache & cache)
 {
-    typename Cache::Statistics statistics = cache.getStatistics();
+    auto statistics = cache.getStatistics();
     std::cerr
         << "total_chunks_size: " << statistics.total_chunks_size << "\n"
         << "total_allocated_size: " << statistics.total_allocated_size << "\n"
@@ -50,7 +50,7 @@ int main(int argc, char ** argv)
     size_t region_max_size = DB::parse<size_t>(argv[4]);
     size_t max_key = DB::parse<size_t>(argv[5]);
 
-    using Cache = ArrayCache<int, int>;
+    using Cache = CachingAllocator<int, int>;
     Cache cache(cache_size);
 
     std::vector<std::thread> threads;

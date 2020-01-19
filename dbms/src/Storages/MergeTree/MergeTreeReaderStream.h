@@ -42,7 +42,8 @@ private:
 
     MarkCache * mark_cache;
     bool save_marks_in_cache;
-    MarkCache::MappedPtr marks;
+
+    MarkCache::MemoryRegionPtr marks;
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 

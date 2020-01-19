@@ -106,7 +106,8 @@ const MarkInCompressedFile & MergeTreeReaderStream::getMark(size_t index)
 {
     if (!marks)
         loadMarks();
-    return (*marks)[index];
+
+    return marks->mapped()[index];
 }
 
 
@@ -114,19 +115,20 @@ void MergeTreeReaderStream::loadMarks()
 {
     std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
 
-    auto load = [&]() -> MarkCache::MappedPtr
+    auto load = [&]() -> MarkCache::MemoryRegionPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(mrk_path).getSize();
         size_t expected_file_size = index_granularity_info->mark_size_in_bytes * marks_count;
+
         if (expected_file_size != file_size)
             throw Exception(
                 "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
                 ErrorCodes::CORRUPTED_DATA);
 
-        auto res = std::make_shared<MarksInCompressedFile>(marks_count);
+        auto res = std::make_shared<MarkCache::Mapped>(marks_count);
 
         if (!index_granularity_info->is_adaptive)
         {
@@ -150,13 +152,16 @@ void MergeTreeReaderStream::loadMarks()
             if (i * index_granularity_info->mark_size_in_bytes != file_size)
                 throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
         }
+
         res->protect();
+
         return res;
     };
 
     if (mark_cache)
     {
-        auto key = mark_cache->hash(mrk_path);
+        auto key = DB::MarkCache::hash(mrk_path);
+
         if (save_marks_in_cache)
         {
             marks = mark_cache->getOrSet(key, load);
@@ -164,6 +169,7 @@ void MergeTreeReaderStream::loadMarks()
         else
         {
             marks = mark_cache->get(key);
+
             if (!marks)
                 marks = load();
         }

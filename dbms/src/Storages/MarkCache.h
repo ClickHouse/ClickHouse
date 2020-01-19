@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Common/LRUCache.h>
+#include <Common/CachingAllocator.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
@@ -29,43 +29,46 @@ struct MarksWeightFunction
 };
 
 
-/** Cache of 'marks' for StorageMergeTree.
-  * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
-  */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
+/**
+ * Cache of \c marks for \c StorageMergeTree.
+ * \c Mark is an index structure that addresses column file ranges that correspond to primary key ranges.
+ */
+class MarkCache : public CachingAllocator<UInt128, MarksInCompressedFile, UInt128TrivialHash>
 {
 private:
-    using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
-
+    using Base = CachingAllocator<UInt128, MarksInCompressedFile, UInt128TrivialHash>;
 public:
-    MarkCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+    using Base::get;
+
+    explicit MarkCache(size_t max_size_in_bytes): Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file)
+    static UInt128 hash(const String& path_to_file)
     {
-        UInt128 key;
-
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
+
+        UInt128 key{};
         hash.get128(key.low, key.high);
 
         return key;
     }
 
-    template <typename LoadFunc>
-    MappedPtr getOrSet(const Key & key, LoadFunc && load)
-    {
-        auto result = Base::getOrSet(key, load);
-        if (result.second)
+    template <typename Init>
+    inline MemoryRegionPtr getOrSet(const Key& key, Init&& initialize) {
+        auto&& [region, was_produced] = Base::getOrSet(
+            key,
+            MarksWeightFunction{},
+            std::forward<Init>(initialize));
+
+        if (was_produced)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
-        return result.first;
+        return region;
     }
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;
-
 }
