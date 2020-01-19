@@ -78,7 +78,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     /** Compatibility settings */ \
     M(SettingBool, compatibility_allow_sampling_expression_not_in_primary_key, false, "Allow to create a table with sampling expression not in primary key. This is needed only to temporarily allow to run the server with wrong tables for backward compatibility.", 0) \
     M(SettingBool, use_minimalistic_checksums_in_zookeeper, true, "Use small format (dozens bytes) for part checksums in ZooKeeper instead of ordinary ones (dozens KB). Before enabling check that all replicas support new format.", 0) \
-    M(SettingBool, use_minimalistic_part_header_in_zookeeper, false, "Store part header (checksums and columns) in a compact format and a single part znode instead of separate znodes (<part>/columns and <part>/checksums). This can dramatically reduce snapshot size in ZooKeeper. Before enabling check that all replicas support new format.", 0) \
+    M(SettingBool, use_minimalistic_part_header_in_zookeeper, true, "Store part header (checksums and columns) in a compact format and a single part znode instead of separate znodes (<part>/columns and <part>/checksums). This can dramatically reduce snapshot size in ZooKeeper. Before enabling check that all replicas support new format.", 0) \
     M(SettingUInt64, finished_mutations_to_keep, 100, "How many records about mutations that are done to keep. If zero, then keep all of them.", 0) \
     M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, "Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled).", 0) \
     M(SettingUInt64, index_granularity_bytes, 10 * 1024 * 1024, "Approximate amount of bytes in single granule (0 - disabled).", 0) \
@@ -86,8 +86,8 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingBool, ttl_only_drop_parts, false, "Only drop altogether the expired parts and not partially prune them.", 0) \
     M(SettingBool, write_final_mark, 1, "Write final mark after end of column (0 - disabled, do nothing if index_granularity_bytes=0)", 0) \
     M(SettingBool, enable_mixed_granularity_parts, 0, "Enable parts with adaptive and non adaptive granularity", 0) \
-    M(SettingMaxThreads, max_part_loading_threads, 0, "The number of theads to load data parts at startup.", 0) \
-    M(SettingMaxThreads, max_part_removal_threads, 0, "The number of theads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
+    M(SettingMaxThreads, max_part_loading_threads, 0, "The number of threads to load data parts at startup.", 0) \
+    M(SettingMaxThreads, max_part_removal_threads, 0, "The number of threads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
     M(SettingUInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.", 0) \
     M(SettingString, storage_policy, "default", "Name of storage disk policy", 0)
 
@@ -105,7 +105,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes" || name == "storage_policy";
+        return name == "index_granularity" || name == "index_granularity_bytes";
     }
 };
 

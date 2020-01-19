@@ -59,6 +59,7 @@ private:
     bool has_collation = false;
 
     SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SimpleSortCursor> queue_simple;
     SortingHeap<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.

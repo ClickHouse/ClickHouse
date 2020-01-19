@@ -26,6 +26,7 @@ nav:
   - 'Клиент командной строки': 'interfaces/cli.md'
   - 'Нативный интерфейс (TCP)': 'interfaces/tcp.md'
   - 'HTTP-интерфейс': 'interfaces/http.md'
+  - 'MySQL-интерфейс': 'interfaces/mysql.md'
   - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
   - 'ODBC-драйвер': 'interfaces/odbc.md'
@@ -196,6 +197,7 @@ nav:
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
   - 'Квоты': 'operations/quotas.md'
   - 'Системные таблицы': 'operations/system_tables.md'
+  - 'Тестирование оборудования': 'operations/performance_test.md'
   - 'Конфигурационные параметры сервера':
     - 'Введение': 'operations/server_settings/index.md'
     - 'Серверные настройки': 'operations/server_settings/settings.md'

@@ -123,7 +123,7 @@ private:
     struct JobShard
     {
         std::list<JobReplica> replicas_jobs;
-        IColumn::Permutation shard_current_block_permuation;
+        IColumn::Permutation shard_current_block_permutation;
     };
 
     std::vector<JobShard> per_shard_jobs;

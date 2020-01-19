@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Disks/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -81,6 +80,13 @@ class ICompressionCodec;
 class AccessControlManager;
 class SettingsConstraints;
 class RemoteHostFilter;
+struct StorageID;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class DiskSelector;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -91,12 +97,9 @@ class CompiledExpressionCache;
 
 #endif
 
-/// (database name, table name)
-using DatabaseAndTableName = std::pair<String, String>;
-
 /// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
-using Dependencies = std::vector<DatabaseAndTableName>;
+using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
+using Dependencies = std::vector<StorageID>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
@@ -153,6 +156,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+    // TODO maybe replace with DatabaseMemory?
     TableAndCreateASTs external_tables;     /// Temporary tables.
     Scalars scalars;
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -250,13 +254,13 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    Dependencies getDependencies(const String & database_name, const String & table_name) const;
+    void addDependency(const StorageID & from, const StorageID & where);
+    void removeDependency(const StorageID & from, const StorageID & where);
+    Dependencies getDependencies(const StorageID & from) const;
 
     /// Functions where we can lock the context manually
-    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void addDependencyUnsafe(const StorageID & from, const StorageID & where);
+    void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
@@ -282,7 +286,9 @@ public:
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
+    StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+    StoragePtr tryGetTable(const StorageID & table_id) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
@@ -373,10 +379,7 @@ public:
     std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
-    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
-    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -591,7 +594,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

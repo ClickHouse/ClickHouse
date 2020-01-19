@@ -56,18 +56,27 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_,
-    const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
+StorageBuffer::StorageBuffer(
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     Context & context_,
-    size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    :
-    table_name(table_name_), database_name(database_name_), global_context(context_),
-    num_shards(num_shards_), buffers(num_shards_),
-    min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
-    destination_database(destination_database_), destination_table(destination_table_),
-    no_destination(destination_database.empty() && destination_table.empty()),
-    allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name + ")"))
+    size_t num_shards_,
+    const Thresholds & min_thresholds_,
+    const Thresholds & max_thresholds_,
+    const String & destination_database_,
+    const String & destination_table_,
+    bool allow_materialized_)
+    : IStorage(table_id_)
+    , global_context(context_)
+    , num_shards(num_shards_), buffers(num_shards_)
+    , min_thresholds(min_thresholds_)
+    , max_thresholds(max_thresholds_)
+    , destination_database(destination_database_)
+    , destination_table(destination_table_)
+    , no_destination(destination_database.empty() && destination_table.empty())
+    , allow_materialized(allow_materialized_)
+    , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -438,7 +447,7 @@ void StorageBuffer::startup()
     if (global_context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
-            << " Set apropriate system_profile to fix this.");
+            << " Set appropriate system_profile to fix this.");
     }
 
     flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
@@ -699,23 +708,33 @@ void StorageBuffer::flushThread()
     } while (!shutdown_event.tryWait(1000));
 }
 
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
+    }
+}
+
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    const String database_name_ = getDatabaseName();
-    const String table_name_ = getTableName();
+    auto table_id = getStorageID();
+    checkAlterIsPossible(params, context.getSettingsRef());
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-    params.applyForColumnsOnly(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
-    setColumns(std::move(new_columns));
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    setColumns(std::move(metadata.columns));
 }
 
 
@@ -753,8 +772,9 @@ void registerStorageBuffer(StorageFactory & factory)
         UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[8]->as<ASTLiteral &>().value);
 
         return StorageBuffer::create(
-            args.database_name,
-            args.table_name, args.columns, args.constraints,
+            args.table_id,
+            args.columns,
+            args.constraints,
             args.context,
             num_buckets,
             StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
