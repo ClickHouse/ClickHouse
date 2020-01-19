@@ -16,7 +16,12 @@ struct BitCountImpl
         /// We count bits in the value representation in memory. For example, we support floats.
         /// We need to avoid sign-extension when converting signed numbers to larger type. So, uint8_t(-1) has 8 bits.
 
-        return __builtin_popcountll(ext::bit_cast<unsigned long long>(a));
+        if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
+            return __builtin_popcountll(a);
+        if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || std::is_unsigned_v<A>)
+            return __builtin_popcount(a);
+        else
+            return __builtin_popcountll(ext::bit_cast<unsigned long long>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
