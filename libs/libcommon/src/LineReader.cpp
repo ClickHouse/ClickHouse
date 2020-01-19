@@ -162,9 +162,16 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
         }
         else
         {
-            void * dl_handle = dlopen("libreadline.so", RTLD_LAZY);
-            if (dl_handle)
-                readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
+            for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
+            {
+                void * dl_handle = dlopen(name, RTLD_LAZY);
+                if (dl_handle)
+                {
+                    readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
+                    if (readline_ptr)
+                        break;
+                }
+            }
         }
     }
 
