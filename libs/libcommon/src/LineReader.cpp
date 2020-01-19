@@ -1,6 +1,7 @@
+#include <common/config_common.h>
 #include <common/LineReader.h>
 
-#ifdef USE_REPLXX
+#if USE_REPLXX
 #   include <replxx.hxx>
 #endif
 
@@ -60,7 +61,7 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
 LineReader::LineReader(const Suggest * suggest, const String & history_file_path_, char extender_, char delimiter_)
     : history_file_path(history_file_path_), extender(extender_), delimiter(delimiter_)
 {
-#ifdef USE_REPLXX
+#if USE_REPLXX
     impl = new replxx::Replxx;
     auto & rx = *(replxx::Replxx*)(impl);
 
@@ -85,7 +86,7 @@ LineReader::LineReader(const Suggest * suggest, const String & history_file_path
 
 LineReader::~LineReader()
 {
-#ifdef USE_REPLXX
+#if USE_REPLXX
     auto & rx = *(replxx::Replxx*)(impl);
     if (!history_file_path.empty())
         rx.history_save(history_file_path);
@@ -141,7 +142,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-#ifdef USE_REPLXX
+#if USE_REPLXX
     auto & rx = *(replxx::Replxx*)(impl);
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)
@@ -160,7 +161,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 
 void LineReader::addToHistory(const String & line)
 {
-#ifdef USE_REPLXX
+#if USE_REPLXX
     auto & rx = *(replxx::Replxx*)(impl);
     rx.history_add(line);
 #endif
