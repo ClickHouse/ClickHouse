@@ -22,9 +22,6 @@
 namespace DB
 {
 
-class SSDCacheDictionary;
-class CacheStorage;
-
 using AttributeValueVariant = std::variant<
         UInt8,
         UInt16,
