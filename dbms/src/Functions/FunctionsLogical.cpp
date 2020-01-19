@@ -283,29 +283,28 @@ template <
 struct OperationApplier
 {
     template <typename Columns, typename ResultData>
-    static void apply(Columns & in, ResultData & result_data)
+    static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
-        /// TODO: Maybe reuse this code for constants (which may form precalculated result)
-        doBatchedApply<false>(in, result_data);
-
+        if (!use_result_data_as_input)
+            doBatchedApply<false>(in, result_data);
         while (in.size() > 0)
             doBatchedApply<true>(in, result_data);
     }
 
-    template <bool carryResult, typename Columns, typename ResultData>
+    template <bool CarryResult, typename Columns, typename ResultData>
     static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
     {
         if (N > in.size())
         {
             OperationApplier<Op, OperationApplierImpl, N - 1>
-                ::template doBatchedApply<carryResult>(in, result_data);
+                ::template doBatchedApply<CarryResult>(in, result_data);
             return;
         }
 
         const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
         for (auto & res : result_data)
-            if constexpr (carryResult)
+            if constexpr (CarryResult)
                 res = Op::apply(res, operationApplierImpl.apply(i++));
             else
                 res = operationApplierImpl.apply(i++);
