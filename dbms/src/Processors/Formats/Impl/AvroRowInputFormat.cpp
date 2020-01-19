@@ -64,12 +64,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_READ_ALL_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
 }
@@ -114,18 +111,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
     WhichDataType target(target_type);
     switch (root_node->type())
     {
-        case avro::AVRO_STRING:
-            if (target.isString())
-            {
-                return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
-                {
-                    decoder.decodeString(tmp);
-                    column.insertData(tmp.c_str(), tmp.length());
-                };
-            }
-            break;
+        case avro::AVRO_STRING: [[fallthrough]];
         case avro::AVRO_BYTES:
-            if (target.isString())
+            if (target.isString() || target.isFixedString())
             {
                 return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
                 {
