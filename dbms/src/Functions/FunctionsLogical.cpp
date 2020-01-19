@@ -316,7 +316,7 @@ struct OperationApplier
 
 template <
     typename Op, template <typename, size_t> typename OperationApplierImpl>
-struct OperationApplier<Op, OperationApplierImpl, 1>
+struct OperationApplier<Op, OperationApplierImpl, 0>
 {
     template <bool, typename Columns, typename Result>
     static void NO_INLINE doBatchedApply(Columns &, Result &)
@@ -336,7 +336,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     const bool has_consts = extractConstColumnsTernary<Op>(arguments, const_3v_value);
 
     /// If the constant value uniquely determines the result, return it.
-    if (has_consts && (arguments.empty() || (Op::isSaturable() && Op::isSaturatedValue(const_3v_value))))
+    if (has_consts && (arguments.empty() || Op::isSaturatedValue(const_3v_value)))
     {
         result_info.column = ColumnConst::create(
             convertFromTernaryData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
