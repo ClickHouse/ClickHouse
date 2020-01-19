@@ -317,8 +317,6 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
                 input.status = InputStatus::Finished;
                 ++num_finished_inputs;
 
-// std::cerr << "===================================\n";
-
                 waiting_outputs.push(input.waiting_output);
             }
             continue;
