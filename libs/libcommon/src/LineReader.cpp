@@ -164,7 +164,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
         {
             void * dl_handle = dlopen("libreadline.so", RTLD_LAZY);
             if (dl_handle)
-                readline_ptr = dlsym(dl_handle, "readline");
+                readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
         }
     }
 
