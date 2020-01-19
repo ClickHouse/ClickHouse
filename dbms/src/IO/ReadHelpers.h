@@ -1,6 +1,5 @@
 #pragma once
 
-#include <byteswap.h>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -756,11 +755,11 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
     if constexpr (sizeof(x) == 1)
         return;
     else if constexpr (sizeof(x) == 2)
-        x = bswap_16(x);
+        x = __builtin_bswap16(x);
     else if constexpr (sizeof(x) == 4)
-        x = bswap_32(x);
+        x = __builtin_bswap32(x);
     else if constexpr (sizeof(x) == 8)
-        x = bswap_64(x);
+        x = __builtin_bswap64(x);
 }
 
 
