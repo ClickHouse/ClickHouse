@@ -1,17 +1,13 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <common/LineReader.h>
+#include <common/logger_useful.h>
+
 #include <iostream>
 #include <sstream>
-#include <Poco/ConsoleChannel.h>
-#include <common/logger_useful.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-
-#if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
-#else
-#   include <common/LineReader.h>
-#endif
 
 
 void printStat(const Coordination::Stat & s)
@@ -74,11 +70,7 @@ int main(int argc, char ** argv)
         Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-#if USE_REPLXX
-        ReplxxLineReader lr(nullptr, {}, '\\');
-#else
         LineReader lr({}, '\\');
-#endif
 
         do
         {
