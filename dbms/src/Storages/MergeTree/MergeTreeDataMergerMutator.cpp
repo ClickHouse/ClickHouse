@@ -1021,7 +1021,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     MergeStageProgress stage_progress(1.0);
     in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
 
-    if (updated_header.columns() == all_columns.size())
+    if (source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
         /// All columns are modified, proceed to write a new part from scratch.
         if (data.hasPrimaryKey() || data.hasSkipIndices())
