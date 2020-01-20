@@ -48,7 +48,7 @@ See [File](../operations/table_engines/file.md).
 ### Using Command-Line Redirection
 
 ```sql
-$ clickhouse-client --query "SELECT * from table" > result.txt
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
 See [clickhouse-client](../interfaces/cli.md).

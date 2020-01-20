@@ -48,7 +48,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ### Перенаправление в командой строке
 
 ```sql
-$ clickhouse-client --query "SELECT * from table" > result.txt
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
 Смотрите [clickhouse-client](../interfaces/cli.md).
