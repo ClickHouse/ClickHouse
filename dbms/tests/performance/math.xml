@@ -3,7 +3,7 @@
 
     <stop_conditions>
         <any_of>
-            <average_speed_not_changing_for_ms>1000</average_speed_not_changing_for_ms>
+            <average_speed_not_changing_for_ms>2000</average_speed_not_changing_for_ms>
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
