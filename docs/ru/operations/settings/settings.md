@@ -366,7 +366,7 @@ Ok.
 - [Движок таблиц Join](../table_engines/join.md)
 - [join_default_strictness](#settings-join_default_strictness)
 
-## join_use_nulls {#settings-join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
 Устанавливает тип поведения [JOIN](../../query_language/select.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
 

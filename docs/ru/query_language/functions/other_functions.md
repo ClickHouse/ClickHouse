@@ -846,9 +846,9 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 ## joinGet {#joinget}
 
-Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](https://clickhouse.yandex/docs/ru/query_language/dicts/).
+Функция позволяет извлекать данные из таблицы таким же образом как из [словаря](../dicts/index.md).
 
-Получает данные из таблиц [Join](https://clickhouse.yandex/docs/ru/operations/table_engines/join/) по ключу.
+Получает данные из таблиц [Join](../../operations/table_engines/join.md#creating-a-table) по ключу.
 
 Поддерживаются только таблицы, созданные с `ENGINE = Join(ANY, LEFT, <join_keys>)`. 
 
@@ -860,8 +860,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Параметры** 
 
-- `join_storage_name` — [идентификатор](../../syntax/#syntax-identifiers), который указывает, откуда производится выборка данных. Чаще всего это имя базы данных и/или таблица. 
-Поиск по идентификатору осуществляется сначала в базе данных по умолчанию (в конфигурации `default_database`), а затем по всем базам данных. Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`.
+- `join_storage_name` — [идентификатор](../../syntax/#syntax-identifiers), который указывает, откуда производится выборка данных. Чаще всего это имя базы данных и/или таблица. Поиск по идентификатору осуществляется сначала в базе данных по умолчанию (см. конфигурацию `default_database`), а затем по всем базам данных. Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`.
    - Для таблиц с уникальным названием достататочно указать только имя таблицы.
    - Для неуникальных таблиц укажите базу данных, а затем таблицу. В качестве разделителя используйте точку.
 - `value_column` — столбец, из которого нужно произвести выборку данных.
@@ -871,19 +870,16 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Возвращает значение по списку ключей.
 
-Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](https://clickhouse.yandex/docs/ru/operations/settings/settings/#settings-join_use_nulls). 
-
-Тип: [все Типы Данных](https://clickhouse.yandex/docs/ru/data_types/).
-
+Если значения не существует в исходной таблице, вернется `0` или `null` в соответствии с настройками [join_use_nulls](../../operations/settings/settings.md#join_use_nulls). 
 
 **Пример**
 
 Входная таблица:
 
 ```sql
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
-
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13)
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
 ```text
@@ -897,18 +893,18 @@ INSERT INTO id_val VALUES (1,11)(2,12)(4,13)
 Запрос:
 
 ```sql
-SELECT joinGet(dbtest.id_val,'val',toUInt32(number)) from numbers(4)
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4)
 ```
 
 Результат:
 
 ```text
-┌─joinGet(dbtest.id_val, 'val', toUInt32(number))─┐
-│                                               0 │
-│                                              11 │
-│                                              12 │
-│                                               0 │
-└─────────────────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
