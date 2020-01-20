@@ -1,19 +1,24 @@
 #pragma once
 
 #include <Disks/IDisk.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 
 #include <mutex>
+#include <memory>
 #include <unordered_map>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
+class ReadBuffer;
+class WriteBuffer;
+
+
+/** Implementation of Disk intended only for testing purposes.
+  * All filesystem objects are stored in memory and lost on server restart.
+  *
+  * NOTE Work in progress. Currently the interface is not viable enough to support MergeTree or even StripeLog tables.
+  * Please delete this interface if it will not be finished after 2020-06-18.
+  */
 class DiskMemory : public IDisk
 {
 public:
