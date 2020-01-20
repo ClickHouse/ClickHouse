@@ -736,10 +736,12 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -787,10 +789,12 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -913,10 +917,12 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 

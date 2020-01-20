@@ -21,11 +21,11 @@ If you use Oracle through the ODBC driver as a source of external dictionaries, 
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
-## How to export data from ClickHouse to the file?
+## How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
 
 ### Using INTO OUTFILE Clause
 
-Add [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
+Add an [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
 
 For example:
 
@@ -41,11 +41,11 @@ For example:
 SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ```
 
-### Using File-engine Table
+### Using a File-Engine Table
 
 See [File](../operations/table_engines/file.md).
 
-### Using Command-line Redirection
+### Using Command-Line Redirection
 
 ```sql
 $ clickhouse-client --query "SELECT * from table" > result.txt
