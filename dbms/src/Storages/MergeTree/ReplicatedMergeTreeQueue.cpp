@@ -517,7 +517,6 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
             }
             catch (...)
             {
-                //std::cerr << "DIE HERE:\n";
                 tryLogCurrentException(log);
                 /// If it fails, the data in RAM is incorrect. In order to avoid possible further corruption of data in ZK, we will kill ourselves.
                 /// This is possible only if there is an unknown logical error.

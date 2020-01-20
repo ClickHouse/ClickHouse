@@ -1188,8 +1188,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         throw Exception(metadata_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
     int32_t metadata_version_zk = metadata_znode_stat.version;
 
-    const bool changed_columns_version = (columns_version_zk != this->columns_version);
-    const bool changed_metadata_version = (metadata_version_zk != this->metadata_version);
+    const bool changed_columns_version = (columns_version_zk != columns_version);
+    const bool changed_metadata_version = (metadata_version_zk != metadata_version);
 
     ////std::cerr << "Versions changed: columns:" << changed_columns_version << " metadata:" << changed_metadata_version << std::endl;
 
