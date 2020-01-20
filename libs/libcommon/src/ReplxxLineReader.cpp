@@ -15,15 +15,15 @@ void trim(String & s)
 
 }
 
-ReplxxLineReader::ReplxxLineReader(const Suggest * suggest, const String & history_file_path_, char extender_, char delimiter_)
+ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & history_file_path_, char extender_, char delimiter_)
     : LineReader(history_file_path_, extender_, delimiter_)
 {
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
 
-    auto callback = [suggest] (const String & context, size_t context_size)
+    auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        auto range = suggest->getCompletions(context, context_size);
+        auto range = suggest.getCompletions(context, context_size);
         return replxx::Replxx::completions_t(range.first, range.second);
     };
 

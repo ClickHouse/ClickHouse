@@ -67,7 +67,7 @@ set (COMMON_SRCS
     include/ext/unlock_guard.h
 )
 
-if (ENABLE_READLINE)
+if (ENABLE_REPLXX)
     set (COMMON_SRCS
         src/ReplxxLineReader.cpp
         include/common/ReplxxLineReader.h
@@ -104,8 +104,8 @@ if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
-if (USE_REPLXX)
-    target_link_libraries(common PRIVATE replxx)
+if (ENABLE_REPLXX)
+    target_link_libraries(common PUBLIC replxx)
 endif ()
 
 target_link_libraries (common
