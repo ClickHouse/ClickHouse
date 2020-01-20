@@ -382,7 +382,7 @@ See also:
 - [Join table engine](../table_engines/join.md)
 - [join_default_strictness](#settings-join_default_strictness)
 
-## join_use_nulls {#settings-join_use_nulls}
+## join_use_nulls {#join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 

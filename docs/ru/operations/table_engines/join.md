@@ -2,7 +2,7 @@
 
 Подготовленная структура данных для использования в операциях [JOIN](../../query_language/select.md#select-join).
 
-## Создание таблицы
+## Создание таблицы {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

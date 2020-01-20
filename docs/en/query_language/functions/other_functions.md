@@ -863,9 +863,9 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet {#joinget}
 
-The function lets you extract data from the table the same way as from a [dictionary](https://clickhouse.yandex/docs/en/query_language/dicts/).
+The function lets you extract data from the table the same way as from a [dictionary](../dicts/index.md).
 
-Gets data from [Join](../../join/#creating-a-table) tables using the specified join key.
+Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) tables using the specified join key.
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
@@ -877,10 +877,9 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Parameters** 
 
-- `join_storage_table_name` — [Identifier](../../syntax/#syntax-identifiers) indicates where search is performed. In most cases, this is the name of the database and/or table. 
-Firstly, identifier is searched in the default database (see parameter `default_database` in the config), and then in other databases. To override the default database, use the `USE db_name` command.
-     - Specify only the table name for tables with a unique name.
-     - Specify the database and then the table for non-unique tables. Use a dot as the separator.
+- `join_storage_table_name` — [Identifier](../../syntax/#syntax-identifiers) indicates where search is performed. In most cases, this is the name of the database and/or table. Firstly, identifier is searched in the default database (see parameter `default_database` in the config file), and then in other databases. To override the default database, use the `USE db_name` command.
+    - Specify only the table name for tables with a unique name.
+    - Specify the database and then the table for non-unique tables. Use a dot as the separator.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -888,16 +887,16 @@ Firstly, identifier is searched in the default database (see parameter `default_
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../settings/#settings-join_use_nulls) setting. 
-
-Type: [all Data Types](https://clickhouse.yandex/docs/en/data_types/).
+If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting. 
 
 **Example**
 
 Input table:
+
 ```sql
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13)
+CREATE DATABASE db_test
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
 ```text
@@ -911,18 +910,18 @@ INSERT INTO id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ```sql
-SELECT joinGet(dbtest.id_val,'val',toUInt32(number)) from numbers(4)
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4)
 ```
 
 Result:
 
 ```text
-┌─joinGet(dbtest.id_val, 'val', toUInt32(number))─┐
-│                                               0 │
-│                                              11 │
-│                                              12 │
-│                                               0 │
-└─────────────────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
+│                                                0 │
+│                                               11 │
+│                                               12 │
+│                                                0 │
+└──────────────────────────────────────────────────┘
 ```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
