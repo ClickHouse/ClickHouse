@@ -19,6 +19,6 @@ Changelog entry (short description of added functionality):
 
 Detailed description / Documentation draft:
 
-Adding documentation, you much help users of a feature you have done. Documentation is highly required for all features that affect user experience. 
+By adding documentation, you'll allow users to try your new feature immediately, not when someone else will have time to document it later. Documentation is highly required for all features that affect user experience in any way. You can add brief documentation draft above, or add documentation right into your patch as Markdown files in [docs](https://github.com/ClickHouse/ClickHouse/tree/master/docs) folder.
 
 Read the lightweight [Contributing to ClickHouse Documentation](https://github.com/ClickHouse/ClickHouse/tree/master/docs/README.md) guide. It would help you to find the right form and words suitable for the audience of a new feature.
