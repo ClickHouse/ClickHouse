@@ -24,7 +24,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     const std::string & config_prefix,
     Block & sample_block_,
     const Context & context_,
-    bool check_config)
+    bool /*check_config*/)
     : log(&Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -35,9 +35,6 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-
-    if (check_config)
-        context.getRemoteHostFilter().checkURL(Poco::URI(url));
 
     const auto & credentials_prefix = config_prefix + ".credentials";
 
