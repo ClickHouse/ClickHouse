@@ -151,9 +151,15 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]
         {
+            try
             {
                 DB::ThreadStatus thread_status;
                 std::apply(func, args);
+            }
+            catch (...)
+            {
+                state->set();
+                throw;
             }
             state->set();
         });
