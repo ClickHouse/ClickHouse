@@ -19,7 +19,7 @@ SELECT count(1), uniqExact(n) FROM (
     USING k);
 
 SELECT 'errors';
-SET max_joined_block_size = 0;
+SET max_joined_block_size_rows = 0;
     
 SELECT count(1) FROM (
     SELECT materialize(1) as k, n FROM numbers(10)
@@ -31,8 +31,8 @@ SELECT count(1) FROM (
     JOIN (SELECT materialize(1) AS k, number n FROM numbers(10000)) j
     USING k); -- { serverError 241 }
 
-SELECT 'max_joined_block_size = 2000';
-SET max_joined_block_size = 2000;
+SELECT 'max_joined_block_size_rows = 2000';
+SET max_joined_block_size_rows = 2000;
 
 SELECT count(1) FROM (
     SELECT materialize(1) as k, n FROM numbers(10)

@@ -35,10 +35,10 @@ private:
 };
 
 /// ExpressionBlockInputStream that could generate many out blocks for single input block.
-class SplittingExpressionBlockInputStream : public ExpressionBlockInputStream
+class InflatingExpressionBlockInputStream : public ExpressionBlockInputStream
 {
 public:
-    SplittingExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
+    InflatingExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
     :   ExpressionBlockInputStream(input, expression_)
     {}
 

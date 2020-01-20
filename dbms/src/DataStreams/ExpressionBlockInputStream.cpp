@@ -44,7 +44,7 @@ Block ExpressionBlockInputStream::readImpl()
     return res;
 }
 
-Block SplittingExpressionBlockInputStream::readImpl()
+Block InflatingExpressionBlockInputStream::readImpl()
 {
     if (!initialized)
     {

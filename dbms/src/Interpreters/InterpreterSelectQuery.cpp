@@ -75,6 +75,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -1104,7 +1105,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
-                        return std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        return std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
                     });
                 }
                 else
@@ -1112,7 +1113,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<SplittingExpressionBlockInputStream>(stream, expressions.before_join);
+                        stream = std::make_shared<InflatingExpressionBlockInputStream>(stream, expressions.before_join);
 
                     if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {
