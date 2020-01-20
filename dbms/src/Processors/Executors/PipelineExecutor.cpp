@@ -482,6 +482,8 @@ void PipelineExecutor::execute(size_t num_threads)
 
     if (!all_processors_finished)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
+
+    //std::cerr << dumpPipeline() << std::endl;
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
