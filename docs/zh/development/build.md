@@ -59,12 +59,6 @@ export CC=gcc-9
 export CXX=g++-9
 ```
 
-## 安装所需的工具依赖库
-
-```bash
-sudo apt-get install libreadline-dev
-```
-
 ## 拉取 ClickHouse 源码
 
 ```bash
