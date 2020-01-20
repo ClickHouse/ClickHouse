@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
 {
 }
 
@@ -179,7 +179,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getStorageID().getNameForLogs() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))
@@ -341,7 +341,7 @@ TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_
 void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
 }
@@ -349,7 +349,7 @@ void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & l
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
         lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
@@ -385,14 +385,11 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    const String database_name = getDatabaseName();
-    const String table_name = getTableName();
-
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
+    auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(database_name)->alterTable(context, table_name, metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -425,6 +422,19 @@ BlockInputStreams IStorage::read(
         res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
     return res;
+}
+
+StorageID IStorage::getStorageID() const
+{
+    std::lock_guard<std::mutex> lock(id_mutex);
+    return storage_id;
+}
+
+void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
+{
+    std::lock_guard<std::mutex> lock(id_mutex);
+    storage_id.database_name = new_database_name;
+    storage_id.table_name = new_table_name;
 }
 
 }

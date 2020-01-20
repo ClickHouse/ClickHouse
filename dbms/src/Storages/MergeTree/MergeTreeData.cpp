@@ -111,8 +111,7 @@ namespace
 
 
 MergeTreeData::MergeTreeData(
-    const String & database_,
-    const String & table_,
+    const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata,
     Context & context_,
@@ -122,17 +121,16 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : global_context(context_)
+    : IStorage(table_id_)
+    , global_context(context_)
     , merging_params(merging_params_)
     , partition_by_ast(metadata.partition_by_ast)
     , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
-    , database_name(database_)
-    , table_name(table_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(database_name + "." + table_name)
+    , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
     , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
@@ -635,6 +633,10 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 
     if (new_ttl_table_ast)
     {
+        std::vector<TTLEntry> update_move_ttl_entries;
+        ASTPtr update_ttl_table_ast = nullptr;
+        TTLEntry update_ttl_table_entry;
+
         bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
@@ -649,8 +651,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
-                    ttl_table_ast = ttl_element.children[0];
-                    ttl_table_entry = new_ttl_table_entry;
+                    update_ttl_table_ast = ttl_element.children[0];
+                    update_ttl_table_entry = new_ttl_table_entry;
                 }
 
                 seen_delete_ttl = true;
@@ -673,10 +675,17 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 }
 
                 if (!only_check)
-                {
-                    move_ttl_entries.emplace_back(std::move(new_ttl_entry));
-                }
+                    update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
             }
+        }
+
+        if (!only_check)
+        {
+            ttl_table_entry = update_ttl_table_entry;
+            ttl_table_ast = update_ttl_table_ast;
+
+            auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
+            move_ttl_entries = update_move_ttl_entries;
         }
     }
 }
@@ -1257,7 +1266,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = global_context.getPartLog(database_name))
+
+    auto table_id = getStorageID();
+    if (auto part_log = global_context.getPartLog(table_id.database_name))
     {
         PartLogElement part_log_elem;
 
@@ -1265,8 +1276,8 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         part_log_elem.event_time = time(nullptr);
         part_log_elem.duration_ms = 0;
 
-        part_log_elem.database_name = database_name;
-        part_log_elem.table_name = table_name;
+        part_log_elem.database_name = table_id.database_name;
+        part_log_elem.table_name = table_id.table_name;
 
         for (auto & part : parts)
         {
@@ -1341,8 +1352,7 @@ void MergeTreeData::rename(
     global_context.dropCaches();
 
     relative_data_path = new_table_path;
-    table_name = new_table_name;
-    database_name = new_database_name;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void MergeTreeData::dropAllData()
@@ -3295,7 +3305,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     ReservationPtr reservation;
 
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
-    if (ttl_entry != nullptr)
+    if (ttl_entry)
     {
         SpacePtr destination_ptr = ttl_entry->getDestination(storage_policy);
         if (!destination_ptr)
@@ -3354,27 +3364,28 @@ bool MergeTreeData::TTLEntry::isPartInDestination(const StoragePolicyPtr & polic
     return false;
 }
 
-const MergeTreeData::TTLEntry * MergeTreeData::selectTTLEntryForTTLInfos(
+std::optional<MergeTreeData::TTLEntry> MergeTreeData::selectTTLEntryForTTLInfos(
         const MergeTreeDataPart::TTLInfos & ttl_infos,
         time_t time_of_move) const
 {
-    const MergeTreeData::TTLEntry * result = nullptr;
-    /// Prefer TTL rule which went into action last.
     time_t max_max_ttl = 0;
+    std::vector<DB::MergeTreeData::TTLEntry>::const_iterator best_entry_it;
 
-    for (const auto & ttl_entry : move_ttl_entries)
+    auto lock = std::lock_guard(move_ttl_entries_mutex);
+    for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
     {
-        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry.result_column);
+        auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry_it->result_column);
+        /// Prefer TTL rule which went into action last.
         if (ttl_info_it != ttl_infos.moves_ttl.end()
                 && ttl_info_it->second.max <= time_of_move
                 && max_max_ttl <= ttl_info_it->second.max)
         {
-            result = &ttl_entry;
+            best_entry_it = ttl_entry_it;
             max_max_ttl = ttl_info_it->second.max;
         }
     }
 
-    return result;
+    return max_max_ttl ? *best_entry_it : std::optional<MergeTreeData::TTLEntry>();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3522,11 +3533,12 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage * source_table) const
 {
-    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table.get());
+    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table);
     if (!src_data)
-        throw Exception("Table " + table_name + " supports attachPartitionFrom only for MergeTree family of table engines."
+        throw Exception("Table " + source_table->getStorageID().getNameForLogs() +
+                        " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + source_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
 
     if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
@@ -3547,6 +3559,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         throw Exception("Tables have different format_version", ErrorCodes::BAD_ARGUMENTS);
 
     return *src_data;
+}
+
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+{
+    return checkStructureAndGetMergeTreeData(source_table.get());
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,
@@ -3687,7 +3704,8 @@ void MergeTreeData::writePartLog(
     const MergeListEntry * merge_entry)
 try
 {
-    auto part_log = global_context.getPartLog(database_name);
+    auto table_id = getStorageID();
+    auto part_log = global_context.getPartLog(table_id.database_name);
     if (!part_log)
         return;
 
@@ -3702,8 +3720,8 @@ try
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
     part_log_elem.duration_ms = elapsed_ns / 1000000;
 
-    part_log_elem.database_name = database_name;
-    part_log_elem.table_name = table_name;
+    part_log_elem.database_name = table_id.database_name;
+    part_log_elem.table_name = table_id.table_name;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
     part_log_elem.part_name = new_part_name;
 
@@ -3768,7 +3786,15 @@ bool MergeTreeData::selectPartsAndMove()
 
 bool MergeTreeData::areBackgroundMovesNeeded() const
 {
-    return storage_policy->getVolumes().size() > 1;
+    auto policy = storage_policy;
+
+    if (policy->getVolumes().size() > 1)
+        return true;
+
+    if (policy->getVolumes().size() == 1 && policy->getVolumes()[0]->disks.size() > 1 && move_ttl_entries.size() > 0)
+        return true;
+
+    return false;
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)

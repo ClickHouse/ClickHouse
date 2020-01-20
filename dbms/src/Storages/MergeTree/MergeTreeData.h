@@ -330,7 +330,7 @@ public:
     ///
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(const String & database_, const String & table_,
+    MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata,
                   Context & context_,
@@ -395,9 +395,6 @@ public:
             || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
-
-    String getDatabaseName() const override { return database_name; }
-    String getTableName() const override { return table_name; }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -627,6 +624,7 @@ public:
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage * source_table) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
@@ -739,12 +737,17 @@ public:
         bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
-    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
+
+    /// This mutex is required for background move operations which do not obtain global locks.
+    mutable std::mutex move_ttl_entries_mutex;
+
+    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
     std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;
@@ -786,8 +789,6 @@ protected:
 
     bool require_part_metadata;
 
-    String database_name;
-    String table_name;
     String relative_data_path;
 
 

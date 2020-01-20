@@ -11,46 +11,48 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
 endif ()
 
 add_library (common
+    src/argsToConfig.cpp
+    src/coverage.cpp
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/preciseExp10.c
-    src/shift10.cpp
-    src/mremap.cpp
-    src/JSON.cpp
-    src/getMemoryAmount.cpp
     src/demangle.cpp
-    src/setTerminalEcho.cpp
+    src/getMemoryAmount.cpp
     src/getThreadNumber.cpp
-    src/sleep.cpp
-    src/argsToConfig.cpp
+    src/JSON.cpp
+    src/LineReader.cpp
+    src/mremap.cpp
     src/phdr_cache.cpp
-    src/coverage.cpp
+    src/preciseExp10.c
+    src/setTerminalEcho.cpp
+    src/shift10.cpp
+    src/sleep.cpp
 
-    include/common/SimpleCache.h
-    include/common/Types.h
-    include/common/DayNum.h
+    include/common/constexpr_helpers.h
+    include/common/coverage.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
+    include/common/DayNum.h
+    include/common/demangle.h
+    include/common/ErrorHandlers.h
+    include/common/find_symbols.h
+    include/common/getMemoryAmount.h
+    include/common/getThreadNumber.h
+    include/common/JSON.h
+    include/common/likely.h
+    include/common/LineReader.h
     include/common/LocalDate.h
     include/common/LocalDateTime.h
-    include/common/ErrorHandlers.h
-    include/common/preciseExp10.h
-    include/common/shift10.h
-    include/common/mremap.h
-    include/common/likely.h
     include/common/logger_useful.h
-    include/common/strong_typedef.h
-    include/common/JSON.h
-    include/common/getMemoryAmount.h
-    include/common/demangle.h
-    include/common/setTerminalEcho.h
-    include/common/find_symbols.h
-    include/common/constexpr_helpers.h
-    include/common/getThreadNumber.h
-    include/common/sleep.h
-    include/common/SimpleCache.h
+    include/common/mremap.h
     include/common/phdr_cache.h
-    include/common/coverage.h
+    include/common/preciseExp10.h
+    include/common/setTerminalEcho.h
+    include/common/shift10.h
+    include/common/SimpleCache.h
+    include/common/SimpleCache.h
+    include/common/sleep.h
+    include/common/strong_typedef.h
+    include/common/Types.h
 
     include/ext/bit_cast.h
     include/ext/chrono_io.h
@@ -89,6 +91,10 @@ endif()
 if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
+
+if (USE_REPLXX)
+    target_link_libraries(common PRIVATE replxx)
+endif ()
 
 target_link_libraries (common
         PUBLIC

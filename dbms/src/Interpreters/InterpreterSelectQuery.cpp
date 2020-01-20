@@ -116,14 +116,11 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-namespace
-{
-
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-String generateFilterActions(ExpressionActionsPtr & actions, const Context & context, const StoragePtr & storage, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {})
+String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns) const
 {
-    const auto & db_name = storage->getDatabaseName();
-    const auto & table_name = storage->getTableName();
+    const auto & db_name = table_id.getDatabaseName();
+    const auto & table_name = table_id.getTableName();
 
     /// TODO: implement some AST builders for this kind of stuff
     ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
@@ -153,15 +150,13 @@ String generateFilterActions(ExpressionActionsPtr & actions, const Context & con
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-    ExpressionActionsChain new_chain(context);
+    auto syntax_result = SyntaxAnalyzer(*context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, *context);
+    ExpressionActionsChain new_chain(*context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
 
     return expr_list->children.at(0)->getColumnName();
-}
-
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -292,7 +287,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (auto view_source = context->getViewSource())
             {
                 auto & storage_values = static_cast<const StorageValues &>(*view_source);
-                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                auto tmp_table_id = storage_values.getStorageID();
+                if (tmp_table_id.database_name == database_name && tmp_table_id.table_name == table_name)
                 {
                     /// Read from view source.
                     storage = context->getViewSource();
@@ -309,7 +305,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     //std::cerr << "Source header:" << source_header.dumpStructure() << std::endl;
     if (storage)
+    {
         table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_id = storage->getStorageID();
+    }
 
     auto analyze = [&] ()
     {
@@ -371,11 +370,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER);
+            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
-                filter_info->column_name = generateFilterActions(filter_info->actions, *context, storage, row_policy_filter, required_columns);
+                filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
                 source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
             }
         }
@@ -425,9 +424,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     sanitizeBlock(result_header);
 
     /// Remove limits for some tables in the `system` database.
-    if (storage && (storage->getDatabaseName() == "system"))
+    if (storage && (table_id.getDatabaseName() == "system"))
     {
-        String table_name = storage->getTableName();
+        String table_name = table_id.getTableName();
         if ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one"))
         {
             options.ignore_quota = true;
@@ -511,7 +510,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         /// PREWHERE optimization.
         /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER))
+        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
@@ -1367,12 +1366,12 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage)
     {
         /// Append columns from the table filter to required
-        auto row_policy_filter = context->getRowPolicy()->getCondition(storage->getDatabaseName(), storage->getTableName(), RowPolicy::SELECT_FILTER);
+        auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
         if (row_policy_filter)
         {
             auto initial_required_columns = required_columns;
             ExpressionActionsPtr actions;
-            generateFilterActions(actions, *context, storage, row_policy_filter, initial_required_columns);
+            generateFilterActions(actions, row_policy_filter, initial_required_columns);
             auto required_columns_from_filter = actions->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
