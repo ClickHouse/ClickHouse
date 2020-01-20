@@ -335,3 +335,8 @@ endif()
 #if (USE_INTERNAL_ORC_LIBRARY)
 #    add_subdirectory(orc-cmake)
 #endif ()
+
+if (USE_INTERNAL_REPLXX)
+    add_subdirectory (replxx-cmake)
+endif()
+

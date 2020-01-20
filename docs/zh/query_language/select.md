@@ -13,11 +13,11 @@ SELECT [DISTINCT] expr_list
     [GROUP BY expr_list] [WITH TOTALS]
     [HAVING expr]
     [ORDER BY expr_list]
+    [LIMIT n BY columns]
     [LIMIT [n, ]m]
     [UNION ALL ...]
     [INTO OUTFILE filename]
     [FORMAT format]
-    [LIMIT n BY columns]
 ```
 
 所有的子句都是可选的，除了SELECT之后的表达式列表(expr_list)。

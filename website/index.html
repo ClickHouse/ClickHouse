@@ -398,7 +398,7 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span>:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span> or <span class="distributive_not_selected" id="repo_tgz">Other Linux</span>:</p>
 
     <code id="packages-install">
 <pre id="instruction_deb">
@@ -422,6 +422,28 @@ sudo yum install clickhouse-server clickhouse-client
 sudo /etc/init.d/clickhouse-server start
 clickhouse-client
 </pre>
+
+<pre id="instruction_tgz" style="display: none;">
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+</pre>
+
     </code>
 
     <p>For other operating systems the easiest way to get started is using
@@ -549,7 +571,7 @@ clickhouse-client
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 
-        var available_distributives = ['deb', 'rpm'];
+        var available_distributives = ['deb', 'rpm', 'tgz'];
         var selected_distributive = 'deb';
 
         function refresh_distributives() {

@@ -262,7 +262,7 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }

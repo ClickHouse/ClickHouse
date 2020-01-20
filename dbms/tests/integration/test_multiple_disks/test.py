@@ -85,6 +85,22 @@ def test_system_tables(start_cluster):
             "move_factor": 0.1,
         },
         {
+            "policy_name": "one_more_small_jbod_with_external",
+            "volume_name": "m",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "one_more_small_jbod_with_external",
+            "volume_name": "e",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
             "policy_name": "jbods_with_external",
             "volume_name": "main",
             "volume_priority": "1",
@@ -221,6 +237,40 @@ def test_query_parser(start_cluster):
             node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy='moving_jbod_with_external'")
     finally:
         node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
+
+
+@pytest.mark.parametrize("name,engine", [
+    ("test_alter_policy","MergeTree()"),
+    ("replicated_test_alter_policy","ReplicatedMergeTree('/clickhouse/test_alter_policy', '1')",),
+])
+def test_alter_policy(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                d UInt64
+            ) ENGINE = {engine}
+            ORDER BY d
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "small_jbod_with_external\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='one_more_small_jbod_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "small_jbod_with_external\n"
+
+        node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='jbods_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "jbods_with_external\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""ALTER TABLE {name} MODIFY SETTING storage_policy='small_jbod_with_external'""".format(name=name))
+
+        assert node1.query("""SELECT storage_policy FROM system.tables WHERE name = '{name}'""".format(name=name)) == "jbods_with_external\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 
 def get_random_string(length):
@@ -686,10 +736,12 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -737,10 +789,12 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
@@ -863,10 +917,12 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
+        values = list({ random.randint(1, 1000000) for _ in range(0, 1000) })
+
         def insert(num):
             for i in range(num):
                 day = random.randint(11, 30)
-                value = random.randint(1, 1000000)
+                value = values.pop()
                 month = '0' + str(random.choice([3, 4]))
                 node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 

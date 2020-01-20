@@ -83,30 +83,7 @@
 
             <!-- Quota for user. -->
             <quota>default</quota>
-
-            <!-- Example of row level security policy. -->
-            <!-- <databases>
-                <test>
-                    <filtered_table1>
-                        <filter>a = 1</filter>
-                    </filtered_table1>
-                    <filtered_table2>
-                        <filter>a + b &lt; 1 or c - d &gt; 5</filter>
-                    </filtered_table2>
-                </test>
-            </databases> -->
         </default>
-
-        <!-- Example of user with readonly access. -->
-        <!-- <readonly>
-            <password></password>
-            <networks incl="networks" replace="replace">
-                <ip>::1</ip>
-                <ip>127.0.0.1</ip>
-            </networks>
-            <profile>readonly</profile>
-            <quota>default</quota>
-        </readonly> -->
     </users>
 
     <!-- Quotas. -->
