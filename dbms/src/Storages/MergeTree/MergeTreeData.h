@@ -737,12 +737,17 @@ public:
         bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
     };
 
-    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
+
+    /// This mutex is required for background move operations which do not obtain global locks.
+    mutable std::mutex move_ttl_entries_mutex;
+
+    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
     std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;
