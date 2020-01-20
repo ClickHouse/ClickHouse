@@ -105,14 +105,6 @@ brew install cmake ninja
 
 ClickHouse使用多个外部库进行构建。大多数外部库不需要单独安装，而是和ClickHouse一起在子模块中构建。可以查看`contrib`中罗列的清单。
 
-有一些库不是由源构建的，而是由系统提供，例如：Readline，也建议安装。
-
-Ubuntu: `sudo apt install libreadline-dev`
-
-Mac OS X: `brew install readline`
-
-但是，这些库本身都是可选的，ClickHouse即便没有它们也可以构建。ICU用于支持`ORDER BY`中的`COLLATE`(例如，对土耳其字母进行排序)。Readline用于在clickhouse-client中更便捷的指令输入。
-
 
 # C++ 编译器
 
