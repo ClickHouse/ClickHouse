@@ -282,29 +282,32 @@ template <
     typename Op, template <typename, size_t> typename OperationApplierImpl, size_t N = 10>
 struct OperationApplier
 {
-    template <typename Columns, typename ResultColumn>
-    static void apply(Columns & in, ResultColumn & result)
+    template <typename Columns, typename ResultData>
+    static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
-        while (in.size() > 1)
-        {
-            doBatchedApply(in, result->getData());
-            in.push_back(result.get());
-        }
+        if (!use_result_data_as_input)
+            doBatchedApply<false>(in, result_data);
+        while (in.size() > 0)
+            doBatchedApply<true>(in, result_data);
     }
 
-    template <typename Columns, typename ResultData>
+    template <bool CarryResult, typename Columns, typename ResultData>
     static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
     {
         if (N > in.size())
         {
-            OperationApplier<Op, OperationApplierImpl, N - 1>::doBatchedApply(in, result_data);
+            OperationApplier<Op, OperationApplierImpl, N - 1>
+                ::template doBatchedApply<CarryResult>(in, result_data);
             return;
         }
 
         const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
         for (auto & res : result_data)
-            res = operationApplierImpl.apply(i++);
+            if constexpr (CarryResult)
+                res = Op::apply(res, operationApplierImpl.apply(i++));
+            else
+                res = operationApplierImpl.apply(i++);
 
         in.erase(in.end() - N, in.end());
     }
@@ -312,9 +315,9 @@ struct OperationApplier
 
 template <
     typename Op, template <typename, size_t> typename OperationApplierImpl>
-struct OperationApplier<Op, OperationApplierImpl, 1>
+struct OperationApplier<Op, OperationApplierImpl, 0>
 {
-    template <typename Columns, typename Result>
+    template <bool, typename Columns, typename Result>
     static void NO_INLINE doBatchedApply(Columns &, Result &)
     {
         throw Exception(
@@ -332,7 +335,7 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
     const bool has_consts = extractConstColumnsTernary<Op>(arguments, const_3v_value);
 
     /// If the constant value uniquely determines the result, return it.
-    if (has_consts && (arguments.empty() || (Op::isSaturable() && Op::isSaturatedValue(const_3v_value))))
+    if (has_consts && (arguments.empty() || Op::isSaturatedValue(const_3v_value)))
     {
         result_info.column = ColumnConst::create(
             convertFromTernaryData(UInt8Container({const_3v_value}), result_info.type->isNullable()),
@@ -341,16 +344,10 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
         return;
     }
 
-    const auto result_column = ColumnUInt8::create(input_rows_count);
-    MutableColumnPtr const_column_holder;
-    if (has_consts)
-    {
-        const_column_holder =
-                convertFromTernaryData(UInt8Container(input_rows_count, const_3v_value), const_3v_value == Ternary::Null);
-        arguments.push_back(const_column_holder.get());
-    }
+    const auto result_column = has_consts ?
+            ColumnUInt8::create(input_rows_count, const_3v_value) : ColumnUInt8::create(input_rows_count);
 
-    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column);
+    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column->getData(), has_consts);
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
@@ -425,19 +422,8 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     if (has_consts && Op::apply(const_val, 0) == 0 && Op::apply(const_val, 1) == 1)
         has_consts = false;
 
-    UInt8ColumnPtrs uint8_args;
-
-    auto col_res = ColumnUInt8::create();
-    UInt8Container & vec_res = col_res->getData();
-    if (has_consts)
-    {
-        vec_res.assign(input_rows_count, const_val);
-        uint8_args.push_back(col_res.get());
-    }
-    else
-    {
-        vec_res.resize(input_rows_count);
-    }
+    auto col_res = has_consts ?
+            ColumnUInt8::create(input_rows_count, const_val) : ColumnUInt8::create(input_rows_count);
 
     /// FastPath detection goes in here
     if (arguments.size() == (has_consts ? 1 : 2))
@@ -452,7 +438,8 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     }
 
     /// Convert all columns to UInt8
-    Columns converted_columns;
+    UInt8ColumnPtrs uint8_args;
+    Columns converted_columns_holder;
     for (const IColumn * column : arguments)
     {
         if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
@@ -462,15 +449,11 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
             auto converted_column = ColumnUInt8::create(input_rows_count);
             convertColumnToUInt8(column, converted_column->getData());
             uint8_args.push_back(converted_column.get());
-            converted_columns.emplace_back(std::move(converted_column));
+            converted_columns_holder.emplace_back(std::move(converted_column));
         }
     }
 
-    OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res);
-
-    /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
-    if (uint8_args[0] != col_res.get())
-        vec_res.assign(uint8_args[0]->getData());
+    OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res->getData(), has_consts);
 
     result_info.column = std::move(col_res);
 }
