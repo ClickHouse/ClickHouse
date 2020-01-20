@@ -88,9 +88,11 @@ Rounds a number to a specified decimal position.
 
 - If rounding number is a half between two numbers, the function uses banker's rounding.
 
-    Banker's rounding is a method of rounding fractional numbers. When the rounding number is a half between two numbers, it is rounded to the nearest even number. E.g. 3.5 rounds up to 4, 2.5 rounds down to 2. 
+    Banker's rounding is a method of rounding fractional numbers. When the rounding number is a half between two numbers, it is rounded to the nearest even number. E.g. 3.5 rounds up to 4, 2.5 rounds down to 2.
+    
+    It is the default rounding method for floating point numbers defined in [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754#Roundings_to_nearest). The [round](#rounding_functions-round) function does the same rounding for floating point numbers. The `roundBankers` function also rounds integers in the same manner, for example, `roundBankers(45, -1) = 40`.
 
-- In other cases function rounds numbers to the nearest integer.
+- In other cases, function rounds numbers to the nearest integer.
 
 Using banker's rounding, you can reduce the effect of rounding numbers on the result of summing or subtracting these numbers.
 
@@ -156,12 +158,6 @@ roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
 roundBankers(10.755, 2) = 11,76
 ```
-
-**See Also** 
-
-- [round](#rounding_functions-round)
-
-
 
 ## roundToExp2(num)
 
