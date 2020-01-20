@@ -40,6 +40,7 @@ protected:
     };
 
     const String history_file_path;
+    static constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
 
     String input;
 

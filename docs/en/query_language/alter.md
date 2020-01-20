@@ -189,8 +189,10 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
+- [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
+- [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -282,6 +284,23 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
+
+#### MOVE PARTITION {#alter_move-partition}
+
+``` sql
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+This query move the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
+
+For the query to run successfully, the following conditions must be met:
+
+- Both tables must have the same structure.
+- Both tables must have the same partition key.
+- Both tables must be the same engine family. (replicated or non-replicated)
+- Both tables must have the same storage policy.
+
+
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 

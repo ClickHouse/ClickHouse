@@ -328,12 +328,12 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     return res;
 }
 
-bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & settings)
+bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings)
 {
     size_t cur_column = 0;
     try
     {
-        if (tryParseExpression(istr, settings, cur_column))
+        if (tryParseExpression(istr, format_settings, cur_column, settings))
         {
             ++rows_count;
             return true;
@@ -355,7 +355,7 @@ bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     return false;
 }
 
-bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const FormatSettings & settings, size_t & cur_column)
+bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings)
 {
     size_t cur_token = 0;
     size_t num_columns = structure->literals.columns();
@@ -372,13 +372,13 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
         skipWhitespaceIfAny(istr);
 
         const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
-        if (settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
+        if (format_settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
         {
-            if (!parseLiteralAndAssertType(istr, type.get(), cur_column))
+            if (!parseLiteralAndAssertType(istr, type.get(), cur_column, settings))
                 return false;
         }
         else
-            type->deserializeAsTextQuoted(*columns[cur_column], istr, settings);
+            type->deserializeAsTextQuoted(*columns[cur_column], istr, format_settings);
 
         ++cur_column;
     }
@@ -392,7 +392,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
     return true;
 }
 
-bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx)
+bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {
     using Type = Field::Types::Which;
 
@@ -410,7 +410,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         Tokens tokens_number(istr.position(), istr.buffer().end());
-        IParser::Pos iterator(tokens_number);
+        IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
 

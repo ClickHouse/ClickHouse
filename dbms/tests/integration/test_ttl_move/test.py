@@ -620,3 +620,52 @@ limitations under the License."""
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,positive", [
+    ("test_double_move_while_select_negative", 0),
+    ("test_double_move_while_select_positive", 1),
+])
+def test_double_move_while_select(started_cluster, name, positive):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64,
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY n
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        node1.query("INSERT INTO {name} VALUES (1, '{string}')".format(name=name, string=get_random_string(10 * 1024 * 1024)))
+
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(name=name)).splitlines()
+        assert len(parts) == 1
+
+        node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(name=name, part=parts[0]))
+
+        def long_select():
+            if positive:
+                node1.query("SELECT sleep(3), sleep(2), sleep(1), n FROM {name}".format(name=name))
+
+        thread = threading.Thread(target=long_select)
+        thread.start()
+
+        node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'jbod1'".format(name=name, part=parts[0]))
+
+        # Fill jbod1 to force ClickHouse to make move of partition 1 to external.
+        node1.query("INSERT INTO {name} VALUES (2, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+        node1.query("INSERT INTO {name} VALUES (3, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+        node1.query("INSERT INTO {name} VALUES (4, '{string}')".format(name=name, string=get_random_string(9 * 1024 * 1024)))
+
+        # If SELECT locked old part on external, move shall fail.
+        assert node1.query("SELECT disk_name FROM system.parts WHERE table = '{name}' AND active = 1 AND name = '{part}'"
+                .format(name=name, part=parts[0])).splitlines() == ["jbod1" if positive else "external"]
+
+        thread.join()
+
+        assert node1.query("SELECT n FROM {name} ORDER BY n".format(name=name)).splitlines() == ["1", "2", "3", "4"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))

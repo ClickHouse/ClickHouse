@@ -31,7 +31,7 @@ ReplxxLineReader::ReplxxLineReader(const Suggest * suggest, const String & histo
     {
         rx.set_completion_callback(callback);
         rx.set_complete_on_empty(false);
-        rx.set_word_break_characters(" \t\n\r\"\\'`@$><=;|&{(.");
+        rx.set_word_break_characters(word_break_characters);
     }
 }
 

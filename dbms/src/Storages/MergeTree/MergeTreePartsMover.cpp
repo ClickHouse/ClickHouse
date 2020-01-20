@@ -221,7 +221,9 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
         return;
     }
 
-    cloned_part->renameTo(active_part->name);
+    /// Don't remove new directory but throw an error because it may contain part which is currently in use.
+    cloned_part->renameTo(active_part->name, false);
+
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 

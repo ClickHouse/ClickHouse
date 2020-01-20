@@ -142,10 +142,10 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wmaybe-uninitialized)
     # Warn when the indentation of the code does not reflect the block structure
     add_cxx_compile_options(-Wmisleading-indentation)
-    # Warn if a global function is defined without a previous declaration
+    # Warn if a global function is defined without a previous declaration - disabled because of build times
     # add_cxx_compile_options(-Wmissing-declarations)
     # Warn if a user-supplied include directory does not exist
-    # add_cxx_compile_options(-Wmissing-include-dirs)
+    add_cxx_compile_options(-Wmissing-include-dirs)
     # Obvious
     add_cxx_compile_options(-Wnon-virtual-dtor)
     # Obvious
@@ -563,7 +563,7 @@ if (USE_JEMALLOC)
     endif()
 endif ()
 
-dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
+dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
@@ -585,7 +585,14 @@ if (ENABLE_TESTS AND USE_GTEST)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
-    target_compile_options(unit_tests_dbms PRIVATE -Wno-zero-as-null-pointer-constant -Wno-undef -Wno-sign-compare -Wno-used-but-marked-unused -Wno-missing-noreturn)
+    target_compile_options(unit_tests_dbms PRIVATE
+        -Wno-zero-as-null-pointer-constant
+        -Wno-undef
+        -Wno-sign-compare
+        -Wno-used-but-marked-unused
+        -Wno-missing-noreturn
+        -Wno-gnu-zero-variadic-macro-arguments
+    )
 
     target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
     add_check(unit_tests_dbms)
