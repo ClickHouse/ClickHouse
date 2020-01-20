@@ -92,7 +92,7 @@ if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
-if (ENABLE_REPLXX)
+if (USE_REPLXX)
     target_link_libraries(common PRIVATE replxx)
 endif ()
 
