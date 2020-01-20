@@ -135,13 +135,25 @@ namespace
                 for (const String & database : databases)
                 {
                     const String database_config = databases_config + "." + database;
-                    Poco::Util::AbstractConfiguration::Keys table_names;
-                    config.keys(database_config, table_names);
+                    Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
+                    config.keys(database_config, keys_in_database_config);
 
                     /// Read table properties
-                    for (const String & table_name : table_names)
+                    for (const String & key_in_database_config : keys_in_database_config)
                     {
-                        const auto filter_config = database_config + "." + table_name + ".filter";
+                        String table_name = key_in_database_config;
+                        String filter_config = database_config + "." + table_name + ".filter";
+
+                        if (key_in_database_config.starts_with("table["))
+                        {
+                            const auto table_name_config = database_config + "." + table_name + "[@name]";
+                            if (config.has(table_name_config))
+                            {
+                                table_name = config.getString(table_name_config);
+                                filter_config = database_config + ".table[@name='" + table_name + "']";
+                            }
+                        }
+
                         if (config.has(filter_config))
                         {
                             try

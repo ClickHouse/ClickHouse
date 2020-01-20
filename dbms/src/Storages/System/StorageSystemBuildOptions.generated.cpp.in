@@ -36,7 +36,6 @@ const char * auto_config_build[]
     "USE_INTERNAL_MEMCPY", "@USE_INTERNAL_MEMCPY@",
     "USE_GLIBC_COMPATIBILITY", "@GLIBC_COMPATIBILITY@",
     "USE_JEMALLOC", "@USE_JEMALLOC@",
-    "USE_TCMALLOC", "@USE_TCMALLOC@",
     "USE_MIMALLOC", "@USE_MIMALLOC@",
     "USE_UNWIND", "@USE_UNWIND@",
     "USE_ICU", "@USE_ICU@",
@@ -62,6 +61,7 @@ const char * auto_config_build[]
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
     "USE_POCO_REDIS", "@USE_POCO_REDIS@",
+    "USE_REPLXX", "@USE_REPLXX@",
 
     nullptr, nullptr
 };

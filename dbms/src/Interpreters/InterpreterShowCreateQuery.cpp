@@ -55,7 +55,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery();
+        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {

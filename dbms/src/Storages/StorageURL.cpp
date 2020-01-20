@@ -30,13 +30,16 @@ namespace ErrorCodes
 IStorageURLBase::IStorageURLBase(
     const Poco::URI & uri_,
     const Context & context_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
-    : uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
+    : IStorage(table_id_)
+    , uri(uri_)
+    , context_global(context_)
+    , compression_method(compression_method_)
+    , format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
@@ -60,17 +63,18 @@ namespace
             const CompressionMethod compression_method)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(
-                compression_method,
-                uri,
-                method,
-                callback,
-                timeouts,
-                context.getSettingsRef().max_http_get_redirects,
-                Poco::Net::HTTPBasicCredentials{},
-                DBMS_DEFAULT_BUFFER_SIZE,
-                ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
-                context.getRemoteHostFilter());
+            read_buf = wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadWriteBufferFromHTTP>(
+                    uri,
+                    method,
+                    callback,
+                    timeouts,
+                    context.getSettingsRef().max_http_get_redirects,
+                    Poco::Net::HTTPBasicCredentials{},
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                    context.getRemoteHostFilter()),
+                compression_method);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
@@ -117,7 +121,9 @@ namespace
             const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = getWriteBuffer<WriteBufferFromHTTP>(compression_method, uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
+                compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -196,7 +202,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         context,
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
-        IStorage::chooseCompressionMethod(request_uri.getPath(), compression_method));
+        chooseCompressionMethod(request_uri.getPath(), compression_method));
 
     auto column_defaults = getColumns().getDefaults();
     if (column_defaults.empty())
@@ -204,18 +210,12 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
-}
-
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global,
         ConnectionTimeouts::getHTTPTimeouts(context_global),
-        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
+        chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -246,7 +246,7 @@ void registerStorageURL(StorageFactory & factory)
 
         return StorageURL::create(
             uri,
-            args.database_name, args.table_name,
+            args.table_id,
             format_name,
             args.columns, args.constraints, args.context,
             compression_method);

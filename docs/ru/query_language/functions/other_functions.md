@@ -6,7 +6,7 @@
 
 ## FQDN {#fqdn}
 
-Возвращает полное имя домена. 
+Возвращает полное имя домена.
 
 **Синтаксис**
 
@@ -377,7 +377,7 @@ neighbor(column, offset[, default_value])
 
 **Возвращаемое значение**
 
-- Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока. 
+- Значение `column` в смещении от текущей строки, если значение `offset` не выходит за пределы блока.
 - Значение по умолчанию для `column`, если значение `offset`  выходит за пределы блока данных. Если передан параметр `default_value`, то значение берется из него.
 
 Тип: зависит от данных в `column` или переданного значения по умолчанию в `default_value`.
@@ -850,10 +850,12 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
-## modelEvaluate(model_name, ...)
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
 
-Вычислить модель.
-Принимает имя модели и аргументы модели. Возвращает Float64.
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.
+
 
 ## throwIf(x\[, custom_message\])
 
@@ -883,10 +885,39 @@ SELECT identity(42)
 ```
 Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
+## randomPrintableASCII {#randomascii}
+
+Генерирует строку со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
+
+**Синтаксис**
+
+```sql
+randomPrintableASCII(length)
+```
+
+**Параметры**
+
+- `length` — Длина результирующей строки. Положительное целое число.
+
+    Если передать `length < 0`, то поведение функции не определено.
+
+**Возвращаемое значение**
+
+ - Строка со случайным набором печатных символов [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters).
+
+Тип: [String](../../data_types/string.md)
+
+**Пример**
+
+```sql
+SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers LIMIT 3
+```
+```text
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"wUTh:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
-
-## modelEvaluate(model_name, ...) {#function-modelevaluate}
-
-Оценивает внешнюю модель.
-
-Принимает на вход имя и аргументы модели. Возвращает Float64.

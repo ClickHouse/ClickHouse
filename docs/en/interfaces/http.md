@@ -172,7 +172,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 By default, the database that is registered in the server settings is used as the default database. By default, this is the database called 'default'. Alternatively, you can always specify the database using a dot before the table name.
 
-The username and password can be indicated in one of two ways:
+The username and password can be indicated in one of three ways:
 
 1. Using HTTP Basic Authentication. Example:
 
@@ -184,6 +184,12 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+```
+
+3. Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
 ```
 
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.

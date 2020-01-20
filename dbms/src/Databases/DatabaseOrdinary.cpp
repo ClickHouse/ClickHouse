@@ -10,8 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/StorageFactory.h>
@@ -38,7 +36,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
@@ -68,13 +65,10 @@ namespace
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot attach table '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -89,13 +83,10 @@ namespace
         {
             database.attachDictionary(query.table, context);
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot create dictionary '" + query.table + "' from query " + serializeAST(query)
-                    + ". Error: " + DB::getCurrentExceptionMessage(true),
-                e,
-                DB::ErrorCodes::CANNOT_CREATE_DICTIONARY_FROM_METADATA);
+            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            throw;
         }
     }
 
@@ -131,12 +122,12 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -144,10 +135,10 @@ void DatabaseOrdinary::loadStoredObjects(
                 total_dictionaries += create_query->is_dictionary;
             }
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
-            throw Exception(
-                "Cannot parse definition from metadata file " + full_path + ". Error: " + DB::getCurrentExceptionMessage(true), e, ErrorCodes::CANNOT_PARSE_TEXT);
+            e.addMessage("Cannot parse definition from metadata file " + full_path);
+            throw;
         }
 
     });
@@ -181,12 +172,8 @@ void DatabaseOrdinary::loadStoredObjects(
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
 
-    /// Add database as repository
-    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    auto & external_loader = context.getExternalDictionariesLoader();
-    external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
-
     /// Attach dictionaries.
+    attachToExternalDictionariesLoader(context);
     for (const auto & name_with_query : file_names)
     {
         auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
