@@ -27,12 +27,9 @@ ReplxxLineReader::ReplxxLineReader(const Suggest * suggest, const String & histo
         return replxx::Replxx::completions_t(range.first, range.second);
     };
 
-    if (suggest)
-    {
-        rx.set_completion_callback(callback);
-        rx.set_complete_on_empty(false);
-        rx.set_word_break_characters(word_break_characters);
-    }
+    rx.set_completion_callback(callback);
+    rx.set_complete_on_empty(false);
+    rx.set_word_break_characters(word_break_characters);
 }
 
 ReplxxLineReader::~ReplxxLineReader()
