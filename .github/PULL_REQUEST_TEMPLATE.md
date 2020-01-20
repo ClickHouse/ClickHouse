@@ -17,7 +17,7 @@ Changelog entry (short description of added functionality):
 ...
 
 
-Detailed description / Documentation:
+Detailed description / Documentation draft:
 
 Adding documentation, you much help users of a feature you have done. Documentation is highly required for all features that affect user experience. 
 
