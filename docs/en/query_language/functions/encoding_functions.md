@@ -10,22 +10,20 @@ Returns a string containing the argument's hexadecimal representation.
 **Syntax**
 
 ```sql
-hex(arg);
+hex(arg)
 ```
 
-Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. 
-
-The result of the function depends on the type of argument.
+The result of the function depends on the type of argument. Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. 
 
 For strings, all bytes are simply encoded as two hexadecimal numbers. 
 
-Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes. 
+Numbers are converted to big engine ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes.
 
-`Date` is encoded as the number of days since the beginning of the Unix epoch. 
+For example:
 
-`DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. 
-
-`Float` and `Decimal` is encoded as their hexadecimal representation in memory.
+- `Date` is encoded as the number of days since the beginning of the Unix epoch. 
+- `DateTime` is encoded as the number of seconds since the beginning of the Unix epoch. 
+- `Float` and `Decimal` is encoded as their hexadecimal representation in memory.
 
 **Parameters**
 
@@ -39,9 +37,13 @@ Type: `String`.
 
 **Example**
 
+Query:
+
 ```sql
 SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
 ```
+
+Result:
 
 ```text
 ┌─hex_presentation─┐
@@ -50,9 +52,13 @@ SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
 └──────────────────┘
 ```
 
+Query:
+
 ```sql
 SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
 ```
+
+Result:
 
 ```text
 ┌─hex_presentation─┐
