@@ -4,7 +4,7 @@
 
 The main reason is that ClickHouse is an open source project, and if you don't write the docs, nobody does. "Incomplete or Confusing Documentation" is the top complaint about open source software by the results of a [Github Open Source Survey](http://opensourcesurvey.org/2017/) of 2017. Documentation is highly valued but often overlooked. One of the most important contributions someone can make to an open source repository is a documentation update.
 
-Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't read the code. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
+Many developers can say that the code is the best docs by itself, and they are right. But, ClickHouse is not a project for C++ developers. Most of its users don't know C++, and they can't understand the code quickly. ClickHouse is large enough to absorb almost any change without a noticeable trace. Nobody will find your very useful function, or an important setting, or a very informative new column in a system table if it is not referenced in the documentation.
 
 If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
