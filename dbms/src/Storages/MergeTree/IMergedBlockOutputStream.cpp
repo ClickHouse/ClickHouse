@@ -32,6 +32,4 @@ Block IMergedBlockOutputStream::getBlockAndPermute(const Block & block, const Na
     return result;
 }
 
-/// Implementation of IMergedBlockOutputStream::ColumnStream.
-
 }
