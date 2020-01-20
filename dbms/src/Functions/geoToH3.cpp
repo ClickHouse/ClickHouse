@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-#include <h3api.h>
+#include <h3/h3api.h>
 
 
 namespace DB
