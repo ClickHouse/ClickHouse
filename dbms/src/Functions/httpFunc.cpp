@@ -17,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
+#include "registerFunctions.h"
 
 namespace DB
 {

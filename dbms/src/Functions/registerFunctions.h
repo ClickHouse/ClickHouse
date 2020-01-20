@@ -55,6 +55,7 @@ void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
+void registerFunctionHttpFunc(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -303,8 +304,6 @@ void registerFunctionVisitParamExtractFloat(FunctionFactory & factory);
 void registerFunctionVisitParamExtractBool(FunctionFactory & factory);
 void registerFunctionVisitParamExtractRaw(FunctionFactory & factory);
 void registerFunctionVisitParamExtractString(FunctionFactory & factory);
-
-void registerFunctionHttpFunc(FunctionFactory & factory);
 
 void registerFunctions();
 
