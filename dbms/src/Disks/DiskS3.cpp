@@ -83,7 +83,15 @@ namespace
         {
             if (finalized)
                 return;
-            finalize();
+
+            try
+            {
+                finalize();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
     private:
@@ -324,10 +332,10 @@ String DiskS3::getS3Path(const String & path) const
 String DiskS3::getRandomName() const
 {
     std::uniform_int_distribution<int> distribution('a', 'z');
-    String suffix(16, ' ');
-    for (auto & c : suffix)
+    String name(32, ' ');   /// The number of bits of entropy should be not less than 128.
+    for (auto & c : name)
         c = distribution(thread_local_rng);
-    return suffix;
+    return name;
 }
 
 bool DiskS3::tryReserve(UInt64 bytes)
