@@ -996,6 +996,44 @@ FROM ontime
 └─────────────────────┘
 ```
 
+## topKWeighted {#topkweighted}
+
+Returns an array of the most frequent values in the specified column. The resulting array is sorted by weight of value. If the optional parameter `N` is passed, сreates a slice of array with n elements.
+
+We recommend using the `N < 10 ` value; performance is reduced with large `N` values. Maximum value of ` N = 65536`.
+
+**Syntax**
+
+```sql
+topKWeighted(N)(x, weight)
+```
+
+**Parameters**
+
+- `N` — The number of elements to return. Optional parameter. [UInt8](../../data_types/int_uint.md).
+- `x` – The column.
+- `weight` — The weight. [UInt8](../../data_types/int_uint.md).
+
+**Returned value**
+
+Returns an array of the most frequent values.
+
+**Example**
+
+Query:
+
+```sql
+SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+```
+
+Result:
+
+```text
+┌─topKWeighted(10)(number, number)──────────┐
+│ [999,998,997,996,995,994,993,992,991,990] │
+└───────────────────────────────────────────┘
+```
+
 ## covarSamp(x, y)
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
