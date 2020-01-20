@@ -418,12 +418,7 @@ void registerDiskS3(DiskFactory & factory)
                 throw Exception("No read accecss to S3 bucket in disk " + name, ErrorCodes::PATH_ACCESS_DENIED);
         }
         {
-            String s3_path = readKeyFromFile(metadata_path + "test_acl");
-            Aws::S3::Model::DeleteObjectRequest request;
-            request.SetBucket(uri.bucket);
-            request.SetKey(s3_path);
-            throwIfError(client->DeleteObject(request));
-            Poco::File(metadata_path + "test_acl").remove();
+            s3disk->remove("test_acl");
         }
 
         return s3disk;
