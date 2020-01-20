@@ -11,7 +11,7 @@ $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/inst
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-$ brew install cmake ninja libtool gettext readline
+$ brew install cmake ninja libtool gettext
 ```
 
 ## Checkout ClickHouse Sources

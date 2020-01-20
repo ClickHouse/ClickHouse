@@ -277,15 +277,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
-    /// Check that we have read and write access to all data paths
-    auto disk_selector = global_context->getDiskSelector();
-    for (const auto & [name, disk] : disk_selector.getDisksMap())
-    {
-        Poco::File disk_path(disk->getPath());
-        if (!disk_path.canRead() || !disk_path.canWrite())
-            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
-    }
-
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -445,8 +436,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(global_context->getTextLog());
-            buildLoggers(*config, logger());
+            // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
+            // in a lot of places. For now, disable updating log configuration without server restart.
+            //setTextLog(global_context->getTextLog());
+            //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
 
@@ -870,6 +863,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        setTextLog(global_context->getTextLog());
+        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         users_config_reloader->start();

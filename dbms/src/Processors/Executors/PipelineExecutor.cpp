@@ -774,7 +774,7 @@ String PipelineExecutor::dumpPipeline() const
 
     WriteBufferFromOwnString out;
     printPipeline(processors, statuses, out);
-    out.finish();
+    out.finalize();
 
     return out.str();
 }
