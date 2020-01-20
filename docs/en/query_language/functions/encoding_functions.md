@@ -2,7 +2,7 @@
 
 ## char {#char}
 
-Accepts multiple arguments of numeric types. Returns a string with the length as the number of passed arguments and each byte has the value of corresponding argument.
+Returns the character value of the given integer value according to the ASCII table. Accepts multiple arguments of numeric types.
 
 **Syntax**
 
