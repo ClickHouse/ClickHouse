@@ -75,7 +75,7 @@ namespace
         void finalize() override
         {
             WriteBufferFromS3::finalize();
-            writeKeyToFile(metadata_path, s3_path);
+            writeKeyToFile(s3_path, metadata_path);
             finalized = true;
         }
 
@@ -332,10 +332,10 @@ String DiskS3::getS3Path(const String & path) const
 String DiskS3::getRandomName() const
 {
     std::uniform_int_distribution<int> distribution('a', 'z');
-    String name(32, ' ');   /// The number of bits of entropy should be not less than 128.
-    for (auto & c : name)
+    String res(32, ' ');   /// The number of bits of entropy should be not less than 128.
+    for (auto & c : res)
         c = distribution(thread_local_rng);
-    return name;
+    return res;
 }
 
 bool DiskS3::tryReserve(UInt64 bytes)
