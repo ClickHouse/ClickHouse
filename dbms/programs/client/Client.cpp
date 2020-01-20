@@ -2,7 +2,7 @@
 #include "ConnectionParameters.h"
 #include "Suggest.h"
 
-#ifdef USE_REPLXX
+#if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
 #else
 #   include <common/LineReader.h>
@@ -501,7 +501,7 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-#ifdef USE_REPLXX
+#if USE_REPLXX
             ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 #else
             LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);

@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 
-#ifdef USE_REPLXX
+#if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
 #else
 #   include <common/LineReader.h>
@@ -74,7 +74,7 @@ int main(int argc, char ** argv)
         Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
-#ifdef USE_REPLXX
+#if USE_REPLXX
         ReplxxLineReader lr(nullptr, {}, '\\');
 #else
         LineReader lr({}, '\\');

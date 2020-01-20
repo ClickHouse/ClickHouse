@@ -7,7 +7,7 @@
 class ReplxxLineReader : public LineReader
 {
 public:
-    ReplxxLineReader(const Suggest * suggest, const String & history_file_path, char extender, char delimiter = 0);
+    ReplxxLineReader(const Suggest & suggest, const String & history_file_path, char extender, char delimiter = 0);
     ~ReplxxLineReader() override;
 
 private:
