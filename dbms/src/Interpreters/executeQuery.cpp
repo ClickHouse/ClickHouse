@@ -129,9 +129,9 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         throw;
     }
-    catch (const Exception & e)
+    catch (const std::exception & e)
     {
-        elem.stack_trace = e.getStackTrace().toString();
+        elem.stack_trace = getExceptionStackTraceString(e);
     }
     catch (...) {}
 }
@@ -214,7 +214,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size);
+        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -620,7 +620,7 @@ void executeQuery(
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
         copyData(limit, out);
-        out.finish();
+        out.finalize();
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();

@@ -1,6 +1,45 @@
-#include "registerFunctions.h"
 namespace DB
 {
+
+class FunctionFactory;
+
+void registerFunctionPlus(FunctionFactory & factory);
+void registerFunctionMinus(FunctionFactory & factory);
+void registerFunctionMultiply(FunctionFactory & factory);
+void registerFunctionDivide(FunctionFactory & factory);
+void registerFunctionIntDiv(FunctionFactory & factory);
+void registerFunctionIntDivOrZero(FunctionFactory & factory);
+void registerFunctionModulo(FunctionFactory & factory);
+void registerFunctionNegate(FunctionFactory & factory);
+void registerFunctionAbs(FunctionFactory & factory);
+void registerFunctionBitAnd(FunctionFactory & factory);
+void registerFunctionBitOr(FunctionFactory & factory);
+void registerFunctionBitXor(FunctionFactory & factory);
+void registerFunctionBitNot(FunctionFactory & factory);
+void registerFunctionBitShiftLeft(FunctionFactory & factory);
+void registerFunctionBitShiftRight(FunctionFactory & factory);
+void registerFunctionBitRotateLeft(FunctionFactory & factory);
+void registerFunctionBitRotateRight(FunctionFactory & factory);
+void registerFunctionBitCount(FunctionFactory & factory);
+void registerFunctionLeast(FunctionFactory & factory);
+void registerFunctionGreatest(FunctionFactory & factory);
+void registerFunctionBitTest(FunctionFactory & factory);
+void registerFunctionBitTestAny(FunctionFactory & factory);
+void registerFunctionBitTestAll(FunctionFactory & factory);
+void registerFunctionGCD(FunctionFactory & factory);
+void registerFunctionLCM(FunctionFactory & factory);
+void registerFunctionIntExp2(FunctionFactory & factory);
+void registerFunctionIntExp10(FunctionFactory & factory);
+void registerFunctionRoundToExp2(FunctionFactory & factory);
+void registerFunctionRoundDuration(FunctionFactory & factory);
+void registerFunctionRoundAge(FunctionFactory & factory);
+
+void registerFunctionBitBoolMaskOr(FunctionFactory & factory);
+void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
+void registerFunctionBitWrapperFunc(FunctionFactory & factory);
+void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
+
+
 void registerFunctionsArithmetic(FunctionFactory & factory)
 {
     registerFunctionPlus(factory);
@@ -20,6 +59,7 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionBitShiftRight(factory);
     registerFunctionBitRotateLeft(factory);
     registerFunctionBitRotateRight(factory);
+    registerFunctionBitCount(factory);
     registerFunctionLeast(factory);
     registerFunctionGreatest(factory);
     registerFunctionBitTest(factory);

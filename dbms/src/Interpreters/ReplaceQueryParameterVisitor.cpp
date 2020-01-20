@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -54,10 +55,12 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
+    data_type->deserializeAsTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
-        throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'", ErrorCodes::BAD_QUERY_PARAMETER);
+        throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'"
+            " because it isn't parsed completely: only " + toString(read_buffer.count()) + " of " + toString(value.size()) + " bytes was parsed: "
+            + value.substr(0, read_buffer.count()), ErrorCodes::BAD_QUERY_PARAMETER);
 
     ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
 }

@@ -98,4 +98,13 @@ SELECT count(*)
 FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
+## Virtual Columns
+
+- `_path` — Path to the file.
+- `_file` — Name of the file.
+
+**See Also**
+
+- [Virtual columns](https://clickhouse.yandex/docs/en/operations/table_engines/#table_engines-virtual_columns)
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/file/) <!--hide-->

@@ -205,8 +205,7 @@ static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_k
 }
 
 StorageDistributed::StorageDistributed(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & remote_database_,
@@ -216,13 +215,18 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & relative_data_path_,
     bool attach_)
-    : IStorage(ColumnsDescription({
-        {"_shard_num", std::make_shared<DataTypeUInt32>()},
-    }, true)),
-    table_name(table_name_), database_name(database_name_),
-    remote_database(remote_database_), remote_table(remote_table_),
-    global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
+    : IStorage(id_,
+               ColumnsDescription(
+                   {
+                       {"_shard_num", std::make_shared<DataTypeUInt32>()},
+                   },
+               true))
+    , remote_database(remote_database_)
+    , remote_table(remote_table_)
+    , global_context(context_)
+    , cluster_name(global_context.getMacros()->expand(cluster_name_))
+    , has_sharding_key(sharding_key_)
+    , path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -237,15 +241,14 @@ StorageDistributed::StorageDistributed(
     if (!attach_ && !cluster_name.empty())
     {
         size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
-        if (num_local_shards && remote_database == database_name && remote_table == table_name)
-            throw Exception("Distributed table " + table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
+        if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
+            throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
 }
 
 
 StorageDistributed::StorageDistributed(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ASTPtr remote_table_function_ptr_,
@@ -254,34 +257,34 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, relative_data_path_, attach)
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, relative_data_path_, attach)
 {
-    remote_table_function_ptr = remote_table_function_ptr_;
+    remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
 
 StoragePtr StorageDistributed::createWithOwnCluster(
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const String & remote_database_,       /// database on remote servers.
     const String & remote_table_,          /// The name of the table on the remote servers.
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
-    res->owned_cluster = owned_cluster_;
+    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
+    res->owned_cluster = std::move(owned_cluster_);
     return res;
 }
 
 
 StoragePtr StorageDistributed::createWithOwnCluster(
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     ASTPtr & remote_table_function_ptr_,
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
+    auto res = create(table_id_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
     return res;
 }
@@ -342,17 +345,18 @@ BlockInputStreams StorageDistributed::read(
         if (has_sharding_key)
         {
             auto smaller_cluster = skipUnusedShards(cluster, query_info);
+            auto table_id = getStorageID();
 
             if (smaller_cluster)
             {
                 cluster = smaller_cluster;
-                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
                                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
             else
             {
-                LOG_DEBUG(log, "Reading from " << database_name << "." << table_name << ": "
+                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
                                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
             }
         }
@@ -410,15 +414,12 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
 void StorageDistributed::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    auto table_id = getStorageID();
 
     checkAlterIsPossible(params, context.getSettingsRef());
-
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
-
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, metadata);
+    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -612,8 +613,6 @@ void StorageDistributed::flushClusterNodesAllData()
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
                                 TableStructureWriteLockHolder &)
 {
-    table_name = new_table_name;
-    database_name = new_database_name;
     if (!path.empty())
     {
         auto new_path = global_context.getPath() + new_path_to_table_data;
@@ -623,6 +622,7 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Str
         for (auto & node : cluster_nodes_data)
             node.second.directory_monitor->updatePath();
     }
+    renameInMemory(new_database_name, new_table_name);
 }
 
 
@@ -676,7 +676,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         return StorageDistributed::create(
-            args.database_name, args.table_name, args.columns, args.constraints,
+            args.table_id, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
             args.context, sharding_key, args.relative_data_path,
             args.attach);

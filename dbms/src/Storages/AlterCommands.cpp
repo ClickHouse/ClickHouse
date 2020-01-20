@@ -249,6 +249,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 /// let's use info about old type
                 if (data_type == nullptr)
                     codec->useInfoAboutType(column.type);
+                else /// use info about new DataType
+                    codec->useInfoAboutType(data_type);
+
                 column.codec = codec;
             }
 
@@ -316,7 +319,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 
             if (insert_it == metadata.indices.indices.end())
                 throw Exception("Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after.",
-                        ErrorCodes::LOGICAL_ERROR);
+                        ErrorCodes::BAD_ARGUMENTS);
 
             ++insert_it;
         }
@@ -338,7 +341,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.",
-                            ErrorCodes::LOGICAL_ERROR);
+                            ErrorCodes::BAD_ARGUMENTS);
         }
 
         metadata.indices.indices.erase(erase_it);
@@ -378,7 +381,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::BAD_ARGUMENTS);
         }
         metadata.constraints.constraints.erase(erase_it);
     }
@@ -392,8 +395,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         for (const auto & change : settings_changes)
         {
             auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
-            if (auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
-                it != settings_from_storage.end())
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+
+            if (it != settings_from_storage.end())
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
@@ -644,11 +648,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, const Cont
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
 {
-    /// We will save ALTER ADD/MODIFY command indices (only the last for each column) for possible modification
-    /// (we might need to add deduced types or modify default expressions).
-    /// Saving indices because we can add new commands later and thus cause vector resize.
-    std::unordered_map<String, size_t> column_to_command_idx;
-
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];

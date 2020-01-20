@@ -65,7 +65,7 @@ public:
         set(reinterpret_cast<Position>(vector.data() + old_size), (size - old_size) * sizeof(typename VectorType::value_type));
     }
 
-    void finish()
+    void finalize() override
     {
         if (is_finished)
             return;
@@ -91,7 +91,7 @@ public:
     {
         try
         {
-            finish();
+            finalize();
         }
         catch (...)
         {

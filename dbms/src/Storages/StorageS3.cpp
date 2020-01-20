@@ -49,7 +49,7 @@ namespace
             const String & key)
             : name(name_)
         {
-            read_buf = getReadBuffer<ReadBufferFromS3>(compression_method, client, bucket, key);
+            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -98,7 +98,8 @@ namespace
             const String & key)
             : sample_block(sample_block_)
         {
-            write_buf = getWriteBuffer<WriteBufferFromS3>(compression_method, client, bucket, key, min_upload_part_size);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size), compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -132,23 +133,21 @@ namespace
 }
 
 
-StorageS3::StorageS3(const S3::URI & uri_,
+StorageS3::StorageS3(
+    const S3::URI & uri_,
     const String & access_key_id_,
     const String & secret_access_key_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(columns_)
+    : IStorage(table_id_, columns_)
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
-    , database_name(database_name_)
-    , table_name(table_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
     , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
@@ -173,7 +172,7 @@ BlockInputStreams StorageS3::read(
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client,
         uri.bucket,
         uri.key);
@@ -184,17 +183,11 @@ BlockInputStreams StorageS3::read(
     return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void StorageS3::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
-}
-
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name, min_upload_part_size, getSampleBlock(), context_global,
-        IStorage::chooseCompressionMethod(uri.endpoint, compression_method),
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client, uri.bucket, uri.key);
 }
 
@@ -233,7 +226,7 @@ void registerStorageS3(StorageFactory & factory)
         else
             compression_method = "auto";
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 

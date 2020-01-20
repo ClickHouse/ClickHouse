@@ -1,7 +1,5 @@
 #pragma once
 
-#include <queue>
-
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <common/logger_useful.h>
@@ -87,7 +85,7 @@ protected:
 
     /// Gets the next block from the source corresponding to the `current`.
     template <typename TSortCursor>
-    void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
+    void fetchNextBlock(const TSortCursor & current, SortingHeap<TSortCursor> & queue);
 
 
     Block header;
@@ -109,14 +107,10 @@ protected:
     size_t num_columns = 0;
     std::vector<SharedBlockPtr> source_blocks;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
-    using Queue = std::priority_queue<SortCursor>;
-    Queue queue_without_collation;
-
-    using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
-    QueueWithCollation queue_with_collation;
+    SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SortCursorWithCollation> queue_with_collation;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
@@ -177,13 +171,10 @@ protected:
 private:
 
     /** We support two different cursors - with Collation and without.
-     * Templates are used instead of polymorphic SortCursor and calls to virtual functions.
-     */
-    template <typename TSortCursor>
-    void initQueue(std::priority_queue<TSortCursor> & queue);
-
-    template <typename TSortCursor>
-    void merge(MutableColumns & merged_columns, std::priority_queue<TSortCursor> & queue);
+      * Templates are used instead of polymorphic SortCursor and calls to virtual functions.
+      */
+    template <typename TSortingHeap>
+    void merge(MutableColumns & merged_columns, TSortingHeap & queue);
 
     Logger * log = &Logger::get("MergingSortedBlockInputStream");
 
