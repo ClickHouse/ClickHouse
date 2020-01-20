@@ -10,7 +10,7 @@ If you want to help ClickHouse with documentation you can face, for example, the
 
 - "I don't know how to write."
     
-    We prepared some [recommendations](#what-to-write) for you.
+    We have prepared some [recommendations](#what-to-write) for you.
 
 - "I know what I want to write, but I don't know how to contribute to docs."
 
