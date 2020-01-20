@@ -39,6 +39,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool hasEvenlyDistributedRead() const override { return true; }
+
 private:
     const std::string name;
     bool multithreaded;
