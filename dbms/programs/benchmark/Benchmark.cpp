@@ -492,7 +492,7 @@ private:
 
 public:
 
-    ~Benchmark()
+    ~Benchmark() override
     {
         shutdown = true;
     }
