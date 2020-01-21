@@ -955,14 +955,100 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
+template <typename T>
+inline std::enable_if_t<!is_integral_v<T>, void>
+readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<is_integral_v<T>, void>
+readTextWithSuffix(T & x, ReadBuffer & buf)
+{
+    readIntText(x, buf);
+    if (buf.eof())
+        return;
+    switch (*buf.position())
+    {
+        case 'k':
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000;
+                return;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 10);
+            }
+            else
+            {
+                return;
+            }
+            break;
+        case 'M':
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000000; /// 1e+6
+                return;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 20);
+            }
+            else
+            {
+                return;
+            }
+            break;
+        case 'G':
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000000000; /// 1e+9
+                return;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 30);
+            }
+            else
+            {
+                return;
+            }
+            break;
+        case 'T':
+            ++buf.position();
+            if (buf.eof())
+            {
+                x *= 1000000000000; /// 1e+12
+                return;
+            }
+            else if (*buf.position() == 'i')
+            {
+                x = (x << 40);
+            }
+            else
+            {
+                return;
+            }
+            break;
+        default:
+            return;
+    }
+    ++buf.position();
+    return;
+}
+
 /// Read something from text format, but expect complete parse of given text
 /// For example: 723145 -- ok, 213MB -- not ok
+/// Integral values parsing with suffix (k, ki, M, Mi, G, Gi, T, Ti)
+/// For example: 133M = 133000000
 template <typename T>
 inline T completeParse(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readText(res, buf);
+    readTextWithSuffix(res, buf);
     assertEOF(buf);
     return res;
 }
