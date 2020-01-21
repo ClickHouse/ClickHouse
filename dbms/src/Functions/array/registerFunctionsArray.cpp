@@ -1,6 +1,5 @@
 namespace DB
 {
-
 class FunctionFactory;
 
 void registerFunctionArray(FunctionFactory & factory);
@@ -33,7 +32,7 @@ void registerFunctionArrayDistinct(FunctionFactory & factory);
 void registerFunctionArrayFlatten(FunctionFactory & factory);
 void registerFunctionArrayWithConstant(FunctionFactory & factory);
 void registerFunctionArrayZip(FunctionFactory & factory);
-void registerFunctionAUC(FunctionFactory &);
+void registerFunctionArrayAUC(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -67,8 +66,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayFlatten(factory);
     registerFunctionArrayWithConstant(factory);
     registerFunctionArrayZip(factory);
-    registerFunctionAUC(factory);
+    registerFunctionArrayAUC(factory);
 }
 
 }
-
