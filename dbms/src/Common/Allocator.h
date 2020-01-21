@@ -118,12 +118,12 @@ public:
         else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD
                  && alignment <= MALLOC_MIN_ALIGNMENT)
         {
+            /// Resize malloc'd memory region with no special alignment requirement.
+            CurrentMemoryTracker::realloc(old_size, new_size);
+
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
                 DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-            /// Resize malloc'd memory region with no special alignment requirement.
-            CurrentMemoryTracker::realloc(old_size, new_size);
 
             buf = new_buf;
             if constexpr (clear_memory)
@@ -132,26 +132,25 @@ public:
         }
         else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
         {
+            /// Resize mmap'd memory region.
+            CurrentMemoryTracker::realloc(old_size, new_size);
+
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
             buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
                                     PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
-            /// Resize mmap'd memory region.
-            CurrentMemoryTracker::realloc(old_size, new_size);
-
             /// No need for zero-fill, because mmap guarantees it.
         }
         else if (new_size < MMAP_THRESHOLD)
         {
-            void * new_buf = allocNoTrack(new_size, alignment);
-            memcpy(new_buf, buf, std::min(old_size, new_size));
-            freeNoTrack(buf, old_size);
-
             /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
             CurrentMemoryTracker::realloc(old_size, new_size);
 
+            void * new_buf = allocNoTrack(new_size, alignment);
+            memcpy(new_buf, buf, std::min(old_size, new_size));
+            freeNoTrack(buf, old_size);
             buf = new_buf;
         }
         else
