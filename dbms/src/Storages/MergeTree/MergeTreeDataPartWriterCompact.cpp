@@ -77,7 +77,8 @@ void MergeTreeDataPartWriterCompact::write(
 
     if (rows_in_buffer < last_mark_rows)
     {
-        /// FIXME need comment
+        /// If it's not enough rows for granule, accumulate blocks
+        ///  and save how much rows we already have.
         next_index_offset = last_mark_rows - rows_in_buffer;
         return;
     }
@@ -114,6 +115,7 @@ void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
         size_t rows_written = total_rows - current_row;
         current_row += rows_to_write;
 
+        /// Correct last mark as it should contain exact amount of rows.
         if (current_row >= total_rows && rows_written != rows_to_write)
         {
             rows_to_write = rows_written;
