@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Parsers/IAST.h>
-#include <iostream>
 
 namespace DB
 {
@@ -69,10 +68,8 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
             case MatchColumnsMode::NameOrDefault:
                 if (input_header.has(res_elem.name))
                     conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
-		else {
-		    std::cerr << "column " << result_col_num << " will be set to default\n";	
+		else
                     conversion[result_col_num] = USE_DEFAULT;
-		}
 		break;
         }
 
