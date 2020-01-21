@@ -12,7 +12,7 @@ Changelog category (leave one):
 - Non-significant (changelog entry is not required)
 
 
-Changelog entry (short description of added functionality):
+Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 
 ...
 
