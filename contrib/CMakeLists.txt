@@ -331,3 +331,7 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
+
+if (USE_INTERNAL_REPLXX)
+    add_subdirectory (replxx-cmake)
+endif()
