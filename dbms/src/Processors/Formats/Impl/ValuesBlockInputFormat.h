@@ -34,7 +34,7 @@ public:
     String getName() const override { return "ValuesBlockInputFormat"; }
 
     void resetParser() override;
-    
+
     /// TODO: remove context somehow.
     void setContext(const Context & context_) { context = std::make_unique<Context>(context_); }
 
