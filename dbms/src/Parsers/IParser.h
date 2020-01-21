@@ -5,6 +5,8 @@
 
 #include <Core/Defines.h>
 #include <Core/Types.h>
+#include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/TokenIterator.h>
 
@@ -57,13 +59,15 @@ public:
         using TokenIterator::TokenIterator;
 
         uint32_t depth = 0;
-        uint32_t max_depth = 1000;
+        uint32_t max_depth = 0;
+
+        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
 
         void increaseDepth()
         {
             ++depth;
-            if (depth > max_depth)
-                throw Exception("Maximum parse depth exceeded", ErrorCodes::TOO_DEEP_RECURSION);
+            if (max_depth > 0 && depth > max_depth)
+                throw Exception("Maximum parse depth (" + toString(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.", ErrorCodes::TOO_DEEP_RECURSION);
         }
 
         void decreaseDepth()

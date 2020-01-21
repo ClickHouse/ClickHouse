@@ -104,12 +104,11 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     }
 
     if (query_context)
+    {
         query_id = query_context->getCurrentQueryId();
 
 #if defined(__linux__)
-    /// Set "nice" value if required.
-    if (query_context)
-    {
+        /// Set "nice" value if required.
         Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
         {
@@ -120,8 +119,8 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
             os_thread_priority = new_os_thread_priority;
         }
-    }
 #endif
+    }
 
     initPerformanceCounters();
     initQueryProfiler();
@@ -198,6 +197,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
     memory_tracker.setParent(nullptr);
 
+    query_id.clear();
     query_context = nullptr;
     thread_group.reset();
 

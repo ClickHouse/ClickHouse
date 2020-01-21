@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import print_function
 import sys
 import os
 import os.path
@@ -72,6 +73,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
+    total_time = (datetime.now() - start_time).total_seconds()
+
     # Normalize randomized database names in stdout, stderr files.
     os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
     os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
@@ -81,7 +84,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
     stderr = unicode(stderr, errors='replace', encoding='utf-8')
 
-    return proc, stdout, stderr
+    return proc, stdout, stderr, total_time
 
 
 def need_retry(stderr):
@@ -104,7 +107,7 @@ def get_stacktraces(server_pid):
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    cmd = "lsof -i tcp:{port} | fgrep 'TCP *:{port} (LISTEN)'".format(port=server_tcp_port)
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
@@ -149,6 +152,10 @@ def run_tests_array(all_tests_with_params):
 
     client_options = get_additional_client_options(args)
 
+    def print_test_time(test_time):
+        if args.print_time:
+            print(" {0:.2f} sec.".format(test_time), end='')
+
     if len(all_tests):
         print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
 
@@ -175,7 +182,11 @@ def run_tests_array(all_tests_with_params):
                     or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
-            elif not args.no_long and 'long' in name:
+            elif not args.no_long and ('long' in name
+                    # Tests for races and deadlocks usually are runned in loop
+                    #  for significant amount of time
+                    or 'deadlock' in name
+                    or 'race' in name):
                 print(MSG_SKIPPED + " - no long")
                 skipped_total += 1
             else:
@@ -194,7 +205,7 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                    proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -203,11 +214,13 @@ def run_tests_array(all_tests_with_params):
                                 raise
 
                         failures += 1
-                        print("{0} - Timeout!".format(MSG_FAIL))
+                        print(MSG_FAIL, end='')
+                        print_test_time(total_time)
+                        print(" - Timeout!")
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
-                            proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -216,7 +229,9 @@ def run_tests_array(all_tests_with_params):
                         if proc.returncode != 0:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - return code {}".format(proc.returncode))
 
                             if stderr:
                                 print(stderr.encode('utf-8'))
@@ -227,24 +242,34 @@ def run_tests_array(all_tests_with_params):
                         elif stderr:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - having stderror:\n{}".format(stderr.encode('utf-8')))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - having exception:\n{}".format(stdout.encode('utf-8')))
                         elif not os.path.isfile(reference_file):
-                            print("{0} - no reference file".format(MSG_UNKNOWN))
+                            print(MSG_UNKNOWN, end='')
+                            print_test_time(total_time)
+                            print(" - no reference file")
                         else:
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                             if result_is_different:
                                 diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                 failures += 1
-                                print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+                                print(MSG_FAIL, end='')
+                                print_test_time(total_time)
+                                print(" - result differs with reference:\n{}".format(diff))
                             else:
                                 passed_total += 1
                                 failures_chain = 0
-                                print(MSG_OK)
+                                print(MSG_OK, end='')
+                                print_test_time(total_time)
+                                print()
                                 if os.path.exists(stdout_file):
                                     os.remove(stdout_file)
                                 if os.path.exists(stderr_file):
@@ -502,13 +527,14 @@ if __name__ == '__main__':
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
+    parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
+    parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
-    group.add_argument('--client-option', nargs='+', help='Specify additional client argument')
 
     args = parser.parse_args()
 

@@ -3,7 +3,7 @@
 HTTP интерфейс позволяет использовать ClickHouse на любой платформе, из любого языка программирования. У нас он используется для работы из Java и Perl, а также из shell-скриптов. В других отделах, HTTP интерфейс используется из Perl, Python и Go. HTTP интерфейс более ограничен по сравнению с родным интерфейсом, но является более совместимым.
 
 По умолчанию, clickhouse-server слушает HTTP на порту 8123 (это можно изменить в конфиге).
-Если запросить GET / без параметров, то вернётся строка "Ok." (с переводом строки на конце). Это может быть использовано в скриптах проверки живости.
+Если запросить GET / без параметров, то вернётся строка "Ok." (с переводом строки на конце). Это может быть использовано в скриптах проверки доступности.
 
 ```bash
 $ curl 'http://localhost:8123/'
@@ -28,8 +28,12 @@ $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
+Date: Wed, 27 Nov 2019 10:30:18 GMT
 Connection: Close
-Date: Fri, 16 Nov 2012 19:21:50 GMT
+Content-Type: text/tab-separated-values; charset=UTF-8
+X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
+X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 
 1
 ```
@@ -169,9 +173,9 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 По умолчанию используется БД, которая прописана в настройках сервера, как БД по умолчанию. По умолчанию, это - БД default. Также вы всегда можете указать БД через точку перед именем таблицы.
 
-Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
+Имя пользователя и пароль могут быть указаны в одном из трёх вариантов:
 
-1. С использованием HTTP Basic Authentification. Пример:
+1. С использованием HTTP Basic Authentication. Пример:
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
@@ -181,6 +185,12 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+```
+
+3. С использованием заголовков ‘X-ClickHouse-User’ и ‘X-ClickHouse-Key’. Пример:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
 ```
 
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.

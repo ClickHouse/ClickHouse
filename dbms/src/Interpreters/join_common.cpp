@@ -32,18 +32,58 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
         convertColumnToNullable(block.getByPosition(i));
 }
 
-ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized)
+/// @warning It assumes that every NULL has default value in nested column (or it does not matter)
+void removeColumnNullability(ColumnWithTypeAndName & column)
+{
+    if (!column.type->isNullable())
+        return;
+
+    column.type = static_cast<const DataTypeNullable &>(*column.type).getNestedType();
+    if (column.column)
+    {
+        auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
+        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
+        MutableColumnPtr mutable_column = (*std::move(nested_column)).mutate();
+        column.column = std::move(mutable_column);
+    }
+}
+
+ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 {
     ColumnRawPtrs ptrs;
     ptrs.reserve(names.size());
+
+    for (auto & column_name : names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        ptrs.push_back(column.get());
+    }
+
+    return ptrs;
+}
+
+Columns materializeColumns(const Block & block, const Names & names)
+{
+    Columns materialized;
     materialized.reserve(names.size());
 
     for (auto & column_name : names)
     {
         const auto & src_column = block.getByName(column_name).column;
         materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
-        ptrs.push_back(materialized.back().get());
     }
+
+    return materialized;
+}
+
+ColumnRawPtrs getRawPointers(const Columns & columns)
+{
+    ColumnRawPtrs ptrs;
+    ptrs.reserve(columns.size());
+
+    for (auto & column : columns)
+        ptrs.push_back(column.get());
 
     return ptrs;
 }

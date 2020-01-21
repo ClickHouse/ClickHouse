@@ -34,7 +34,9 @@
 - نظارت بر
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
-        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        - [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
+        - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+        - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../operations/table_engines/graphitemergetree.md#rollup-configuration) could be applied
     - [Grafana](https://grafana.com/)
         - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     - [Prometheus](https://prometheus.io/)

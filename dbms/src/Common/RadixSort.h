@@ -165,12 +165,10 @@ struct RadixSortIntTraits
 
 
 template <typename T>
-using RadixSortNumTraits =
-    std::conditional_t<std::is_integral_v<T>,
-        std::conditional_t<std::is_unsigned_v<T>,
-            RadixSortUIntTraits<T>,
-            RadixSortIntTraits<T>>,
-        RadixSortFloatTraits<T>>;
+using RadixSortNumTraits = std::conditional_t<
+    is_integral_v<T>,
+    std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
+    RadixSortFloatTraits<T>>;
 
 
 template <typename Traits>

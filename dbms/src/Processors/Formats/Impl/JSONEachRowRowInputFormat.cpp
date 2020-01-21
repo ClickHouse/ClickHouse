@@ -65,9 +65,9 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
 
     if (prev_positions.size() > key_index
         && prev_positions[key_index]
-        && name == *lookupResultGetKey(prev_positions[key_index]))
+        && name == prev_positions[key_index]->getKey())
     {
-        return *lookupResultGetMapped(prev_positions[key_index]);
+        return prev_positions[key_index]->getMapped();
     }
     else
     {
@@ -78,7 +78,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return *lookupResultGetMapped(it);
+            return it->getMapped();
         }
         else
             return UNKNOWN_FIELD;
@@ -256,18 +256,91 @@ void JSONEachRowRowInputFormat::syncAfterError()
     skipToUnescapedNextLineOrEOF(in);
 }
 
+void JSONEachRowRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    nested_prefix_length = 0;
+    read_columns.clear();
+    seen_columns.clear();
+    prev_positions.clear();
+}
+
 
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
-        const Context &,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings);
     });
+}
+
+static bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+{
+    skipWhitespaceIfAny(in);
+
+    char * pos = in.position();
+    size_t balance = 0;
+    bool quotes = false;
+
+    while (loadAtPosition(in, memory, pos)  && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
+    {
+        if (quotes)
+        {
+            pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '\\')
+            {
+                ++pos;
+                if (loadAtPosition(in, memory, pos))
+                    ++pos;
+            }
+            else if (*pos == '"')
+            {
+                ++pos;
+                quotes = false;
+            }
+        }
+        else
+        {
+            pos = find_first_symbols<'{', '}', '\\', '"'>(pos, in.buffer().end());
+            if (pos == in.buffer().end())
+                continue;
+            if (*pos == '{')
+            {
+                ++balance;
+                ++pos;
+            }
+            else if (*pos == '}')
+            {
+                --balance;
+                ++pos;
+            }
+            else if (*pos == '\\')
+            {
+                ++pos;
+                if (loadAtPosition(in, memory, pos))
+                    ++pos;
+            }
+            else if (*pos == '"')
+            {
+                quotes = true;
+                ++pos;
+            }
+        }
+    }
+
+    saveUpToPosition(in, memory, pos);
+    return loadAtPosition(in, memory, pos);
+}
+
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

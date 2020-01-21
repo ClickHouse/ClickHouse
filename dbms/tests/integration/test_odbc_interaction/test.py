@@ -91,7 +91,8 @@ def test_mysql_simple_select_works(started_cluster):
     with conn.cursor() as cursor:
         cursor.execute("INSERT INTO clickhouse.{} VALUES(50, 'null-guy', 127, 255, NULL), (100, 'non-null-guy', 127, 255, 511);".format(table_name))
         conn.commit()
-    assert node1.query("SELECT column_x FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name)) == '\\N\n511\n'
+    assert node1.query("SELECT column_x FROM odbc('DSN={}', '{}') SETTINGS external_table_functions_use_nulls=1".format(mysql_setup["DSN"], table_name)) == '\\N\n511\n'
+    assert node1.query("SELECT column_x FROM odbc('DSN={}', '{}') SETTINGS external_table_functions_use_nulls=0".format(mysql_setup["DSN"], table_name)) == '0\n511\n'
 
     node1.query('''
 CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');

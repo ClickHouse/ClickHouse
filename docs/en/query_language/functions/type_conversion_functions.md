@@ -40,7 +40,35 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8|16|32|64)OrZero
 
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns 0.
+
+**Example**
+
+```sql
+select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
+```
+```text
+┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
+│                  123123 │                         0 │
+└─────────────────────────┴───────────────────────────┘
+```
+
+
 ## toInt(8|16|32|64)OrNull
+
+It takes an argument of type String and tries to parse it into Int (8 | 16 | 32 | 64). If failed, returns NULL.
+
+**Example**
+
+```sql
+select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
+```
+```text
+┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
+│                  123123 │                      ᴺᵁᴸᴸ │
+└─────────────────────────┴───────────────────────────┘
+```
+
 
 ## toUInt(8|16|32|64)
 
@@ -321,10 +349,32 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second)
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second) {#function-tointerval}
 
-Converts a Number type argument to a Interval type (duration).
-The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
+Converts a Number type argument to an [Interval](../../data_types/special_data_types/interval.md) data type.
+
+**Syntax**
+
+```sql
+toIntervalSecond(number)
+toIntervalMinute(number)
+toIntervalHour(number)
+toIntervalDay(number)
+toIntervalWeek(number)
+toIntervalMonth(number)
+toIntervalQuarter(number)
+toIntervalYear(number)
+```
+
+**Parameters**
+
+- `number` — Duration of interval. Positive integer number.
+
+**Returned values**
+
+- The value in `Interval` data type.
+
+**Example**
 
 ```sql
 WITH

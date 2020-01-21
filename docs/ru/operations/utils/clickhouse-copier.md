@@ -143,7 +143,7 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
                  NOTE: In spite of this section is optional (if it is not specified, all partitions will be copied),
                  it is strictly recommended to specify them explicitly.
-                 If you already have some ready paritions on destination cluster they
+                 If you already have some ready partitions on destination cluster they
                  will be removed at the start of the copying since they will be interpeted
                  as unfinished data from the previous copying!!!
             -->

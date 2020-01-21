@@ -671,9 +671,12 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
 
-## groupArrayInsertAt(x)
+## groupArrayInsertAt(value, position)
 
 Inserts a value into the array in the specified position.
+
+!!! note "Note"
+    This function uses zero-based positions, contrary to the conventional one-based positions for SQL arrays.
 
 Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
 
@@ -858,7 +861,7 @@ Don't use this function for calculating timings. There is a more suitable functi
 
 ## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds. 
+Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds.
 
 ```sql
 quantileTiming(level)(expr)
@@ -868,7 +871,7 @@ quantileTiming(level)(expr)
 
 - `level` — Quantile level. Range: [0, 1].
 - `expr` — [Expression](../syntax.md#syntax-expressions) returning a [Float*](../../data_types/float.md)-type number. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
-    
+
     - If negative values are passed to the function, the behavior is undefined.
     - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
@@ -1007,6 +1010,16 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## categoricalInformationValue
+
+Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
+
+```sql
+categoricalInformationValue(category1, category2, ..., tag)
+```
+
+The result indicates how a discrete (categorical) feature `[category1, category2, ...]` contribute to a learning model which predicting the value of `tag`.
+
 ## simpleLinearRegression
 
 Performs simple (unidimensional) linear regression.
@@ -1069,39 +1082,40 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Fitting
 
-    Such query may be used.
+**1.** Fitting
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Such query may be used.
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    ```
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
 
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+```
 
-2. Predicting
+Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+**2.** Predicting
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
 
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    `test_data` is a table like `train_data` but may not contain target value.
+The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+`test_data` is a table like `train_data` but may not contain target value.
 
 ### Notes {#agg_functions-stochasticlinearregression-notes}
 

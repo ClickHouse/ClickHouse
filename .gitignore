@@ -244,4 +244,10 @@ website/package-lock.json
 # ccls cache
 /.ccls-cache
 
+# clangd cache
+/.clangd
+
 /compile_commands.json
+
+# Toolchains
+/cmake/toolchain/*

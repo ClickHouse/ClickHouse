@@ -6,9 +6,13 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
+#include <Common/hex.h>
+#include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
@@ -32,10 +36,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int UNKNOWN_CODEC;
+    extern const int CANNOT_DECOMPRESS;
     extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CORRUPTED_DATA;
 }
 
 
@@ -56,12 +63,32 @@ namespace
 
         return pools;
     }
+
+    void assertChecksum(CityHash_v1_0_2::uint128 expected, CityHash_v1_0_2::uint128 calculated)
+    {
+        if (expected != calculated)
+        {
+            String message = "Checksum of extra info doesn't match: corrupted data."
+                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
+                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
+                + ".";
+            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        }
+    }
+
 }
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_)
-    : storage(storage_), pool{pool_}, path{storage.path + name_ + '/'}
+    StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
+    /// It's important to initialize members before `thread` to avoid race.
+    : storage(storage_)
+    , pool(std::move(pool_))
+    , name(std::move(name_))
+    , path{storage.path + name + '/'}
+    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
@@ -69,10 +96,6 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
 {
-    const Settings & settings = storage.global_context.getSettingsRef();
-    should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
-    min_batched_block_size_rows = settings.min_insert_block_size_rows;
-    min_batched_block_size_bytes = settings.min_insert_block_size_bytes;
 }
 
 
@@ -246,7 +269,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         Settings insert_settings;
         std::string insert_query;
-        readQueryAndSettings(in, insert_settings, insert_query);
+        readHeader(in, insert_settings, insert_query, log);
 
         RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
 
@@ -265,20 +288,55 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
-void StorageDistributedDirectoryMonitor::readQueryAndSettings(
-    ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const
+void StorageDistributedDirectoryMonitor::readHeader(
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, Logger * log)
 {
-    UInt64 magic_number_or_query_size;
+    UInt64 query_size;
+    readVarUInt(query_size, in);
 
-    readVarUInt(magic_number_or_query_size, in);
-
-    if (magic_number_or_query_size == UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER))
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
     {
-        insert_settings.deserialize(in);
-        readVarUInt(magic_number_or_query_size, in);
+        /// Read the header as a string.
+        String header;
+        readStringBinary(header, in);
+
+        /// Check the checksum of the header.
+        CityHash_v1_0_2::uint128 checksum;
+        readPODBinary(checksum, in);
+        assertChecksum(checksum, CityHash_v1_0_2::CityHash128(header.data(), header.size()));
+
+        /// Read the parts of the header.
+        ReadBufferFromString header_buf(header);
+
+        UInt64 initiator_revision;
+        readVarUInt(initiator_revision, header_buf);
+        if (ClickHouseRevision::get() < initiator_revision)
+        {
+            LOG_WARNING(
+                log,
+                "ClickHouse shard version is older than ClickHouse initiator version. "
+                    << "It may lack support for new features.");
+        }
+
+        readStringBinary(insert_query, header_buf);
+        insert_settings.deserialize(header_buf);
+
+        /// Add handling new data here, for example:
+        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
+        ///    readVarUInt(my_new_data, header_buf);
+
+        return;
     }
-    insert_query.resize(magic_number_or_query_size);
-    in.readStrict(insert_query.data(), magic_number_or_query_size);
+
+    if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
+    {
+        insert_settings.deserialize(in, SettingsBinaryFormat::OLD);
+        readStringBinary(insert_query, in);
+        return;
+    }
+
+    insert_query.resize(query_size);
+    in.readStrict(insert_query.data(), query_size);
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -355,8 +413,19 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// we must try to re-send exactly the same batches.
             /// So we save contents of the current batch into the current_batch_file_path file
             /// and truncate it afterwards if all went well.
-            WriteBufferFromFile out{parent.current_batch_file_path};
-            writeText(out);
+
+            /// Temporary file is required for atomicity.
+            String tmp_file{parent.current_batch_file_path + ".tmp"};
+
+            if (Poco::File{tmp_file}.exists())
+                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
+
+            {
+                WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
+                writeText(out);
+            }
+
+            Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
@@ -380,7 +449,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                parent.readQueryAndSettings(in, insert_settings, insert_query);
+                parent.readHeader(in, insert_settings, insert_query, parent.log);
 
                 if (first)
                 {
@@ -451,6 +520,53 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 };
 
+class DirectoryMonitorBlockInputStream : public IBlockInputStream
+{
+public:
+    explicit DirectoryMonitorBlockInputStream(const String & file_name)
+        : in(file_name)
+        , decompressing_in(in)
+        , block_in(decompressing_in, ClickHouseRevision::get())
+        , log{&Logger::get("DirectoryMonitorBlockInputStream")}
+    {
+        Settings insert_settings;
+        String insert_query;
+        StorageDistributedDirectoryMonitor::readHeader(in, insert_settings, insert_query, log);
+
+        block_in.readPrefix();
+        first_block = block_in.read();
+        header = first_block.cloneEmpty();
+    }
+
+    String getName() const override { return "DirectoryMonitor"; }
+
+protected:
+    Block getHeader() const override { return header; }
+    Block readImpl() override
+    {
+        if (first_block)
+            return std::move(first_block);
+
+        return block_in.read();
+    }
+
+    void readSuffix() override { block_in.readSuffix(); }
+
+private:
+    ReadBufferFromFile in;
+    CompressedReadBuffer decompressing_in;
+    NativeBlockInputStream block_in;
+
+    Block first_block;
+    Block header;
+
+    Logger * log;
+};
+
+BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
+{
+    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
+}
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
@@ -488,7 +604,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readQueryAndSettings(in, insert_settings, insert_query);
+            readHeader(in, insert_settings, insert_query, log);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -540,6 +656,8 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::UNKNOWN_CODEC
+        || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
 }
 
@@ -571,7 +689,14 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
-    return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
+    return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
+}
+
+void StorageDistributedDirectoryMonitor::updatePath()
+{
+    std::lock_guard lock{mutex};
+    path = storage.path + name + '/';
+    current_batch_file_path = path + "current_batch.txt";
 }
 
 }

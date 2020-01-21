@@ -12,8 +12,7 @@ SYSTEM SYNC REPLICA byte_identical_r2;
 ALTER TABLE byte_identical_r1 ADD COLUMN y DEFAULT rand();
 OPTIMIZE TABLE byte_identical_r1 PARTITION tuple() FINAL;
 
-SET any_join_distinct_right_table_keys = 1;
-SELECT x, t1.y - t2.y FROM byte_identical_r1 t1 ANY INNER JOIN byte_identical_r2 t2 USING x ORDER BY x;
+SELECT x, t1.y - t2.y FROM byte_identical_r1 t1 SEMI LEFT JOIN byte_identical_r2 t2 USING x ORDER BY x;
 
 DROP TABLE byte_identical_r1;
 DROP TABLE byte_identical_r2;

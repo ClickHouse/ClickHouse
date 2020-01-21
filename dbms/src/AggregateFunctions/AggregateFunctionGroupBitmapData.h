@@ -11,7 +11,10 @@
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
 // TODO: find out what it is. On github, they have proper inteface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
+#pragma GCC diagnostic push
+#pragma GCC diagnostic warning "-Wold-style-cast"
 #include <roaring/roaring.h>
+#pragma GCC diagnostic pop
 
 namespace DB
 {
@@ -581,11 +584,28 @@ public:
         return max_val;
     }
 
+    /**
+     * Replace value
+     */
+    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
+    {
+        if (isSmall())
+            toLarge();
+        for (size_t i = 0; i < num; ++i)
+        {
+            if (from_vals[i] == to_vals[i])
+                continue;
+            bool changed = roaring_bitmap_remove_checked(rb, from_vals[i]);
+            if (changed)
+                roaring_bitmap_add(rb, to_vals[i]);
+        }
+    }
+
 private:
     /// To read and write the DB Buffer directly, migrate code from CRoaring
     void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)
     {
-        void * container = NULL; // hold value of last container touched
+        void * container = nullptr; // hold value of last container touched
         uint8_t typecode = 0; // typecode of last container touched
         uint32_t prev = 0; // previous valued inserted
         size_t i = 0; // index of value
@@ -630,7 +650,7 @@ private:
         size_t ctr = 0;
         for (Int32 i = 0; i < ra->size; ++i)
         {
-            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], ((UInt32)ra->keys[i]) << 16);
+            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], (static_cast<UInt32>(ra->keys[i])) << 16);
             ctr += num_added;
         }
     }
@@ -641,18 +661,18 @@ private:
         switch (typecode)
         {
             case BITSET_CONTAINER_TYPE_CODE:
-                return db_bitset_container_to_uint32_array(dbBuf, (const bitset_container_t *)container, base);
+                return db_bitset_container_to_uint32_array(dbBuf, static_cast<const bitset_container_t *>(container), base);
             case ARRAY_CONTAINER_TYPE_CODE:
-                return db_array_container_to_uint32_array(dbBuf, (const array_container_t *)container, base);
+                return db_array_container_to_uint32_array(dbBuf, static_cast<const array_container_t *>(container), base);
             case RUN_CONTAINER_TYPE_CODE:
-                return db_run_container_to_uint32_array(dbBuf, (const run_container_t *)container, base);
+                return db_run_container_to_uint32_array(dbBuf, static_cast<const run_container_t *>(container), base);
         }
         return 0;
     }
 
     UInt32 db_bitset_container_to_uint32_array(DB::WriteBuffer & dbBuf, const bitset_container_t * cont, UInt32 base) const
     {
-        return (UInt32)db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base);
+        return static_cast<UInt32>(db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base));
     }
 
     size_t db_bitset_extract_setbits(DB::WriteBuffer & dbBuf, UInt64 * bitset, size_t length, UInt32 base) const

@@ -5,7 +5,7 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 
 # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
 # See https://bugs.llvm.org/show_bug.cgi?id=16404
-if (COMPILER_CLANG)
+if (COMPILER_CLANG AND NOT (CMAKE_CROSSCOMPILING AND ARCH_AARCH64))
     execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
 else ()
     set (BUILTINS_LIBRARY "-lgcc")
@@ -17,6 +17,14 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
+
+# glibc-compatibility library relies to fixed version of libc headers
+# (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
+# This is for x86_64. For other architectures we have separate toolchains.
+if (ARCH_AMD64)
+    set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+    set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
+endif ()
 
 # Global libraries
 

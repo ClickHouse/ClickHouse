@@ -55,15 +55,17 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 
         map.emplace(data[i], it, inserted);
         if (inserted)
-            *lookupResultGetMapped(it) = 1;
+            it->getMapped() = 1;
         else
-            ++*lookupResultGetMapped(it);
+            ++it->getMapped();
     }
 
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
         auto it = map.find(data[i]);
-        ++*lookupResultGetMapped(it);
+        auto curr = ++it;
+        if (curr)
+            curr->getMapped();
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
@@ -81,10 +83,10 @@ void insert(Map & map, StringRef & k)
     typename Map::LookupResult it;
     map.emplace(k, it, inserted, nullptr);
     if (inserted)
-        *lookupResultGetMapped(it) = 1;
+        it->getMapped() = 1;
     else
-        ++*lookupResultGetMapped(it);
-    std::cout << *lookupResultGetMapped(map.find(k))<< std::endl;
+        ++it->getMapped();
+    std::cout << map.find(k)->getMapped() << std::endl;
 }
 
 int main(int argc, char ** argv)

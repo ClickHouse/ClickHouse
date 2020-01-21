@@ -3,7 +3,7 @@
 {% set palette = config.theme.palette %}
 {% set font = config.theme.font %}
 <!DOCTYPE html>
-<html lang="{{ lang.t('language') }}" class="no-js">
+<html lang="{{ lang.t('language') }}" class="no-js" data-version="{{ config.extra.version_prefix }}">
   <head>
     {% block site_meta %}
       <meta charset="utf-8">
@@ -49,6 +49,7 @@
       {% endif %}
     {% endblock %}
     {% block styles %}
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.css" />
       <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application.2a88008a.css">
       {% if palette.primary or palette.accent %}
         <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application-palette.792431c1.css">
@@ -269,6 +270,19 @@
           )
       });
     </script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.js"></script>
+    <script type="text/javascript"> docsearch({
+apiKey: 'e239649803024433599de47a53b2d416',
+indexName: 'yandex_clickhouse',
+inputSelector: '#md-search__input',
+algoliaOptions: {
+  hitsPerPage: 25,
+  'facetFilters': ["lang:{{ lang.t('language') }}"]
+},
+debug: false
+});
+</script>
+
     <!-- Yandex.Metrika counter -->
     <script type="text/javascript">
         (function (d, w, c) {

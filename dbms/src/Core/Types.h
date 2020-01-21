@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <common/Types.h>
+#include <Common/intExp.h>
 
 
 namespace DB
@@ -29,6 +31,8 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
+    DateTime32 = DateTime,
+    DateTime64,
     String,
     FixedString,
     Enum8,
@@ -144,12 +148,19 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
+    static T getScaleMultiplier(UInt32 scale);
+
     T value;
 };
+
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
+
+// TODO (nemkov): consider making a strong typedef
+//using DateTime32 = time_t;
+using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
 template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
@@ -168,6 +179,10 @@ template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
+
+template <> inline Int32 Decimal32::getScaleMultiplier(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
 
 inline const char * getTypeName(TypeIndex idx)
 {
@@ -188,6 +203,7 @@ inline const char * getTypeName(TypeIndex idx)
         case TypeIndex::Float64:    return TypeName<Float64>::get();
         case TypeIndex::Date:       return "Date";
         case TypeIndex::DateTime:   return "DateTime";
+        case TypeIndex::DateTime64: return "DateTime64";
         case TypeIndex::String:     return TypeName<String>::get();
         case TypeIndex::FixedString: return "FixedString";
         case TypeIndex::Enum8:      return "Enum8";

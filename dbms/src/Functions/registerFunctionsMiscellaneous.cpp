@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include <config_core.h>
 
 namespace DB
 {
@@ -7,6 +7,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentQuota(FunctionFactory &);
+void registerFunctionCurrentRowPolicies(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -34,6 +36,7 @@ void registerFunctionHasColumnInTable(FunctionFactory &);
 void registerFunctionIsFinite(FunctionFactory &);
 void registerFunctionIsInfinite(FunctionFactory &);
 void registerFunctionIsNaN(FunctionFactory &);
+void registerFunctionIfNotFinite(FunctionFactory &);
 void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
@@ -62,6 +65,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentQuota(factory);
+    registerFunctionCurrentRowPolicies(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -89,6 +94,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIsFinite(factory);
     registerFunctionIsInfinite(factory);
     registerFunctionIsNaN(factory);
+    registerFunctionIfNotFinite(factory);
     registerFunctionThrowIf(factory);
     registerFunctionVersion(factory);
     registerFunctionUptime(factory);

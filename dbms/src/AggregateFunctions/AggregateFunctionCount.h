@@ -63,7 +63,11 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
+    /// Reset the state to specified value. This function is not the part of common interface.
+    void set(AggregateDataPtr place, UInt64 new_count)
+    {
+        data(place).count = new_count;
+    }
 };
 
 
@@ -109,8 +113,6 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

@@ -61,19 +61,22 @@ bool RangeHashedDictionary::Range::contains(const RangeStorageType & value) cons
     return left <= value && value <= right;
 }
 
-bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDictionary::Range & right)
+static bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDictionary::Range & right)
 {
     return std::tie(left.left, left.right) < std::tie(right.left, right.right);
 }
 
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const std::string & dictionary_name_,
+    const std::string & database_,
+    const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : dictionary_name{dictionary_name_}
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -127,7 +130,7 @@ void RangeHashedDictionary::getString(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = *lookupResultGetMapped(it);
+            const auto & ranges_and_values = it->getMapped();
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<StringRef> & v)
                   {
@@ -156,7 +159,7 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{dictionary_name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
+            throw Exception{full_name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
                             ErrorCodes::BAD_ARGUMENTS};
     }
 }
@@ -207,7 +210,7 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{dictionary_name + ": dictionary source is empty and 'require_nonempty' property is set.",
+        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
                         ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
@@ -398,7 +401,7 @@ void RangeHashedDictionary::getItemsImpl(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = *lookupResultGetMapped(it);
+            const auto & ranges_and_values = it->getMapped();
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<AttributeType> & v)
                   {
@@ -425,7 +428,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
 
     if (it)
     {
-        auto & values = *lookupResultGetMapped(it);
+        auto & values = it->getMapped();
 
         const auto insert_it
             = std::lower_bound(std::begin(values), std::end(values), range, [](const Value<T> & lhs, const Range & rhs_range)
@@ -498,7 +501,7 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
 
             if (it)
             {
-                auto & values = *lookupResultGetMapped(it);
+                auto & values = it->getMapped();
 
                 const auto insert_it = std::lower_bound(
                     std::begin(values), std::end(values), range, [](const Value<StringRef> & lhs, const Range & rhs_range)
@@ -520,7 +523,7 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{dictionary_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -610,9 +613,9 @@ void RangeHashedDictionary::getIdsAndDates(
 
     for (const auto & key : attr)
     {
-        for (const auto & value : key.getSecond())
+        for (const auto & value : key.getMapped())
         {
-            ids.push_back(key.getFirst());
+            ids.push_back(key.getKey());
             start_dates.push_back(value.range.left);
             end_dates.push_back(value.range.right);
 
@@ -674,7 +677,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 
 void registerDictionaryRangeHashed(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & name,
+    auto create_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -684,12 +687,14 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
             throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception{name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
                             ErrorCodes::BAD_ARGUMENTS};
 
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("range_hashed", create_layout, false);
 }

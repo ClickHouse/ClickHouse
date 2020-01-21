@@ -2,7 +2,7 @@
 
 An external dictionary can be connected from many different sources.
 
-The configuration looks like this:
+If dictionary is configured using xml-file, the configuration looks like this:
 
 ```xml
 <yandex>
@@ -17,6 +17,15 @@ The configuration looks like this:
   </dictionary>
   ...
 </yandex>
+```
+
+In case of [DDL-query](../create.md#create-dictionary-query), equal configuration will looks like:
+
+```sql
+CREATE DICTIONARY dict_name (...)
+...
+SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
+...
 ```
 
 The source is configured in the `source` section.
@@ -47,6 +56,12 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Setting fields:
 
 - `path` – The absolute path to the file.
@@ -66,6 +81,12 @@ Example of settings:
         <format>TabSeparated</format>
     </executable>
 </source>
+```
+
+or
+
+```sql
+SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
@@ -99,15 +120,26 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(HTTP(
+    url 'http://[::1]/os.tsv'
+    format 'TabSeparated'
+    credentials(user 'user' password 'password')
+    headers(header(name 'API-KEY' value 'key'))
+))
+```
+
 In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openssl) in the server configuration.
 
 Setting fields:
 
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
-- `credentials` – Basic HTTP authentification. Optional parameter.
-    - `user` – Username required for the authentification.
-    - `password` – Password required for the authentification.
+- `credentials` – Basic HTTP authentication. Optional parameter.
+    - `user` – Username required for the authentication.
+    - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
     - `header` – Single HTTP header entry.
         - `name` – Identifiant name used for the header send on the request.
@@ -121,12 +153,25 @@ You can use this method to connect any database that has an ODBC driver.
 Example of settings:
 
 ```xml
-<odbc>
-    <db>DatabaseName</db>
-    <table>ShemaName.TableName</table>
-    <connection_string>DSN=some_parameters</connection_string>
-    <invalidate_query>SQL_QUERY</invalidate_query>
-</odbc>
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </odbc>
+</source>
+```
+
+or
+
+```sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Setting fields:
@@ -233,6 +278,19 @@ The dictionary configuration in ClickHouse:
 </yandex>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY table_name (
+    id UInt64,
+    some_column UInt64 DEFAULT 0
+)
+PRIMARY KEY id
+SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 360)
+```
+
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
 ### Example of Connecting MS SQL Server
@@ -316,6 +374,19 @@ Configuring the dictionary in ClickHouse:
 </yandex>
 ```
 
+or
+
+```sql
+CREATE DICTIONARY test (
+    k UInt64,
+    s String DEFAULT ''
+)
+PRIMARY KEY k
+SOURCE(ODBC(table 'dict' connection_string 'DSN=MSSQL;UID=test;PWD=test'))
+LAYOUT(FLAT())
+LIFETIME(MIN 300 MAX 360)
+```
+
 ## DBMS
 
 
@@ -343,6 +414,22 @@ Example of settings:
       <invalidate_query>SQL_QUERY</invalidate_query>
   </mysql>
 </source>
+```
+
+or
+
+```sql
+SOURCE(MYSQL(
+    port 3306
+    user 'clickhouse'
+    password 'qwerty'
+    replica(host 'example01-1' priority 1)
+    replica(host 'example01-2' priority 1)
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Setting fields:
@@ -385,6 +472,21 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(MYSQL(
+    host 'localhost'
+    socket '/path/to/socket/file.sock'
+    user 'clickhouse'
+    password 'qwerty'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
 
 ### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
@@ -402,6 +504,20 @@ Example of settings:
         <where>id=10</where>
     </clickhouse>
 </source>
+```
+
+or
+
+```sql
+SOURCE(CLICKHOUSE(
+    host 'example01-01-1'
+    port 9000
+    user 'default'
+    password ''
+    db 'default'
+    table 'ids'
+    where 'id=10'
+))
 ```
 
 Setting fields:
@@ -433,6 +549,19 @@ Example of settings:
 </source>
 ```
 
+or
+
+```sql
+SOURCE(MONGO(
+    host 'localhost'
+    port 27017
+    user ''
+    password ''
+    db 'test'
+    collection 'dictionary_source'
+))
+```
+
 Setting fields:
 
 - `host` – The MongoDB host.
@@ -456,6 +585,17 @@ Example of settings:
         <db_index>0</db_index>
     </redis>
 </source>
+```
+
+or
+
+```sql
+SOURCE(REDIS(
+    host 'localhost'
+    port 6379
+    storage_type 'simple'
+    db_index 0
+))
 ```
 
 Setting fields:

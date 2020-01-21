@@ -1,17 +1,23 @@
 # Command-line Client
 
-To work from the command line, you can use `clickhouse-client`:
+ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
+
+[Install](../getting_started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ```bash
 $ clickhouse-client
-ClickHouse client version 0.0.26176.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.
+ClickHouse client version 19.17.1.1579 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 19.17.1 revision 54428.
 
 :)
 ```
 
-The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
+Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
+
+```
+ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+```
 
 ## Usage {#cli_usage}
 
@@ -39,15 +45,15 @@ Similarly, to process a large number of queries, you can run 'clickhouse-client'
 
 In interactive mode, you get a command line where you can enter queries.
 
-If 'multiline' is not specified (the default):To run the query, press Enter. The semicolon is not necessary at the end of the query. To enter a multiline query, enter a backslash `\` before the line feed. After you press Enter, you will be asked to enter the next line of the query.
+If 'multiline' is not specified (the default): To run the query, press Enter. The semicolon is not necessary at the end of the query. To enter a multiline query, enter a backslash `\` before the line feed. After you press Enter, you will be asked to enter the next line of the query.
 
-If multiline is specified:To run a query, end it with a semicolon and press Enter. If the semicolon was omitted at the end of the entered line, you will be asked to enter the next line of the query.
+If multiline is specified: To run a query, end it with a semicolon and press Enter. If the semicolon was omitted at the end of the entered line, you will be asked to enter the next line of the query.
 
 Only a single query is run, so everything after the semicolon is ignored.
 
 You can specify `\G` instead of or after the semicolon. This indicates Vertical format. In this format, each value is printed on a separate line, which is convenient for wide tables. This unusual feature was added for compatibility with the MySQL CLI.
 
-The command line is based on 'readline' (and 'history' or 'libedit', or without a library, depending on the build). In other words, it uses the familiar keyboard shortcuts and keeps a history.
+The command line is based on 'replxx' (similar to 'readline'). In other words, it uses the familiar keyboard shortcuts and keeps a history.
 The history is written to `~/.clickhouse-client-history`.
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
@@ -111,7 +117,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--query, -q` – The query to process when using non-interactive mode.
 - `--database, -d` – Select the current default database. Default value: the current database from the server settings ('default' by default).
 - `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
-- `--multiquery, -n` – If specified, allow processing multiple queries separated by commas. Only works in non-interactive mode.
+- `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
 - `--format, -f` – Use the specified default format to output the result.
 - `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as '--format=Vertical'. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 - `--time, -t` – If specified, print the query execution time to 'stderr' in non-interactive mode.
@@ -125,7 +131,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 `clickhouse-client` uses the first existing file of the following:
 
-- Defined in the `-config-file` parameter.
+- Defined in the `--config-file` parameter.
 - `./clickhouse-client.xml`
 - `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
