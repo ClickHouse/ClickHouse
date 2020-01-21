@@ -18,7 +18,7 @@ SELECT count(1), uniqExact(n) FROM (
     JOIN (SELECT materialize(1) AS k, number n FROM numbers(10)) j
     USING k);
 
-SELECT 'errors';
+-- errors
 SET max_joined_block_size_rows = 0;
     
 SELECT count(1) FROM (

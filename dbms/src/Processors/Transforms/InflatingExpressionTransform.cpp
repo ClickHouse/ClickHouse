@@ -30,12 +30,12 @@ void InflatingExpressionTransform::work()
     catch (DB::Exception &)
     {
         current_data.exception = std::current_exception();
+        current_data.chunk.clear();
         transformed = true;
         has_input = false;
         return;
     }
 
-    /// The only change from ISimpleTransform::work()
     if (!not_processed)
         has_input = false;
 
@@ -64,9 +64,11 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
     Block block;
     if (on_totals)
     {
+        /// We have to make chunk empty before return
+        block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
         if (default_totals && !expression->hasTotalsInJoin())
             return;
-        block = readExecOnTotals(chunk);
+        expression->executeOnTotals(block);
     }
     else
         block = readExec(chunk);
@@ -90,13 +92,6 @@ Block InflatingExpressionTransform::readExec(Chunk & chunk)
         expression->execute(res, not_processed, action_number);
     }
     return res;
-}
-
-Block InflatingExpressionTransform::readExecOnTotals(Chunk & chunk)
-{
-    Block block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-    expression->executeOnTotals(block);
-    return block;
 }
 
 }
