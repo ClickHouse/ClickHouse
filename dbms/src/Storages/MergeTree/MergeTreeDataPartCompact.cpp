@@ -43,7 +43,6 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    /// FIXME maybe avoid shared_from_this
     return std::make_unique<MergeTreeReaderCompact>(
         shared_from_this(), columns_to_read, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,

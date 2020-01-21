@@ -131,7 +131,8 @@ static void fillIndexGranularityImpl(
     {
         size_t rows_left_in_block = rows_in_block - current_row;
 
-        /// FIXME need comment
+        /// Try to extend last granule if it's needed and block is large enough
+        ///  or it shouldn't be first in granule (index_offset != 0).
         if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block
             && (rows_in_block >= index_granularity_for_block || index_offset != 0))
         {
