@@ -78,7 +78,7 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset - 1;
+        return offsets[row_num] - prev_offset;
     }
 
     Slice getWhole() const
