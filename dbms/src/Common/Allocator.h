@@ -93,9 +93,8 @@ public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
     {
-        auto * ptr = allocNoTrack(size, alignment);
         CurrentMemoryTracker::alloc(size);
-        return ptr;
+        return allocNoTrack(size, alignment);
     }
 
     /// Free memory range.
