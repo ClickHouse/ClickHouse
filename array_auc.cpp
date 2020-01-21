@@ -5,12 +5,12 @@
 
 namespace DB
 {
-struct NameAUC
+struct NameArrayAUC
 {
-    static constexpr auto name = "auc";
+    static constexpr auto name = "arrayAUC";
 };
 
-class AUCImpl
+class ArrayAUCImpl
 {
 public:
     using ResultType = Float64;
@@ -26,7 +26,7 @@ public:
         WhichDataType which2(nested_type2);
         if (!which2.isUInt8())
         {
-            throw Exception(std::string(NameAUC::name) + "lable type must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(std::string(NameArrayAUC::name) + "lable type must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -41,7 +41,7 @@ public:
         size_t label_len)
     {
         if (score_len != label_len)
-            throw Exception{"Unmatched length of arrays in " + std::string(NameAUC::name), ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unmatched length of arrays in " + std::string(NameArrayAUC::name), ErrorCodes::LOGICAL_ERROR};
         if (score_len == 0)
             return {};
 
@@ -91,11 +91,11 @@ public:
 };
 
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
-using FunctionAUC = FunctionArrayScalarProduct<AUCImpl, NameAUC>;
+using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
-void registerFunctionAUC(FunctionFactory & factory)
+void registerFunctionArrayAUC(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionAUC>();
+    factory.registerFunction<FunctionArrayAUC>();
 }
 
 
