@@ -6,13 +6,15 @@
 #include <port/unistd.h>
 #include <string.h>
 
+#ifdef OS_LINUX
 /// We can detect if code is linked with one or another readline variants or open the library dynamically.
-#include <dlfcn.h>
+#   include <dlfcn.h>
 extern "C"
 {
     char * readline(const char *) __attribute__((__weak__));
     char * (*readline_ptr)(const char *) = readline;
 }
+#endif
 
 namespace
 {
@@ -112,6 +114,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
+#ifdef OS_LINUX
     if (!readline_ptr)
     {
         for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
@@ -137,6 +140,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
         input = line_read;
     }
     else
+#endif
     {
         std::cout << prompt;
         std::getline(std::cin, input);
