@@ -212,10 +212,7 @@ void TraceCollector::run()
         Int64 size;
         readPODBinary(size, in);
 
-        UInt64 pointer;
-        readPODBinary(pointer, in);
-
-        TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace, size, pointer};
+        TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace, size};
         trace_log->add(element);
     }
 }

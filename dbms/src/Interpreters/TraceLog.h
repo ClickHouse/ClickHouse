@@ -20,9 +20,7 @@ struct TraceLogElement
     String query_id;
     Array trace;
 
-    /// for |TraceType::MEMORY|
-    Int64 size; /// Allocation size in bytes. In case of deallocation should match the allocation size.
-    UInt64 pointer; /// Address of allocated region - to track the deallocations.
+    Int64 size; /// Allocation size in bytes for |TraceType::MEMORY|
 
     static std::string name() { return "TraceLog"; }
     static Block createBlock();

@@ -29,7 +29,6 @@ Block TraceLogElement::createBlock()
         {std::make_shared<DataTypeString>(),                                  "query_id"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"},
         {std::make_shared<DataTypeInt64>(),                                   "size"},
-        {std::make_shared<DataTypeUInt64>(),                                  "pointer"},
     };
 }
 
@@ -47,7 +46,6 @@ void TraceLogElement::appendToBlock(Block & block) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-    columns[i++]->insert(pointer);
 
     block.setColumns(std::move(columns));
 }

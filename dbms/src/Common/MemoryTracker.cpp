@@ -9,6 +9,7 @@
 #include <common/logger_useful.h>
 #include <common/singleton.h>
 
+#include <atomic>
 #include <cstdlib>
 
 
@@ -84,7 +85,8 @@ void MemoryTracker::alloc(Int64 size)
     if (metric != CurrentMetrics::end())
         CurrentMetrics::add(metric, size);
 
-    Int64 current_limit = limit.load(std::memory_order_relaxed);
+    Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
+    Int64 current_soft_limit = soft_limit.load(std::memory_order_relaxed);
 
     /// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
     /// In this case, it doesn't matter.
@@ -101,12 +103,19 @@ void MemoryTracker::alloc(Int64 size)
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
+            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
-    if (unlikely(current_limit && will_be > current_limit))
+    if (unlikely(current_soft_limit && will_be > current_soft_limit))
+    {
+        auto no_track = blocker.cancel();
+        Singleton<DB::TraceCollector>()->collect(size);
+        setOrRaiseSoftLimit(current_soft_limit + Int64(ceil((will_be - current_soft_limit) / soft_limit_step)) * soft_limit_step);
+    }
+
+    if (unlikely(current_hard_limit && will_be > current_hard_limit))
     {
         free(size);
 
@@ -119,7 +128,7 @@ void MemoryTracker::alloc(Int64 size)
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
-            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_limit);
+            << ", maximum: " << formatReadableSizeWithBinarySuffix(current_hard_limit);
 
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
@@ -177,7 +186,8 @@ void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
-    limit.store(0, std::memory_order_relaxed);
+    hard_limit.store(0, std::memory_order_relaxed);
+    soft_limit.store(0, std::memory_order_relaxed);
 }
 
 
@@ -190,11 +200,20 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setOrRaiseLimit(Int64 value)
+void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
-    Int64 old_value = limit.load(std::memory_order_relaxed);
-    while (old_value < value && !limit.compare_exchange_weak(old_value, value))
+    Int64 old_value = hard_limit.load(std::memory_order_relaxed);
+    while (old_value < value && !hard_limit.compare_exchange_weak(old_value, value))
+        ;
+}
+
+
+void MemoryTracker::setOrRaiseSoftLimit(Int64 value)
+{
+    /// This is just atomic set to maximum.
+    Int64 old_value = soft_limit.load(std::memory_order_relaxed);
+    while (old_value < value && !soft_limit.compare_exchange_weak(old_value, value))
         ;
 }
 
@@ -214,9 +233,6 @@ namespace CurrentMemoryTracker
                 Int64 tmp = untracked;
                 untracked = 0;
                 memory_tracker->alloc(tmp);
-
-                auto no_track = memory_tracker->blocker.cancel();
-                Singleton<DB::TraceCollector>()->collect(tmp);
             }
         }
     }
