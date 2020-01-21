@@ -12,8 +12,11 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
+#include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/StorageID.h>
 
 #include <Processors/QueryPipeline.h>
+#include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
 
@@ -68,10 +71,13 @@ public:
     BlockIO execute() override;
 
     /// Execute the query and return multuple streams for parallel processing.
-    BlockInputStreams executeWithMultipleStreams();
+    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
 
     QueryPipeline executeWithProcessors() override;
     bool canExecuteWithProcessors() const override { return true; }
+
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
 
     Block getSampleBlock();
 
@@ -136,7 +142,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, QueryPipeline & save_context_and_storage);
 
     struct AnalysisResult
     {
@@ -148,6 +154,7 @@ private:
         bool has_limit_by   = false;
 
         bool remove_where_filter = false;
+        bool optimize_read_in_order = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN
         ExpressionActionsPtr before_where;
@@ -171,6 +178,8 @@ private:
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
         FilterInfoPtr filter_info;
+        ConstantFilterDescription prewhere_constant_filter_description;
+        ConstantFilterDescription where_constant_filter_description;
     };
 
     static AnalysisResult analyzeExpressions(
@@ -181,7 +190,8 @@ private:
         const Context & context,
         const StoragePtr & storage,
         bool only_types,
-        const FilterInfoPtr & filter_info);
+        const FilterInfoPtr & filter_info,
+        const Block & source_header);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
@@ -194,8 +204,9 @@ private:
 
     template <typename TPipeline>
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
-        const SortingInfoPtr & sorting_info, const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere);
+        const PrewhereInfoPtr & prewhere_info,
+        const Names & columns_to_remove_after_prewhere,
+        QueryPipeline & save_context_and_storage);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -203,7 +214,7 @@ private:
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
@@ -222,7 +233,7 @@ private:
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
@@ -233,6 +244,8 @@ private:
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
+
+    String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);
@@ -255,9 +268,9 @@ private:
       */
     void initSettings();
 
-    const SelectQueryOptions options;
+    SelectQueryOptions options;
     ASTPtr query_ptr;
-    Context context;
+    std::shared_ptr<Context> context;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
@@ -283,6 +296,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
+    StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.

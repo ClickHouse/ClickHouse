@@ -33,6 +33,12 @@ public:
 
     String getName() const override { return "Asynchronous"; }
 
+    void waitInnerThread()
+    {
+        if (started)
+            pool.wait();
+    }
+
     void readPrefix() override
     {
         /// Do not call `readPrefix` on the child, so that the corresponding actions are performed in a separate thread.

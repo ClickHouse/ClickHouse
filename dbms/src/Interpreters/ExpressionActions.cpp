@@ -15,6 +15,7 @@
 #include <set>
 #include <optional>
 #include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace ProfileEvents
@@ -61,7 +62,7 @@ Names ExpressionAction::getNeededColumns() const
 
 
 ExpressionAction ExpressionAction::applyFunction(
-    const FunctionBuilderPtr & function_,
+    const FunctionOverloadResolverPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
@@ -204,9 +205,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
             size_t result_position = sample_block.columns();
             sample_block.insert({nullptr, result_type, result_name});
             function = function_base->prepare(sample_block, arguments, result_position);
-
-            if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
-                prepared_function->createLowCardinalityResultCache(settings.max_threads);
+            function->createLowCardinalityResultCache(settings.max_threads);
 
             bool compile_expressions = false;
 #if USE_EMBEDDED_COMPILER
@@ -955,7 +954,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// remote table (doesn't know anything about it).
     ///
     /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
-    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// so generated streams with these actions will have different headers. To avoid this we additionally rename our "redundant" column
     /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
     /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
 
@@ -1188,8 +1187,9 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     /// Check has column in (empty set).
     String set_to_check;
 
-    for (auto & action : actions)
+    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
+        auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1198,6 +1198,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 && action.argument_names.size() > 1)
             {
                 set_to_check = action.argument_names[1];
+                break;
             }
         }
     }
@@ -1208,9 +1209,10 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
-                if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
+                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
+                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
                 {
-                    if (column_set->getData()->getTotalRowCount() == 0)
+                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;
                 }
             }

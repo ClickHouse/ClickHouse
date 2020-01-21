@@ -5,11 +5,13 @@ nav:
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Производительность': 'introduction/performance.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
+  - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':
-  - 'Установка и запуск': 'getting_started/index.md'
+  - 'hidden': 'getting_started/index.md'
+  - 'Установка': 'getting_started/install.md'
+  - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'
@@ -24,43 +26,16 @@ nav:
   - 'Клиент командной строки': 'interfaces/cli.md'
   - 'Нативный интерфейс (TCP)': 'interfaces/tcp.md'
   - 'HTTP-интерфейс': 'interfaces/http.md'
+  - 'MySQL-интерфейс': 'interfaces/mysql.md'
   - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
   - 'ODBC-драйвер': 'interfaces/odbc.md'
+  - 'C++ клиентская библиотека': 'interfaces/cpp.md'
   - 'От сторонних разработчиков':
     - 'Клиентские библиотеки': 'interfaces/third-party/client_libraries.md'
     - 'Интеграции': 'interfaces/third-party/integrations.md'
     - 'Визуальные интерфейсы': 'interfaces/third-party/gui.md'
     - 'Прокси': 'interfaces/third-party/proxy.md'
-
-- 'Типы данных':
-  - 'Введение': 'data_types/index.md'
-  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
-  - 'Float32, Float64': 'data_types/float.md'
-  - 'Decimal': 'data_types/decimal.md'
-  - 'Булевы значения': 'data_types/boolean.md'
-  - 'String': 'data_types/string.md'
-  - 'FixedString(N)': 'data_types/fixedstring.md'
-  - 'UUID': 'data_types/uuid.md'
-  - 'Date': 'data_types/date.md'
-  - 'DateTime': 'data_types/datetime.md'
-  - 'Enum': 'data_types/enum.md'
-  - 'Array(T)': 'data_types/array.md'
-  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
-  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
-  - 'Nullable': 'data_types/nullable.md'
-  - 'Вложенные структуры данных':
-    - 'hidden': 'data_types/nested_data_structures/index.md'
-    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
-  - 'Служебные типы данных':
-    - 'hidden': 'data_types/special_data_types/index.md'
-    - 'Expression': 'data_types/special_data_types/expression.md'
-    - 'Set': 'data_types/special_data_types/set.md'
-    - 'Nothing': 'data_types/special_data_types/nothing.md'
-  - 'Domains':
-    - 'Overview': 'data_types/domains/overview.md'
-    - 'IPv4': 'data_types/domains/ipv4.md'
-    - 'IPv6': 'data_types/domains/ipv6.md'
 
 - 'Движки баз данных':
     - 'Введение': 'database_engines/index.md'
@@ -106,12 +81,15 @@ nav:
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
-  - 'SELECT': 'query_language/select.md'
-  - 'INSERT INTO': 'query_language/insert_into.md'
-  - 'CREATE': 'query_language/create.md'
-  - 'ALTER': 'query_language/alter.md'
-  - 'SYSTEM': 'query_language/system.md'
-  - 'Прочие виды запросов': 'query_language/misc.md'
+  - 'Общий синтаксис': 'query_language/syntax.md'
+  - 'Запросы':
+    - 'SELECT': 'query_language/select.md'
+    - 'INSERT INTO': 'query_language/insert_into.md'
+    - 'CREATE': 'query_language/create.md'
+    - 'ALTER': 'query_language/alter.md'
+    - 'SYSTEM': 'query_language/system.md'
+    - 'SHOW': 'query_language/show.md'
+    - 'Прочие': 'query_language/misc.md'
   - 'Функции':
     - 'Введение': 'query_language/functions/index.md'
     - 'Арифметические функции': 'query_language/functions/arithmetic_functions.md'
@@ -173,7 +151,39 @@ nav:
       - 'Ключ и поля словаря': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
   - 'Операторы': 'query_language/operators.md'
-  - 'Общий синтаксис': 'query_language/syntax.md'
+  - 'Типы данных':
+    - 'Введение': 'data_types/index.md'
+    - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
+    - 'Float32, Float64': 'data_types/float.md'
+    - 'Decimal': 'data_types/decimal.md'
+    - 'Булевы значения': 'data_types/boolean.md'
+    - 'String': 'data_types/string.md'
+    - 'FixedString(N)': 'data_types/fixedstring.md'
+    - 'UUID': 'data_types/uuid.md'
+    - 'Date': 'data_types/date.md'
+    - 'DateTime': 'data_types/datetime.md'
+    - 'Enum': 'data_types/enum.md'
+    - 'Array(T)': 'data_types/array.md'
+    - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
+    - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+    - 'Nullable': 'data_types/nullable.md'
+    - 'Вложенные структуры данных':
+      - 'hidden': 'data_types/nested_data_structures/index.md'
+      - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
+    - 'Служебные типы данных':
+      - 'hidden': 'data_types/special_data_types/index.md'
+      - 'Expression': 'data_types/special_data_types/expression.md'
+      - 'Set': 'data_types/special_data_types/set.md'
+      - 'Nothing': 'data_types/special_data_types/nothing.md'
+      - 'Interval': 'data_types/special_data_types/interval.md'
+    - 'Domains':
+      - 'Overview': 'data_types/domains/overview.md'
+      - 'IPv4': 'data_types/domains/ipv4.md'
+      - 'IPv6': 'data_types/domains/ipv6.md'
+
+- 'Руководства':
+  - 'Обзор': 'guides/index.md'
+  - 'Применение CatBoost моделей': 'guides/apply_catboost_model.md'
 
 - 'Эксплуатация':
   - 'Введение': 'operations/index.md'
@@ -187,6 +197,7 @@ nav:
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
   - 'Квоты': 'operations/quotas.md'
   - 'Системные таблицы': 'operations/system_tables.md'
+  - 'Тестирование оборудования': 'operations/performance_test.md'
   - 'Конфигурационные параметры сервера':
     - 'Введение': 'operations/server_settings/index.md'
     - 'Серверные настройки': 'operations/server_settings/settings.md'
@@ -203,24 +214,22 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'Руководства':
-  - 'Обзор': 'guides/index.md'
-  - 'Применение CatBoost моделей': 'guides/apply_catboost_model.md'
-
-- 'F.A.Q.':
-  - 'Общие вопросы': 'faq/general.md'
-
 - 'Разработка':
   - 'hidden': 'development/index.md'
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
-  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross.md'
+  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
+  - 'Инструкция для начинающего разработчика ClickHouse': 'development/developer_instruction.md'
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
+  - 'Подробный roadmap 2020': 'extended_roadmap.md'
+
+- 'F.A.Q.':
+  - 'Общие вопросы': 'faq/general.md'

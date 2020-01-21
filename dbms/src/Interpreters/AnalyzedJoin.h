@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/asof.h>
@@ -94,10 +93,9 @@ public:
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return !hasUsing(); }
+    bool hasOn() const { return table_join.on_expression != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
-    NameSet getOriginalColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_columns) const;
 
@@ -120,12 +118,12 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
+    /// StorageJoin overrides key names (cause of different names qualification)
+    void setRightKeys(const Names & keys) { key_names_right = keys; }
+
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
     friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
-
-struct ASTTableExpression;
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 bool isMergeJoin(const JoinPtr &);
 

@@ -9,8 +9,6 @@
 namespace DB
 {
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
-
 class ASTFunction;
 class AnalyzedJoin;
 class Context;
@@ -47,6 +45,8 @@ struct SyntaxAnalyzerResult
 
     /// Results of scalar sub queries
     Scalars scalars;
+
+    bool maybe_optimize_trivial_count = false;
 
     void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }

@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -84,6 +85,8 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
         if (!allow_materialized && !table_sample_non_materialized.has(current_name))
             throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+        if (res.has(current_name))
+            throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
 
         res.insert(ColumnWithTypeAndName(table_sample.getByName(current_name).type, current_name));
     }
@@ -95,6 +98,7 @@ BlockIO InterpreterInsertQuery::execute()
 {
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
+
     StoragePtr table = getTable(query);
 
     auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
@@ -107,7 +111,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (table->noPushingToViews() && !no_destination)
         out = table->write(query_ptr, context);
     else
-        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
+        out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
@@ -132,7 +136,6 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::move(out_wrapper);
 
     BlockIO res;
-    res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?
     if (query.select)
@@ -140,12 +143,12 @@ BlockIO InterpreterInsertQuery::execute()
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
         InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
-        res.in = interpreter_select.execute().in;
-
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-
+        /// BlockIO may hold StoragePtrs to temporary tables
+        res = interpreter_select.execute();
         res.out = nullptr;
+
+        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
 
         if (!allow_materialized)
         {
@@ -158,9 +161,12 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-        res.out = nullptr;
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out);
     }
+    else
+        res.out = std::move(out);
+
+    res.pipeline.addStorageHolder(table);
 
     return res;
 }

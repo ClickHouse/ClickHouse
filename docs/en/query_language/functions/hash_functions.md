@@ -179,6 +179,8 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
+**Syntax** 
+
 ```sql
 SELECT javaHash('');
 ```
@@ -186,8 +188,6 @@ SELECT javaHash('');
 **Returned value**
 
 A `Int32` data type hash value.
-
-Type: `javaHash`.
 
 **Example**
 
@@ -203,6 +203,42 @@ Result:
 ┌─javaHash('Hello, world!')─┐
 │               -1880044555 │
 └───────────────────────────┘
+```
+
+## javaHashUTF16LE {#javahashutf16le}
+
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
+
+**Syntax** 
+
+```sql
+javaHashUTF16LE(stringUtf16le)
+```
+
+**Parameters** 
+
+- `stringUtf16le` —  a string in UTF-16LE encoding.
+
+**Returned value**
+
+A `Int32` data type hash value.
+
+**Example**
+
+Correct query with UTF-16LE encoded string.
+
+Query:
+
+```sql
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
+```
+
+Result:
+
+```text
+┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
+│                                                      3556498 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## hiveHash {#hash_functions-hivehash}

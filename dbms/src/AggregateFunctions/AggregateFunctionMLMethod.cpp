@@ -11,6 +11,7 @@
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -486,10 +487,17 @@ void LogisticRegression::compute(
     size_t row_num)
 {
     Float64 derivative = bias;
+
+    std::vector<Float64> values(weights.size());
+
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
-        derivative += weights[i] * value;
+        values[i] = (*columns[i]).getFloat64(row_num);
+    }
+
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        derivative += weights[i] * values[i];
     }
     derivative *= target;
     derivative = exp(derivative);
@@ -497,8 +505,7 @@ void LogisticRegression::compute(
     batch_gradient[weights.size()] += target / (derivative + 1);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
-        batch_gradient[i] += target * value / (derivative + 1) - 2 * l2_reg_coef * weights[i];
+        batch_gradient[i] += target * values[i] / (derivative + 1) - 2 * l2_reg_coef * weights[i];
     }
 }
 
@@ -557,18 +564,25 @@ void LinearRegression::compute(
     size_t row_num)
 {
     Float64 derivative = (target - bias);
+
+    std::vector<Float64> values(weights.size());
+
+
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
-        derivative -= weights[i] * value;
+        values[i] = (*columns[i]).getFloat64(row_num);
+    }
+
+    for (size_t i = 0; i < weights.size(); ++i)
+    {
+        derivative -= weights[i] * values[i];
     }
     derivative *= 2;
 
     batch_gradient[weights.size()] += derivative;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
-        batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
+        batch_gradient[i] += derivative * values[i] - 2 * l2_reg_coef * weights[i];
     }
 }
 

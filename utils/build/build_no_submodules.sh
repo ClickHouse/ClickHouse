@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd ${CUR_DIR}/../..
 BRANCH=`git rev-parse --abbrev-ref HEAD`
 BRANCH=${BRANCH:=master}
-ROOT_DIR=${CUR_DIR}/../build_no_submodules
+ROOT_DIR=${CUR_DIR}/../../build_no_submodules
 mkdir -p $ROOT_DIR
 cd $ROOT_DIR
 URL=`git remote get-url origin | sed 's/.git$//'`

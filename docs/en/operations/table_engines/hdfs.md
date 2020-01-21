@@ -1,6 +1,6 @@
 # HDFS {#table_engines-hdfs}
 
-This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.htmll)via ClickHouse. This engine is similar
+This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
 to the [File](file.md) and [URL](url.md) engines, but provides Hadoop-specific features.
 
 ## Usage
@@ -99,5 +99,14 @@ Create table with files named `file000`, `file001`, ... , `file999`:
 ```sql
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
+
+## Virtual Columns
+
+- `_path` — Path to the file.
+- `_file` — Name of the file.
+
+**See Also**
+
+- [Virtual columns](https://clickhouse.yandex/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/hdfs/) <!--hide-->

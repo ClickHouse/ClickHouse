@@ -42,6 +42,7 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyCacheDictionary(
+        const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -50,7 +51,9 @@ public:
 
     std::string getKeyDescription() const { return key_description; }
 
-    std::string getName() const override { return name; }
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "ComplexKeyCache"; }
 
@@ -71,11 +74,11 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
-    bool isCached() const override { return true; }
+    bool supportUpdates() const override { return false; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -311,7 +314,7 @@ private:
 
         std::vector<size_t> required_rows(outdated_keys.size());
         std::transform(
-            std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
+            std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getMapped().front(); });
 
         /// request new values
         update(
@@ -437,7 +440,7 @@ private:
             std::vector<size_t> required_rows(outdated_keys.size());
             std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair)
             {
-                return pair.getSecond().front();
+                return pair.getMapped().front();
             });
 
             update(
@@ -469,7 +472,7 @@ private:
         {
             const StringRef key = keys_array[row];
             const auto it = map.find(key);
-            const auto string_ref = it ? *lookupResultGetMapped(it) : get_default(row);
+            const auto string_ref = it ? it->getMapped() : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
     }
@@ -576,7 +579,7 @@ private:
         /// Check which ids have not been found and require setting null_value
         for (const auto & key_found_pair : remaining_keys)
         {
-            if (key_found_pair.getSecond())
+            if (key_found_pair.getMapped())
             {
                 ++found_num;
                 continue;
@@ -584,7 +587,7 @@ private:
 
             ++not_found_num;
 
-            auto key = key_found_pair.getFirst();
+            auto key = key_found_pair.getKey();
             const auto hash = StringRefHash{}(key);
             const auto find_result = findCellIdx(key, now, hash);
             const auto & cell_idx = find_result.cell_idx;
@@ -668,7 +671,9 @@ private:
 
     bool isEmptyCell(const UInt64 idx) const;
 
+    const std::string database;
     const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

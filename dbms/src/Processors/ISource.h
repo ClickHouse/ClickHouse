@@ -27,4 +27,6 @@ public:
     const OutputPort & getPort() const { return output; }
 };
 
+using SourcePtr = std::shared_ptr<ISource>;
+
 }

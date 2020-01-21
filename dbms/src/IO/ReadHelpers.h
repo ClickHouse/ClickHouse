@@ -12,31 +12,29 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
+#include <common/arithmeticOverflow.h>
 
 #include <Core/Types.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/VarInt.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-#endif
+#include <DataTypes/DataTypeDateTime.h>
 
 #include <double-conversion/double-conversion.h>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
 
 
 /// 1 GiB
@@ -250,7 +248,13 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
     }
 }
 
-template <typename T, typename ReturnType = void>
+enum class ReadIntTextCheckOverflow
+{
+    DO_NOT_CHECK_OVERFLOW,
+    CHECK_OVERFLOW,
+};
+
+template <typename T, typename ReturnType = void, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -265,6 +269,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             return ReturnType(false);
     }
 
+    const size_t initial_pos = buf.count();
     while (!buf.eof())
     {
         switch (*buf.position())
@@ -272,7 +277,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '+':
                 break;
             case '-':
-                if (std::is_signed_v<T>)
+                if constexpr (is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -292,30 +297,48 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
+                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+                {
+                    // perform relativelly slow overflow check only when number of decimal digits so far is close to the max for given type.
+                    if (buf.count() - initial_pos >= std::numeric_limits<T>::max_digits10)
+                    {
+                        if (common::mulOverflow(res, static_cast<decltype(res)>(10), res)
+                            || common::addOverflow(res, static_cast<decltype(res)>(*buf.position() - '0'), res))
+                            return ReturnType(false);
+                        break;
+                    }
+                }
                 res *= 10;
                 res += *buf.position() - '0';
                 break;
             default:
-                x = negative ? -res : res;
-                return ReturnType(true);
+                goto end;
         }
         ++buf.position();
     }
 
+end:
     x = negative ? -res : res;
+
     return ReturnType(true);
 }
 
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
-    readIntTextImpl<T, void>(x, buf);
+    readIntTextImpl<T, void, check_overflow>(x, buf);
 }
 
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 bool tryReadIntText(T & x, ReadBuffer & buf)
 {
-    return readIntTextImpl<T, bool>(x, buf);
+    return readIntTextImpl<T, bool, check_overflow>(x, buf);
+}
+
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
+void readIntText(Decimal<T> & x, ReadBuffer & buf)
+{
+    readIntText<check_overflow>(x.value, buf);
 }
 
 /** More efficient variant (about 1.5 times on real dataset).
@@ -339,7 +362,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (unlikely(buf.eof()))
         return on_error();
 
-    if (std::is_signed_v<T> && *buf.position() == '-')
+    if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -372,7 +395,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    x = std::is_signed_v<T> && negative ? -res : res;
+    x = is_signed_v<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -573,8 +596,13 @@ inline T parseFromString(const String & str)
     return parse<T>(str.data(), str.size());
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+// Just dont mess with it. If the redundant redeclaration is removed then ReaderHelpers.h should be included.
+// This leads to Arena.h inclusion which has a problem with ASAN stuff included properly and messing macro definition
+// which intefrers with... You dont want to know, really.
 UInt128 stringToUUID(const String & str);
-
+#pragma GCC diagnostic pop
 
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
@@ -615,10 +643,52 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<time_t, ReturnType>(datetime, buf);
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     else
         return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
+}
+
+template <typename ReturnType>
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
+{
+    time_t whole;
+    if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
+    {
+        return ReturnType(false);
+    }
+
+    DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
+
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        buf.ignore(1); // skip separator
+        const auto pos_before_fractional = buf.count();
+        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(c.fractional, buf))
+        {
+            return ReturnType(false);
+        }
+
+        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
+        // about convention of ommiting trailing zero on fractional part
+        // and assumes that fractional part value is less than 10^scale.
+
+        // If scale is 3, but we read '12', promote fractional part to '120'.
+        // And vice versa: if we read '1234', denote it to '123'.
+        const auto fractional_length = static_cast<Int32>(buf.count() - pos_before_fractional);
+        if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
+        {
+            c.fractional *= common::exp10_i64(adjust_scale);
+        }
+        else if (adjust_scale < 0)
+        {
+            c.fractional /= common::exp10_i64(-1 * adjust_scale);
+        }
+    }
+
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(c, scale);
+
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
@@ -626,9 +696,19 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
+inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
+}
+
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
+}
+
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -653,7 +733,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
@@ -668,7 +748,7 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
@@ -691,7 +771,7 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
@@ -713,7 +793,7 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -752,7 +832,7 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
@@ -850,17 +930,17 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
 /** Helper function for implementation.
   */
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
 static inline const char * tryReadIntText(T & x, const char * pos, const char * end)
 {
     ReadBufferFromMemory in(pos, end - pos);
-    tryReadIntText(x, in);
+    tryReadIntText<check_overflow>(x, in);
     return pos + in.count();
 }
 
@@ -873,6 +953,30 @@ inline T parse(const char * data, size_t size)
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     return res;
+}
+
+/// Read something from text format, but expect complete parse of given text
+/// For example: 723145 -- ok, 213MB -- not ok
+template <typename T>
+inline T completeParse(const char * data, size_t size)
+{
+    T res;
+    ReadBufferFromMemory buf(data, size);
+    readText(res, buf);
+    assertEOF(buf);
+    return res;
+}
+
+template <typename T>
+inline T completeParse(const String & s)
+{
+    return completeParse<T>(s.data(), s.size());
+}
+
+template <typename T>
+inline T completeParse(const char * data)
+{
+    return completeParse<T>(data, strlen(data));
 }
 
 template <typename T>
@@ -910,5 +1014,20 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
+
+
+/** This function just copies the data from buffer's internal position (in.position())
+  * to current position (from arguments) into memory.
+  */
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
+
+/** This function is negative to eof().
+  * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
+  * And saves data from buffer's position to current if there is no pending data in buffer.
+  * Why we have to use this strange function? Consider we have buffer's internal position in the middle
+  * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
+  * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
+  */
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 }

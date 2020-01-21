@@ -13,7 +13,6 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
-#include <Common/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -22,6 +21,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/RemoteHostFilter.h>
 
 
 namespace Poco
@@ -43,7 +43,8 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class QuotaForIntervals;
+class QuotaContext;
+class RowPolicyContext;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -76,7 +77,16 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class AccessControlManager;
 class SettingsConstraints;
+class RemoteHostFilter;
+struct StorageID;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+class DiskSelector;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class StoragePolicySelector;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -87,12 +97,9 @@ class CompiledExpressionCache;
 
 #endif
 
-/// (database name, table name)
-using DatabaseAndTableName = std::pair<String, String>;
-
 /// Table -> set of table-views that make SELECT from it.
-using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
-using Dependencies = std::vector<DatabaseAndTableName>;
+using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
+using Dependencies = std::vector<StorageID>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
@@ -135,7 +142,10 @@ private:
     InputInitializer input_initializer_callback;
     InputBlocksReader input_blocks_reader;
 
-    std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaContext> quota;           /// Current quota. By default - empty quota, that have no limits.
+    bool is_quota_management_allowed = false;      /// Whether the current user is allowed to manage quotas via SQL commands.
+    std::shared_ptr<RowPolicyContext> row_policy;
+    bool is_row_policy_management_allowed = false; /// Whether the current user is allowed to manage row policies via SQL commands.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     std::shared_ptr<const SettingsConstraints> settings_constraints;
@@ -146,6 +156,7 @@ private:
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+    // TODO maybe replace with DatabaseMemory?
     TableAndCreateASTs external_tables;     /// Temporary tables.
     Scalars scalars;
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -187,11 +198,13 @@ public:
     String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    String getDictionariesLibPath() const;
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
+    void setDictionariesLibPath(const String & path);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -199,16 +212,19 @@ public:
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
+    AccessControlManager & getAccessControlManager();
+    const AccessControlManager & getAccessControlManager() const;
+    std::shared_ptr<QuotaContext> getQuota() const { return quota; }
+    void checkQuotaManagementIsAllowed();
+    std::shared_ptr<RowPolicyContext> getRowPolicy() const { return row_policy; }
+    void checkRowPolicyManagementIsAllowed();
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
-
-    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
-    bool hasUserProperty(const String & database, const String & table, const String & name) const;
-    const String & getUserProperty(const String & database, const String & table, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -238,16 +254,13 @@ public:
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
-    void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
-    QuotaForIntervals & getQuota();
-
-    void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    Dependencies getDependencies(const String & database_name, const String & table_name) const;
+    void addDependency(const StorageID & from, const StorageID & where);
+    void removeDependency(const StorageID & from, const StorageID & where);
+    Dependencies getDependencies(const StorageID & from) const;
 
     /// Functions where we can lock the context manually
-    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void addDependencyUnsafe(const StorageID & from, const StorageID & where);
+    void removeDependencyUnsafe(const StorageID & from, const StorageID & where);
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
@@ -273,7 +286,9 @@ public:
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
+    StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
+    StoragePtr tryGetTable(const StorageID & table_id) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
@@ -319,12 +334,12 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Update checking that each setting is updatable
-    void updateSettingsChanges(const SettingsChanges & changes);
-
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
     void checkSettingsConstraints(const SettingsChanges & changes);
+
+    /// Returns the current constraints (can return null).
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -354,16 +369,17 @@ public:
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;
 
+    /// Storage of allowed hosts from config.xml
+    void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
+    const RemoteHostFilter & getRemoteHostFilter() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
     std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
-    ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
-    ASTPtr getCreateDatabaseQuery(const String & database_name) const;
-    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -403,7 +419,6 @@ public:
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
-
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
@@ -450,6 +465,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -495,15 +511,16 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSpace::DiskSelector & getDiskSelector() const;
+    DiskSelector & getDiskSelector() const;
 
     /// Provides storage disks
-    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDisk(const String & name) const;
+    const DiskPtr & getDefaultDisk() const { return getDisk("default"); }
 
-    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+    StoragePolicySelector & getStoragePolicySelector() const;
 
     /// Provides storage politics schemes
-    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
+    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -577,7 +594,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
-    StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+    StoragePtr getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const;
 
     SessionKey getSessionKey(const String & session_id) const;
 

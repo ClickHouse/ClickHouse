@@ -115,18 +115,6 @@ protected:
 };
 
 
-class ParserTupleElementExpression : public IParserBase
-{
-private:
-    static const char * operators[];
-
-protected:
-    const char * getName() const { return "tuple element expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
-
 class ParserArrayElementExpression : public IParserBase
 {
 private:
@@ -134,6 +122,18 @@ private:
 
 protected:
     const char * getName() const { return "array element expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
+class ParserTupleElementExpression : public IParserBase
+{
+private:
+    static const char * operators[];
+
+protected:
+    const char * getName() const { return "tuple element expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
@@ -241,6 +241,9 @@ protected:
   */
 class ParserNullityChecking : public IParserBase
 {
+private:
+    ParserComparisonExpression elem_parser;
+
 protected:
     const char * getName() const override { return "nullity checking"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -383,12 +386,21 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+
 /// Parser for list of key-value pairs.
 class ParserKeyValuePairsList : public IParserBase
 {
 protected:
     const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserTTLExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const { return "ttl expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

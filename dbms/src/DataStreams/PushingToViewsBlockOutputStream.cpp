@@ -18,7 +18,7 @@ namespace DB
 {
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
-    const String & database, const String & table, const StoragePtr & storage_,
+    const StoragePtr & storage_,
     const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
     : storage(storage_), context(context_), query_ptr(query_ptr_)
 {
@@ -32,47 +32,44 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
     bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
-    if (!table.empty())
+    auto table_id = storage->getStorageID();
+    Dependencies dependencies = context.getDependencies(table_id);
+
+    /// We need special context for materialized views insertions
+    if (!dependencies.empty())
     {
-        Dependencies dependencies = context.getDependencies(database, table);
+        views_context = std::make_unique<Context>(context);
+        // Do not deduplicate insertions into MV if the main insertion is Ok
+        if (disable_deduplication_for_children)
+            views_context->getSettingsRef().insert_deduplicate = false;
+    }
 
-        /// We need special context for materialized views insertions
-        if (!dependencies.empty())
+    for (const auto & database_table : dependencies)
+    {
+        auto dependent_table = context.getTable(database_table);
+
+        ASTPtr query;
+        BlockOutputStreamPtr out;
+
+        if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
         {
-            views_context = std::make_unique<Context>(context);
-            // Do not deduplicate insertions into MV if the main insertion is Ok
-            if (disable_deduplication_for_children)
-                views_context->getSettingsRef().insert_deduplicate = false;
+            StoragePtr inner_table = materialized_view->getTargetTable();
+            auto inner_table_id = inner_table->getStorageID();
+            query = materialized_view->getInnerQuery();
+            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+            insert->database = inner_table_id.database_name;
+            insert->table = inner_table_id.table_name;
+            ASTPtr insert_query_ptr(insert.release());
+            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
+            BlockIO io = interpreter.execute();
+            out = io.out;
         }
+        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
+        else
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
 
-        for (const auto & database_table : dependencies)
-        {
-            auto dependent_table = context.getTable(database_table.first, database_table.second);
-
-            ASTPtr query;
-            BlockOutputStreamPtr out;
-
-            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
-            {
-                StoragePtr inner_table = materialized_view->getTargetTable();
-                query = materialized_view->getInnerQuery();
-                std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-                insert->database = inner_table->getDatabaseName();
-                insert->table = inner_table->getTableName();
-                ASTPtr insert_query_ptr(insert.release());
-                InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
-                BlockIO io = interpreter.execute();
-                out = io.out;
-            }
-            else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-                out = std::make_shared<PushingToViewsBlockOutputStream>(
-                        database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
-            else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(
-                        database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
-
-            views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
-        }
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
     }
 
     /* Do not push to destination table if the flag is set */
@@ -129,7 +126,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.scheduleOrThrowOnError([=]
+            pool.scheduleOrThrowOnError([=, this]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)
@@ -161,7 +158,7 @@ void PushingToViewsBlockOutputStream::writePrefix()
         }
         catch (Exception & ex)
         {
-            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
             throw;
         }
     }
@@ -180,7 +177,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
         }
         catch (Exception & ex)
         {
-            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
             throw;
         }
     }
@@ -203,6 +200,19 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     {
         BlockInputStreamPtr in;
 
+        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+        ///
+        /// - We copy Context inside InterpreterSelectQuery to support
+        ///   modification of context (Settings) for subqueries
+        /// - InterpreterSelectQuery lives shorter than query pipeline.
+        ///   It's used just to build the query pipeline and no longer needed
+        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+        ///   **can** take a reference to Context from InterpreterSelectQuery
+        ///   (the problem raises only when function uses context from the
+        ///    execute*() method, like FunctionDictGet do)
+        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+        std::optional<InterpreterSelectQuery> select;
+
         if (view.query)
         {
             /// We create a table with the same name as original table and the same alias columns,
@@ -210,10 +220,10 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// InterpreterSelectQuery will do processing of alias columns.
             Context local_context = *views_context;
             local_context.addViewSource(
-                    StorageValues::create(storage->getDatabaseName(), storage->getTableName(), storage->getColumns(),
+                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
                                           block));
-            InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+            select.emplace(view.query, local_context, SelectQueryOptions());
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
@@ -237,7 +247,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     }
     catch (Exception & ex)
     {
-        ex.addMessage("while pushing to view " + backQuoteIfNeed(view.database) + "." + backQuoteIfNeed(view.table));
+        ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
         throw;
     }
 }

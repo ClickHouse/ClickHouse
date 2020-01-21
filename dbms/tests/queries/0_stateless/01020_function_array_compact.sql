@@ -1,0 +1,9 @@
+select arrayCompact([0]);
+select arrayCompact([1]);
+select arrayCompact([2]);
+select arrayCompact([1,1]);
+select arrayCompact([1,2]);
+select arrayCompact([1,1,2]);
+select arrayCompact([1,2,1]);
+select arrayCompact([2,1,1]);
+select arrayCompact([1,2,2,3,3,3,4,4,4,4,5,5,5,5,5]);

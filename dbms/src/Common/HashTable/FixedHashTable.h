@@ -8,11 +8,14 @@ struct FixedHashTableCell
     using State = TState;
 
     using value_type = Key;
-    using mapped_type = void;
+    using mapped_type = VoidMapped;
     bool full;
 
     FixedHashTableCell() {}
     FixedHashTableCell(const Key &, const State &) : full(true) {}
+
+    const VoidKey getKey() const { return {}; }
+    VoidMapped getMapped() const { return {}; }
 
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
@@ -28,6 +31,8 @@ struct FixedHashTableCell
     {
         Key key;
 
+        const VoidKey getKey() const { return {}; }
+        VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };
@@ -53,7 +58,7 @@ struct FixedHashTableCell
 template <typename Key, typename Cell, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State
 {
-    static constexpr size_t BUFFER_SIZE = 1ULL << (sizeof(Key) * 8);
+    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
 
 protected:
     friend class const_iterator;
@@ -61,12 +66,11 @@ protected:
     friend class Reader;
 
     using Self = FixedHashTable;
-    using cell_type = Cell;
 
     size_t m_size = 0; /// Amount of elements
-    Cell * buf; /// A piece of memory for all elements except the element with zero key.
+    Cell * buf; /// A piece of memory for all elements.
 
-    void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(BUFFER_SIZE * sizeof(Cell))); }
+    void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
 
     void free()
     {
@@ -111,7 +115,7 @@ protected:
             ++ptr;
 
             /// Skip empty cells in the main buffer.
-            auto buf_end = container->buf + container->BUFFER_SIZE;
+            auto buf_end = container->buf + container->NUM_CELLS;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -140,8 +144,9 @@ protected:
 
 public:
     using key_type = Key;
-    using value_type = typename Cell::value_type;
     using mapped_type = typename Cell::mapped_type;
+    using value_type = typename Cell::value_type;
+    using cell_type = Cell;
 
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -239,7 +244,7 @@ public:
             return end();
 
         const Cell * ptr = buf;
-        auto buf_end = buf + BUFFER_SIZE;
+        auto buf_end = buf + NUM_CELLS;
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
@@ -254,21 +259,21 @@ public:
             return end();
 
         Cell * ptr = buf;
-        auto buf_end = buf + BUFFER_SIZE;
+        auto buf_end = buf + NUM_CELLS;
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return iterator(this, ptr);
     }
 
-    const_iterator end() const { return const_iterator(this, buf + BUFFER_SIZE); }
+    const_iterator end() const { return const_iterator(this, buf + NUM_CELLS); }
     const_iterator cend() const { return end(); }
-    iterator end() { return iterator(this, buf + BUFFER_SIZE); }
+    iterator end() { return iterator(this, buf + NUM_CELLS); }
 
 
 public:
     /// The last parameter is unused but exists for compatibility with HashTable interface.
-    void ALWAYS_INLINE emplace(Key x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
+    void ALWAYS_INLINE emplace(const Key & x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
     {
         it = &buf[x];
 
@@ -288,40 +293,31 @@ public:
         std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            insertSetMapped(lookupResultGetMapped(res.first), x);
+            insertSetMapped(res.first->getMapped(), x);
 
         return res;
     }
 
-    LookupResult ALWAYS_INLINE find(Key x)
-    {
-        return !buf[x].isZero(*this) ? &buf[x] : nullptr;
-    }
+    LookupResult ALWAYS_INLINE find(const Key & x) { return !buf[x].isZero(*this) ? &buf[x] : nullptr; }
 
-    ConstLookupResult ALWAYS_INLINE find(Key x) const
-    {
-        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x);
-    }
+    ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
 
-    LookupResult ALWAYS_INLINE find(Key, size_t hash_value)
-    {
-        return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr;
-    }
+    LookupResult ALWAYS_INLINE find(const Key &, size_t hash_value) { return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr; }
 
-    ConstLookupResult ALWAYS_INLINE find(Key key, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(const Key & key, size_t hash_value) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key, hash_value);
     }
 
-    bool ALWAYS_INLINE has(Key x) const { return !buf[x].isZero(*this); }
-    bool ALWAYS_INLINE has(Key, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
+    bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
+    bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
     void write(DB::WriteBuffer & wb) const
     {
         Cell::State::write(wb);
         DB::writeVarUInt(m_size, wb);
 
-        for (auto ptr = buf, buf_end = buf + BUFFER_SIZE; ptr < buf_end; ++ptr)
+        for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
             if (!ptr->isZero(*this))
             {
                 DB::writeVarUInt(ptr - buf);
@@ -334,7 +330,7 @@ public:
         Cell::State::writeText(wb);
         DB::writeText(m_size, wb);
 
-        for (auto ptr = buf, buf_end = buf + BUFFER_SIZE; ptr < buf_end; ++ptr)
+        for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
         {
             if (!ptr->isZero(*this))
             {
@@ -393,7 +389,7 @@ public:
         destroyElements();
         m_size = 0;
 
-        memset(static_cast<void *>(buf), 0, BUFFER_SIZE * sizeof(*buf));
+        memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
 
     /// After executing this function, the table can only be destroyed,
@@ -405,9 +401,9 @@ public:
         free();
     }
 
-    size_t getBufferSizeInBytes() const { return BUFFER_SIZE * sizeof(Cell); }
+    size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
 
-    size_t getBufferSizeInCells() const { return BUFFER_SIZE; }
+    size_t getBufferSizeInCells() const { return NUM_CELLS; }
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
     size_t getCollisions() const { return 0; }

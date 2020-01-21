@@ -21,4 +21,36 @@ If you use Oracle through the ODBC driver as a source of external dictionaries, 
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
+## How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
+
+### Using INTO OUTFILE Clause
+
+Add an [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
+
+For example:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../query_language/select/#format-clause).
+
+For example:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
+```
+
+### Using a File-Engine Table
+
+See [File](../operations/table_engines/file.md).
+
+### Using Command-Line Redirection
+
+```sql
+$ clickhouse-client --query "SELECT * from table" > result.txt
+```
+
+See [clickhouse-client](../interfaces/cli.md).
+
 [Original article](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->

@@ -14,6 +14,14 @@
                </force_index_by_date>
             </constraints>
         </default>
+
+        <readonly_profile>
+            <readonly>1</readonly>
+        </readonly_profile>
+
+        <no_dll_profile>
+            <allow_ddl>0</allow_ddl>
+        </no_dll_profile>
     </profiles>
 
     <users>
@@ -25,6 +33,22 @@
             <profile>default</profile>
             <quota>default</quota>
         </default>
+        <readonly_user>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>readonly_profile</profile>
+            <quota>default</quota>
+        </readonly_user>
+        <no_dll_user>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>no_dll_profile</profile>
+            <quota>default</quota>
+        </no_dll_user>
     </users>
 
     <quotas>

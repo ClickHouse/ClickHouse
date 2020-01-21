@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
@@ -100,14 +102,14 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (!query.target_table.empty())
+    if (!query.table.empty())
     {
-        String database = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
+        String database = !query.database.empty() ? query.database : context.getCurrentDatabase();
 
         if (start)
-            manager->remove(database, query.target_table, action_type);
+            manager->remove(database, query.table, action_type);
         else
-            manager->add(database, query.target_table, action_type);
+            manager->add(database, query.table, action_type);
     }
     else
     {
@@ -121,12 +123,17 @@ void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlo
 
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery")) {}
+        : query_ptr(query_ptr_->clone()), context(context_), log(&Poco::Logger::get("InterpreterSystemQuery"))
+{
+}
 
 
 BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {query.database});
 
     using Type = ASTSystemQuery::Type;
 
@@ -135,8 +142,11 @@ BlockIO InterpreterSystemQuery::execute()
     system_context.setSetting("profile", context.getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (!query.target_table.empty() && query.target_database.empty())
-         query.target_database = context.getCurrentDatabase();
+    if (!query.table.empty() && query.database.empty())
+         query.database = context.getCurrentDatabase();
+
+    if (!query.target_dictionary.empty() && !query.database.empty())
+        query.target_dictionary = query.database + "." + query.target_dictionary;
 
     switch (query.type)
     {
@@ -165,11 +175,11 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionariesLoader().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
+            system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
-                    [&] () { system_context.getExternalDictionariesLoader().reload(); },
+                    [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
             break;
@@ -231,8 +241,8 @@ BlockIO InterpreterSystemQuery::execute()
             restartReplicas(system_context);
             break;
         case Type::RESTART_REPLICA:
-            if (!tryRestartReplica(query.target_database, query.target_table, system_context))
-                throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
+            if (!tryRestartReplica(query.database, query.table, system_context))
+                throw Exception("There is no " + query.database + "." + query.table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::FLUSH_LOGS:
@@ -273,7 +283,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId());
-        create_ast = system_context.getCreateTableQuery(database_name, table_name);
+        create_ast = database->getCreateTableQuery(system_context, table_name);
 
         database->detachTable(table_name);
     }
@@ -284,19 +294,15 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
-        std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
         auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
-            data_path,
-            table_name,
-            database_name,
+            database->getTableDataPath(create),
             system_context,
             system_context.getGlobalContext(),
             columns,
             constraints,
-            create.attach,
             false);
 
         database->createTable(system_context, table_name, table, create_ast);
@@ -333,8 +339,8 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
-    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
-    const String & table_name = query.target_table;
+    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
+    const String & table_name = query.table;
 
     StoragePtr table = context.getTable(database_name, table_name);
 
@@ -356,8 +362,8 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
-    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
-    String & table_name = query.target_table;
+    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
+    String & table_name = query.table;
 
     if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
         storage_distributed->flushClusterNodesAllData();

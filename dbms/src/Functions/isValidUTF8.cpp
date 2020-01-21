@@ -251,7 +251,7 @@ SOFTWARE.
              * pos-240: | 0   0      0  | 0   0            0  | 0   1      15 |
              * pos+112: | 112 113    127|       >= 128        |     >= 128    |
              */
-            tmp1 = _mm_subs_epu8(pos, _mm_set1_epi8(240));
+            tmp1 = _mm_subs_epu8(pos, _mm_set1_epi8(0xF0));
             range2 = _mm_shuffle_epi8(df_ee_tbl, tmp1);
             tmp2 = _mm_adds_epu8(pos, _mm_set1_epi8(112));
             range2 = _mm_add_epi8(range2, _mm_shuffle_epi8(ef_fe_tbl, tmp2));

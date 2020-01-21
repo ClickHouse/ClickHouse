@@ -53,7 +53,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 شما میتوانید از `\G` به جای سیمی کالن یا بعد از سیمی کالن استفاده کنید. این علامت، فرمت Vertical را نشان می دهد. در این فرمت، هر مقدار در یک خط جدا چاپ می شود که برای جداول عریض مناسب است. این ویژگی غیرمعمول برای سازگاری با MySQL CLI اضافه شد.
 
-command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بدون کتابخانه بسته به build) می باشد. به عبارت دیگر، این محیط از shortcut های آشنا استفاده می کند و history دستورات را نگه می دار. history ها در فایل ~/.clickhouse-client-history نوشته می شوند.
+command line برا پایه 'replxx' می باشد. به عبارت دیگر، این محیط از shortcut های آشنا استفاده می کند و history دستورات را نگه می دار. history ها در فایل ~/.clickhouse-client-history نوشته می شوند.
 
 به صورت پیش فرض فرمت خروجی PrettyCompact می باشد. شما میتوانید از طریق دستور FORMAT در یک query، یا با مشخص کردن `\G` در انتهای query، استفاده از آرگومان های `--format` یا `--vertical` یا از کانفیگ فایل کلاینت، فرمت خروجی را مشخص کنید.
 
@@ -91,18 +91,18 @@ command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بد
 - `--query, -q` – مشخص کردن query برای پردازش در هنگام استفاده از حالت non-interactive.
 - `--database, -d` – انتخاب دیتابیس در بدو ورود به کلاینت. مقدار پیش فرض: دیتابیس مشخص شده در تنظیمات سرور (پیش فرض 'default')
 - `--multiline, -m` – اگر مشخص شود، یعنی اجازه ی نوشتن query های چند خطی را بده. (بعد از Enter، query را ارسال نکن).
-- `--multiquery, -n` – اگر مشخص شود، اجازه ی اجرای چندین query که از طریق کاما جدا شده اند را می دهد. فقط در حالت non-interactive کار می کند.
+- `--multiquery, -n` – اگر مشخص شود، اجازه ی اجرای چندین query که از طریق جمع و حلقه ها جدا شده اند را می دهد. فقط در حالت non-interactive کار می کند.
 - `--format, -f` مشخص کردن نوع فرمت خروجی
 - `--vertical, -E` اگر مشخص شود، از فرمت Vertical برای نمایش خروجی استفاده می شود. این گزینه مشابه '--format=Vertical' می باشد. در این فرمت، هر مقدار در یک خط جدید چاپ می شود، که در هنگام نمایش جداول عریض مفید است.
 - `--time, -t` اگر مشخص شود، در حالت non-interactive زمان اجرای query در 'stderr' جاپ می شود.
 - `--stacktrace` – اگر مشخص شود stack trase مربوط به اجرای query در هنگام رخ دادن یک exception چاپ می شود.
-- `-config-file` – نام فایل پیکربندی.
+- `--config-file` – نام فایل پیکربندی.
 
 ### فایل های پیکربندی
 
 `clickhouse-client` به ترتیب اولویت زیر از اولین فایل موجود برای ست کردن تنظیمات استفاده می کند:
 
-- مشخص شده در پارامتر `-config-file`
+- مشخص شده در پارامتر `--config-file`
 - `./clickhouse-client.xml`
 - `\~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`

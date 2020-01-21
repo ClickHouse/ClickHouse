@@ -10,7 +10,7 @@
 #include <common/demangle.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
-#include <Common/DiskSpaceMonitor.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 
 namespace DB
@@ -23,7 +23,59 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
+
+
+Exception::Exception()
+{
+}
+
+Exception::Exception(const std::string & msg, int code)
+    : Poco::Exception(msg, code)
+{
+    // In debug builds, treat LOGICAL_ERROR as an assertion failure.
+    assert(code != ErrorCodes::LOGICAL_ERROR);
+}
+
+Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
+    : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+#endif
+}
+
+Exception::Exception(CreateFromSTDTag, const std::exception & exc)
+    : Poco::Exception(String(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    set_stack_trace(exc.get_stack_trace_frames(), exc.get_stack_trace_size());
+#endif
+}
+
+
+std::string getExceptionStackTraceString(const std::exception & e)
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    return StackTrace::toString(e.get_stack_trace_frames(), 0, e.get_stack_trace_size());
+#else
+    if (const auto * db_exception = dynamic_cast<const Exception *>(&e))
+        return db_exception->getStackTraceString();
+    return {};
+#endif
+}
+
+
+std::string Exception::getStackTraceString() const
+{
+#ifdef STD_EXCEPTION_HAS_STACK_TRACE
+    return StackTrace::toString(get_stack_trace_frames(), 0, get_stack_trace_size());
+#else
+    return trace.toString();
+#endif
+}
+
 
 std::string errnoToString(int code, int e)
 {
@@ -76,7 +128,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     }
 }
 
-void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
+static void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
 {
     path = std::filesystem::absolute(path);
     /// It's possible to get ENOSPC for non existent file (e.g. if there are no free inodes and creat() fails)
@@ -84,20 +136,20 @@ void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
     while (!std::filesystem::exists(path) && path.has_relative_path())
         path = path.parent_path();
 
-    auto fs = DiskSpace::getStatVFS(path);
+    auto fs = getStatVFS(path);
     msg += "\nTotal space: "      + formatReadableSizeWithBinarySuffix(fs.f_blocks * fs.f_bsize)
          + "\nAvailable space: "  + formatReadableSizeWithBinarySuffix(fs.f_bavail * fs.f_bsize)
          + "\nTotal inodes: "     + formatReadableQuantity(fs.f_files)
          + "\nAvailable inodes: " + formatReadableQuantity(fs.f_favail);
 
-    auto mount_point = DiskSpace::getMountPoint(path).string();
+    auto mount_point = getMountPoint(path).string();
     msg += "\nMount point: " + mount_point;
 #if defined(__linux__)
-    msg += "\nFilesystem: " + DiskSpace::getFilesystemName(mount_point);
+    msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
 
-std::string getExtraExceptionInfo(const std::exception & e)
+static std::string getExtraExceptionInfo(const std::exception & e)
 {
     String msg;
     try
@@ -141,6 +193,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText()
+                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL;
         }
@@ -157,8 +210,9 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                   << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                   << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
+                << (with_stacktrace ? getExceptionStackTraceString(e) : "")
+                << (with_extra_info ? getExtraExceptionInfo(e) : "")
+                << ", version = " << VERSION_STRING << VERSION_OFFICIAL;
         }
         catch (...) {}
     }
@@ -261,7 +315,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
         stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
     catch (...) {}
 

@@ -105,7 +105,7 @@ public:
         if (node.name == NameAnd::name)
         {
             if (!node.arguments || node.arguments->children.empty())
-                throw Exception("Logical error: function requires argiment", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Logical error: function requires argument", ErrorCodes::LOGICAL_ERROR);
 
             for (auto & child : node.arguments->children)
             {
@@ -167,7 +167,7 @@ private:
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
     {
         if (!node.arguments)
-            throw Exception("Logical error: function requires argiment", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: function requires arguments", ErrorCodes::LOGICAL_ERROR);
         if (node.arguments->children.size() != 2)
             return false;
 

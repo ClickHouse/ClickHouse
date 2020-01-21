@@ -30,6 +30,17 @@
             </volumes>
         </small_jbod_with_external>
 
+        <one_more_small_jbod_with_external>
+            <volumes>
+                <m>
+                    <disk>jbod1</disk>
+                </m>
+                <e>
+                    <disk>external</disk>
+                </e>
+            </volumes>
+        </one_more_small_jbod_with_external>
+
         <!-- store on JBOD by default (round-robin), store big parts on external -->
         <jbods_with_external>
             <volumes>
@@ -45,7 +56,7 @@
             </volumes>
         </jbods_with_external>
 
-        <!-- Moving all parts jbod1 if accuired more than 70% -->
+        <!-- Moving all parts jbod1 if acquired more than 70% -->
         <moving_jbod_with_external>
             <volumes>
                 <main>

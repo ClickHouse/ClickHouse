@@ -10,9 +10,12 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/bit_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Interpreters/BloomFilter.h>
 
 namespace DB
 {
@@ -20,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct BloomFilterHash
@@ -30,49 +34,95 @@ struct BloomFilterHash
         15033938188484401405ULL, 18286745649494826751ULL, 6852245486148412312ULL, 8886056245089344681ULL, 10151472371158292780ULL
     };
 
-    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    template <typename FieldGetType, typename FieldType>
+    static UInt64 getNumberTypeHash(const Field & field)
     {
-        WhichDataType which(data_type);
+        /// For negative, we should convert the type to make sure the symbol is in right place
+        return field.isNull() ? intHash64(0) : intHash64(ext::bit_cast<UInt64>(FieldType(field.safeGet<FieldGetType>())));
+    }
 
-        if (which.isUInt() || which.isDateOrDateTime())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
-        else if (which.isInt() || which.isEnum())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
-        else if (which.isFloat32() || which.isFloat64())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
-        else if (which.isString() || which.isFixedString())
+    static UInt64 getStringTypeHash(const Field & field)
+    {
+        if (!field.isNull())
         {
             const auto & value = field.safeGet<String>();
-            return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
+            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
         }
-        else
-            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+        return CityHash_v1_0_2::CityHash64("", 0);
+    }
+
+    static UInt64 getFixedStringTypeHash(const Field & field, const IDataType * type)
+    {
+        if (!field.isNull())
+        {
+            const auto & value = field.safeGet<String>();
+            return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+        }
+
+        const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type);
+        const std::vector<char> value(fixed_string_type->getN(), 0);
+        return CityHash_v1_0_2::CityHash64(value.data(), value.size());
+    }
+
+    static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
+    {
+        const auto & build_hash_column = [&](const UInt64 & hash) -> ColumnPtr
+        {
+            return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
+        };
+
+
+        WhichDataType which(data_type);
+
+        if (which.isUInt8()) return build_hash_column(getNumberTypeHash<UInt64, UInt8>(field));
+        else if (which.isUInt16()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        else if (which.isUInt32()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        else if (which.isUInt64()) return build_hash_column(getNumberTypeHash<UInt64, UInt64>(field));
+        else if (which.isInt8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        else if (which.isInt16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        else if (which.isInt32()) return build_hash_column(getNumberTypeHash<Int64, Int32>(field));
+        else if (which.isInt64()) return build_hash_column(getNumberTypeHash<Int64, Int64>(field));
+        else if (which.isEnum8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
+        else if (which.isEnum16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
+        else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
+        else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
+        else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
+        else if (which.isString()) return build_hash_column(getStringTypeHash(field));
+        else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
-        const IColumn * actual_col = column.get();
-        const IDataType * actual_type = data_type.get();
-
         WhichDataType which(data_type);
         if (which.isArray())
         {
-            const ColumnArray * array_col = typeid_cast<const ColumnArray *>(column.get());
+            const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
-                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
-
-            actual_col = array_col->getDataPtr().get();
-            actual_type = static_cast<const DataTypeArray *>(data_type.get())->getNestedType().get();
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
             const auto & offsets = array_col->getOffsets();
-            size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
-            limit = std::max(actual_col->size() - offset, limit);
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
+            pos = offsets[pos - 1];
+
+            if (limit == 0)
+            {
+                auto index_column = ColumnUInt64::create(1);
+                ColumnUInt64::Container & index_column_vec = index_column->getData();
+                index_column_vec[0] = 0;
+                return index_column;
+            }
         }
+
+        const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);
+        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
 
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
-        getAnyTypeHash<true>(actual_type, actual_col, index_column_vec, pos);
+        getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column_vec, pos);
         return index_column;
     }
 
@@ -97,7 +147,7 @@ struct BloomFilterHash
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
-        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     template <typename Type, bool is_first>
