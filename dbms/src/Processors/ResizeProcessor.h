@@ -174,7 +174,6 @@ private:
     {
         OutputPort * port;
         OutputStatus status;
-        ssize_t last_input;
     };
 
     std::vector<InputPortWithStatus> input_ports;
