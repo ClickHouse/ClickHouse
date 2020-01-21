@@ -966,76 +966,40 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
     readIntText(x, buf);
     if (buf.eof())
         return;
+
+    auto F = [&buf, &x] (long long base, int power_of_two) mutable
+    {
+        ++buf.position();
+        if (buf.eof())
+        {
+            x *= base;
+        }
+        else if (*buf.position() == 'i')
+        {
+            x = (x << power_of_two);
+            ++buf.position();
+        }
+        return;
+    };
+                                                                                                                                                                        
     switch (*buf.position())
     {
-        case 'k':
-            ++buf.position();
-            if (buf.eof())
-            {
-                x *= 1000;
-                return;
-            }
-            else if (*buf.position() == 'i')
-            {
-                x = (x << 10);
-            }
-            else
-            {
-                return;
-            }
+        case 'k': [[fallthrough]];
+        case 'K':
+            F(1000, 10);
             break;
         case 'M':
-            ++buf.position();
-            if (buf.eof())
-            {
-                x *= 1000000; /// 1e+6
-                return;
-            }
-            else if (*buf.position() == 'i')
-            {
-                x = (x << 20);
-            }
-            else
-            {
-                return;
-            }
+            F(1000000, 20);
             break;
         case 'G':
-            ++buf.position();
-            if (buf.eof())
-            {
-                x *= 1000000000; /// 1e+9
-                return;
-            }
-            else if (*buf.position() == 'i')
-            {
-                x = (x << 30);
-            }
-            else
-            {
-                return;
-            }
+            F(1000000000, 30);
             break;
         case 'T':
-            ++buf.position();
-            if (buf.eof())
-            {
-                x *= 1000000000000; /// 1e+12
-                return;
-            }
-            else if (*buf.position() == 'i')
-            {
-                x = (x << 40);
-            }
-            else
-            {
-                return;
-            }
+            F(1000000000000ULL, 40);
             break;
         default:
             return;
     }
-    ++buf.position();
     return;
 }
 
