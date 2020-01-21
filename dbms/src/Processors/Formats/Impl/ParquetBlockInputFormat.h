@@ -18,6 +18,9 @@ class ParquetBlockInputFormat: public IInputFormat
 public:
     ParquetBlockInputFormat(ReadBuffer & in_, Block header_);
 
+    void resetParser() override;
+
+
     String getName() const override { return "ParquetBlockInputFormat"; }
 
 protected:
