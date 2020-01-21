@@ -4,7 +4,7 @@
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
 #include <common/logger_useful.h>
-#include <common/readline_use.h>
+#include <common/LineReader.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -69,12 +69,13 @@ int main(int argc, char ** argv)
         Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
+        LineReader lr(nullptr, {}, '\\');
 
-        while (char * line_ = readline(":3 "))
+        do
         {
-            add_history(line_);
-            std::string line(line_);
-            free(line_);
+            const auto & line = lr.readLine(":3 ", ":3 ");
+            if (line.empty())
+                break;
 
             try
             {
@@ -211,6 +212,7 @@ int main(int argc, char ** argv)
                 std::cerr << "KeeperException: " << e.displayText() << std::endl;
             }
         }
+        while (true);
     }
     catch (const Coordination::Exception & e)
     {
