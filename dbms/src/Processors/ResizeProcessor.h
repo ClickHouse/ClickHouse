@@ -98,6 +98,7 @@ private:
             {
                 queue_mode = false;
                 input_flags.assign(num_inputs, true);
+                num_enabled_flags = num_inputs;
             }
             else
             {
@@ -113,14 +114,18 @@ private:
                 if (input_flags[preferred])
                 {
                     input_flags[preferred] = false;
+                    --num_enabled_flags;
                     return preferred;
                 }
 
                 queue_mode = false;
 
-                for (size_t i = 0; i < input_flags.size(); ++i)
-                    if (input_flags[i])
-                        inputs_queue.push(i);
+                if (num_enabled_flags)
+                {
+                    for (size_t i = 0; i < input_flags.size(); ++i)
+                        if (input_flags[i])
+                            inputs_queue.push(i);
+                }
             }
 
             preferred = inputs_queue.front();
@@ -132,12 +137,16 @@ private:
             if (queue_mode)
                 inputs_queue.push(input);
             else
+            {
+                ++num_enabled_flags;
                 input_flags[input] = true;
+            }
         }
 
-        bool empty() const { return queue_mode && inputs_queue.empty(); }
+        bool empty() const { return queue_mode ? inputs_queue.empty() : num_enabled_flags == 0; }
 
     private:
+        size_t num_enabled_flags = 0;
         std::vector<char> input_flags;
         std::queue<size_t> inputs_queue;
         bool queue_mode = true;
