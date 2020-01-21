@@ -26,7 +26,6 @@ private:
     bool default_totals;
     bool initialized = false;
 
-    Chunk src_chunk;
     ExtraBlockPtr not_processed;
     size_t action_number = 0;
 

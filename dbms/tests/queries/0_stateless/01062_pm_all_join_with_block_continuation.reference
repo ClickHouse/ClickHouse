@@ -2,7 +2,6 @@ defaults
 10000000
 10000000
 10000000	10
-errors
 max_joined_block_size_rows = 2000
 10000000
 10000000	10000
