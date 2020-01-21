@@ -2,17 +2,15 @@
 
 ClickHouse is an open project, and you can contribute to it in many ways. You can help with ideas, code, or documentation. We appreciate any efforts that help us to make the project better.
 
-Thank you :-)
+Thank you.
 
-## Technical info
-
-You can find the "Contacts" section on the project's [website](https://clickhouse.yandex/). Select any way of communicating with us and discuss ideas.
+## Technical Info
 
 We have a [developer's guide](https://clickhouse.yandex/docs/en/development/developer_instruction/) for writing code for ClickHouse. Besides this guide, you can find [Overview of ClickHouse Architecture](https://clickhouse.yandex/docs/en/development/architecture/) and instructions on how to build ClickHouse in different environments.
 
 If you want to contribute to documentation, read the [Contributing to ClickHouse Documentation](docs/README.md) guide.
 
-## Legal info
+## Legal Info
 
 In order for us (YANDEX LLC) to accept patches and other contributions from you, you will have to adopt our Yandex Contributor License Agreement (the "**CLA**"). The current version of the CLA you may find here:
 1) https://yandex.ru/legal/cla/?lang=en (in English) and

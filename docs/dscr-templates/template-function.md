@@ -21,7 +21,7 @@ More text (Optional).
 
 - Returned values list.
 
-Type: `Type`.
+Type: [Type](relative/path/to/type/dscr.md#type).
 
 **Example**
 

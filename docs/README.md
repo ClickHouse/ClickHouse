@@ -16,11 +16,7 @@ If you want to help ClickHouse with documentation you can face, for example, the
 
     Here are some [tips](#how-to-contribute).
 
-- "I don't know what to describe."
-
-    Ask us, and we will provide you a choice.
-
-Writing the docs is extremely useful for project's users and developers, and grows your karma :-)
+Writing the docs is extremely useful for project's users and developers, and grows your karma.
 
 **Contents**
 
@@ -42,15 +38,9 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, documentation exists in:
+At the moment, [documentation](https://clickhouse.yandex/docs) exists in English, Russian, Chinese, Japanese, and Farsi. We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs).
 
-* English: https://clickhouse.yandex/docs/en/
-* Russian: https://clickhouse.yandex/docs/ru/
-* Chinese: https://clickhouse.yandex/docs/zh/
-* Japanese: https://clickhouse.yandex/docs/ja/
-* Farsi: https://clickhouse.yandex/docs/fa/
-
-We store the documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs). Each language lays in the corresponding folder. Files in language folders that are not translated from English are the symbolic links to the English ones.
+Each language lays in the corresponding folder. Files that are not translated from English are the symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
 
@@ -60,19 +50,15 @@ You can contribute to the documentation in many ways, for example:
 
 - Fork the ClickHouse repository, edit, commit, push, and open a pull request.
 
-    Add the `documentation` label to this pull request for proper automatic checks applying.
+    Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
 - Open a required file in the ClickHouse repository and edit it from the GitHub web interface.
 
     You can do it on GitHub, or on the [ClickHouse Documentation](https://clickhouse.yandex/docs/en/) site. Each page of ClickHouse Documentation site contains an "Edit this page" (🖋) element in the upper right corner. Clicking this symbol, you get to the ClickHouse docs file opened for editing.
 
-    When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying.
+    When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
-- Open the GitHub issue and place your docs there with the `documentation` label.
-
-    We surely will find and adopt it to the documentation.
-
-Preferable language for contribution is English. Also, we can take contributions in the Russian language.
+Contribute all new information in English language. Other languages are translations from English.
 
 <a name="markdown-cheatsheet"/>
 
@@ -142,7 +128,13 @@ Preferable language for contribution is English. Also, we can take contributions
 
 When adding a new file:
 
-- Make symbolic links for all other languages.
+- Make symbolic links for all other languages. You can use the following commands:
+
+    ```bash
+    $ cd /ClickHouse/clone/directory/docs
+    $ ln -sr en/new/file.md lang/new/file.md
+    ```
+
 - Reference the file from `toc_{en,ru,zh,ja,fa}.yaml` files with the pages index.
 
 
@@ -214,6 +206,4 @@ Templates:
 
 ## How to Build Documentation
 
-You don't need to build the documentation locally. Add the `documentation` label to your PR's, and the GitHub CI tool will build docs and show you errors.
-
-However, if you want to build documentation locally, use the instructions in [docs/tools/README.md](docs/tools/README.md).
+You can build your documentation manually by following the instructions in [docs/tools/README.md](docs/tools/README.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
