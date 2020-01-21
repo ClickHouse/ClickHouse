@@ -46,6 +46,8 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
+    void drop(TableStructureWriteLockHolder &) override;
+
 protected:
     StorageTinyLog(
         DiskPtr disk_,
