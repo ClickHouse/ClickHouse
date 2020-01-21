@@ -49,4 +49,9 @@ if (ENABLE_REPLXX)
     target_compile_definitions(replxx PUBLIC USE_REPLXX=1)
 
     message (STATUS "Using replxx")
+else ()
+    add_library(replxx INTERFACE)
+    target_compile_definitions(replxx PUBLIC USE_REPLXX=0)
+
+    message (STATUS "Not using replxx (Beware! Runtime fallback to readline is possible!)")
 endif ()

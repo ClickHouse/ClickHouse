@@ -6,6 +6,13 @@
 #include <port/unistd.h>
 #include <string.h>
 
+/// We can detect if code is linked with one or another readline variants or open the library dynamically.
+#include <dlfcn.h>
+extern "C"
+{
+    char * readline(const char *) __attribute__((__weak__));
+    char * (*readline_ptr)(const char *) = readline;
+}
 
 namespace
 {
@@ -105,10 +112,37 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-    std::cout << prompt;
-    std::getline(std::cin, input);
-    if (!std::cin.good())
-        return ABORT;
+    if (!readline_ptr)
+    {
+        for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
+        {
+            void * dl_handle = dlopen(name, RTLD_LAZY);
+            if (dl_handle)
+            {
+                readline_ptr = reinterpret_cast<char * (*)(const char *)>(dlsym(dl_handle, "readline"));
+                if (readline_ptr)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Minimal support for readline
+    if (readline_ptr)
+    {
+        char * line_read = (*readline_ptr)(prompt.c_str());
+        if (!line_read)
+            return ABORT;
+        input = line_read;
+    }
+    else
+    {
+        std::cout << prompt;
+        std::getline(std::cin, input);
+        if (!std::cin.good())
+            return ABORT;
+    }
 
     trim(input);
     return INPUT_LINE;
