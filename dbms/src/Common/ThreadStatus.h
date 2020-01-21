@@ -83,7 +83,7 @@ extern thread_local ThreadStatus * current_thread;
   *
   * This object should be used only via "CurrentThread", see CurrentThread.h
   */
-class ThreadStatus : public boost::noncopyable
+class ThreadStatus : boost::noncopyable
 {
 public:
     ThreadStatus();

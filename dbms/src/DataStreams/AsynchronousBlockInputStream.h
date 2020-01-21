@@ -20,7 +20,7 @@ namespace DB
   * 1. Allows you to make the different stages of the query execution pipeline work in parallel.
   * 2. Allows you not to wait until the data is ready, and periodically check their readiness without blocking.
   *    This is necessary, for example, so that during the waiting period you can check if a packet
-  *     has come over the network with a request to interrupt the execution of the query.
+  *    has come over the network with a request to interrupt the execution of the query.
   *    It also allows you to execute multiple queries at the same time.
   */
 class AsynchronousBlockInputStream : public IBlockInputStream
@@ -113,4 +113,3 @@ protected:
 };
 
 }
-
