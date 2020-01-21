@@ -11,8 +11,8 @@ namespace ErrorCodes
 }
 
 
-template <bool _throw_on_error, typename T>
-inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
+template <typename T>
+inline void readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
 {
     x = 0;
     exponent = 0;
@@ -24,11 +24,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
     bool after_point = false;
 
     if (buf.eof())
-    {
-        if constexpr (_throw_on_error)
-            throwReadAfterEOF();
-        return false;
-    }
+        throwReadAfterEOF();
 
     if (!buf.eof())
     {
@@ -79,12 +75,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
 
                 ++places; // num zeroes before + current digit
                 if (digits + places > max_digits)
-                {
-                    if constexpr (_throw_on_error)
-                        throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
+                    throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
                             + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-                    return false;
-                }
 
                 digits += places;
                 if (after_point)
@@ -109,11 +101,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
 
             default:
                 if (digits_only)
-                {
-                    if constexpr (_throw_on_error)
-                        throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
-                    return false;
-                }
+                    throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                 stop = true;
                 continue;
         }
@@ -121,7 +109,6 @@ inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
     }
 
     x *= sign;
-    return true;
 }
 
 template <typename T>
@@ -129,7 +116,7 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
 {
     unsigned int digits = precision;
     int exponent;
-    readDigits<true>(buf, x, digits, exponent, digits_only);
+    readDigits(buf, x, digits, exponent, digits_only);
 
     if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale))
         throw Exception("Decimal value is too big", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -145,10 +132,17 @@ inline bool tryReadDecimalText(ReadBuffer & buf, T & x, unsigned int precision, 
     unsigned int digits = precision;
     int exponent;
 
-    if (!readDigits<false>(buf, x, digits, exponent, true) ||
-        static_cast<int>(digits) + exponent > static_cast<int>(precision - scale) ||
-        static_cast<int>(scale) + exponent < 0)
+    try
+    {
+        readDigits(buf, x, digits, exponent, true);
+        if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale) ||
+            static_cast<int>(scale) + exponent < 0)
+            return false;
+    }
+    catch (const Exception &)
+    {
         return false;
+    }
 
     scale += exponent;
     return true;
