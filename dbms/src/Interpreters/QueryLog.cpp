@@ -50,6 +50,7 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeString>(),                                  "query"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
+        {std::make_shared<DataTypeUInt16>(),                                  "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
 
         {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
@@ -108,6 +109,12 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insertData(query.data(), query.size());
     columns[i++]->insertData(exception.data(), exception.size());
+
+    UInt16 exception_code = 0;
+    if (exception != "")
+        exception_code = parse<UInt16>(exception.data() + 6, exception.size() - 6); /// pass "Code: "
+    columns[i++]->insert(exception_code);
+
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());
 
     appendClientInfo(client_info, columns, i);
