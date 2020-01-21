@@ -896,7 +896,7 @@ Result:
 │ [('a','d'),('b','e'),('c','f')]            │
 └────────────────────────────────────────────┘
 ```
-## auc(arr_scores, arr_labels)
+## arrayAUC(arr_scores, arr_labels)
 
 Returns AUC(Area Under the Curve, which is a concept in machine learning, see more details: https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc); 
 
