@@ -144,7 +144,8 @@ public:
             argument_block.insert(block.getByPosition(arguments[arg]));
         }
 
-        ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr) {
+        ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
+        {
             WriteBufferFromOStream out_buffer(ostr);
             auto output = context.getOutputFormat(rpc_input_format, out_buffer, argument_block.cloneEmpty());
             output->writePrefix();
