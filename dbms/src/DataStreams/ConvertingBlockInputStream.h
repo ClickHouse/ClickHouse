@@ -30,7 +30,7 @@ public:
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,
         /// Find columns in source by their names if present else use the default. Allow excessive columns in source.
-	NameOrDefault
+        NameOrDefault
     };
 
     ConvertingBlockInputStream(
