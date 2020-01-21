@@ -132,12 +132,6 @@ StoragePtr StorageFactory::get(
         }
     }
 
-    if (relative_data_path.empty())
-    {
-        if (endsWith(name, "MergeTree") || endsWith(name, "Log") || name == "Join" || name == "Set")
-            throw Exception("Data path cannot be empty for table with engine " + name, ErrorCodes::LOGICAL_ERROR);
-    }
-
     auto it = storages.find(name);
     if (it == storages.end())
     {
