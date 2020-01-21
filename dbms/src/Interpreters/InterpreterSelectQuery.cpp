@@ -1105,7 +1105,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
-                        return std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        std::shared_ptr<IProcessor> ret;
+                        if (settings.partial_merge_join)
+                            ret = std::make_shared<InflatingExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        else
+                            ret = std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
+                        return ret;
                     });
                 }
                 else
