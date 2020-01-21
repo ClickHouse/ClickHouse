@@ -590,7 +590,8 @@ void HTTPHandler::processQuery(
     customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type, const String & format) {
+        [&response] (const String & content_type, const String & format)
+        {
             response.setContentType(content_type);
             response.add("X-ClickHouse-Format", format);
         },
