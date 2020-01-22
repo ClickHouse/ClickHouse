@@ -676,9 +676,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
         const size_t size = config.getUInt64(layout_prefix + ".cache.size_in_cells");
         if (size == 0)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 0 cells",
                             ErrorCodes::TOO_SMALL_BUFFER_SIZE};
-            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
 
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         if (require_nonempty)
@@ -713,7 +712,6 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return std::make_unique<CacheDictionary>(
                 database, name, dict_struct, std::move(source_ptr), dict_lifetime, size,
                 allow_read_expired_keys, max_update_queue_size, update_queue_push_timeout_milliseconds, each_update_finish_timeout_seconds);
-        return std::make_unique<CacheDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("cache", create_layout, false);
 }
@@ -727,6 +725,9 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr first_popped;
         update_queue.pop(first_popped);
+
+        /// Wait other pointers to be pushed.
+        /// std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
         /// Here we pop as many unit pointers from update queue as we can.
         /// We fix current size to avoid livelock (or too long waiting),
