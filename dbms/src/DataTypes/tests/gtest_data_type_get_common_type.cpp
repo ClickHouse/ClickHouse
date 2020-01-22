@@ -60,7 +60,7 @@ std::ostream & operator<<(std::ostream & ostr, const TypesTestCase & test_case)
 class TypeTest : public ::testing::TestWithParam<TypesTestCase>
 {
 public:
-    void SetUp()
+    void SetUp() override
     {
         const auto & p = GetParam();
         from_types = typesFromString(p.from_types);
