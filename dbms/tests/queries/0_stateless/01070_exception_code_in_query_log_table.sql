@@ -1,6 +1,7 @@
-DROP TABLE IF EXISTS test_table;
+DROP TABLE IF EXISTS test_table_for_01070_exception_code_in_query_log_table;
+SELECT * FROM test_table_for_01070_exception_code_in_query_log_table; -- { serverError 60 }
+CREATE TABLE test_table_for_01070_exception_code_in_query_log_table (value UInt64) ENGINE=Memory();
+SELECT * FROM test_table_for_01070_exception_code_in_query_log_table;
 SYSTEM FLUSH LOGS;
-TRUNCATE TABLE system.query_log;
-SELECT * FROM test_table; -- { serverError 60 }
-SYSTEM FLUSH LOGS;
-SELECT exception_code FROM system.query_log;
+SELECT exception_code FROM system.query_log WHERE query='SELECT * FROM test_table_for_01070_exception_code_in_query_log_table';
+DROP TABLE IF EXISTS test_table_for_01070_exception_code_in_query_log_table;
