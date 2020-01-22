@@ -38,7 +38,7 @@ struct QueryLogElement
     time_t query_start_time{};
     UInt64 query_duration_ms{};
 
-    /// The data fetched from 1457488640DB to execute the query
+    /// The data fetched from DB to execute the query
     UInt64 read_rows{};
     UInt64 read_bytes{};
 
