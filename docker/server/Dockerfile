@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.17.7.*
+ARG version=19.17.8.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
