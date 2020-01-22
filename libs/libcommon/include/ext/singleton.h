@@ -3,6 +3,8 @@
 #include <memory>
 #include <type_traits>
 
+namespace ext {
+
 template <class T, typename DefaultConstructable = void>
 class Singleton;
 
@@ -19,7 +21,7 @@ public:
     }
 };
 
-/// For custom-constructed type we have to enforce call to |create()|
+/// For custom-constructed type we have to construct |Singleton| object with non-default constructor once
 /// before any use of "arrow" operator.
 template <class T>
 class Singleton<T, std::enable_if_t<!std::is_default_constructible_v<T>>>
@@ -42,3 +44,5 @@ public:
 private:
     inline static std::unique_ptr<T> instance{};
 };
+
+}

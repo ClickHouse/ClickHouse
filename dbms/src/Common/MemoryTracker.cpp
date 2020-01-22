@@ -7,9 +7,10 @@
 #include <Common/formatReadable.h>
 #include <common/likely.h>
 #include <common/logger_useful.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 
 
@@ -86,7 +87,7 @@ void MemoryTracker::alloc(Int64 size)
         CurrentMetrics::add(metric, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
-    Int64 current_soft_limit = soft_limit.load(std::memory_order_relaxed);
+    Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
 
     /// Using non-thread-safe random number generator. Joint distribution in different threads would not be uniform.
     /// In this case, it doesn't matter.
@@ -108,11 +109,11 @@ void MemoryTracker::alloc(Int64 size)
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
-    if (unlikely(current_soft_limit && will_be > current_soft_limit))
+    if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto no_track = blocker.cancel();
-        Singleton<DB::TraceCollector>()->collect(size);
-        setOrRaiseSoftLimit(current_soft_limit + Int64(ceil((will_be - current_soft_limit) / soft_limit_step)) * soft_limit_step);
+        ext::Singleton<DB::TraceCollector>()->collect(size);
+        setOrRaiseProfilerLimit(current_profiler_limit + Int64(std::ceil((will_be - current_profiler_limit) / profiler_step)) * profiler_step);
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit))
@@ -187,7 +188,7 @@ void MemoryTracker::resetCounters()
     amount.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
     hard_limit.store(0, std::memory_order_relaxed);
-    soft_limit.store(0, std::memory_order_relaxed);
+    profiler_limit.store(0, std::memory_order_relaxed);
 }
 
 
@@ -209,11 +210,11 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 }
 
 
-void MemoryTracker::setOrRaiseSoftLimit(Int64 value)
+void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
-    Int64 old_value = soft_limit.load(std::memory_order_relaxed);
-    while (old_value < value && !soft_limit.compare_exchange_weak(old_value, value))
+    Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
+    while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
 }
 

@@ -182,13 +182,13 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             ///  not for specific users, sessions or queries,
             ///  because this setting is effectively global.
             total_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_all_queries);
-            total_memory_tracker.setOrRaiseSoftLimit(settings.total_memory_profiler_step);
-            total_memory_tracker.setSoftLimitStep(settings.total_memory_profiler_step);
             total_memory_tracker.setDescription("(total)");
 
             /// Track memory usage for all simultaneously running queries from single user.
             user_process_list.user_memory_tracker.setParent(&total_memory_tracker);
             user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
+            user_process_list.user_memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+            user_process_list.user_memory_tracker.setProfilerStep(settings.memory_profiler_step);
             user_process_list.user_memory_tracker.setDescription("(for user)");
 
             /// Actualize thread group info
