@@ -21,7 +21,7 @@ public:
     const size_t default_shard_idx = 0;
 
     ShardsMultiplexedConnections(
-        std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
+        std::vector<std::vector<IConnectionPool::Entry>> && shard_connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Send all scalars to replicas.

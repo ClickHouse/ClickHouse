@@ -21,10 +21,10 @@ namespace ErrorCodes
 }
 
 RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
-            ShardQueries && multiplexed_shards_,
+            const ShardQueries & multiplexed_shards_,
             const Block & header_, const Context & context_, const Settings * settings,
             const ThrottlerPtr & throttler_, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : multiplexed_shards(std::move(multiplexed_shards_))
+    : multiplexed_shards(multiplexed_shards_)
     , header(header_)
     , context(context_)
     , throttler(throttler_)
@@ -299,7 +299,7 @@ void RemoteShardsBlockInputStream::sendQuery()
         shard_connections.push_back(current_connections);
     }
 
-    multiplexed_connections = std::make_unique<ShardsMultiplexedConnections>(shard_connections, settings, throttler);
+    multiplexed_connections = std::make_unique<ShardsMultiplexedConnections>(std::move(shard_connections), settings, throttler);
 
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;

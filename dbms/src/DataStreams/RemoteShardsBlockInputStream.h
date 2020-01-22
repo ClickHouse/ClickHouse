@@ -28,7 +28,7 @@ public:
     using ShardQueries = std::vector<ShardQuery>;
 
     RemoteShardsBlockInputStream(
-            ShardQueries && multiplexed_shards_,
+            const ShardQueries & multiplexed_shards_,
             const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);

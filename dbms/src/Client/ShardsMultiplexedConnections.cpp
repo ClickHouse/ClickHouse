@@ -13,11 +13,11 @@ namespace ErrorCodes
 }
 
 ShardsMultiplexedConnections::ShardsMultiplexedConnections(
-        std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
+        std::vector<std::vector<IConnectionPool::Entry>> && shard_connections,
         const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_)
 {
-    for (auto & connections : shard_connections)
+    for (auto && connections : shard_connections)
     {
         /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
         /// `skip_unavailable_shards` was set. Then just return.
@@ -25,15 +25,16 @@ ShardsMultiplexedConnections::ShardsMultiplexedConnections(
             continue;
 
         // replica_states.reserve(connections.size());
-        for (auto & pool_entry : connections)
+        for (auto && pool_entry : connections)
         {
             Connection * connection = &(*pool_entry);
             connection->setThrottler(throttler);
 
-            replica_states.push_back({
-                .pool_entry = std::move(pool_entry),
-                .connection = connection,
-            });
+            ReplicaState replica_state;
+            replica_state.pool_entry = std::move(pool_entry);
+            replica_state.connection = connection;
+
+            replica_states.push_back(std::move(replica_state));
         }
     }
     active_connection_count = replica_states.size();
@@ -113,7 +114,7 @@ void ShardsMultiplexedConnections::sendQuery(
     }
 
     const size_t offset = replicas.begin() - replica_states.begin();
-    const size_t num_replicas = replicas.end() - replicas.end();
+    const size_t num_replicas = replicas.end() - replicas.begin();
     if (num_replicas > 1)
     {
         /// Use multiple replicas for parallel query processing.
