@@ -170,7 +170,7 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
-void StorageMergeTree::drop(TableStructureWriteLockHolder &)
+void StorageMergeTree::drop()
 {
     shutdown();
     dropAllData();

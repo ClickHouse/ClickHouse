@@ -14,11 +14,13 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, const Context & context_)
+DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
     : DatabaseOrdinary(name_, metadata_path_, context_)
 {
     data_path = "store/";
-    log = &Logger::get("DatabaseAtomic (" + name_ + ")");
+    auto log_name = "DatabaseAtomic (" + name_ + ")";
+    log = &Logger::get(log_name);
+    drop_task = context_.getSchedulePool().createTask(log_name, [this](){ this->dropTableDataTask(); });
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -44,6 +46,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 void DatabaseAtomic::drop(const Context &)
 {
     Poco::File(getMetadataPath()).remove(false);
+    //TODO check all tables dropped
 }
 
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -61,6 +64,39 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
         table_name_to_path.erase(name);
     }
     return DatabaseWithDictionaries::detachTable(name);
+}
+
+void DatabaseAtomic::dropTable(const Context & context, const String & table_name)
+{
+    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path_drop = table_metadata_path + drop_suffix;
+    String table_data_path_relative = getTableDataPath(table_name);
+    assert(!table_data_path_relative.empty());
+
+    StoragePtr table = detachTable(table_name);
+    try
+    {
+        // FIXME
+        // 1. CREATE table_name: + table_name.sql
+        // 2. DROP table_name: table_name.sql -> table_name.sql.tmp_drop
+        // 3. CREATE table_name: + table_name.sql
+        // 4. DROP table_name: table_name.sql -> table_name.sql.tmp_drop overwrites table_name.sql.tmp_drop ?
+        Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
+
+        {
+            LOG_INFO(log, "Mark table " + table->getStorageID().getNameForLogs() + " to drop.");
+            std::lock_guard lock(tables_to_drop_mutex);
+            time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            tables_to_drop.push_back({table, context.getPath() + table_data_path_relative, current_time});
+        }
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        attachTable(table_name, table, table_data_path_relative);
+        Poco::File(table_metadata_path_drop).renameTo(table_metadata_path);
+        throw;
+    }
 }
 
 void DatabaseAtomic::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
@@ -87,6 +123,75 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     to_database.attachTable(to_table_name, table, getTableDataPath(table_name));
     detachTable(table_name);
     Poco::File(getObjectMetadataPath(table_name)).renameTo(to_database.getObjectMetadataPath(to_table_name));
+}
+
+void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
+{
+    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
+    drop_task->activateAndSchedule();
+}
+
+void DatabaseAtomic::shutdown()
+{
+    drop_task->deactivate();
+    DatabaseWithDictionaries::shutdown();
+    //TODO try drop tables
+}
+
+void DatabaseAtomic::dropTableDataTask()
+{
+    LOG_INFO(log, String("Wake up ") + __PRETTY_FUNCTION__);
+    TableToDrop table;
+    try
+    {
+        std::lock_guard lock(tables_to_drop_mutex);
+        LOG_INFO(log, "There are " + std::to_string(tables_to_drop.size()) + " tables to drop");
+        time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto it = std::find_if(tables_to_drop.begin(), tables_to_drop.end(), [current_time, this](const TableToDrop & elem)
+        {
+            LOG_INFO(log, "Check table " + elem.table->getStorageID().getNameForLogs() + ": " +
+                      "refcount = " + std::to_string(elem.table.unique()) + ", " +
+                      "time elapsed = " + std::to_string(current_time - elem.drop_time));
+            return elem.table.unique() && elem.drop_time + drop_delay_s < current_time;
+        });
+        if (it != tables_to_drop.end())
+        {
+            table = std::move(*it);
+            LOG_INFO(log, "Will try drop " + table.table->getStorageID().getNameForLogs());
+            tables_to_drop.erase(it);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+
+    if (table.table)
+    {
+        try
+        {
+            LOG_INFO(log, "Trying to drop table " + table.table->getStorageID().getNameForLogs());
+            table.table->drop();
+            table.table->is_dropped = true;
+            Poco::File table_data_dir{table.data_path};
+            if (table_data_dir.exists())
+                table_data_dir.remove(true);
+
+            String metadata_tmp_drop = getObjectMetadataPath(table.table->getStorageID().getTableName()) + drop_suffix;
+            Poco::File(metadata_tmp_drop).remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot drop table " + table.table->getStorageID().getNameForLogs() +
+                                        ". Will retry later.");
+            {
+                std::lock_guard lock(tables_to_drop_mutex);
+                tables_to_drop.emplace_back(std::move(table));
+            }
+        }
+    }
+
+    drop_task->scheduleAfter(reschedule_time_ms);
 }
 
 

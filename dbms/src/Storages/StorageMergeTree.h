@@ -62,7 +62,7 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;

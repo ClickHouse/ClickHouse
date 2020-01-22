@@ -159,7 +159,7 @@ void DatabaseOnDisk::createTable(
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
-    String table_metadata_tmp_path = table_metadata_path + ".tmp";
+    String table_metadata_tmp_path = table_metadata_path + create_suffix;
     String statement;
 
     {
@@ -190,30 +190,36 @@ void DatabaseOnDisk::createTable(
     }
 }
 
-void DatabaseOnDisk::removeTable(const Context & /* context */, const String & table_name)
+void DatabaseOnDisk::dropTable(const Context &  context, const String & table_name)
 {
-    String table_data = getTableDataPath(table_name);
-    StoragePtr res = detachTable(table_name);
     String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path_drop = table_metadata_path + drop_suffix;
+    String table_data_path_relative = getTableDataPath(table_name);
+    assert(!table_data_path_relative.empty());
 
+    StoragePtr table = detachTable(table_name);
+    bool renamed = false;
     try
     {
-        Poco::File(table_metadata_path).remove();
+        Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
+        renamed = true;
+        table->drop();
+        table->is_dropped = true;
+
+        Poco::File table_data_dir{context.getPath() + table_data_path_relative};
+        if (table_data_dir.exists())
+            table_data_dir.remove(true);
     }
     catch (...)
     {
-        try
-        {
-            Poco::File(table_metadata_path + ".tmp_drop").remove();
-            return;
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
-        }
-        attachTable(table_name, res, data_path);
+        LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        attachTable(table_name, table, table_data_path_relative);
+        if (renamed)
+            Poco::File(table_metadata_path_drop).renameTo(table_metadata_path);
         throw;
     }
+
+    Poco::File(table_metadata_path_drop).remove();
 }
 
 void DatabaseOnDisk::renameTable(
@@ -234,41 +240,43 @@ void DatabaseOnDisk::renameTable(
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    StoragePtr table = tryGetTable(context, table_name);
-
-    if (!table)
-        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-
-    auto table_lock = table->lockExclusively(context.getCurrentQueryId());
-
-    ASTPtr ast = parseQueryFromMetadata(context, getObjectMetadataPath(table_name));
-    auto & create = ast->as<ASTCreateQuery &>();
-    create.table = to_table_name;
-    if (from_ordinary_to_atomic)
-        create.uuid = UUIDHelpers::generateV4();
-    if (from_atomic_to_ordinary)
-        create.uuid = UUIDHelpers::Nil;
-
-    /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
+    auto table_data_relative_path = getTableDataPath(table_name);
+    TableStructureWriteLockHolder table_lock;
+    String table_metadata_path;
+    ASTPtr attach_query;
+    StoragePtr table = detachTable(table_name);
     try
     {
-        table->rename(to_database.getTableDataPath(create),
-                      to_database.getDatabaseName(),
-                      to_table_name, table_lock);
+        table_lock = table->lockExclusively(context.getCurrentQueryId());
+
+        table_metadata_path = getObjectMetadataPath(table_name);
+        attach_query = parseQueryFromMetadata(context, table_metadata_path);
+        auto & create = attach_query->as<ASTCreateQuery &>();
+        create.table = to_table_name;
+        if (from_ordinary_to_atomic)
+            create.uuid = UUIDHelpers::generateV4();
+        if (from_atomic_to_ordinary)
+            create.uuid = UUIDHelpers::Nil;
+
+        /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
+        table->rename(to_database.getTableDataPath(create), to_database.getDatabaseName(), to_table_name, table_lock);
     }
     catch (const Exception &)
     {
+        attachTable(table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
+        attachTable(table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPoco, e};
     }
 
-    /// NOTE Non-atomic.
-    to_database.createTable(context, to_table_name, table, ast);
-    removeTable(context, table_name);
+    /// Now table data are moved to new database, so we must add metadata and attach table to new database
+    to_database.createTable(context, to_table_name, table, attach_query);
+
+    Poco::File(table_metadata_path).remove();
 }
 
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const

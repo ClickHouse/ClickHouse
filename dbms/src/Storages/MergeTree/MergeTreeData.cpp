@@ -1381,7 +1381,8 @@ void MergeTreeData::dropAllData()
     auto full_paths = getDataPaths();
 
     for (auto && full_data_path : full_paths)
-        Poco::File(full_data_path).remove(true);
+        if (Poco::File(full_data_path).exists())
+            Poco::File(full_data_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
 }

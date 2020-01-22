@@ -2,6 +2,8 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/IStorage.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -21,11 +23,23 @@ void DatabaseMemory::createTable(
     attachTable(table_name, table);
 }
 
-void DatabaseMemory::removeTable(
+void DatabaseMemory::dropTable(
     const Context & /*context*/,
     const String & table_name)
 {
-    detachTable(table_name);
+    auto table = detachTable(table_name);
+    try
+    {
+        table->drop();
+        Poco::File table_data_dir{getTableDataPath(table_name)};
+        if (table_data_dir.exists())
+            table_data_dir.remove(true);
+    }
+    catch (...)
+    {
+        attachTable(table_name, table);
+    }
+    table->is_dropped = true;
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery(const Context & /*context*/) const

@@ -3798,7 +3798,7 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
 }
 
 
-void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
+void StorageReplicatedMergeTree::drop()
 {
     {
         auto zookeeper = tryGetZooKeeper();

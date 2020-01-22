@@ -10,6 +10,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Databases/DatabaseAtomic.h>
 
 
 namespace DB
@@ -106,43 +107,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
 
-            const std::string metadata_file_without_extension =
-                database_and_table.first->getMetadataPath()
-                + escapeForFileName(table_id.table_name);
-
-            const auto prev_metadata_name = metadata_file_without_extension + ".sql";
-            const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
-
-            /// Try to rename metadata file and delete the data
-            //TODO move this logic to DatabaseOnDisk
-            try
-            {
-                /// There some kind of tables that have no metadata - ignore renaming
-                if (Poco::File(prev_metadata_name).exists())
-                    Poco::File(prev_metadata_name).renameTo(drop_metadata_name);
-                /// Delete table data
-                database_and_table.second->drop(table_lock);
-            }
-            catch (...)
-            {
-                if (Poco::File(drop_metadata_name).exists())
-                    Poco::File(drop_metadata_name).renameTo(prev_metadata_name);
-                throw;
-            }
-
-            String table_data_path_relative = database_and_table.first->getTableDataPath(table_name);
-
-            /// Delete table metadata and table itself from memory
-            database_and_table.first->removeTable(context, table_id.table_name);
-            database_and_table.second->is_dropped = true;
-
-            /// If it is not virtual database like Dictionary then drop remaining data dir
-            if (!table_data_path_relative.empty())
-            {
-                String table_data_path = context.getPath() + table_data_path_relative;
-                if (Poco::File(table_data_path).exists())
-                    Poco::File(table_data_path).remove(true);
-            }
+            database_and_table.first->dropTable(context, table_name);
         }
     }
 
@@ -217,7 +182,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
-                table->drop(table_lock);
+                table->drop();
                 table->is_dropped = true;
             }
         }

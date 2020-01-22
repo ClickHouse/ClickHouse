@@ -209,7 +209,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 }
 
 
-void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
+void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
     if (!select_table_id.empty())

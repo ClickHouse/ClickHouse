@@ -16,11 +16,11 @@ namespace ErrorCodes
 
 ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
+    ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+    String format_string;
+    readStringUntilEOF(format_string, schema_file);
     try
     {
-        ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
-        String format_string;
-        readStringUntilEOF(format_string, schema_file);
         parse(format_string, idx_by_name);
     }
     catch (DB::Exception & e)
@@ -76,7 +76,14 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
 
             case Column:
                 column_names.emplace_back();
-                pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_names.back());
+                try
+                {
+                    pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_names.back());
+                }
+                catch (const DB::Exception & e)
+                {
+                    throwInvalidFormat(e.message(), columnsCount());
+                }
 
                 if (*pos == ':')
                     state = Format;
@@ -99,7 +106,16 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     errno = 0;
                     column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
                     if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
-                        column_idx = idx_by_name(column_names.back());
+                    {
+                        try
+                        {
+                            column_idx = idx_by_name(column_names.back());
+                        }
+                        catch (const DB::Exception & e)
+                        {
+                            throwInvalidFormat(e.message(), columnsCount());
+                        }
+                    }
                 }
                 format_idx_to_column_idx.emplace_back(column_idx);
                 break;

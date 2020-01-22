@@ -487,7 +487,7 @@ StorageLiveView::~StorageLiveView()
     }
 }
 
-void StorageLiveView::drop(TableStructureWriteLockHolder &)
+void StorageLiveView::drop()
 {
     auto table_id = getStorageID();
     global_context.removeDependency(select_table_id, table_id);
