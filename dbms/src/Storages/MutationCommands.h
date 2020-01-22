@@ -25,7 +25,8 @@ struct MutationCommand
         EMPTY,     /// Not used.
         DELETE,
         UPDATE,
-        MATERIALIZE_INDEX
+        MATERIALIZE_INDEX,
+        MATERIALIZE_TTL
     };
 
     Type type = EMPTY;

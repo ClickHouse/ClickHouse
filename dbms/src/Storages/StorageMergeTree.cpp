@@ -778,6 +778,8 @@ bool StorageMergeTree::tryMutatePart()
             tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
+        removeEmptyColumnsFromPart(new_part);
+
         tagger->is_successful = true;
         write_part_log({});
 
