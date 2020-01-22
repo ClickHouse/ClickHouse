@@ -96,6 +96,8 @@ CacheDictionary::~CacheDictionary()
 {
     finished = true;
     update_queue.clear();
+    auto empty_finishing_ptr = std::make_shared<UpdateUnit>(std::vector<Key>());
+    update_queue.push(empty_finishing_ptr);
     update_thread.join();
 }
 
@@ -725,6 +727,9 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr first_popped;
         update_queue.pop(first_popped);
+
+        if (finished)
+            break;
 
         /// Wait other pointers to be pushed.
         /// std::this_thread::sleep_for(std::chrono::milliseconds(1000));
