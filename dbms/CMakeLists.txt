@@ -142,10 +142,10 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wmaybe-uninitialized)
     # Warn when the indentation of the code does not reflect the block structure
     add_cxx_compile_options(-Wmisleading-indentation)
-    # Warn if a global function is defined without a previous declaration
+    # Warn if a global function is defined without a previous declaration - disabled because of build times
     # add_cxx_compile_options(-Wmissing-declarations)
     # Warn if a user-supplied include directory does not exist
-    # add_cxx_compile_options(-Wmissing-include-dirs)
+    add_cxx_compile_options(-Wmissing-include-dirs)
     # Obvious
     add_cxx_compile_options(-Wnon-virtual-dtor)
     # Obvious
@@ -177,7 +177,7 @@ elseif (COMPILER_GCC)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
     # Warn about overriding virtual functions that are not marked with the override keyword
-    # add_cxx_compile_options(-Wsuggest-override)
+    add_cxx_compile_options(-Wsuggest-override)
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false
@@ -563,7 +563,7 @@ if (USE_JEMALLOC)
     endif()
 endif ()
 
-dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
+dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})

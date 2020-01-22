@@ -173,7 +173,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 По умолчанию используется БД, которая прописана в настройках сервера, как БД по умолчанию. По умолчанию, это - БД default. Также вы всегда можете указать БД через точку перед именем таблицы.
 
-Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
+Имя пользователя и пароль могут быть указаны в одном из трёх вариантов:
 
 1. С использованием HTTP Basic Authentication. Пример:
 
@@ -185,6 +185,12 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+```
+
+3. С использованием заголовков ‘X-ClickHouse-User’ и ‘X-ClickHouse-Key’. Пример:
+
+```bash
+$ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
 ```
 
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.

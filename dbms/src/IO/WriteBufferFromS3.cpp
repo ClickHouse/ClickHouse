@@ -69,6 +69,7 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::finalize()
 {
+    next();
     temporary_buffer->finalize();
     if (!buffer_string.empty())
     {
