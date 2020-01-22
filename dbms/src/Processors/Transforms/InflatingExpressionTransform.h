@@ -15,10 +15,10 @@ public:
                                  bool on_totals_ = false, bool default_totals_ = false);
 
     String getName() const override { return "InflatingExpressionTransform"; }
-    void work() override;
 
 protected:
     void transform(Chunk & chunk) override;
+    bool needInputData() const override { return !not_processed; }
 
 private:
     ExpressionActionsPtr expression;

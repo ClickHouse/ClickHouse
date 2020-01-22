@@ -18,35 +18,6 @@ InflatingExpressionTransform::InflatingExpressionTransform(Block input_header, E
     , default_totals(default_totals_)
 {}
 
-void InflatingExpressionTransform::work()
-{
-    if (current_data.exception)
-        return;
-
-    try
-    {
-        transform(current_data.chunk);
-    }
-    catch (DB::Exception &)
-    {
-        current_data.exception = std::current_exception();
-        current_data.chunk.clear();
-        transformed = true;
-        has_input = false;
-        return;
-    }
-
-    if (!not_processed)
-        has_input = false;
-
-    if (!skip_empty_chunks || current_data.chunk)
-        transformed = true;
-
-    if (transformed && !current_data.chunk)
-        /// Support invariant that chunks must have the same number of columns as header.
-        current_data.chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
-}
-
 void InflatingExpressionTransform::transform(Chunk & chunk)
 {
     if (!initialized)
