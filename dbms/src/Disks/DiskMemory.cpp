@@ -16,6 +16,27 @@ namespace ErrorCodes
     extern const int CANNOT_DELETE_DIRECTORY;
 }
 
+
+class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
+{
+public:
+    explicit DiskMemoryDirectoryIterator(std::vector<String> && dir_file_paths_)
+        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
+    {
+    }
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != dir_file_paths.end(); }
+
+    String path() const override { return *iter; }
+
+private:
+    std::vector<String> dir_file_paths;
+    std::vector<String>::iterator iter;
+};
+
+
 ReservationPtr DiskMemory::reserve(UInt64 /*bytes*/)
 {
     throw Exception("Method reserve is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
@@ -71,7 +92,7 @@ size_t DiskMemory::getFileSize(const String & path) const
 
     auto iter = files.find(path);
     if (iter == files.end())
-        throw Exception("File " + path + " does not exist", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
     return iter->second.data.size();
 }
@@ -86,7 +107,7 @@ void DiskMemory::createDirectory(const String & path)
     String parent_path = parentPath(path);
     if (!parent_path.empty() && files.find(parent_path) == files.end())
         throw Exception(
-            "Failed to create directory " + path + ". Parent directory " + parent_path + " does not exist",
+            "Failed to create directory '" + path + "'. Parent directory " + parent_path + " does not exist",
             ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     files.emplace(path, FileData{FileType::Directory});
@@ -116,7 +137,7 @@ void DiskMemory::clearDirectory(const String & path)
     std::lock_guard lock(mutex);
 
     if (files.find(path) == files.end())
-        throw Exception("Directory " + path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+        throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     for (auto iter = files.begin(); iter != files.end();)
     {
@@ -128,7 +149,7 @@ void DiskMemory::clearDirectory(const String & path)
 
         if (iter->second.type == FileType::Directory)
             throw Exception(
-                "Failed to clear directory " + path + ". " + iter->first + " is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+                "Failed to clear directory '" + path + "'. " + iter->first + " is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
 
         files.erase(iter++);
     }
@@ -144,7 +165,7 @@ DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
     std::lock_guard lock(mutex);
 
     if (!path.empty() && files.find(path) == files.end())
-        throw Exception("Directory " + path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+        throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
     std::vector<String> dir_file_paths;
     for (const auto & file : files)
@@ -203,7 +224,7 @@ std::unique_ptr<ReadBuffer> DiskMemory::readFile(const String & path, size_t /*b
 
     auto iter = files.find(path);
     if (iter == files.end())
-        throw Exception("File " + path + " does not exist", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("File '" + path + "' does not exist", ErrorCodes::FILE_DOESNT_EXIST);
 
     return std::make_unique<ReadBufferFromString>(iter->second.data);
 }
@@ -218,7 +239,7 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
         String parent_path = parentPath(path);
         if (!parent_path.empty() && files.find(parent_path) == files.end())
             throw Exception(
-                "Failed to create file " + path + ". Directory " + parent_path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+                "Failed to create file '" + path + "'. Directory " + parent_path + " does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
         iter = files.emplace(path, FileData{FileType::File}).first;
     }
@@ -228,6 +249,46 @@ std::unique_ptr<WriteBuffer> DiskMemory::writeFile(const String & path, size_t /
     else
         return std::make_unique<WriteBufferFromString>(iter->second.data);
 }
+
+void DiskMemory::remove(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    if (file_it->second.type == FileType::Directory)
+    {
+        files.erase(file_it);
+        if (std::any_of(files.begin(), files.end(), [path](const auto & file) { return parentPath(file.first) == path; }))
+            throw Exception("Directory '" + path + "' is not empty", ErrorCodes::CANNOT_DELETE_DIRECTORY);
+    }
+    else
+    {
+        files.erase(file_it);
+    }
+}
+
+void DiskMemory::removeRecursive(const String & path)
+{
+    std::lock_guard lock(mutex);
+
+    auto file_it = files.find(path);
+    if (file_it == files.end())
+        throw Exception("File '" + path + "' doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+
+    for (auto iter = files.begin(); iter != files.end();)
+    {
+        if (iter->first.size() >= path.size() && std::string_view(iter->first.data(), path.size()) == path)
+            iter = files.erase(iter);
+        else
+            ++iter;
+    }
+}
+
+
+using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
 
 
 void registerDiskMemory(DiskFactory & factory)

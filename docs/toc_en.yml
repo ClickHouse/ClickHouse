@@ -25,6 +25,7 @@ nav:
   - 'Command-Line Client': 'interfaces/cli.md'
   - 'Native Interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP Interface': 'interfaces/http.md'
+  - 'MySQL Interface': 'interfaces/mysql.md'
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'

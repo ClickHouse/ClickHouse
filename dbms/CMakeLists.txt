@@ -177,7 +177,7 @@ elseif (COMPILER_GCC)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
     # Warn about overriding virtual functions that are not marked with the override keyword
-    # add_cxx_compile_options(-Wsuggest-override)
+    add_cxx_compile_options(-Wsuggest-override)
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false

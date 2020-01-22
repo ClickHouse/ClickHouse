@@ -283,29 +283,28 @@ template <
 struct OperationApplier
 {
     template <typename Columns, typename ResultData>
-    static void apply(Columns & in, ResultData & result_data)
+    static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
-        /// TODO: Maybe reuse this code for constants (which may form precalculated result)
-        doBatchedApply<false>(in, result_data);
-
+        if (!use_result_data_as_input)
+            doBatchedApply<false>(in, result_data);
         while (in.size() > 0)
             doBatchedApply<true>(in, result_data);
     }
 
-    template <bool carryResult, typename Columns, typename ResultData>
+    template <bool CarryResult, typename Columns, typename ResultData>
     static void NO_INLINE doBatchedApply(Columns & in, ResultData & result_data)
     {
         if (N > in.size())
         {
             OperationApplier<Op, OperationApplierImpl, N - 1>
-                ::template doBatchedApply<carryResult>(in, result_data);
+                ::template doBatchedApply<CarryResult>(in, result_data);
             return;
         }
 
         const OperationApplierImpl<Op, N> operationApplierImpl(in);
         size_t i = 0;
         for (auto & res : result_data)
-            if constexpr (carryResult)
+            if constexpr (CarryResult)
                 res = Op::apply(res, operationApplierImpl.apply(i++));
             else
                 res = operationApplierImpl.apply(i++);
@@ -345,16 +344,10 @@ static void executeForTernaryLogicImpl(ColumnRawPtrs arguments, ColumnWithTypeAn
         return;
     }
 
-    const auto result_column = ColumnUInt8::create(input_rows_count);
-    MutableColumnPtr const_column_holder;
-    if (has_consts)
-    {
-        const_column_holder =
-                convertFromTernaryData(UInt8Container(input_rows_count, const_3v_value), const_3v_value == Ternary::Null);
-        arguments.push_back(const_column_holder.get());
-    }
+    const auto result_column = has_consts ?
+            ColumnUInt8::create(input_rows_count, const_3v_value) : ColumnUInt8::create(input_rows_count);
 
-    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column->getData());
+    OperationApplier<Op, AssociativeGenericApplierImpl>::apply(arguments, result_column->getData(), has_consts);
 
     result_info.column = convertFromTernaryData(result_column->getData(), result_info.type->isNullable());
 }
@@ -429,32 +422,24 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     if (has_consts && Op::apply(const_val, 0) == 0 && Op::apply(const_val, 1) == 1)
         has_consts = false;
 
-    auto col_res = ColumnUInt8::create(input_rows_count, const_val);
-    UInt8Container & vec_res = col_res->getData();
+    auto col_res = has_consts ?
+            ColumnUInt8::create(input_rows_count, const_val) : ColumnUInt8::create(input_rows_count);
 
     /// FastPath detection goes in here
     if (arguments.size() == (has_consts ? 1 : 2))
     {
         if (has_consts)
-            FastApplierImpl<Op>::apply(*arguments[0], *col_res, vec_res);
+            FastApplierImpl<Op>::apply(*arguments[0], *col_res, col_res->getData());
         else
-            FastApplierImpl<Op>::apply(*arguments[0], *arguments[1], vec_res);
+            FastApplierImpl<Op>::apply(*arguments[0], *arguments[1], col_res->getData());
 
         result_info.column = std::move(col_res);
         return;
     }
 
-    UInt8ColumnPtrs uint8_args;
-    if (has_consts)
-    {
-        /// TODO: This will FAIL (or not =) ) after correction b/c we now overwrite
-        /// the result column in the first pass of OperationApplier
-        //  vec_res.assign(input_rows_count, const_val);
-        uint8_args.push_back(col_res.get());
-    }
-
     /// Convert all columns to UInt8
-    Columns converted_columns;
+    UInt8ColumnPtrs uint8_args;
+    Columns converted_columns_holder;
     for (const IColumn * column : arguments)
     {
         if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
@@ -464,21 +449,11 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
             auto converted_column = ColumnUInt8::create(input_rows_count);
             convertColumnToUInt8(column, converted_column->getData());
             uint8_args.push_back(converted_column.get());
-            converted_columns.emplace_back(std::move(converted_column));
+            converted_columns_holder.emplace_back(std::move(converted_column));
         }
     }
 
-    OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res->getData());
-
-    /// TODO: The following code is obsolete and is to be removed now
-    ///
-    /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
-    /// Suppose we have all constants folded into a neutral value and there is only one non-constant column.
-    /// Although not all logical functions have a neutral value.
-    /*
-    if (uint8_args[0] != col_res.get())
-        vec_res.assign(uint8_args[0]->getData());
-     */
+    OperationApplier<Op, AssociativeApplierImpl>::apply(uint8_args, col_res->getData(), has_consts);
 
     result_info.column = std::move(col_res);
 }

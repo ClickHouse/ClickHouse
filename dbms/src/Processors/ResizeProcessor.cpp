@@ -1,5 +1,5 @@
 #include <Processors/ResizeProcessor.h>
-
+#include <iostream>
 
 namespace DB
 {
@@ -252,6 +252,144 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
     }
 
     if (!waiting_outputs.empty())
+        return Status::NeedData;
+
+    return Status::PortFull;
+}
+
+IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+{
+    if (!initialized)
+    {
+        initialized = true;
+
+        for (auto & input : inputs)
+            input_ports.push_back({.port = &input, .status = InputStatus::NotActive, .waiting_output = -1});
+
+        for (UInt64 i = 0; i < input_ports.size(); ++i)
+            disabled_input_ports.push(i);
+
+        for (auto & output : outputs)
+            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+    }
+
+    for (auto & output_number : updated_outputs)
+    {
+        auto & output = output_ports[output_number];
+        if (output.port->isFinished())
+        {
+            if (output.status != OutputStatus::Finished)
+            {
+                ++num_finished_outputs;
+                output.status = OutputStatus::Finished;
+            }
+
+            continue;
+        }
+
+        if (output.port->canPush())
+        {
+            if (output.status != OutputStatus::NeedData)
+            {
+                output.status = OutputStatus::NeedData;
+                waiting_outputs.push(output_number);
+            }
+        }
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+
+        return Status::Finished;
+    }
+
+    std::queue<UInt64> inputs_with_data;
+
+    for (auto & input_number : updated_inputs)
+    {
+        auto & input = input_ports[input_number];
+        if (input.port->isFinished())
+        {
+            if (input.status != InputStatus::Finished)
+            {
+                input.status = InputStatus::Finished;
+                ++num_finished_inputs;
+
+                waiting_outputs.push(input.waiting_output);
+            }
+            continue;
+        }
+
+        if (input.port->hasData())
+        {
+            if (input.status != InputStatus::NotActive)
+            {
+                input.status = InputStatus::NotActive;
+                inputs_with_data.push(input_number);
+            }
+        }
+    }
+
+    while (!inputs_with_data.empty())
+    {
+        auto input_number = inputs_with_data.front();
+        auto & input_with_data = input_ports[input_number];
+        inputs_with_data.pop();
+
+        if (input_with_data.waiting_output == -1)
+            throw Exception("No associated output for input with data.", ErrorCodes::LOGICAL_ERROR);
+
+        auto & waiting_output = output_ports[input_with_data.waiting_output];
+
+        if (waiting_output.status != OutputStatus::NeedData)
+            throw Exception("Invalid status for associated output.", ErrorCodes::LOGICAL_ERROR);
+
+        waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_deeded = */ true));
+        waiting_output.status = OutputStatus::NotActive;
+
+        if (input_with_data.port->isFinished())
+        {
+            input_with_data.status = InputStatus::Finished;
+            ++num_finished_inputs;
+        }
+        else
+            disabled_input_ports.push(input_number);
+    }
+
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
+    /// Enable more inputs if needed.
+    while (!disabled_input_ports.empty() && !waiting_outputs.empty())
+    {
+        auto & input = input_ports[disabled_input_ports.front()];
+        disabled_input_ports.pop();
+
+        input.port->setNeeded();
+        input.status = InputStatus::NeedData;
+        input.waiting_output = waiting_outputs.front();
+
+        waiting_outputs.pop();
+    }
+
+    while (!waiting_outputs.empty())
+    {
+       auto & output = output_ports[waiting_outputs.front()];
+       waiting_outputs.pop();
+
+       output.status = OutputStatus::Finished;
+       output.port->finish();
+       ++num_finished_outputs;
+    }
+
+    if (disabled_input_ports.empty())
         return Status::NeedData;
 
     return Status::PortFull;
