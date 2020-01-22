@@ -28,9 +28,7 @@ public:
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
-        Name,
-        /// Find columns in source by their names if present else use the default. Allow excessive columns in source.
-        NameOrDefault
+        Name
     };
 
     ConvertingBlockInputStream(
@@ -50,7 +48,6 @@ private:
 
     /// How to construct result block. Position in source block, where to get each column.
     using Conversion = std::vector<size_t>;
-    const size_t USE_DEFAULT = static_cast<size_t>(-1);
     Conversion conversion;
 };
 
