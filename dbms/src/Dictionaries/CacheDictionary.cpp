@@ -716,6 +716,8 @@ void CacheDictionary::updateThreadFunction()
     setThreadName("AsyncUpdater");
     while (!finished)
     {
+        ///std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
         UpdateUnitPtr first_popped;
         update_queue.pop(first_popped);
 
@@ -726,7 +728,7 @@ void CacheDictionary::updateThreadFunction()
 
         /// Word "bunch" must present in this log message, because it is being checked in tests.
         if (current_queue_size > 0)
-            LOG_DEBUG(log, "Performing a bunch of keys update in cache dictionary.");
+            LOG_DEBUG(log, "Performing bunch of keys update in cache dictionary.");
 
         /// We use deque since there is first_popped pointer.
         /// And we have to add to the update_request without breaking order.
