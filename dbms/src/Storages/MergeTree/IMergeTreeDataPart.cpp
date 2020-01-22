@@ -520,7 +520,7 @@ void IMergeTreeDataPart::loadRowsCount()
     {
         rows_count = 0;
     }
-    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::COMPACT)
     {
         if (!Poco::File(path).exists())
             throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -531,14 +531,6 @@ void IMergeTreeDataPart::loadRowsCount()
     }
     else
     {
-        if (Poco::File(path).exists())
-        {
-            ReadBufferFromFile file = openForReading(path);
-            readIntText(rows_count, file);
-            assertEOF(file);
-            return;
-        }
-
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();

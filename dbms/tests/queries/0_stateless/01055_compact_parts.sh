@@ -21,11 +21,11 @@ ${CLICKHOUSE_CLIENT} --query="select '=====================';"
 
 ${CLICKHOUSE_CLIENT} --query="select distinct part_type from system.parts where database = currentDatabase() and table = 'mt_compact' and active;"
 
-${CLICKHOUSE_CLIENT} --query="insert into mt_compact (a, s, n.x, lc) select number % 3, toString((number * 2132214234 + 5434543) % 2133443), [1, 2], toString(number) from numbers(5);"
+${CLICKHOUSE_CLIENT} --query="insert into mt_compact (a, s, n.x, lc) select number % 3, toString((number * 75434535 + 645645) % 2133443), [1, 2], toString(number) from numbers(5);"
 
 ${CLICKHOUSE_CLIENT} --query="optimize table mt_compact final;"
 
-${CLICKHOUSE_CLIENT} --query="select part_type, count() from system.parts where database = currentDatabase() and table = 'mt_compact' and active group by part_type; "
+${CLICKHOUSE_CLIENT} --query="select part_type, count() from system.parts where database = currentDatabase() and table = 'mt_compact' and active group by part_type order by part_type; "
 ${CLICKHOUSE_CLIENT} --query="select * from mt_compact order by a, s limit 10;"
 ${CLICKHOUSE_CLIENT} --query="select '=====================';"
 
