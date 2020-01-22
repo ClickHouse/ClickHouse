@@ -170,8 +170,8 @@ public:
         throw Exception("There is no CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Delete the table from the database. Delete the metadata.
-    virtual void removeTable(
+    /// Delete the table from the database, drop table and delete the metadata.
+    virtual void dropTable(
         const Context & /*context*/,
         const String & /*name*/)
     {

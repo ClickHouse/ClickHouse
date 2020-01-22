@@ -291,9 +291,10 @@ public:
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
       * The table is not usable during and after call to this method.
+      * If some queries may still use the table, then it must be called under exclusive lock.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
-    virtual void drop(TableStructureWriteLockHolder &) {}
+    virtual void drop() {}
 
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.

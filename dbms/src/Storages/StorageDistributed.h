@@ -75,8 +75,6 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop(TableStructureWriteLockHolder &) override {}
-
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 

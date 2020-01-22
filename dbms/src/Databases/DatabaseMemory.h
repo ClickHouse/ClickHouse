@@ -29,7 +29,7 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void removeTable(
+    void dropTable(
         const Context & context,
         const String & table_name) override;
 

@@ -431,7 +431,7 @@ void DatabaseMySQL::loadStoredObjects(Context &, bool)
     }
 }
 
-void DatabaseMySQL::removeTable(const Context &, const String & table_name)
+void DatabaseMySQL::dropTable(const Context &, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -445,7 +445,8 @@ void DatabaseMySQL::removeTable(const Context &, const String & table_name)
         throw Exception("The remove flag file already exists but the " + backQuoteIfNeed(getDatabaseName()) +
             "." + backQuoteIfNeed(table_name) + " does not exists remove tables, it is bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (!local_tables_cache.count(table_name))
+    auto table_iter = local_tables_cache.find(table_name);
+    if (table_iter == local_tables_cache.end())
         throw Exception("Table " + backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
             ErrorCodes::UNKNOWN_TABLE);
 
@@ -453,6 +454,7 @@ void DatabaseMySQL::removeTable(const Context &, const String & table_name)
 
     try
     {
+        table_iter->second.second->drop();
         remove_flag.createFile();
     }
     catch (...)
@@ -460,6 +462,7 @@ void DatabaseMySQL::removeTable(const Context &, const String & table_name)
         remove_or_detach_tables.erase(table_name);
         throw;
     }
+    table_iter->second.second->is_dropped = true;
 }
 
 DatabaseMySQL::~DatabaseMySQL()

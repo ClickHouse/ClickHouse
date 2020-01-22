@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config_core.h"
+#define USE_MYSQL 1
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
@@ -52,7 +53,7 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void removeTable(const Context &, const String & table_name) override;
+    void dropTable(const Context &, const String & table_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path = {}) override;
 

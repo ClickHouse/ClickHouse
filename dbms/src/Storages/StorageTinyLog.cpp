@@ -425,10 +425,13 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
         addFiles(column.name, *column.type);
 }
 
-void StorageTinyLog::drop(TableStructureWriteLockHolder &)
+void StorageTinyLog::drop()
 {
+    // TODO do we really need another rwlock here if drop() is called under exclusive table lock?
     std::unique_lock<std::shared_mutex> lock(rwlock);
-    disk->removeRecursive(table_path);
+    // TODO may be move it to DatabaseOnDisk
+    if (disk->exists(table_path))
+        disk->removeRecursive(table_path);
     files.clear();
 }
 

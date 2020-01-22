@@ -65,12 +65,12 @@ void DatabaseLazy::createTable(
         it->second.metadata_modification_time = DatabaseOnDisk::getObjectMetadataModificationTime(table_name);
 }
 
-void DatabaseLazy::removeTable(
+void DatabaseLazy::dropTable(
     const Context & context,
     const String & table_name)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::removeTable(context, table_name);
+    DatabaseOnDisk::dropTable(context, table_name);
 }
 
 void DatabaseLazy::renameTable(

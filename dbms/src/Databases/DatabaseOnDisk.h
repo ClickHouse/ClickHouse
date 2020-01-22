@@ -38,7 +38,7 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void removeTable(
+    void dropTable(
         const Context & context,
         const String & table_name) override;
 
@@ -62,6 +62,9 @@ public:
     String getMetadataPath() const override { return metadata_path; }
 
 protected:
+    static constexpr const char * create_suffix = ".tmp";
+    static constexpr const char * drop_suffix = ".tmp_drop";
+
     using IteratingFunction = std::function<void(const String &)>;
     void iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const;
 
@@ -73,6 +76,8 @@ protected:
     ASTPtr parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
     ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
 
+    //bool detachTableAndRemoveMetadata(const String & table_name);
+    //void replaceMetadata(const ASTPtr & create, );
 
     const String metadata_path;
     /*const*/ String data_path;
