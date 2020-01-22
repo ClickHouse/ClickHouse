@@ -67,6 +67,10 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) override;
 
+    void remove(const String & path) override;
+
+    void removeRecursive(const String & path) override;
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
@@ -92,31 +96,5 @@ private:
     Files files;
     mutable std::mutex mutex;
 };
-
-using DiskMemoryPtr = std::shared_ptr<DiskMemory>;
-
-
-class DiskMemoryDirectoryIterator : public IDiskDirectoryIterator
-{
-public:
-    explicit DiskMemoryDirectoryIterator(std::vector<String> && dir_file_paths_)
-        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
-    {
-    }
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != dir_file_paths.end(); }
-
-    String path() const override { return *iter; }
-
-private:
-    std::vector<String> dir_file_paths;
-    std::vector<String>::iterator iter;
-};
-
-
-class DiskFactory;
-void registerDiskMemory(DiskFactory & factory);
 
 }
