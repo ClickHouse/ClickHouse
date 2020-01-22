@@ -30,7 +30,7 @@ namespace ErrorCodes
 {
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
 }
-    
+
 /*
  * cache_not_found_ids  |0|0|1|1|
  * cache_expired_ids    |0|1|0|1|
@@ -45,6 +45,7 @@ class CacheDictionary final : public IDictionary
 {
 public:
     CacheDictionary(
+        const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
@@ -57,7 +58,9 @@ public:
 
     ~CacheDictionary() override;
 
-    std::string getName() const override { return name; }
+    const std::string & getDatabase() const override { return database; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "Cache"; }
 
@@ -79,7 +82,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
-                name, dict_struct, source_ptr->clone(), dict_lifetime, size,
+                database, name, dict_struct, source_ptr->clone(), dict_lifetime, size,
                 allow_read_expired_keys, max_update_queue_size,
                 update_queue_push_timeout_milliseconds, each_update_finish_timeout_seconds);
     }
@@ -282,7 +285,9 @@ private:
     template <typename AncestorType>
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
+    const std::string database;
     const std::string name;
+    const std::string full_name;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

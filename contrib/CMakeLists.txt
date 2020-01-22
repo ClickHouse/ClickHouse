@@ -2,10 +2,10 @@
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -31,6 +31,8 @@ endif ()
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
     add_subdirectory (double-conversion-cmake)
 endif ()
+
+add_subdirectory (ryu-cmake)
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (cityhash102)
@@ -328,4 +330,8 @@ endif()
 
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
+endif()
+
+if (USE_INTERNAL_REPLXX)
+    add_subdirectory (replxx-cmake)
 endif()

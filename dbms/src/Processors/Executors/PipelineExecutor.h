@@ -84,6 +84,7 @@ private:
 
         IProcessor * processor = nullptr;
         UInt64 processors_id = 0;
+        bool has_quota = false;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -117,6 +118,7 @@ private:
             execution_state = std::make_unique<ExecutionState>();
             execution_state->processor = processor;
             execution_state->processors_id = processor_id;
+            execution_state->has_quota = processor->hasQuota();
         }
 
         Node(Node && other) noexcept
@@ -132,7 +134,64 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    using TaskQueue = std::queue<ExecutionState *>;
+    class TaskQueue
+    {
+    public:
+        void init(size_t num_threads) { queues.resize(num_threads); }
+
+        void push(ExecutionState * state, size_t thread_num)
+        {
+            queues[thread_num].push(state);
+
+            ++size_;
+
+            if (state->has_quota)
+                ++quota_;
+        }
+
+        size_t getAnyThreadWithTasks(size_t from_thread = 0)
+        {
+            if (size_ == 0)
+                throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+
+            for (size_t i = 0; i < queues.size(); ++i)
+            {
+                if (!queues[from_thread].empty())
+                    return from_thread;
+
+                ++from_thread;
+                if (from_thread >= queues.size())
+                    from_thread = 0;
+            }
+
+            throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        ExecutionState * pop(size_t thread_num)
+        {
+            auto thread_with_tasks = getAnyThreadWithTasks(thread_num);
+
+            ExecutionState * state = queues[thread_with_tasks].front();
+            queues[thread_with_tasks].pop();
+
+            --size_;
+
+            if (state->has_quota)
+                ++quota_;
+
+            return state;
+        }
+
+        size_t size() const { return size_; }
+        bool empty() const { return size_ == 0; }
+        size_t quota() const { return quota_; }
+
+    private:
+        using Queue = std::queue<ExecutionState *>;
+        std::vector<Queue> queues;
+        size_t size_ = 0;
+        size_t quota_ = 0;
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
@@ -173,7 +232,7 @@ private:
         std::mutex mutex;
         bool wake_flag = false;
 
-        std::queue<ExecutionState *> pinned_tasks;
+        /// std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
@@ -186,19 +245,21 @@ private:
     /// Graph related methods.
     bool addEdges(UInt64 node);
     void buildGraph();
-    void expandPipeline(Stack & stack, UInt64 pid);
+    bool expandPipeline(Stack & stack, UInt64 pid);
+
+    using Queue = std::queue<ExecutionState *>;
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToStack(Stack & stack);
-    bool tryAddProcessorToStackIfUpdated(Edge & edge, Stack & stack);
+    bool tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queue, size_t thread_number);
     static void addJob(ExecutionState * execution_state);
     // TODO: void addAsyncJob(UInt64 pid);
 
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
-    void doExpandPipeline(ExpandPipelineTask * task, bool processing);
+    bool prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, std::unique_lock<std::mutex> node_lock);
+    bool doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);
     void executeSingleThread(size_t thread_num, size_t num_threads);
