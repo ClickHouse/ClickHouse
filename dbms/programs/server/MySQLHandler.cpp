@@ -282,7 +282,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     else
     {
         bool with_output = false;
-        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void {
+        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void
+        {
             with_output = true;
         };
 
