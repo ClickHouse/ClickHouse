@@ -120,7 +120,7 @@ StoragePtr DatabaseLazy::tryGetTable(
         std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
-            throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            return {};
 
         if (it->second.table)
         {

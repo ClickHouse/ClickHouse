@@ -432,8 +432,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(global_context->getTextLog());
-            buildLoggers(*config, logger());
+            // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
+            // in a lot of places. For now, disable updating log configuration without server restart.
+            //setTextLog(global_context->getTextLog());
+            //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
 
@@ -857,6 +859,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        setTextLog(global_context->getTextLog());
+        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         users_config_reloader->start();

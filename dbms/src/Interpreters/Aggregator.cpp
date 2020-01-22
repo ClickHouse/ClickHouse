@@ -781,7 +781,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
     bool final,
-    size_t bucket) const
+    size_t bucket,
+    std::atomic<bool> * is_cancelled) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -792,6 +793,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst)) \
+            return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
     }
 
@@ -1482,12 +1485,15 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
-    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
+    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> * is_cancelled) const
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
+            return;
+
         AggregatedDataVariants & current = *data[result_num];
 
         mergeDataImpl<Method>(

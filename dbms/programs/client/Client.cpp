@@ -1,7 +1,7 @@
 #include "TestHint.h"
 #include "ConnectionParameters.h"
+#include "Suggest.h"
 
-#include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -18,8 +18,9 @@
 #include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-#include <common/readline_use.h>
 #include <common/find_symbols.h>
+#include <common/config_common.h>
+#include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -69,10 +70,6 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 
-#if USE_READLINE
-#include "Suggest.h"
-#endif
-
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
@@ -89,39 +86,6 @@
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
 
-#if USE_READLINE && RL_VERSION_MAJOR >= 7
-
-#define BRACK_PASTE_PREF "\033[200~"
-#define BRACK_PASTE_SUFF "\033[201~"
-
-#define BRACK_PASTE_LAST '~'
-#define BRACK_PASTE_SLEN 6
-
-/// This handler bypasses some unused macro/event checkings.
-static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
-{
-    std::string buf;
-    buf.reserve(128);
-
-    RL_SETSTATE(RL_STATE_MOREINPUT);
-    SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    int c;
-    while ((c = rl_read_key()) >= 0)
-    {
-        if (c == '\r')
-            c = '\n';
-        buf.push_back(c);
-        if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
-        {
-            buf.resize(buf.size() - BRACK_PASTE_SLEN);
-            break;
-        }
-    }
-    return static_cast<size_t>(rl_insert_text(buf.c_str())) == buf.size() ? 0 : 1;
-}
-
-#endif
-
 namespace DB
 {
 
@@ -136,7 +100,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
 }
@@ -157,7 +120,7 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-    bool is_interactive = true;          /// Use either readline interface or batch mode.
+    bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
@@ -242,7 +205,7 @@ private:
 
     ConnectionParameters connection_parameters;
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
 
@@ -270,7 +233,7 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> & /*args*/) override
     {
         try
         {
@@ -514,26 +477,10 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-#if USE_READLINE
-            SCOPE_EXIT({ Suggest::instance().finalize(); });
-            if (server_revision >= Suggest::MIN_SERVER_REVISION
-                && !config().getBool("disable_suggestion", false))
-            {
+            if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 
-                /// Added '.' to the default list. Because it is used to separate database and table.
-                rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
-
-                /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
-                rl_completion_append_character = '\0';
-
-                rl_completion_entry_function = Suggest::generator;
-            }
-            else
-                /// Turn tab completion off.
-                rl_bind_key('\t', rl_insert);
-#endif
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -546,70 +493,45 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty())
+            if (!history_file.empty() && !Poco::File(history_file).exists())
+                Poco::File(history_file).createFile();
+
+            LineReader lr(&Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+
+            do
             {
-                if (Poco::File(history_file).exists())
+                auto input = lr.readLine(prompt(), ":-] ");
+                if (input.empty())
+                    break;
+
+                try
                 {
-#if USE_READLINE
-                    int res = read_history(history_file.c_str());
-                    if (res)
-                        std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
-#endif
+                    if (!process(input))
+                        break;
                 }
-                else    /// Create history file.
-                    Poco::File(history_file).createFile();
+                catch (const Exception & e)
+                {
+                    actual_client_error = e.code();
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    {
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+
+                        std::cerr << std::endl;
+
+                    }
+
+                    /// Client-side exception during query execution can result in the loss of
+                    /// sync in the connection protocol.
+                    /// So we reconnect and allow to enter the next query.
+                    connect();
+                }
             }
-
-#if USE_READLINE
-            /// Install Ctrl+C signal handler that will be used in interactive mode.
-
-            if (rl_initialize())
-                throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
-
-#if RL_VERSION_MAJOR >= 7
-            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-            ///  disabled, so that we are able to paste and execute multiline queries in a whole
-            ///  instead of erroring out, while be less intrusive.
-            if (config().has("multiquery") && !config().has("multiline"))
-            {
-                /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
-                ///  that the program can differentiate pasted text from typed-in text. This helps
-                ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
-                ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
-                ///  more details.
-                rl_variable_bind("enable-bracketed-paste", "on");
-
-                /// Use our bracketed paste handler to get better user experience. See comments above.
-                rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
-            }
-#endif
-
-            auto clear_prompt_or_exit = [](int)
-            {
-                /// This is signal safe.
-                ssize_t res = write(STDOUT_FILENO, "\n", 1);
-
-                /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
-                /// (First press to Ctrl+C will try to cancel query by InterruptListener).
-                if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
-                {
-                    rl_replace_line("", 0);
-                    if (rl_forced_update_display())
-                        _exit(0);
-                }
-                else
-                {
-                    /// A little dirty, but we struggle to find better way to correctly
-                    /// force readline to exit after returning from the signal handler.
-                    _exit(0);
-                }
-            };
-
-            if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-#endif
-
-            loop();
+            while (true);
 
             if (isNewYearMode())
                 std::cout << "Happy new year." << std::endl;
@@ -621,17 +543,6 @@ private:
         }
         else
         {
-            /// This is intended for testing purposes.
-            if (config().getBool("always_load_suggestion_data", false))
-            {
-#if USE_READLINE
-                SCOPE_EXIT({ Suggest::instance().finalize(); });
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
-#else
-                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
-#endif
-            }
-
             query_id = config().getString("query_id", "");
             nonInteractive();
 
@@ -706,109 +617,9 @@ private:
     }
 
 
-    /// Check if multi-line query is inserted from the paste buffer.
-    /// Allows delaying the start of query execution until the entirety of query is inserted.
-    static bool hasDataInSTDIN()
-    {
-        timeval timeout = { 0, 0 };
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
-    }
-
     inline const String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
-
-    void loop()
-    {
-        String input;
-        String prev_input;
-
-        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
-        {
-            String line = line_;
-            free(line_);
-
-            size_t ws = line.size();
-            while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
-                --ws;
-
-            if (ws == 0 || line.empty())
-                continue;
-
-            bool ends_with_semicolon = line[ws - 1] == ';';
-            bool ends_with_backslash = line[ws - 1] == '\\';
-
-            has_vertical_output_suffix = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
-
-            if (ends_with_backslash)
-                line = line.substr(0, ws - 1);
-
-            input += line;
-
-            if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
-            {
-                // TODO: should we do sensitive data masking on client too? History file can be source of secret leaks.
-                if (input != prev_input)
-                {
-                    /// Replace line breaks with spaces to prevent the following problem.
-                    /// Every line of multi-line query is saved to history file as a separate line.
-                    /// If the user restarts the client then after pressing the "up" button
-                    /// every line of the query will be displayed separately.
-                    std::string logged_query = input;
-                    if (config().has("multiline"))
-                        std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
-                    add_history(logged_query.c_str());
-
-#if USE_READLINE && HAVE_READLINE_HISTORY
-                    if (!history_file.empty() && append_history(1, history_file.c_str()))
-                        std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
-#endif
-
-                    prev_input = input;
-                }
-
-                if (has_vertical_output_suffix)
-                    input = input.substr(0, input.length() - 2);
-
-                try
-                {
-                    if (!process(input))
-                        break;
-                }
-                catch (const Exception & e)
-                {
-                    actual_client_error = e.code();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                    {
-                        std::cerr << std::endl
-                            << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
-
-                        if (config().getBool("stacktrace", false))
-                            std::cerr << "Stack trace:" << std::endl
-                                      << e.getStackTraceString() << std::endl;
-
-                        std::cerr << std::endl;
-
-                    }
-
-                    /// Client-side exception during query execution can result in the loss of
-                    /// sync in the connection protocol.
-                    /// So we reconnect and allow to enter the next query.
-                    connect();
-                }
-
-                input = "";
-            }
-            else
-            {
-                input += '\n';
-            }
-        }
     }
 
 
@@ -2001,13 +1812,6 @@ public:
             server_logs_file = options["server_logs_file"].as<std::string>();
         if (options.count("disable_suggestion"))
             config().setBool("disable_suggestion", true);
-        if (options.count("always_load_suggestion_data"))
-        {
-            if (options.count("disable_suggestion"))
-                throw Exception("Command line parameters disable_suggestion (-A) and always_load_suggestion_data cannot be specified simultaneously",
-                    ErrorCodes::BAD_ARGUMENTS);
-            config().setBool("always_load_suggestion_data", true);
-        }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
 
