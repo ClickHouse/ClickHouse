@@ -241,7 +241,7 @@ public:
 
     size_t size() { return queue.size(); }
 
-    Cursor & nextChild() { return queue[nextChildIndex()]; }
+    Cursor & ALWAYS_INLINE nextChild() { return queue[nextChildIndex()]; }
 
     void ALWAYS_INLINE next()
     {
@@ -287,10 +287,10 @@ private:
     {
         if (next_idx == 0)
         {
-            next_idx = 1;
-
             if (queue.size() > 2 && queue[1] < queue[2])
-                ++next_idx;
+                next_idx = 2;
+            else
+                next_idx = 1;
         }
 
         return next_idx;
@@ -309,12 +309,11 @@ private:
         auto begin = queue.begin();
 
         size_t child_idx = nextChildIndex();
-        auto child_it = begin + child_idx;
 
-        /// Check if we are in order.
-        if (*child_it < *begin)
+        if (queue[child_idx] < queue[0])
             return;
 
+        auto child_it = begin + child_idx;
         next_idx = 0;
 
         auto curr_it = begin;
