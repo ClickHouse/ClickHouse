@@ -55,6 +55,13 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_TTL;
+        return res;
+    }
     else
         return {};
 }

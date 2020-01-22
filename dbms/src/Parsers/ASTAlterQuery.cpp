@@ -261,6 +261,11 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MATERIALIZE_TTL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MATERIALIZE TTL"
+                      << (settings.hilite ? hilite_none : "");
+    }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");

@@ -381,6 +381,24 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             const auto required_columns = syntax_result->requiredSourceColumns();
             affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
+        else if (command.type == MutationCommand::MATERIALIZE_TTL)
+        {
+            if (stages.empty() || !stages.back().column_to_updated.empty())
+                stages.emplace_back(context);
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
+                stages.emplace_back(context);
+
+            auto required_columns_for_ttl = storage->getColumnsRequiredForTTL();
+            for (const auto & column_name : required_columns_for_ttl)
+                stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
+
+            auto updated_columns_by_ttl = storage->getColumnsUpdatedByTTL();
+            for (const auto & column_name : updated_columns_by_ttl)
+            {
+                stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
+                affected_indices_columns.insert(column_name);
+            }
+        }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }

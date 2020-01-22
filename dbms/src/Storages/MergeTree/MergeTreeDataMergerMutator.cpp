@@ -936,6 +936,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
+    bool need_remove_expired_values = false;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_TTL)
+        {
+            need_remove_expired_values = true;
+            break;
+        }
+    }
+
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
     const auto & source_part = future_part.parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
@@ -966,6 +976,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
         data, space_reservation->getDisk(), future_part.name, future_part.part_info);
+
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -1003,6 +1014,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         if (data.hasPrimaryKey() || data.hasSkipIndices())
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
+
+        if (need_remove_expired_values)
+            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time(nullptr), true);
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -1085,11 +1099,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             IDataType::SubstreamPath stream_path;
             entry.type->enumerateStreams(callback, stream_path);
         }
+
         for (const auto & index : indices_to_recalc)
         {
             files_to_skip.insert(index->getFileName() + ".idx");
             files_to_skip.insert(index->getFileName() + mrk_extension);
         }
+
+        if (!need_remove_expired_values)
+            files_to_skip.insert("ttl.txt");
 
         Poco::DirectoryIterator dir_end;
         for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
@@ -1104,6 +1122,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
+
+        if (need_remove_expired_values)
+            in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time(nullptr), true);
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
@@ -1136,6 +1157,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         new_data_part->checksums = source_part->checksums;
         new_data_part->checksums.add(std::move(changed_checksums));
+
+        if (!new_data_part->ttl_infos.empty())
+        {
+            /// Write a file with ttl infos in json format.
+            WriteBufferFromFile out_ttl(new_part_tmp_path + "ttl.txt", 4096);
+            HashingWriteBuffer out_hashing(out_ttl);
+            new_data_part->ttl_infos.write(out_hashing);
+            new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+            new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+        }
+
         {
             /// Write file with checksums.
             WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);

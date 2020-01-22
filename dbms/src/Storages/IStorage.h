@@ -116,6 +116,9 @@ public:
 
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
+    /// Returns true if there is set table TTL, any column TTL or any move TTL
+    virtual bool hasAnyTTL() const { return false; }
+
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
@@ -439,6 +442,12 @@ public:
 
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
+
+    /// Returns columns required for calculation of TTL expression.
+    virtual Names getColumnsRequiredForTTL() const { return {}; }
+
+    /// Returns columns that could be updated by applying TTL rules
+    virtual Names getColumnsUpdatedByTTL() const { return {}; }
 
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }

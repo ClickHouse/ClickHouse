@@ -47,6 +47,10 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    Names getColumnsRequiredForTTL() const override { return part->storage.getColumnsRequiredForTTL(); }
+    Names getColumnsUpdatedByTTL() const override { return part->storage.getColumnsUpdatedByTTL(); }
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())

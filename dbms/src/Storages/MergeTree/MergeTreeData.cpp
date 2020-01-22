@@ -3905,4 +3905,36 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
     return true;
 }
 
+Names MergeTreeData::getColumnsRequiredForTTL() const
+{
+    NameSet res;
+    auto add_columns_to_set = [&](const auto & expression)
+    {
+        auto columns_vec = expression->getRequiredColumns();
+        res.insert(columns_vec.begin(), columns_vec.end());
+    };
+
+    if (hasTableTTL())
+        add_columns_to_set(ttl_table_entry.expression);
+
+    for (const auto & [_, entry] : column_ttl_entries_by_name)
+        add_columns_to_set(entry.expression);
+
+    for (const auto & entry : move_ttl_entries)
+        add_columns_to_set(entry.expression);
+
+    return Names(res.begin(), res.end());
+}
+
+Names MergeTreeData::getColumnsUpdatedByTTL() const
+{
+    if (hasTableTTL())
+        return getColumns().getAllPhysical().getNames();
+
+    Names res;
+    for (const auto & [name, _] : column_ttl_entries_by_name)
+        res.push_back(name);
+    return res;
+}
+
 }

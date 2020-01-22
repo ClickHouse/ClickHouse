@@ -31,6 +31,7 @@ public:
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_TTL,
+        MATERIALIZE_TTL,
         MODIFY_SETTING,
 
         ADD_INDEX,
