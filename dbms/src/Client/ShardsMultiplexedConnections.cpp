@@ -12,47 +12,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-
-ShardsMultiplexedConnections::ShardsMultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
-{
-    connection.setThrottler(throttler);
-
-    ReplicaState replica_state;
-    replica_state.connection = &connection;
-    replica_states.push_back(replica_state);
-
-    active_connection_count = 1;
-    shard_to_replica_range[default_shard_idx] = ReplicaRange{replica_states.begin(), replica_states.end()};
-}
-
-ShardsMultiplexedConnections::ShardsMultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
-{
-    /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
-    /// `skip_unavailable_shards` was set. Then just return.
-    if (connections.empty())
-        return;
-
-    replica_states.reserve(connections.size());
-    for (size_t i = 0; i < connections.size(); ++i)
-    {
-        Connection * connection = &(*connections[i]);
-        connection->setThrottler(throttler);
-
-        ReplicaState replica_state;
-        replica_state.pool_entry = std::move(connections[i]);
-        replica_state.connection = connection;
-
-        replica_states.push_back(std::move(replica_state));
-    }
-
-    active_connection_count = connections.size();
-    shard_to_replica_range[default_shard_idx] = ReplicaRange{replica_states.begin(), replica_states.end()};
-}
-
 ShardsMultiplexedConnections::ShardsMultiplexedConnections(
         std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
         const Settings & settings_, const ThrottlerPtr & throttler)
@@ -122,17 +81,6 @@ void ShardsMultiplexedConnections::sendExternalTablesData(std::vector<ExternalTa
             ++it;
         }
     }
-}
-
-void ShardsMultiplexedConnections::sendQuery(
-    const ConnectionTimeouts & timeouts,
-    const String & query,
-    const String & query_id,
-    UInt64 stage,
-    const ClientInfo * client_info,
-    bool with_pending_data)
-{
-    sendQuery(default_shard_idx, timeouts, query, query_id, stage, client_info, with_pending_data);
 }
 
 void ShardsMultiplexedConnections::sendQuery(

@@ -20,14 +20,6 @@ class ShardsMultiplexedConnections final : private boost::noncopyable
 public:
     const size_t default_shard_idx = 0;
 
-    /// Accepts ready connection.
-    ShardsMultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
-
-    /// Accepts a vector of connections to replicas of one shard already taken from pool.
-    ShardsMultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler_);
-
     ShardsMultiplexedConnections(
         std::vector<std::vector<IConnectionPool::Entry>> & shard_connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
@@ -38,14 +30,6 @@ public:
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
     /// Send request to replicas.
-    void sendQuery(
-        const ConnectionTimeouts & timeouts,
-        const String & query,
-        const String & query_id = "",
-        UInt64 stage = QueryProcessingStage::Complete,
-        const ClientInfo * client_info = nullptr,
-        bool with_pending_data = false);
-
     void sendQuery(
         size_t shard_idx,
         const ConnectionTimeouts & timeouts,

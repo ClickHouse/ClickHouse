@@ -20,103 +20,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
-        Connection & connection,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
-{
-    if (settings)
-        context.setSettings(*settings);
-
-    create_multiplexed_connections = [this, &connection, throttler]()
-    {
-        return std::make_unique<ShardsMultiplexedConnections>(connection, context.getSettingsRef(), throttler);
-    };
-}
-
-RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
-        std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
-{
-    if (settings)
-        context.setSettings(*settings);
-
-    create_multiplexed_connections = [this, connections, throttler]() mutable
-    {
-        return std::make_unique<ShardsMultiplexedConnections>(
-            std::move(connections), context.getSettingsRef(), throttler);
-    };
-}
-
-RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
-        const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
-{
-    if (settings)
-        context.setSettings(*settings);
-
-    create_multiplexed_connections = [this, pool, throttler]()
-    {
-        const Settings & current_settings = context.getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-        std::vector<IConnectionPool::Entry> connections;
-        if (main_table)
-        {
-            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, *main_table);
-            connections.reserve(try_results.size());
-            for (auto & try_result : try_results)
-                connections.emplace_back(std::move(try_result.entry));
-        }
-        else
-            connections = pool->getMany(timeouts, &current_settings, pool_mode);
-
-        return std::make_unique<ShardsMultiplexedConnections>(
-            std::move(connections), current_settings, throttler);
-    };
-}
-
-RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
-            const ShardQueries & multiplexed_shards_,
+            ShardQueries && multiplexed_shards_,
             const Block & header_, const Context & context_, const Settings * settings,
-            const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+            const ThrottlerPtr & throttler_, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : multiplexed_shards(std::move(multiplexed_shards_))
+    , header(header_)
+    , context(context_)
+    , throttler(throttler_)
+    , scalars(scalars_)
+    , external_tables(external_tables_)
+    , stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
 
-    for (const auto& shard : multiplexed_shards_) {
+    for (const auto& shard : multiplexed_shards) {
         shard_queries.push_back(shard.query);
     }
-
-    create_multiplexed_connections = [this, multiplexed_shards_, throttler]()
-    {
-        const Settings & current_settings = context.getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-
-        std::vector<std::vector<IConnectionPool::Entry>> shard_connections;
-        for (const auto& shard : multiplexed_shards_) {
-            std::vector<IConnectionPool::Entry> current_connections;
-            if (main_table)
-            {
-                auto try_results = shard.pool->getManyChecked(timeouts, &current_settings, pool_mode, *main_table);
-                current_connections.reserve(try_results.size());
-                for (auto & try_result : try_results)
-                    current_connections.emplace_back(std::move(try_result.entry));
-            }
-            else
-                current_connections = shard.pool->getMany(timeouts, &current_settings, pool_mode);
-
-            shard_connections.push_back(current_connections);
-        }
-
-        return std::make_unique<ShardsMultiplexedConnections>(shard_connections, current_settings, throttler);
-    };
 }
 
 RemoteShardsBlockInputStream::~RemoteShardsBlockInputStream()
@@ -359,15 +280,32 @@ void RemoteShardsBlockInputStream::readSuffixImpl()
 
 void RemoteShardsBlockInputStream::sendQuery()
 {
-    multiplexed_connections = create_multiplexed_connections();
+    const Settings & settings = context.getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
 
-    const auto& settings = context.getSettingsRef();
+    std::vector<std::vector<IConnectionPool::Entry>> shard_connections;
+    for (const auto& shard : multiplexed_shards) {
+        std::vector<IConnectionPool::Entry> current_connections;
+        if (main_table)
+        {
+            auto try_results = shard.pool->getManyChecked(timeouts, &settings, pool_mode, *main_table);
+            current_connections.reserve(try_results.size());
+            for (auto & try_result : try_results)
+                current_connections.emplace_back(std::move(try_result.entry));
+        }
+        else
+            current_connections = shard.pool->getMany(timeouts, &settings, pool_mode);
+
+        shard_connections.push_back(current_connections);
+    }
+
+    multiplexed_connections = std::make_unique<ShardsMultiplexedConnections>(shard_connections, settings, throttler);
+
     if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 
     established = true;
 
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     for (size_t i = 0; i < shard_queries.size(); i++)
         multiplexed_connections->sendQuery(i, timeouts, shard_queries[i], query_id, stage, &context.getClientInfo(), true);
 

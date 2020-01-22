@@ -127,13 +127,13 @@ BlockInputStreams SelectStreamFactory::createStreams()
     size_t multiplexed_shards_count = 0;
     auto create_multiplexed_stream = [&]() {
         auto stream = std::make_shared<RemoteShardsBlockInputStream>(
-            multiplexed_shards, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+            std::move(multiplexed_shards), header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
-        result.push_back(stream);
-        multiplexed_shards.clear();
 
+        result.push_back(stream);
+        multiplexed_shards = ShardQueries();
         multiplexed_shards_count++;
     };
 

@@ -27,32 +27,8 @@ public:
 
     using ShardQueries = std::vector<ShardQuery>;
 
-    /// Takes already set connection.
-    /// If `settings` is nullptr, settings will be taken from context.
     RemoteShardsBlockInputStream(
-            Connection & connection,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
-
-    /// Accepts several connections already taken from pool.
-    /// If `settings` is nullptr, settings will be taken from context.
-    RemoteShardsBlockInputStream(
-            std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
-
-    /// Takes a pool and gets one or several connections from it.
-    /// If `settings` is nullptr, settings will be taken from context.
-    RemoteShardsBlockInputStream(
-            const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
-            const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
-
-    RemoteShardsBlockInputStream(
-            const ShardQueries & multiplexed_shards_,
+            ShardQueries && multiplexed_shards_,
             const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
@@ -79,7 +55,7 @@ public:
 
     void cancel(bool kill) override;
 
-    String getName() const override { return "Remote"; }
+    String getName() const override { return "RemoteShards"; }
 
     Block getHeader() const override { return header; }
 
@@ -109,15 +85,17 @@ private:
     void tryCancel(const char * reason);
 
 private:
-    Block header;
+    ShardQueries multiplexed_shards;
 
-    std::function<std::unique_ptr<ShardsMultiplexedConnections>()> create_multiplexed_connections;
+    Block header;
 
     std::unique_ptr<ShardsMultiplexedConnections> multiplexed_connections;
 
     std::vector<String> shard_queries;
     String query_id = "";
     Context context;
+
+    ThrottlerPtr throttler;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
