@@ -11,6 +11,7 @@
 #include <Interpreters/Set.h>
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -75,7 +76,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
     compressed_backup_buf.next();
     backup_buf.next();
 
-    std::filesystem::rename(backup_tmp_path + backup_file_name, backup_path + backup_file_name);
+    fs::rename(backup_tmp_path + backup_file_name, backup_path + backup_file_name);
 }
 
 
@@ -133,8 +134,8 @@ size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    std::filesystem::remove_all(path);
-    std::filesystem::create_directories(path + "tmp/");
+    fs::remove_all(path);
+    fs::create_directories(path + "tmp/");
 
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -147,19 +148,19 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
 
 void StorageSetOrJoinBase::restore()
 {
-    std::filesystem::path tmp_dir(path + "tmp/");
-    if (!std::filesystem::exists(tmp_dir))
+    fs::path tmp_dir(path + "tmp/");
+    if (!fs::exists(tmp_dir))
     {
-        std::filesystem::create_directories(tmp_dir);
+        fs::create_directories(tmp_dir);
         return;
     }
 
     static const auto file_suffix = ".bin";
 
-    std::filesystem::directory_iterator dir_end;
-    for (std::filesystem::directory_iterator dir_it(path); dir_end != dir_it; ++dir_it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator dir_it(path); dir_end != dir_it; ++dir_it)
     {
-        const std::filesystem::path file_path = dir_it->path();
+        const fs::path file_path = dir_it->path();
         const String& file_path_str{file_path};
 
         if (dir_it->is_regular_file()
@@ -205,7 +206,7 @@ void StorageSetOrJoinBase::rename(
 {
     /// Rename directory with data.
     String new_path = base_path + new_path_to_table_data;
-    std::filesystem::rename(path, new_path);
+    fs::rename(path, new_path);
 
     path = new_path;
     table_name = new_table_name;

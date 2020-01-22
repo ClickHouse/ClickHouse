@@ -23,6 +23,7 @@
 
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -133,7 +134,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
         thread.join();
     }
 
-    std::filesystem::remove_all(path);
+    fs::remove_all(path);
 }
 
 
@@ -222,11 +223,11 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
 
-    std::filesystem::directory_iterator end;
-    for (std::filesystem::directory_iterator it{path}; it != end; ++it)
+    fs::directory_iterator end;
+    for (fs::directory_iterator it{path}; it != end; ++it)
     {
-        const auto & file_path_str = it->path();
-        const std::filesystem::path file_path{file_path_str};
+        const fs::path file_path = it->path();
+        const String& file_path_str{file_path};
 
         if (it->is_regular_file() && file_path.extension() == ".bin")
             files[parse<UInt64>(file_path.stem().string())] = file_path_str;
@@ -283,7 +284,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         throw;
     }
 
-    std::filesystem::remove(file_path);
+    fs::remove(file_path);
 
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
@@ -417,7 +418,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// Temporary file is required for atomicity.
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
-            if (std::filesystem::exists(tmp_file))
+            if (fs::exists(tmp_file))
                 LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
 
             {
@@ -425,7 +426,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 writeText(out);
             }
 
-            std::filesystem::rename(tmp_file, parent.current_batch_file_path);
+            fs::rename(tmp_file, parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);
@@ -480,7 +481,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
 
             for (UInt64 file_index : file_indices)
-                std::filesystem::remove(file_index_to_path.at(file_index));
+                fs::remove(file_index_to_path.at(file_index));
         }
         else
         {
@@ -499,7 +500,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         total_bytes = 0;
         recovered = false;
 
-        std::filesystem::resize_file(parent.current_batch_file_path, 0);
+        fs::resize_file(parent.current_batch_file_path, 0);
     }
 
     void writeText(WriteBuffer & out)
@@ -572,7 +573,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 {
     std::unordered_set<UInt64> file_indices_to_skip;
 
-    if (std::filesystem::exists(current_batch_file_path))
+    if (fs::exists(current_batch_file_path))
     {
         /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
         Batch batch(*this, files);
@@ -648,7 +649,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.send();
     }
 
-    std::filesystem::remove(current_batch_file_path);
+    fs::remove(current_batch_file_path);
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
@@ -669,8 +670,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     const auto & broken_path = base_path + "broken/";
     const auto & broken_file_path = broken_path + file_name;
 
-    std::filesystem::create_directory(broken_path);
-    std::filesystem::rename(file_path, broken_file_path);
+    fs::create_directory(broken_path);
+    fs::rename(file_path, broken_file_path);
 
     LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
 }

@@ -15,6 +15,7 @@
 #include <Poco/String.h>    /// toLower
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -60,8 +61,8 @@ StorageJoin::StorageJoin(
 
 void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    std::filesystem::remove_all(path);
-    std::filesystem::create_directories(static_cast<std::filesystem::path>(path) / "tmp");
+    fs::remove_all(path);
+    fs::create_directories(static_cast<fs::path>(path) / "tmp");
 
     increment = 0;
     join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
