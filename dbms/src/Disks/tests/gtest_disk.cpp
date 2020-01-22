@@ -5,6 +5,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 
 template <typename T>
 DB::DiskPtr createDisk();
