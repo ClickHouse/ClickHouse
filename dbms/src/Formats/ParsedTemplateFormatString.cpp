@@ -194,10 +194,7 @@ String ParsedTemplateFormatString::dump() const
 {
     WriteBufferFromOwnString res;
     res << "\nDelimiter " << 0 << ": ";
-    if (delimiters.size() <= 1)
-        res << "<ERROR>";
-    else
-        verbosePrintString(delimiters[0].c_str(), delimiters[0].c_str() + delimiters[0].size(), res);
+    verbosePrintString(delimiters.front().c_str(), delimiters.front().c_str() + delimiters.front().size(), res);
 
     size_t num_columns = std::max(formats.size(), format_idx_to_column_idx.size());
     for (size_t i = 0; i < num_columns; ++i)
