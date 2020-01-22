@@ -981,7 +981,7 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
         }
         return;
     };
-                                                                                                                                                                        
+
     switch (*buf.position())
     {
         case 'k': [[fallthrough]];
@@ -1008,7 +1008,7 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
 /// Integral values parsing with suffix (k, ki, M, Mi, G, Gi, T, Ti)
 /// For example: 133M = 133000000
 template <typename T>
-inline T completeParse(const char * data, size_t size)
+inline T parseWithSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
@@ -1018,15 +1018,15 @@ inline T completeParse(const char * data, size_t size)
 }
 
 template <typename T>
-inline T completeParse(const String & s)
+inline T parseWithSuffix(const String & s)
 {
-    return completeParse<T>(s.data(), s.size());
+    return parseWithSuffix<T>(s.data(), s.size());
 }
 
 template <typename T>
-inline T completeParse(const char * data)
+inline T parseWithSuffix(const char * data)
 {
-    return completeParse<T>(data, strlen(data));
+    return parseWithSuffix<T>(data, strlen(data));
 }
 
 template <typename T>
