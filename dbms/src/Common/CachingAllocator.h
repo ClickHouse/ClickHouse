@@ -109,6 +109,48 @@ public:
         all_regions.clear_and_dispose(region_metadata_disposer);
     }
 
+    inline size_t getSizeInUse() const
+    {
+        std::lock_guard lock(mutex);
+        return total_size_in_use;
+    }
+
+    inline size_t getUsedRegionsCount() const
+    {
+        std::lock_guard lock(mutex);
+        return allocated_regions.size();
+    }
+
+    inline size_t reset()
+    {
+        std::lock_guard lock(mutex);
+
+        insertion_attempts.clear();
+        chunks.clear();
+
+        free_regions.clear();
+        allocated_regions.clear();
+        unused_allocated_regions.clear();
+
+        all_regions.clear_and_dispose(region_metadata_disposer);
+
+        total_chunks_size = 0;
+        total_allocated_size = 0;
+        total_size_in_use = 0;
+
+        total_size_currently_initialized = 0;
+
+        hits = 0;
+        concurrent_hits  = 0;
+        misses = 0;
+
+        allocations  = 0;
+        allocated_bytes = 0;
+        evictions = 0;
+        evicted_bytes = 0;
+        secondary_evictions = 0;
+    }
+
     inline MemoryRegionPtr get(const Key& key)
     {
         std::lock_guard lock(mutex);
@@ -153,12 +195,111 @@ public:
      *      False on cache hit (including a concurrent cache hit), true on cache miss).
      */
     template <typename GetSize, typename Init>
-    inline std::pair<MemoryRegionPtr, bool> getOrSet(const Key & key, GetSize && get_size, Init && initialize);
+    inline std::pair<MemoryRegionPtr, bool> getOrSet(const Key & key, GetSize && get_size, Init && initialize)
+    {
+        InsertionAttemptDisposer disposer;
+        InsertionAttempt * attempt;
+
+        MemoryRegionPtr out = getImpl(key, disposer, attempt);
+
+        if (out)
+            return {out, false}; // value was found in the cache.
+
+        /// No try-catch here because it is not needed.
+        size_t size = get_size();
+
+        RegionMetadata * region;
+
+        {
+            std::lock_guard cache_lock(mutex);
+            region = allocate(size);
+        }
+
+        /// Cannot allocate memory.
+        if (!region) return {};
+
+        region->key = key;
+
+        {
+            total_size_currently_initialized += size;
+            SCOPE_EXIT({ total_size_currently_initialized -= size; });
+
+            try
+            {
+                initialize(region->ptr, region->payload);
+            }
+            catch (...)
+            {
+                {
+                    std::lock_guard cache_lock(mutex);
+                    freeAndCoalesce(*region);
+                }
+
+                throw;
+            }
+        }
+
+        std::lock_guard cache_lock(mutex);
+
+        try
+        {
+            attempt->value = std::make_shared<MemoryRegion>(*this, *region);
+
+            /// Insert the new value only if the attempt is still present in \c insertion_attempts.
+            /// (may be absent because of a concurrent reset() call).
+            auto attempt_it = insertion_attempts.find(key);
+
+            if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
+                allocated_regions.insert(*region);
+
+            if (!attempt->is_disposed)
+                disposer.dispose();
+
+            return {attempt->value, true};
+        }
+        catch (...)
+        {
+            if (region->TAllocatedRegionHook::is_linked())
+                allocated_regions.erase(allocated_regions.iterator_to(*region));
+
+            freeAndCoalesce(*region);
+
+            throw;
+        }
+    }
 
     /**
      * @note Metadata is allocated by a usual allocator (malloc/new) so its memory usage is not accounted.
      */
-    [[nodiscard]] inline CachingAllocatorStats getStatistics() const noexcept;
+    [[nodiscard]] inline CachingAllocatorStats getStatistics() const noexcept
+    {
+        std::lock_guard cache_lock(mutex);
+
+        CachingAllocatorStats out = {};
+
+        out.total_chunks_size = total_chunks_size;
+        out.total_allocated_size = total_allocated_size;
+        out.total_size_currently_initialized = total_size_currently_initialized.load(std::memory_order_relaxed);
+        out.total_size_in_use = total_size_in_use;
+
+        out.num_chunks = chunks.size();
+        out.num_regions = all_regions.size();
+        out.num_free_regions = free_regions.size();
+        out.num_regions_in_use = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
+        out.num_keyed_regions = allocated_regions.size();
+
+        out.hits = hits.load(std::memory_order_relaxed);
+        out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
+        out.misses = misses.load(std::memory_order_relaxed);
+
+        out.allocations = allocations;
+        out.allocated_bytes = allocated_bytes;
+        out.evictions = evictions;
+        out.evicted_bytes = evicted_bytes;
+        out.secondary_evictions = secondary_evictions;
+
+        return out;
+    }
 
 private:
     /**
@@ -479,7 +620,8 @@ private:
         ~RegionMetadata() = default;
     };
 
-    inline MemoryRegionPtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt) {
+    inline MemoryRegionPtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
+    {
         {
             std::lock_guard cache_lock(mutex);
 
@@ -527,9 +669,49 @@ private:
      * @param region Target region to insert. Must not be present in \c free_regions, \c allocated_regions and
      *      \c unused_allocated_regions.
      */
-    inline void freeAndCoalesce(RegionMetadata & region) noexcept;
+    inline void freeAndCoalesce(RegionMetadata & region) noexcept
+    {
+        auto target_region_it = all_regions.iterator_to(region);
+        auto region_it = target_region_it;
 
-    inline void evict(RegionMetadata & target) noexcept;
+        auto erase_free_region = [this, &region](auto region_iter) noexcept {
+            if (region_iter->chunk != region.chunk || !region_iter->isFree())
+                return;
+
+            region.size += region_iter->size;
+            region.char_ptr-= region_iter->size;
+
+            free_regions.erase(free_regions.iterator_to(*region_iter));
+            all_regions.erase_and_dispose(region_iter, region_metadata_disposer);
+        };
+
+        /// Coalesce with left neighbour
+        if (all_regions.begin() != region_it)
+            erase_free_region(--region_it);
+
+        region_it = target_region_it;
+
+        /// Coalesce with right neighbour
+        if (all_regions.end() != region_it)
+            erase_free_region(++region_it);
+
+        free_regions.insert(region);
+    }
+
+    inline void evict(RegionMetadata & target) noexcept
+    {
+        total_allocated_size -= target.size;
+
+        unused_allocated_regions.erase(unused_allocated_regions.iterator_to(target));
+
+        if (target.TAllocatedRegionHook::is_linked())
+            allocated_regions.erase(allocated_regions.iterator_to(target));
+
+        ++evictions;
+        evicted_bytes += target.size;
+
+        freeAndCoalesce(target);
+    }
 
     /**
      * Evicts region of at least \c requested_size from cache and returns it,
@@ -543,9 +725,34 @@ private:
      * @return \c nullptr if there are no unused regions.
      * @return Target region otherwise.
      */
-    inline RegionMetadata * evict(size_t requested) noexcept;
+    inline RegionMetadata * evict(size_t requested) noexcept
+    {
+        if (unused_allocated_regions.empty())
+            return nullptr;
 
-    [[nodiscard, gnu::pure]] inline void * ASLR() {
+        auto region_it = all_regions.iterator_to(unused_allocated_regions.front());
+
+        while (true)
+        {
+            RegionMetadata & evicted = *region_it;
+            evict(evicted);
+
+            if (evicted.size >= requested)
+                return &evicted;
+
+            ++region_it;
+
+            if (region_it == all_regions.end() ||
+                region_it->chunk != evicted.chunk ||
+                !region_it->TUnusedRegionHook::is_linked())
+                return &evicted;
+
+            ++secondary_evictions;
+        }
+    }
+
+    [[nodiscard, gnu::pure]] inline void * ASLR()
+    {
         return reinterpret_cast<void *>(
             std::uniform_int_distribution<size_t>(
             0x100000000000UL,
@@ -556,9 +763,68 @@ private:
      * Allocates a \c MemoryChunk of specified size.
      * @return A free region, spanning through the whole allocated chunk.
      */
-    RegionMetadata * addNewChunk(size_t size);
+    RegionMetadata * addNewChunk(size_t size)
+    {
+        chunks.emplace_back(size, ASLR());
+        MemoryChunk & chunk = chunks.back();
 
-    RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size);
+        total_chunks_size += size;
+
+        RegionMetadata * free_region;
+
+        try
+        {
+            free_region = RegionMetadata::create();
+        }
+        catch (...)
+        {
+            total_chunks_size -= size;
+            chunks.pop_back();
+            throw;
+        }
+
+        free_region->ptr = chunk.ptr;
+        free_region->chunk = chunk.ptr;
+        free_region->size = chunk.size;
+
+        all_regions.push_back(*free_region);
+        free_regions.insert(*free_region);
+
+        return free_region;
+    }
+
+    RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
+    {
+        if (free_region.size < size) return nullptr;
+
+        ++allocations;
+        allocated_bytes += size;
+
+        if (free_region.size == size)
+        {
+            total_allocated_size += size;
+            free_regions.erase(free_regions.iterator_to(free_region));
+            return &free_region;
+        }
+
+        /// No try-catch needed
+        RegionMetadata * allocated_region = RegionMetadata::create();
+
+        total_allocated_size += size;
+
+        allocated_region->ptr = free_region.ptr;
+        allocated_region->chunk = free_region.chunk;
+        allocated_region->size = size;
+
+        free_regions.erase(free_regions.iterator_to(free_region));
+        free_region.size -= size;
+        free_region.char_ptr += size;
+        free_regions.insert(free_region);
+
+        all_regions.insert(all_regions.iterator_to(free_region), *allocated_region);
+
+        return allocated_region;
+    }
 
     [[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding)
     {
@@ -570,295 +836,40 @@ private:
      * @note Method does not insert allocated region to \c allocated_regions or \c unused_allocated_regions.
      * @return Desired region or \c nullptr.
      */
-    RegionMetadata * allocate(size_t size);
+    RegionMetadata * allocate(size_t size)
+    {
+        size = roundUp(size, ptrs_alignment);
+
+        auto free_region_it = free_regions.lower_bound(size, RegionCompareBySize());
+
+        if (free_regions.end() != free_region_it)
+            return allocateFromFreeRegion(*free_region_it, size);
+
+        /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
+        /// allocate a new chunk.
+        size_t required_chunk_size = std::max(min_chunk_size, roundUp(size, page_size));
+
+        if (total_chunks_size + required_chunk_size <= max_total_size)
+        {
+            /// Create free region spanning through chunk.
+            RegionMetadata * free_region = addNewChunk(required_chunk_size);
+            return allocateFromFreeRegion(*free_region, size);
+        }
+
+        /// Evict something from cache and continue.
+        while (true)
+        {
+            RegionMetadata * res = evict(size);
+
+            /// Nothing to evict. All cache is full and in use - cannot allocate memory.
+            if (!res)
+                return nullptr;
+
+            /// Not enough. Evict more.
+            if (res->size < size)
+                continue;
+
+            return allocateFromFreeRegion(*res, size);
+        }
+    }
 };
-
-template <typename TKey, typename TMapped, typename THash>
-using Alloc = CachingAllocator<TKey, TMapped, THash>;
-
-template <typename K, typename M, typename H>
-template <typename GetSize, typename Init>
-std::pair<typename Alloc<K, M, H>::MemoryRegionPtr, bool>
-Alloc<K, M, H>::getOrSet(const Key & key, GetSize && get_size, Init && initialize)
-{
-    InsertionAttemptDisposer disposer;
-    InsertionAttempt * attempt;
-
-    MemoryRegionPtr out = getImpl(key, disposer, attempt);
-
-    if (out)
-        return {out, false}; // value was found in the cache.
-
-    /// No try-catch here because it is not needed.
-    size_t size = get_size();
-
-    RegionMetadata * region;
-
-    {
-        std::lock_guard cache_lock(mutex);
-        region = allocate(size);
-    }
-
-    /// Cannot allocate memory.
-    if (!region) return {};
-
-    region->key = key;
-
-    {
-        total_size_currently_initialized += size;
-        SCOPE_EXIT({ total_size_currently_initialized -= size; });
-
-        try
-        {
-            initialize(region->ptr, region->payload);
-        }
-        catch (...)
-        {
-            {
-                std::lock_guard cache_lock(mutex);
-                freeAndCoalesce(*region);
-            }
-
-            throw;
-        }
-    }
-
-    std::lock_guard cache_lock(mutex);
-
-    try
-    {
-        attempt->value = std::make_shared<MemoryRegion>(*this, *region);
-
-        /// Insert the new value only if the attempt is still present in \c insertion_attempts.
-        /// (may be absent because of a concurrent reset() call).
-        auto attempt_it = insertion_attempts.find(key);
-
-        if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-            allocated_regions.insert(*region);
-
-        if (!attempt->is_disposed)
-            disposer.dispose();
-
-        return {attempt->value, true};
-    }
-    catch (...)
-    {
-        if (region->TAllocatedRegionHook::is_linked())
-            allocated_regions.erase(allocated_regions.iterator_to(*region));
-
-        freeAndCoalesce(*region);
-
-        throw;
-    }
-}
-
-template <typename K, typename M, typename H>
-CachingAllocatorStats Alloc<K, M, H>::getStatistics() const noexcept
-{
-    std::lock_guard cache_lock(mutex);
-
-    CachingAllocatorStats out = {};
-
-    out.total_chunks_size = total_chunks_size;
-    out.total_allocated_size = total_allocated_size;
-    out.total_size_currently_initialized = total_size_currently_initialized.load(std::memory_order_relaxed);
-    out.total_size_in_use = total_size_in_use;
-
-    out.num_chunks = chunks.size();
-    out.num_regions = all_regions.size();
-    out.num_free_regions = free_regions.size();
-    out.num_regions_in_use = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
-    out.num_keyed_regions = allocated_regions.size();
-
-    out.hits = hits.load(std::memory_order_relaxed);
-    out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
-    out.misses = misses.load(std::memory_order_relaxed);
-
-    out.allocations = allocations;
-    out.allocated_bytes = allocated_bytes;
-    out.evictions = evictions;
-    out.evicted_bytes = evicted_bytes;
-    out.secondary_evictions = secondary_evictions;
-
-    return out;
-}
-
-template <typename K, typename M, typename H>
-void Alloc<K, M, H>::freeAndCoalesce(CachingAllocator::RegionMetadata & region) noexcept
-{
-    auto target_region_it = all_regions.iterator_to(region);
-    auto region_it = target_region_it;
-
-    auto erase_free_region = [this, &region](auto region_iter) noexcept {
-        if (region_iter->chunk != region.chunk || !region_iter->isFree())
-            return;
-
-        region.size += region_iter->size;
-        region.char_ptr-= region_iter->size;
-
-        free_regions.erase(free_regions.iterator_to(*region_iter));
-        all_regions.erase_and_dispose(region_iter, region_metadata_disposer);
-    };
-
-    /// Coalesce with left neighbour
-    if (all_regions.begin() != region_it)
-        erase_free_region(--region_it);
-
-    region_it = target_region_it;
-
-    /// Coalesce with right neighbour
-    if (all_regions.end() != region_it)
-        erase_free_region(++region_it);
-
-    free_regions.insert(region);
-}
-
-template <typename K, typename M, typename H>
-void Alloc<K, M, H>::evict(CachingAllocator::RegionMetadata & target) noexcept
-{
-    total_allocated_size -= target.size;
-
-    unused_allocated_regions.erase(unused_allocated_regions.iterator_to(target));
-
-    if (target.TAllocatedRegionHook::is_linked())
-        allocated_regions.erase(allocated_regions.iterator_to(target));
-
-    ++evictions;
-    evicted_bytes += target.size;
-
-    freeAndCoalesce(target);
-}
-
-template <typename K, typename M, typename H>
-typename Alloc<K, M, H>::RegionMetadata *
-Alloc<K, M, H>::evict(size_t requested) noexcept
-{
-    if (unused_allocated_regions.empty())
-        return nullptr;
-
-    auto region_it = all_regions.iterator_to(unused_allocated_regions.front());
-
-    while (true)
-    {
-        RegionMetadata & evicted = *region_it;
-        evict(evicted);
-
-        if (evicted.size >= requested)
-            return &evicted;
-
-        ++region_it;
-
-        if (region_it == all_regions.end() ||
-            region_it->chunk != evicted.chunk ||
-            !region_it->TUnusedRegionHook::is_linked())
-            return &evicted;
-
-        ++secondary_evictions;
-    }
-}
-
-template <typename K, typename M, typename H>
-typename Alloc<K, M, H>::RegionMetadata *
-Alloc<K, M, H>::addNewChunk(size_t size)
-{
-    chunks.emplace_back(size, ASLR());
-    MemoryChunk & chunk = chunks.back();
-
-    total_chunks_size += size;
-
-    RegionMetadata * free_region;
-
-    try
-    {
-        free_region = RegionMetadata::create();
-    }
-    catch (...)
-    {
-        total_chunks_size -= size;
-        chunks.pop_back();
-        throw;
-    }
-
-    free_region->ptr = chunk.ptr;
-    free_region->chunk = chunk.ptr;
-    free_region->size = chunk.size;
-
-    all_regions.push_back(*free_region);
-    free_regions.insert(*free_region);
-
-    return free_region;
-}
-
-template <typename K, typename M, typename H>
-typename Alloc<K, M, H>::RegionMetadata *
-Alloc<K, M, H>::allocateFromFreeRegion(CachingAllocator::RegionMetadata & free_region, size_t size)
-{
-    if (free_region.size < size) return nullptr;
-
-    ++allocations;
-    allocated_bytes += size;
-
-    if (free_region.size == size)
-    {
-        total_allocated_size += size;
-        free_regions.erase(free_regions.iterator_to(free_region));
-        return &free_region;
-    }
-
-    /// No try-catch needed
-    RegionMetadata * allocated_region = RegionMetadata::create();
-
-    total_allocated_size += size;
-
-    allocated_region->ptr = free_region.ptr;
-    allocated_region->chunk = free_region.chunk;
-    allocated_region->size = size;
-
-    free_regions.erase(free_regions.iterator_to(free_region));
-    free_region.size -= size;
-    free_region.char_ptr += size;
-    free_regions.insert(free_region);
-
-    all_regions.insert(all_regions.iterator_to(free_region), *allocated_region);
-
-    return allocated_region;
-}
-
-template <typename K, typename M, typename H>
-typename Alloc<K, M, H>::RegionMetadata *
-Alloc<K, M, H>::allocate(size_t size)
-{
-    size = roundUp(size, ptrs_alignment);
-
-    auto free_region_it = free_regions.lower_bound(size, RegionCompareBySize());
-
-    if (free_regions.end() != free_region_it)
-        return allocateFromFreeRegion(*free_region_it, size);
-
-    /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
-    /// allocate a new chunk.
-    size_t required_chunk_size = std::max(min_chunk_size, roundUp(size, page_size));
-
-    if (total_chunks_size + required_chunk_size <= max_total_size)
-    {
-        /// Create free region spanning through chunk.
-        RegionMetadata * free_region = addNewChunk(required_chunk_size);
-        return allocateFromFreeRegion(*free_region, size);
-    }
-
-    /// Evict something from cache and continue.
-    while (true)
-    {
-        RegionMetadata * res = evict(size);
-
-        /// Nothing to evict. All cache is full and in use - cannot allocate memory.
-        if (!res)
-            return nullptr;
-
-        /// Not enough. Evict more.
-        if (res->size < size)
-            continue;
-
-        return allocateFromFreeRegion(*res, size);
-    }
-}

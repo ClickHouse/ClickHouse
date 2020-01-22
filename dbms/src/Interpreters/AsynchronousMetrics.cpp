@@ -108,8 +108,8 @@ void AsynchronousMetrics::update()
     {
         if (auto mark_cache = context.getMarkCache())
         {
-            set("MarkCacheBytes", mark_cache->weight());
-            set("MarkCacheFiles", mark_cache->count());
+            set("MarkCacheBytes", mark_cache->getSizeInUse());
+            set("MarkCacheFiles", mark_cache->getUsedRegionsCount());
         }
     }
 
