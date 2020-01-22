@@ -9,7 +9,7 @@
 #include <common/config_common.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 #include <random>
 
@@ -32,7 +32,7 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
+        ext::Singleton<TraceCollector>()->collect(trace_type, stack_trace, overrun_count);
     }
 
     [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;

@@ -55,7 +55,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 namespace ProfileEvents
 {
@@ -299,7 +299,7 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        Singleton<TraceCollector>()->stop();
+        ext::Singleton<TraceCollector>()->stop();
     }
 
     bool hasTraceCollector()
@@ -312,7 +312,7 @@ struct ContextShared
         if (trace_log == nullptr)
             return;
 
-        Singleton<TraceCollector>()->setTraceLog(trace_log);
+        ext::Singleton<TraceCollector>()->setTraceLog(trace_log);
     }
 
 private:

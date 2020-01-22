@@ -16,9 +16,9 @@ class MemoryTracker
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
     std::atomic<Int64> hard_limit {0};
-    std::atomic<Int64> soft_limit {0};
+    std::atomic<Int64> profiler_limit {0};
 
-    Int64 soft_limit_step = 0;
+    Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
     double fault_probability = 0;
@@ -72,16 +72,16 @@ public:
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
     void setOrRaiseHardLimit(Int64 value);
-    void setOrRaiseSoftLimit(Int64 value);
+    void setOrRaiseProfilerLimit(Int64 value);
 
     void setFaultProbability(double value)
     {
         fault_probability = value;
     }
 
-    void setSoftLimitStep(Int64 value)
+    void setProfilerStep(Int64 value)
     {
-        soft_limit_step = value;
+        profiler_step = value;
     }
 
     /// next should be changed only once: from nullptr to some value.
