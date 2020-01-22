@@ -67,6 +67,7 @@ struct Packet
 class Connection : private boost::noncopyable
 {
     friend class MultiplexedConnections;
+    friend class ShardsMultiplexedConnections;
 
 public:
     Connection(const String & host_, UInt16 port_,

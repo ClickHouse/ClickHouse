@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/RemoteShardsBlockInputStream.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/ConnectionPool.h>
 #include <Interpreters/Cluster.h>
@@ -50,7 +50,7 @@ private:
     void createForShard(
         const Cluster::ShardInfo & shard_info,
         BlockInputStreams & result,
-        RemoteBlockInputStream::ShardQueries & multiplexed_shards);
+        RemoteShardsBlockInputStream::ShardQueries & multiplexed_shards);
 
     const Block header;
     QueryProcessingStage::Enum processed_stage;

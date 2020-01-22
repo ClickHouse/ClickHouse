@@ -1,4 +1,4 @@
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/RemoteShardsBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
@@ -21,42 +21,42 @@ namespace ErrorCodes
 }
 
 
-RemoteBlockInputStream::RemoteBlockInputStream(
+RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
         Connection & connection,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
 
     create_multiplexed_connections = [this, &connection, throttler]()
     {
-        return std::make_unique<MultiplexedConnections>(connection, context.getSettingsRef(), throttler);
+        return std::make_unique<ShardsMultiplexedConnections>(connection, context.getSettingsRef(), throttler);
     };
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(
+RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
         std::vector<IConnectionPool::Entry> && connections,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
 
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
-        return std::make_unique<MultiplexedConnections>(
+        return std::make_unique<ShardsMultiplexedConnections>(
             std::move(connections), context.getSettingsRef(), throttler);
     };
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(
+RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
         const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    : header(header_), shard_queries{query_}, context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -76,12 +76,50 @@ RemoteBlockInputStream::RemoteBlockInputStream(
         else
             connections = pool->getMany(timeouts, &current_settings, pool_mode);
 
-        return std::make_unique<MultiplexedConnections>(
+        return std::make_unique<ShardsMultiplexedConnections>(
             std::move(connections), current_settings, throttler);
     };
 }
 
-RemoteBlockInputStream::~RemoteBlockInputStream()
+RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
+            const ShardQueries & multiplexed_shards_,
+            const Block & header_, const Context & context_, const Settings * settings,
+            const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : header(header_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+{
+    if (settings)
+        context.setSettings(*settings);
+
+    for (const auto& shard : multiplexed_shards_) {
+        shard_queries.push_back(shard.query);
+    }
+
+    create_multiplexed_connections = [this, multiplexed_shards_, throttler]()
+    {
+        const Settings & current_settings = context.getSettingsRef();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+
+        std::vector<std::vector<IConnectionPool::Entry>> shard_connections;
+        for (const auto& shard : multiplexed_shards_) {
+            std::vector<IConnectionPool::Entry> current_connections;
+            if (main_table)
+            {
+                auto try_results = shard.pool->getManyChecked(timeouts, &current_settings, pool_mode, *main_table);
+                current_connections.reserve(try_results.size());
+                for (auto & try_result : try_results)
+                    current_connections.emplace_back(std::move(try_result.entry));
+            }
+            else
+                current_connections = shard.pool->getMany(timeouts, &current_settings, pool_mode);
+
+            shard_connections.push_back(current_connections);
+        }
+
+        return std::make_unique<ShardsMultiplexedConnections>(shard_connections, current_settings, throttler);
+    };
+}
+
+RemoteShardsBlockInputStream::~RemoteShardsBlockInputStream()
 {
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
       * all connections, then read and skip the remaining packets to make sure
@@ -91,13 +129,13 @@ RemoteBlockInputStream::~RemoteBlockInputStream()
         multiplexed_connections->disconnect();
 }
 
-void RemoteBlockInputStream::readPrefix()
+void RemoteShardsBlockInputStream::readPrefix()
 {
     if (!sent_query)
         sendQuery();
 }
 
-void RemoteBlockInputStream::cancel(bool kill)
+void RemoteShardsBlockInputStream::cancel(bool kill)
 {
     if (kill)
         is_killed = true;
@@ -121,12 +159,12 @@ void RemoteBlockInputStream::cancel(bool kill)
     tryCancel("Cancelling query");
 }
 
-void RemoteBlockInputStream::sendScalars()
+void RemoteShardsBlockInputStream::sendScalars()
 {
     multiplexed_connections->sendScalarsData(scalars);
 }
 
-void RemoteBlockInputStream::sendExternalTables()
+void RemoteShardsBlockInputStream::sendExternalTables()
 {
     size_t count = multiplexed_connections->size();
 
@@ -207,7 +245,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
 }
 
 
-Block RemoteBlockInputStream::readImpl()
+Block RemoteShardsBlockInputStream::readImpl()
 {
     if (!sent_query)
     {
@@ -238,9 +276,9 @@ Block RemoteBlockInputStream::readImpl()
                 break;
 
             case Protocol::Server::EndOfStream:
+                finished_shards_count++;
                 if (!multiplexed_connections->hasActiveConnections())
                 {
-                    finished = true;
                     return Block();
                 }
                 break;
@@ -281,7 +319,7 @@ Block RemoteBlockInputStream::readImpl()
     }
 }
 
-void RemoteBlockInputStream::readSuffixImpl()
+void RemoteShardsBlockInputStream::readSuffixImpl()
 {
     /** If one of:
       * - nothing started to do;
@@ -305,7 +343,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     switch (packet.type)
     {
         case Protocol::Server::EndOfStream:
-            finished = true;
+            finished_shards_count++;
             break;
 
         case Protocol::Server::Exception:
@@ -319,7 +357,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     }
 }
 
-void RemoteBlockInputStream::sendQuery()
+void RemoteShardsBlockInputStream::sendQuery()
 {
     multiplexed_connections = create_multiplexed_connections();
 
@@ -330,7 +368,8 @@ void RemoteBlockInputStream::sendQuery()
     established = true;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, &context.getClientInfo(), true);
+    for (size_t i = 0; i < shard_queries.size(); i++)
+        multiplexed_connections->sendQuery(i, timeouts, shard_queries[i], query_id, stage, &context.getClientInfo(), true);
 
     established = false;
     sent_query = true;
@@ -340,7 +379,7 @@ void RemoteBlockInputStream::sendQuery()
     sendExternalTables();
 }
 
-void RemoteBlockInputStream::tryCancel(const char * reason)
+void RemoteShardsBlockInputStream::tryCancel(const char * reason)
 {
     bool old_val = false;
     if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
@@ -350,12 +389,12 @@ void RemoteBlockInputStream::tryCancel(const char * reason)
     multiplexed_connections->sendCancel();
 }
 
-bool RemoteBlockInputStream::isQueryPending() const
+bool RemoteShardsBlockInputStream::isQueryPending() const
 {
-    return sent_query && !finished;
+    return sent_query && (finished_shards_count < shard_queries.size());
 }
 
-bool RemoteBlockInputStream::hasThrownException() const
+bool RemoteShardsBlockInputStream::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
 }

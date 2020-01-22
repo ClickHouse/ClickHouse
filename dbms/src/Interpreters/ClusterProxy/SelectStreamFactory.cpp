@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 
 #include <common/logger_useful.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-using ShardQueries = RemoteBlockInputStream::ShardQueries;
+using ShardQueries = RemoteShardsBlockInputStream::ShardQueries;
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
@@ -125,7 +126,7 @@ BlockInputStreams SelectStreamFactory::createStreams()
 
     size_t multiplexed_shards_count = 0;
     auto create_multiplexed_stream = [&]() {
-        auto stream = std::make_shared<RemoteBlockInputStream>(
+        auto stream = std::make_shared<RemoteShardsBlockInputStream>(
             multiplexed_shards, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
