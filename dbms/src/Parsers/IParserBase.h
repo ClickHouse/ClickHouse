@@ -35,7 +35,7 @@ public:
         return res;
     }
 
-    bool parse(Pos & pos, ASTPtr & node, Expected & expected);
+    bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 protected:
     virtual bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) = 0;
