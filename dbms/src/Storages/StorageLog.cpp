@@ -5,8 +5,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -83,14 +81,14 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, size_t offset, size_t max_read_buffer_size_)
-            : plain(fullPath(disk, data_path), std::min(max_read_buffer_size_, disk->getFileSize(data_path))),
-            compressed(plain)
+            : plain(disk->readFile(data_path, std::min(max_read_buffer_size_, disk->getFileSize(data_path)))),
+            compressed(*plain)
         {
             if (offset)
-                plain.seek(offset);
+                plain->seek(offset);
         }
 
-        ReadBufferFromFile plain;
+        std::unique_ptr<SeekableReadBuffer> plain;
         CompressedReadBuffer compressed;
     };
 
@@ -111,7 +109,7 @@ public:
     explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
-        marks_stream(fullPath(storage.disk, storage.marks_file_path), 4096, O_APPEND | O_CREAT | O_WRONLY)
+        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Append))
     {
     }
 
@@ -139,13 +137,13 @@ private:
     struct Stream
     {
         Stream(const DiskPtr & disk, const String & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
-            plain(fullPath(disk, data_path), max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, std::move(codec), max_compress_block_size),
+            plain(disk->writeFile(data_path, max_compress_block_size, WriteMode::Append)),
+            compressed(*plain, std::move(codec), max_compress_block_size),
             plain_offset(disk->getFileSize(data_path))
         {
         }
 
-        WriteBufferFromFile plain;
+        std::unique_ptr<WriteBuffer> plain;
         CompressedWriteBuffer compressed;
 
         size_t plain_offset;    /// How many bytes were in the file at the time the LogBlockOutputStream was created.
@@ -153,7 +151,7 @@ private:
         void finalize()
         {
             compressed.next();
-            plain.next();
+            plain->next();
         }
     };
 
@@ -165,7 +163,7 @@ private:
 
     using WrittenStreams = std::set<String>;
 
-    WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
+    std::unique_ptr<WriteBuffer> marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 
     using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializeStates = std::map<String, SerializeState>;
@@ -302,7 +300,7 @@ void LogBlockOutputStream::writeSuffix()
     }
 
     /// Finish write.
-    marks_stream.next();
+    marks_stream->next();
 
     for (auto & name_stream : streams)
         name_stream.second.finalize();
@@ -372,7 +370,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
+        mark.offset = stream_it->second.plain_offset + stream_it->second.plain->count();
 
         out_marks.emplace_back(file.column_index, mark);
     }, settings.path);
@@ -402,8 +400,8 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 
     for (const auto & mark : marks)
     {
-        writeIntBinary(mark.second.rows, marks_stream);
-        writeIntBinary(mark.second.offset, marks_stream);
+        writeIntBinary(mark.second.rows, *marks_stream);
+        writeIntBinary(mark.second.offset, *marks_stream);
 
         size_t column_index = mark.first;
         storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);

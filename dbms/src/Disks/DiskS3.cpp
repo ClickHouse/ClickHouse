@@ -189,6 +189,7 @@ bool DiskS3::isDirectory(const String & path) const
 
 size_t DiskS3::getFileSize(const String & path) const
 {
+    // TODO: Consider storing actual file size in meta file.
     Aws::S3::Model::GetObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(getS3Path(path));
@@ -264,13 +265,14 @@ void DiskS3::copyFile(const String & from_path, const String & to_path)
     writeKeyToFile(s3_to_path, metadata_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskS3::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<SeekableReadBuffer> DiskS3::readFile(const String & path, size_t buf_size) const
 {
     return std::make_unique<ReadBufferFromS3>(client, bucket, getS3Path(path), buf_size);
 }
 
 std::unique_ptr<WriteBuffer> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
+    // TODO: Optimize append mode. Consider storing several S3 references in one meta file.
     if (!exists(path) || mode == WriteMode::Rewrite)
     {
         String new_s3_path = s3_root_path + getRandomName();

@@ -25,8 +25,8 @@
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
-        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <log>/home/jokserfn/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/home/jokserfn/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
         <size>1000M</size>
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
@@ -127,13 +127,13 @@
 
 
     <!-- Path to data directory, with trailing slash. -->
-    <path>/var/lib/clickhouse/</path>
+    <path>/home/jokserfn/var/lib/clickhouse/</path>
 
     <!-- Path to temporary data for processing hard queries. -->
-    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <tmp_path>/home/jokserfn/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
-    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <user_files_path>/home/jokserfn/var/lib/clickhouse/user_files/</user_files_path>
 
     <!-- Path to configuration file with users, access rights, profiles of settings, quotas. -->
     <users_config>users.xml</users_config>
@@ -327,44 +327,44 @@
     -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
-    <query_log>
-        <!-- What table to insert data. If table is not exist, it will be created.
+<!--    <query_log>
+        &lt;!&ndash; What table to insert data. If table is not exist, it will be created.
              When query log structure is changed after system update,
               then old table will be renamed and new table will be created automatically.
-        -->
+        &ndash;&gt;
         <database>system</database>
         <table>query_log</table>
-        <!--
+        &lt;!&ndash;
             PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
                 toYYYYMM(event_date)
                 toStartOfHour(event_time)
-        -->
+        &ndash;&gt;
         <partition_by>toYYYYMM(event_date)</partition_by>
-        <!-- Interval of flushing data. -->
+        &lt;!&ndash; Interval of flushing data. &ndash;&gt;
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </query_log>
+    </query_log>-->
 
     <!-- Trace log. Stores stack traces collected by query profilers.
          See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
-    <trace_log>
+<!--    <trace_log>
         <database>system</database>
         <table>trace_log</table>
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </trace_log>
+    </trace_log>-->
 
     <!-- Query thread log. Has information about all threads participated in query execution.
          Used only for queries with setting log_query_threads = 1. -->
-    <query_thread_log>
+<!--    <query_thread_log>
         <database>system</database>
         <table>query_thread_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </query_thread_log>
+    </query_thread_log>-->
 
     <!-- Uncomment if use part log.
          Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
@@ -489,7 +489,7 @@
     <!-- Directory in <clickhouse-path> containing schema files for various input formats.
          The directory will be created if it doesn't exist.
       -->
-    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <format_schema_path>/home/jokserfn/var/lib/clickhouse/format_schemas/</format_schema_path>
 
 
     <!-- Uncomment to use query masking rules.

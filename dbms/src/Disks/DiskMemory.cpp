@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
@@ -218,7 +219,7 @@ void DiskMemory::copyFile(const String & /*from_path*/, const String & /*to_path
     throw Exception("Method copyFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-std::unique_ptr<ReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
+std::unique_ptr<SeekableReadBuffer> DiskMemory::readFile(const String & path, size_t /*buf_size*/) const
 {
     std::lock_guard lock(mutex);
 

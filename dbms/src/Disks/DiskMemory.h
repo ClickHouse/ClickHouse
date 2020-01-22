@@ -60,7 +60,8 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(
+        const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
 
     std::unique_ptr<WriteBuffer> writeFile(
         const String & path,

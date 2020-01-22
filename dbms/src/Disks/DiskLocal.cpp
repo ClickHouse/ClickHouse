@@ -200,7 +200,7 @@ void DiskLocal::copyFile(const String & from_path, const String & to_path)
     Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
 }
 
-std::unique_ptr<ReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
+std::unique_ptr<SeekableReadBuffer> DiskLocal::readFile(const String & path, size_t buf_size) const
 {
     return std::make_unique<ReadBufferFromFile>(disk_path + path, buf_size);
 }
