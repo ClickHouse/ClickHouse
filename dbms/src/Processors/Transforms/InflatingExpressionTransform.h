@@ -30,7 +30,6 @@ private:
     size_t action_number = 0;
 
     Block readExec(Chunk & chunk);
-    Block readExecOnTotals(Chunk & chunk);
 };
 
 }
