@@ -19,7 +19,17 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & 
     ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
     String format_string;
     readStringUntilEOF(format_string, schema_file);
-    parse(format_string, idx_by_name);
+    try
+    {
+        parse(format_string, idx_by_name);
+    }
+    catch (DB::Exception & e)
+    {
+        if (e.code() != ErrorCodes::INVALID_TEMPLATE_FORMAT)
+            throwInvalidFormat(e.message(), columnsCount());
+        else
+            throw;
+    }
 }
 
 
