@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int CACHE_DICTIONARY_UPDATE_FAIL;
 }
+    
 /*
  * cache_not_found_ids  |0|0|1|1|
  * cache_expired_ids    |0|1|0|1|
