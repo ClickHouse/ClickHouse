@@ -26,6 +26,7 @@ class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
 class ReadBuffer;
+class SeekableReadBuffer;
 class WriteBuffer;
 
 /**
@@ -121,8 +122,8 @@ public:
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
-    /// Open the file for read and return ReadBuffer object.
-    virtual std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
+    /// Open the file for read and return SeekableReadBuffer object.
+    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
 
     /// Open the file for write and return WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;

@@ -7,6 +7,7 @@
 
 #    include <aws/s3/S3Client.h>
 #    include <Poco/DirectoryIterator.h>
+#    include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
@@ -61,7 +62,7 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size) const override;
 
     std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 

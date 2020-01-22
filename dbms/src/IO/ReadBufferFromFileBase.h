@@ -7,18 +7,18 @@
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <port/clock.h>
+#include "SeekableReadBuffer.h"
 
 namespace DB
 {
 
-class ReadBufferFromFileBase : public BufferWithOwnMemory<ReadBuffer>
+class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
     ReadBufferFromFileBase();
     ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
     ReadBufferFromFileBase(ReadBufferFromFileBase &&) = default;
     ~ReadBufferFromFileBase() override;
-    off_t seek(off_t off, int whence = SEEK_SET);
     virtual off_t getPositionInFile() = 0;
     virtual std::string getFileName() const = 0;
     virtual int getFD() const = 0;
@@ -44,8 +44,6 @@ protected:
     ProfileCallback profile_callback;
     clockid_t clock_type{};
 
-    /// Children implementation should be able to seek backwards
-    virtual off_t doSeek(off_t off, int whence) = 0;
 };
 
 }
