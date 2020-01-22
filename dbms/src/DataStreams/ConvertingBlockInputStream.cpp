@@ -5,7 +5,6 @@
 #include <Common/quoteString.h>
 #include <Parsers/IAST.h>
 
-
 namespace DB
 {
 
@@ -65,7 +64,17 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                     throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                         ErrorCodes::THERE_IS_NO_COLUMN);
                 break;
+
+            case MatchColumnsMode::NameOrDefault:
+                if (input_header.has(res_elem.name))
+                    conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
+                else
+                    conversion[result_col_num] = USE_DEFAULT;
+                break;
         }
+
+        if (conversion[result_col_num] == USE_DEFAULT)
+            continue;
 
         const auto & src_elem = input_header.getByPosition(conversion[result_col_num]);
 
@@ -100,8 +109,17 @@ Block ConvertingBlockInputStream::readImpl()
     Block res = header.cloneEmpty();
     for (size_t res_pos = 0, size = conversion.size(); res_pos < size; ++res_pos)
     {
-        const auto & src_elem = src.getByPosition(conversion[res_pos]);
         auto & res_elem = res.getByPosition(res_pos);
+
+        if (conversion[res_pos] == USE_DEFAULT)
+        {
+            // Create a column with default values
+            auto column_with_defaults = res_elem.type->createColumn()->cloneResized(src.rows());
+            res_elem.column = std::move(column_with_defaults);
+            continue;
+        }
+
+        const auto & src_elem = src.getByPosition(conversion[res_pos]);
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
@@ -114,3 +132,4 @@ Block ConvertingBlockInputStream::readImpl()
 }
 
 }
+

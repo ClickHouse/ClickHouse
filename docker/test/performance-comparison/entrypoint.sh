@@ -1,7 +1,11 @@
 #!/bin/bash
 set -ex
 
-cd /workspace
+chown nobody workspace output
+chgrp nogroup workspace output
+chmod 777 workspace output
+
+cd workspace
 
 # We will compare to the most recent testing tag in master branch, let's find it.
 rm -rf ch ||:
@@ -22,7 +26,7 @@ set +e
 # It's probably at fault for using `kill 0` as an error handling mechanism,
 # but I can't be bothered to change this now.
 set -m
-../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | tee compare.log
+time ../compare.sh 0 $ref_sha $PR_TO_TEST $SHA_TO_TEST 2>&1 | ts | tee compare.log
 set +m
 
 7z a /output/output.7z *.log *.tsv
