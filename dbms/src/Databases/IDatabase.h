@@ -56,13 +56,13 @@ public:
 
     DatabaseTablesSnapshotIterator(Tables && tables_) : tables(tables_), it(tables.begin()) {}
 
-    void next() { ++it; }
+    void next() override { ++it; }
 
-    bool isValid() const { return it != tables.end(); }
+    bool isValid() const override { return it != tables.end(); }
 
-    const String & name() const { return it->first; }
+    const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const { return it->second; }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 /// Copies list of dictionaries and iterates through such snapshot.
@@ -262,7 +262,7 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }

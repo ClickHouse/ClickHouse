@@ -58,6 +58,7 @@ inline size_t CacheDictionary::getCellIdx(const Key id) const
 
 
 CacheDictionary::CacheDictionary(
+    const std::string & database_,
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -67,7 +68,9 @@ CacheDictionary::CacheDictionary(
     const size_t max_update_queue_size_,
     const size_t update_queue_push_timeout_milliseconds_,
     const size_t each_update_finish_timeout_seconds_)
-    : name{name_}
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -83,7 +86,7 @@ CacheDictionary::CacheDictionary(
     , update_queue(max_update_queue_size_)
 {
     if (!this->source_ptr->supportsSelectiveLoad())
-        throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
     update_thread = ThreadFromGlobalPool([this] { updateThreadFunction(); });
@@ -222,7 +225,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
 void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -233,7 +236,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t row) { return def->getDataAt(row); });
 }
@@ -242,7 +245,7 @@ void CacheDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsString(attribute, ids, out, [&](const size_t) { return StringRef{def}; });
 }
@@ -426,7 +429,7 @@ void CacheDictionary::createAttributes()
             hierarchical_attribute = &attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
-                throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
+                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 }
@@ -613,7 +616,7 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -654,7 +657,7 @@ std::exception_ptr CacheDictionary::getLastException() const
 
 void registerDictionaryCache(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & name,
+    auto create_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -665,7 +668,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                             ErrorCodes::UNSUPPORTED_METHOD};
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{name
+            throw Exception{full_name
                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
@@ -675,12 +678,15 @@ void registerDictionaryCache(DictionaryFactory & factory)
         if (size == 0)
             throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells",
                             ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
 
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         if (require_nonempty)
-            throw Exception{name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
+            throw Exception{full_name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
                             ErrorCodes::BAD_ARGUMENTS};
 
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const size_t max_update_queue_size =
@@ -705,8 +711,9 @@ void registerDictionaryCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         return std::make_unique<CacheDictionary>(
-                name, dict_struct, std::move(source_ptr), dict_lifetime, size,
+                database, name, dict_struct, std::move(source_ptr), dict_lifetime, size,
                 allow_read_expired_keys, max_update_queue_size, update_queue_push_timeout_milliseconds, each_update_finish_timeout_seconds);
+        return std::make_unique<CacheDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("cache", create_layout, false);
 }

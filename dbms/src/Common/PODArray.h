@@ -150,7 +150,7 @@ protected:
 
     bool isAllocatedFromStack() const
     {
-        constexpr size_t stack_threshold = TAllocator::getStackThreshold();
+        static constexpr size_t stack_threshold = TAllocator::getStackThreshold();
         return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
@@ -453,7 +453,8 @@ public:
         this->c_end += bytes_to_copy;
     }
 
-    void swap(PODArray & rhs)
+    template <typename... TAllocatorParams>
+    void swap(PODArray & rhs, TAllocatorParams &&... allocator_params)
     {
 #ifndef NDEBUG
         this->unprotect();
@@ -463,7 +464,7 @@ public:
         /// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
         /// - The elements of arr1 are stored on stack.
         /// - The elements of arr2 are stored on heap.
-        auto swap_stack_heap = [this](PODArray & arr1, PODArray & arr2)
+        auto swap_stack_heap = [&](PODArray & arr1, PODArray & arr2)
         {
             size_t stack_size = arr1.size();
             size_t stack_allocated = arr1.allocated_bytes();
@@ -480,18 +481,18 @@ public:
             arr1.c_end = arr1.c_start + this->byte_size(heap_size);
 
             /// Allocate stack space for arr2.
-            arr2.alloc(stack_allocated);
+            arr2.alloc(stack_allocated, std::forward<TAllocatorParams>(allocator_params)...);
             /// Copy the stack content.
             memcpy(arr2.c_start, stack_c_start, this->byte_size(stack_size));
             arr2.c_end = arr2.c_start + this->byte_size(stack_size);
         };
 
-        auto do_move = [this](PODArray & src, PODArray & dest)
+        auto do_move = [&](PODArray & src, PODArray & dest)
         {
             if (src.isAllocatedFromStack())
             {
                 dest.dealloc();
-                dest.alloc(src.allocated_bytes());
+                dest.alloc(src.allocated_bytes(), std::forward<TAllocatorParams>(allocator_params)...);
                 memcpy(dest.c_start, src.c_start, this->byte_size(src.size()));
                 dest.c_end = dest.c_start + (src.c_end - src.c_start);
 
@@ -569,24 +570,26 @@ public:
         }
     }
 
-    void assign(size_t n, const T & x)
+    template <typename... TAllocatorParams>
+    void assign(size_t n, const T & x, TAllocatorParams &&... allocator_params)
     {
-        this->resize(n);
+        this->resize(n, std::forward<TAllocatorParams>(allocator_params)...);
         std::fill(begin(), end(), x);
     }
 
-    template <typename It1, typename It2>
-    void assign(It1 from_begin, It2 from_end)
+    template <typename It1, typename It2, typename... TAllocatorParams>
+    void assign(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = from_end - from_begin;
         if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity));
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         size_t bytes_to_copy = this->byte_size(required_capacity);
         memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end = this->c_start + bytes_to_copy;
     }
 
+    // ISO C++ has strict ambiguity rules, thus we cannot apply TAllocatorParams here.
     void assign(const PODArray & from)
     {
         assign(from.begin(), from.end());

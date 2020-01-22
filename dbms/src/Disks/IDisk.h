@@ -1,12 +1,15 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
+#include <Poco/Path.h>
 
 
 namespace CurrentMetrics
@@ -24,6 +27,15 @@ using ReservationPtr = std::unique_ptr<IReservation>;
 
 class ReadBuffer;
 class WriteBuffer;
+
+/**
+ * Mode of opening a file for write.
+ */
+enum class WriteMode
+{
+    Rewrite,
+    Append
+};
 
 /**
  * Provide interface for reservation.
@@ -77,26 +89,49 @@ public:
     /// Return `true` if the specified file exists and it's a directory.
     virtual bool isDirectory(const String & path) const = 0;
 
+    /// Return size of the specified file.
+    virtual size_t getFileSize(const String & path) const = 0;
+
     /// Create directory.
     virtual void createDirectory(const String & path) = 0;
 
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const String & path) = 0;
 
+    /// Remove all files from the directory. Directories are not removed.
+    virtual void clearDirectory(const String & path) = 0;
+
+    /// Move directory from `from_path` to `to_path`.
+    virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
+
     /// Return iterator to the contents of the specified directory.
     virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
 
+    /// Return `true` if the specified directory is empty.
+    bool isDirectoryEmpty(const String & path);
+
     /// Move the file from `from_path` to `to_path`.
+    /// If a file with `to_path` path already exists, an exception will be thrown .
     virtual void moveFile(const String & from_path, const String & to_path) = 0;
+
+    /// Move the file from `from_path` to `to_path`.
+    /// If a file with `to_path` path already exists, it will be replaced.
+    virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
     /// Copy the file from `from_path` to `to_path`.
     virtual void copyFile(const String & from_path, const String & to_path) = 0;
 
     /// Open the file for read and return ReadBuffer object.
-    virtual std::unique_ptr<ReadBuffer> readFile(const String & path) const = 0;
+    virtual std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const = 0;
 
     /// Open the file for write and return WriteBuffer object.
-    virtual std::unique_ptr<WriteBuffer> writeFile(const String & path) = 0;
+    virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
+
+    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
+    virtual void remove(const String & path) = 0;
+
+    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
+    virtual void removeRecursive(const String & path) = 0;
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -114,8 +149,8 @@ public:
     /// Return `true` if the iterator points to a valid element.
     virtual bool isValid() const = 0;
 
-    /// Name of the file that the iterator currently points to.
-    virtual String name() const = 0;
+    /// Path to the file that the iterator currently points to.
+    virtual String path() const = 0;
 
     virtual ~IDiskDirectoryIterator() = default;
 };
@@ -123,7 +158,7 @@ public:
 /**
  * Information about reserved size on particular disk.
  */
-class IReservation
+class IReservation : boost::noncopyable
 {
 public:
     /// Get reservation size.
@@ -145,4 +180,15 @@ inline String fullPath(const DiskPtr & disk, const String & path)
     return disk->getPath() + path;
 }
 
+/// Return parent path for the specified path.
+inline String parentPath(const String & path)
+{
+    return Poco::Path(path).parent().toString();
+}
+
+/// Return file name for the specified path.
+inline String fileName(const String & path)
+{
+    return Poco::Path(path).getFileName();
+}
 }

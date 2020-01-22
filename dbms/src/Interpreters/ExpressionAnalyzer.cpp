@@ -26,7 +26,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
@@ -287,7 +286,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
 }
 
 
-/// Perfomance optimisation for IN() if storage supports it.
+/// Performance optimisation for IN() if storage supports it.
 void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())

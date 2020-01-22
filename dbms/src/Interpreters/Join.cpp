@@ -306,7 +306,7 @@ size_t Join::getTotalByteCount() const
 
 void Join::setSampleBlock(const Block & block)
 {
-    /// You have to restore this lock if you call the fuction outside of ctor.
+    /// You have to restore this lock if you call the function outside of ctor.
     //std::unique_lock lock(rwlock);
 
     LOG_DEBUG(log, "setSampleBlock: " << block.dumpStructure());
@@ -778,7 +778,7 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
             }
             else if constexpr ((is_any_join || is_semi_join) && right)
             {
-                /// Use first appered left key + it needs left columns replication
+                /// Use first appeared left key + it needs left columns replication
                 if (mapped.setUsedOnce())
                 {
                     setUsed<need_filter>(filter, i);
@@ -787,7 +787,7 @@ NO_INLINE IColumn::Filter joinRightColumns(const Map & map, AddedColumns & added
             }
             else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
             {
-                /// Use first appered left key only
+                /// Use first appeared left key only
                 if (mapped.setUsedOnce())
                 {
                     setUsed<need_filter>(filter, i);
