@@ -3,7 +3,7 @@
 {% set palette = config.theme.palette %}
 {% set font = config.theme.font %}
 <!DOCTYPE html>
-<html lang="{{ lang.t('language') }}" class="no-js" data-version="{{ config.extra.version_prefix }}">
+<html lang="{{ lang.t('language') }}" class="no-js" data-version="{{ config.extra.version_prefix or 'master' }}" data-single-page="{% if config.extra.single_page %}true{% else %}false{% endif %}">
   <head>
     {% block site_meta %}
       <meta charset="utf-8">
@@ -276,6 +276,8 @@ apiKey: 'e239649803024433599de47a53b2d416',
 indexName: 'yandex_clickhouse',
 inputSelector: '#md-search__input',
 algoliaOptions: {
+  advancedSyntax: true,
+  clickAnalytics: true,
   hitsPerPage: 25,
   'facetFilters': ["lang:{{ lang.t('language') }}"]
 },
