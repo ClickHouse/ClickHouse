@@ -16,20 +16,10 @@ namespace ErrorCodes
 
 ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
-    try
-    {
-        ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
-        String format_string;
-        readStringUntilEOF(format_string, schema_file);
-        parse(format_string, idx_by_name);
-    }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != ErrorCodes::INVALID_TEMPLATE_FORMAT)
-            throwInvalidFormat(e.message(), columnsCount());
-        else
-            throw;
-    }
+    ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+    String format_string;
+    readStringUntilEOF(format_string, schema_file);
+    parse(format_string, idx_by_name);
 }
 
 
@@ -193,8 +183,11 @@ const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const cha
 String ParsedTemplateFormatString::dump() const
 {
     WriteBufferFromOwnString res;
-    res << "Delimiter " << 0 << ": ";
-    verbosePrintString(delimiters.front().c_str(), delimiters.front().c_str() + delimiters.front().size(), res);
+    res << "\nDelimiter " << 0 << ": ";
+    if (delimiters.size() <= 1)
+        res << "<ERROR>";
+    else
+        verbosePrintString(delimiters[0].c_str(), delimiters[0].c_str() + delimiters[0].size(), res);
 
     size_t num_columns = std::max(formats.size(), format_idx_to_column_idx.size());
     for (size_t i = 0; i < num_columns; ++i)
