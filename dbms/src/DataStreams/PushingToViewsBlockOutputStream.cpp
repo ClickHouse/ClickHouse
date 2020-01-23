@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include "AddingMissedBlockInputStream.h"
 
 namespace DB
 {
@@ -57,17 +56,16 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();
+
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
             insert->table = inner_table_id.table_name;
-//
-//            Context local_context = *views_context;
-//            local_context.addViewSource(
-//                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
-//                                          storage->getSampleBlock()));
+
+            /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
                     .getSampleBlock();
 
+            /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
             for (auto & column : header)
                 list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
@@ -245,17 +243,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                     in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-
-            auto view_table = context.getTable(view.table_id);
-
             in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
-
-            /// Add defaults to inner table in case it was altered after creation.
-//            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_table.get()))
-//            {
-//                StoragePtr inner_table = materialized_view->getTargetTable();
-//                in = std::make_shared<AddingMissedBlockInputStream>(in, view.out->getHeader(), inner_table->getColumns().getDefaults(), context);
-//            }
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
