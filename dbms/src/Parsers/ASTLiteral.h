@@ -21,6 +21,7 @@ public:
     std::optional<TokenIterator> begin;
     std::optional<TokenIterator> end;
 
+    ASTLiteral(Field && value_) : value(value_) {}
     ASTLiteral(const Field & value_) : value(value_) {}
 
     /** Get the text that identifies this element. */
