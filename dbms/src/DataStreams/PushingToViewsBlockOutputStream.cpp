@@ -60,6 +60,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
             insert->table = inner_table_id.table_name;
+
+            auto list = std::make_shared<ASTExpressionList>();
+            for (auto & column : storage->getSampleBlock())
+                list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+            insert->columns = std::move(list);
+
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();
@@ -237,11 +244,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
 
             /// Add defaults to inner table in case it was altered after creation.
-            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_table.get()))
-            {
-                StoragePtr inner_table = materialized_view->getTargetTable();
-                in = std::make_shared<AddingMissedBlockInputStream>(in, view.out->getHeader(), inner_table->getColumns().getDefaults(), context);
-            }
+//            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_table.get()))
+//            {
+//                StoragePtr inner_table = materialized_view->getTargetTable();
+//                in = std::make_shared<AddingMissedBlockInputStream>(in, view.out->getHeader(), inner_table->getColumns().getDefaults(), context);
+//            }
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
