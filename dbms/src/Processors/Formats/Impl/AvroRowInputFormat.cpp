@@ -399,7 +399,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             };
         }
         default:
-            throw Exception("Unsupported Avro type " + avro::ValidSchema(root_node).toJson(false), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Unsupported Avro type " + root_node->name().fullname(), ErrorCodes::ILLEGAL_COLUMN);
     }
 }
 
