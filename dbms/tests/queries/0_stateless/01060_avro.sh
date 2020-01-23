@@ -37,7 +37,7 @@ echo = other
 #no data
 cat $DATA_DIR/empty.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int64' -q 'select count() from table'
 # type mismatch
-cat $DATA_DIR/simple.null.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int32' -q 'select count() from table' 2>&1 | grep -i 'not compatible' -o
+cat $DATA_DIR/simple.null.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'a Int32' -q 'select count() from table'
 # field not found
 cat $DATA_DIR/simple.null.avro | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S 'b Int64' -q 'select count() from table' 2>&1 | grep -i 'not found' -o
 
@@ -66,5 +66,5 @@ S4="a Int64"
 ${CLICKHOUSE_LOCAL} -q "select toInt64(number) as a from numbers(0)  format Avro" | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S "$S4" -q 'select count() from table'
 ${CLICKHOUSE_LOCAL} -q "select toInt64(number) as a from numbers(1000)  format Avro" | ${CLICKHOUSE_LOCAL}  --input-format Avro --output-format CSV -S "$S4" -q 'select count() from table'
 
-# type not supported
-${CLICKHOUSE_LOCAL}  -q "select toInt16(123) as a format Avro" 2>&1 | grep -i 'not supported' -o
+# type supported via conversion
+${CLICKHOUSE_LOCAL}  -q "select toInt16(123) as a format Avro" | wc -c
