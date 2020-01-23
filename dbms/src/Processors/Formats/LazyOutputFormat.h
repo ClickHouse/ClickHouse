@@ -26,8 +26,12 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void finish() { finished_processing = true; }
-    void clearQueue() { queue.clear(); }
+    void finish()
+    {
+        finished_processing = true;
+        /// Clear queue in case if somebody is waiting lazy_format to push.
+        queue.clear();
+    }
 
 protected:
     void consume(Chunk chunk) override
