@@ -210,7 +210,7 @@ private:
 
     ConnectionParameters connection_parameters;
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
 
@@ -238,7 +238,7 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> & /*args*/) override
     {
         try
         {
