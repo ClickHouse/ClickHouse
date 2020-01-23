@@ -3,6 +3,7 @@
 #include <Poco/File.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -80,7 +81,7 @@ void DatabaseAtomic::dropTable(const Context & context, const String & table_nam
         // 1. CREATE table_name: + table_name.sql
         // 2. DROP table_name: table_name.sql -> table_name.sql.tmp_drop
         // 3. CREATE table_name: + table_name.sql
-        // 4. DROP table_name: table_name.sql -> table_name.sql.tmp_drop overwrites table_name.sql.tmp_drop ?
+        // 4. DROP table_name: table_name.sql -> table_name.sql.tmp_drop overwrites table_name.sql.tmp_drop
         Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
 
         {
@@ -127,6 +128,27 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
 void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
 {
+    iterateMetadataFiles(context, [](const String &) {}, [&](const String & file_name)
+    {
+        String full_path = getMetadataPath() + file_name;
+        LOG_INFO(log, "Trying load partially dropped table from " << full_path);
+        try
+        {
+            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
+            if (!ast) //TODO why?
+                return;
+            auto & query = ast->as<ASTCreateQuery &>();
+            auto [_, table] = createTableFromAST(query, database_name, getTableDataPath(query), context, has_force_restore_data_flag);
+            time_t drop_time = Poco::File(full_path).getLastModified().epochTime();
+            tables_to_drop.push_back({table, context.getPath() + getTableDataPath(query), drop_time});
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("Cannot complete table drop " + full_path);
+            //TODO may be remove data dir (if UUID successfully parsed) and .tmp_drop metadata?
+        }
+    });
+
     DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
     drop_task->activateAndSchedule();
 }

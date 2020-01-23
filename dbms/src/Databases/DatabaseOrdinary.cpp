@@ -29,6 +29,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
+#include "DatabaseAtomic.h"
 
 
 namespace DB
