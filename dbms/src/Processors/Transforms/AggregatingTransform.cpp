@@ -106,7 +106,6 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
-        Int32 source_number_,
         Arena * arena_)
         : ISource(params_->getHeader())
         , params(std::move(params_))
