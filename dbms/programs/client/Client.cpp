@@ -2,6 +2,12 @@
 #include "ConnectionParameters.h"
 #include "Suggest.h"
 
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -19,7 +25,6 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
-#include <common/config_common.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
@@ -496,7 +501,11 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-            LineReader lr(&Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#if USE_REPLXX
+            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#else
+            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+#endif
 
             do
             {
