@@ -62,7 +62,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
     Example of how to generate a password from shell:
 
     ```
-    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | openssl dgst -sha1 -binary | openssl dgst -sha1
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
     ```
 
     The first line of the result is the password. The second line is the corresponding double SHA1 hash.
