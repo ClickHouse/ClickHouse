@@ -191,8 +191,9 @@ MergeTreeData::MergeTreeData(
 
     /// Creating directories, if not exist.
     auto paths = getDataPaths();
-    for (const fs::path & path : paths)
+    for (const auto & path_str : paths)
     {
+        fs::path path{path_str};
         fs::create_directories(path / "detached");
         if (fs::exists(path / "format_version.txt"))
         {
@@ -1154,18 +1155,19 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     const auto full_paths = getDataPaths();
 
     /// Delete temporary directories older than a day.
-    Poco::DirectoryIterator end;
+    fs::directory_iterator end;
     for (auto && full_data_path : full_paths)
     {
-        for (Poco::DirectoryIterator it{full_data_path}; it != end; ++it)
+        for (fs::directory_iterator it{full_data_path}; it != end; ++it)
         {
-            if (startsWith(it.name(), "tmp_"))
+
+            if (startsWith(it->path().filename().string(), "tmp_"))
             {
-                Poco::File tmp_dir(full_data_path + it.name());
+                fs::fi tmp_dir(full_data_path + it->path().filename().string());
 
                 try
                 {
-                    if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
+                    if (tmp_dir.is_directory() && isOldPartDirectory(tmp_dir, deadline))
                     {
                         LOG_WARNING(log, "Removing temporary directory " << full_data_path << it.name());
                         Poco::File(full_data_path + it.name()).remove(true);
