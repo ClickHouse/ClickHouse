@@ -16,11 +16,11 @@ namespace ErrorCodes
 
 ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
+    ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+    String format_string;
+    readStringUntilEOF(format_string, schema_file);
     try
     {
-        ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
-        String format_string;
-        readStringUntilEOF(format_string, schema_file);
         parse(format_string, idx_by_name);
     }
     catch (DB::Exception & e)
@@ -193,7 +193,7 @@ const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const cha
 String ParsedTemplateFormatString::dump() const
 {
     WriteBufferFromOwnString res;
-    res << "Delimiter " << 0 << ": ";
+    res << "\nDelimiter " << 0 << ": ";
     verbosePrintString(delimiters.front().c_str(), delimiters.front().c_str() + delimiters.front().size(), res);
 
     size_t num_columns = std::max(formats.size(), format_idx_to_column_idx.size());
