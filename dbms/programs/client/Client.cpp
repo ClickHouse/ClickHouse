@@ -513,6 +513,12 @@ private:
                 if (input.empty())
                     break;
 
+                if (input.ends_with("\\G"))
+                {
+                    input.resize(input.size() - 2);
+                    has_vertical_output_suffix = true;
+                }
+
                 try
                 {
                     if (!process(input))
