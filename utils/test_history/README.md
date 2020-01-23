@@ -6,7 +6,7 @@ Allows to view test-suite history for master branch.
 
 ```bash
 $ sudo pip install -r requirements.txt
-$ test-history --token 4773293b76c0d3f27fb87cf9ea7e08d370d6e334 --since '2020-01-22 00:00:00' --substr Performance'
+$ test-history --token XXX --since '2020-01-22 00:00:00' --substr Performance'
 +---------------------|---------|--------------------+
 | Date                | SHA     | Performance test   |
 +=====================+=========+====================+
