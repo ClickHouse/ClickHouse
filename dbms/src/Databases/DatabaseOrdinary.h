@@ -27,7 +27,7 @@ public:
         const String & name,
         const StorageInMemoryMetadata & metadata) override;
 
-private:
+protected:
 
     void startupTables(ThreadPool & thread_pool);
 };

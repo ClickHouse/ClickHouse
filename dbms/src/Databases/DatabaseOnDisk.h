@@ -66,7 +66,10 @@ protected:
     static constexpr const char * drop_suffix = ".tmp_drop";
 
     using IteratingFunction = std::function<void(const String &)>;
-    void iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const;
+
+    void iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file) const;
+    void iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file,
+                              const IteratingFunction & process_tmp_drop_metadata_file) const;
 
     ASTPtr getCreateTableQueryImpl(
         const Context & context,
@@ -75,6 +78,7 @@ protected:
 
     ASTPtr parseQueryFromMetadata(const Context & context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false) const;
     ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
+
 
     //bool detachTableAndRemoveMetadata(const String & table_name);
     //void replaceMetadata(const ASTPtr & create, );
