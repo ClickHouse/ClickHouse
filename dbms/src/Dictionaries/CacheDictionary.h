@@ -347,6 +347,10 @@ private:
     mutable UpdateQueue update_queue;
 
     ThreadFromGlobalPool update_thread;
+
+    std::atomic<size_t> global_update_thread_number{0};
+    ThreadPool update_pool;
+
     void updateThreadFunction();
     void tryPushToUpdateQueueOrThrow(UpdateUnitPtr update_unit_ptr) const;
     void waitForCurrentUpdateFinish(UpdateUnitPtr update_unit_ptr) const;
@@ -358,6 +362,8 @@ private:
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void prepareAnswer(UpdateUnitPtr, PresentIdHandler &&, AbsentIdHandler &&) const;
-};
+
+    void updateMultiThreadFunction();
+    };
 
 }
