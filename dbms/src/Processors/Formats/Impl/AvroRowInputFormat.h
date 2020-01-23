@@ -30,8 +30,13 @@ private:
     static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     static SkipFn createSkipFn(avro::NodePtr root_node);
 
+    /// Map from field index in Avro schema to column number in block header. Or -1 if there is no corresponding column.
     std::vector<int> field_mapping;
+
+    /// How to skip the corresponding field in Avro schema.
     std::vector<SkipFn> skip_fns;
+
+    /// How to deserialize the corresponding field in Avro schema.
     std::vector<DeserializeFn> deserialize_fns;
 };
 
