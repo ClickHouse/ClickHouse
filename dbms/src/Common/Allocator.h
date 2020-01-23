@@ -51,7 +51,13 @@
   * P.S. This is also required, because tcmalloc can not allocate a chunk of
   * memory greater than 16 GB.
   */
-#ifdef NDEBUG
+
+#ifdef DISABLE_MMAP
+    /**
+     * If we are explicitly asked to disable mmapping, set MMAP_THRESHOLD to effective infinity.
+     */
+    static constexpr size_t MMAP_THRESHOLD = (size_t)-1;
+#elif NDEBUG
     static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #else
     /**
