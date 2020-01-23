@@ -59,6 +59,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
                 insert->database = inner_table->getDatabaseName();
                 insert->table = inner_table->getTableName();
+
+                /// Get list of columns we get from select query.
+                auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+                        .getSampleBlock();
+
+                /// Insert only columns returned by select.
+                auto list = std::make_shared<ASTExpressionList>();
+                for (auto & column : header)
+                    /// But skip columns which storage doesn't have.
+                    if (inner_table->hasColumn(column.name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+
+                insert->columns = std::move(list);
+
                 ASTPtr insert_query_ptr(insert.release());
                 InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
                 BlockIO io = interpreter.execute();
@@ -233,16 +247,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                     in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-
-            auto view_table = context.getTable(view.table_id);
-
-            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_table.get()))
-            {
-                StoragePtr inner_table = materialized_view->getTargetTable();
-                in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::NameOrDefault, inner_table->getColumns().getDefaults());
-            }
-            else
-                in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
