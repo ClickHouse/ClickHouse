@@ -9,7 +9,7 @@ CREATE MATERIALIZED VIEW mv TO mv_target AS SELECT * FROM mv_source;
 
 INSERT INTO mv_source VALUES (1);
 
-ALTER TABLE mv_target ADD COLUMN b UInt8;
+ALTER TABLE mv_target ADD COLUMN b UInt8 DEFAULT a + 1;
 INSERT INTO mv_source VALUES (1),(2),(3);
 
 SELECT * FROM mv ORDER BY a;
