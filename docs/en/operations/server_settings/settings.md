@@ -709,6 +709,20 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
+## mysql_port {#server_settings-mysql_port}
+
+Port for communicating with clients over MySQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
 ## tmp_path
 
 Path to temporary data for processing large queries.

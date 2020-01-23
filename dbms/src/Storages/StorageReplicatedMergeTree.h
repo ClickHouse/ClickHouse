@@ -83,8 +83,6 @@ public:
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
@@ -234,7 +232,7 @@ private:
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
+    InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -527,6 +525,7 @@ private:
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
+    void movePartitionToTable(const StoragePtr & source_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
@@ -544,7 +543,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & database_name_, const String & name_,
+        const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         Context & context_,

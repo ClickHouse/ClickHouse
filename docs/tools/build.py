@@ -66,7 +66,7 @@ def build_for_lang(lang, args):
             'logo': 'images/logo.svg',
             'favicon': 'assets/images/favicon.ico',
             'include_search_page': False,
-            'search_index_only': True,
+            'search_index_only': False,
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
@@ -113,15 +113,8 @@ def build_for_lang(lang, args):
                     }
                 }
             ],
-            plugins=[{
-                'search': {
-                    'lang': ['en', 'ru'] if lang == 'ru' else ['en']
-                }
-            }],
+            plugins=[],
             extra={
-                'search': {
-                    'language': 'en,ru' if lang == 'ru' else 'en'
-                },
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix
             }

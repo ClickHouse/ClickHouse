@@ -25,7 +25,7 @@ static const auto ALTER_ERROR_SLEEP_MS = 10 * 1000;
 ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , zk_node_cache([&] { return storage.getZooKeeper(); })
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAlterThread)")
     , log(&Logger::get(log_name))
 {
     task = storage_.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
@@ -99,8 +99,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
             /// Temporarily cancel parts sending
             ActionLock data_parts_exchange_blocker;
-            if (storage.data_parts_exchange_endpoint_holder)
-                data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->getBlocker().cancel();
+            if (storage.data_parts_exchange_endpoint)
+                data_parts_exchange_blocker = storage.data_parts_exchange_endpoint->blocker.cancel();
 
             /// Temporarily cancel part fetches
             auto fetches_blocker = storage.fetcher.blocker.cancel();

@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /// arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']) = [('a', 'd'), ('b', 'e'), ('c', 'f')]
@@ -44,9 +45,8 @@ public:
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
 
             if (!array_type)
-                throw Exception(
-                    "Argument " + toString(index + 1) + " of function must be array. Found " + arguments[0].type->getName() + " instead.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("Argument " + toString(index + 1) + " of function " + getName()
+                    + " must be array. Found " + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             arguments_types.emplace_back(array_type->getNestedType());
         }
@@ -56,26 +56,37 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        auto first_argument = block.getByPosition(arguments[0]);
-        const auto & first_array_column = checkAndGetColumn<ColumnArray>(first_argument.column.get());
+        size_t num_arguments = arguments.size();
 
-        Columns res_tuple_columns(arguments.size());
-        res_tuple_columns[0] = first_array_column->getDataPtr();
+        ColumnPtr first_array_column;
+        Columns tuple_columns(num_arguments);
 
-        for (size_t index = 1; index < arguments.size(); ++index)
+        for (size_t i = 0; i < num_arguments; ++i)
         {
-            const auto & argument_type_and_column = block.getByPosition(arguments[index]);
-            const auto & argument_array_column = checkAndGetColumn<ColumnArray>(argument_type_and_column.column.get());
+            /// Constant columns cannot be inside tuple. It's only possible to have constant tuple as a whole.
+            ColumnPtr holder = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
 
-            if (!first_array_column->hasEqualOffsets(*argument_array_column))
-                throw Exception("The argument 1 and argument " + toString(index + 1) + " of function have different array sizes",
-                                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
 
-            res_tuple_columns[index] = argument_array_column->getDataPtr();
+            if (!column_array)
+                throw Exception("Argument " + toString(i + 1) + " of function " + getName() + " must be array."
+                    " Found column " + holder->getName() + " instead.", ErrorCodes::ILLEGAL_COLUMN);
+
+            if (i == 0)
+            {
+                first_array_column = holder;
+            }
+            else if (!column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*first_array_column)))
+            {
+                throw Exception("The argument 1 and argument " + toString(i + 1) + " of function " + getName() + " have different array sizes",
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            }
+
+            tuple_columns[i] = column_array->getDataPtr();
         }
 
         block.getByPosition(result).column = ColumnArray::create(
-            ColumnTuple::create(res_tuple_columns), first_array_column->getOffsetsPtr());
+            ColumnTuple::create(tuple_columns), static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
     }
 };
 

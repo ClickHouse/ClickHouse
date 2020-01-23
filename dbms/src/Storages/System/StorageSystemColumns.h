@@ -16,8 +16,6 @@ class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>
     friend struct ext::shared_ptr_helper<StorageSystemColumns>;
 public:
     std::string getName() const override { return "SystemColumns"; }
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -26,9 +24,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-private:
-    const std::string name;
 
 protected:
     StorageSystemColumns(const std::string & name_);

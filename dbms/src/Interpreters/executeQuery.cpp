@@ -163,6 +163,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.query_start_time = current_time;
 
     elem.query = query_for_logging;
+    elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
@@ -214,7 +215,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "", max_query_size);
+        ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -496,6 +497,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
+                elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
 
                 QueryStatus * process_list_elem = context.getProcessListElement();
@@ -620,7 +622,7 @@ void executeQuery(
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
         copyData(limit, out);
-        out.finish();
+        out.finalize();
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
