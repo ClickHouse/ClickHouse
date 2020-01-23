@@ -1,4 +1,5 @@
 #include <iomanip>
+#include "Common/ThreadPool.h"
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ClickHouseRevision.h>
@@ -446,9 +447,23 @@ void TCPHandler::readData(const Settings & connection_settings)
     std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
-    while (true)
-        if (!readDataNext(poll_interval, receive_timeout))
-            return;
+    ThreadPool pool{1};
+
+    pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), &poll_interval, &receive_timeout]()
+    {
+        CurrentMetrics::Increment metric_inc{CurrentMetrics::QueryThread};
+
+        setThreadName("AsyncInsertQuery");
+
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
+
+        while (true)
+            if (!readDataNext(poll_interval, receive_timeout))
+                return;
+    });
+
+    pool.wait();
 }
 
 
@@ -474,6 +489,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     sendData(state.io.out->getHeader());
 
     readData(connection_settings);
+
     state.io.out->writeSuffix();
     state.io.onFinish();
 }
