@@ -31,8 +31,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
-    String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
-    String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time)";
+
+    String engine;
+    if (config.has(config_prefix + ".custom_engine"))
+        engine = config.getString(config_prefix + ".custom_engine");
+    else
+    {
+        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+    }
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
