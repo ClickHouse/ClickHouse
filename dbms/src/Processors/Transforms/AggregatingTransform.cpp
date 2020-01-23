@@ -112,7 +112,6 @@ public:
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
-        , source_number(source_number_)
         , arena(arena_)
         {}
 
@@ -138,7 +137,6 @@ private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
-    Int32 source_number [[maybe_unused]];
     Arena * arena;
 };
 
@@ -380,7 +378,7 @@ private:
         {
             Arena * arena = first->aggregates_pools.at(thread).get();
             auto source = std::make_shared<ConvertingAggregatedToChunksSource>(
-                    params, data, shared_data, thread, arena);
+                    params, data, shared_data, arena);
 
             processors.emplace_back(std::move(source));
         }
