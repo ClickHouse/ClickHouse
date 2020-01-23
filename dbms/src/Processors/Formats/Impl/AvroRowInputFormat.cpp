@@ -172,10 +172,27 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 insertNumber(column, target, decoder.decodeInt());
             };
         case avro::AVRO_LONG:
-            return [target](IColumn & column, avro::Decoder & decoder)
+            if (target.isDateTime64())
             {
-                insertNumber(column, target, decoder.decodeLong());
-            };
+                auto date_time_scale = assert_cast<const DataTypeDateTime64 &>(*target_type).getScale();
+                auto logical_type = root_node->logicalType().type();
+                if ((logical_type == avro::LogicalType::TIMESTAMP_MILLIS && date_time_scale == 3)
+                    || (logical_type == avro::LogicalType::TIMESTAMP_MICROS && date_time_scale == 6))
+                {
+                    return [](IColumn & column, avro::Decoder & decoder)
+                    {
+                        assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(decoder.decodeLong());
+                    };
+                }
+            }
+            else
+            {
+                return [target](IColumn & column, avro::Decoder & decoder)
+                {
+                    insertNumber(column, target, decoder.decodeLong());
+                };
+            }
+            break;
         case avro::AVRO_FLOAT:
             return [target](IColumn & column, avro::Decoder & decoder)
             {
@@ -411,16 +428,19 @@ AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro:
     {
         throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
     }
+
     field_mapping.resize(schema_root->leaves(), -1);
+
     for (size_t i = 0; i < schema_root->leaves(); ++i)
     {
         skip_fns.push_back(createSkipFn(schema_root->leafAt(i)));
         deserialize_fns.push_back(&deserializeNoop);
     }
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const auto & column = columns[i];
-        size_t field_index;
+        size_t field_index = 0;
         if (!schema_root->nameIndex(column.name, field_index))
         {
             throw Exception("Field " + column.name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
