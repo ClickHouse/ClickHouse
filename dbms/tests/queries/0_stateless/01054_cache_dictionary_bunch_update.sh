@@ -77,11 +77,6 @@ timeout $TIMEOUT bash -c thread4 > 01054_output_thread4.txt 2>&1 &
 
 wait
 
-grep -q "bunch" 01054_output_thread1.txt && echo OK > 01054_output_main.txt
-grep -q "bunch" 01054_output_thread2.txt && echo OK > 01054_output_main.txt
-grep -q "bunch" 01054_output_thread3.txt && echo OK > 01054_output_main.txt
-grep -q "bunch" 01054_output_thread4.txt && echo OK > 01054_output_main.txt
-
-grep -q "bunch" 01054_output_main.txt && echo OK
+echo OK
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE if exists test_01054.ints"
