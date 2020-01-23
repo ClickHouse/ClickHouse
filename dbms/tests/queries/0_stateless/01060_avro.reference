@@ -21,7 +21,7 @@
 1000
 = other
 0
-not compatible
+1000
 not found
 === output
 = primitive
@@ -33,4 +33,4 @@ not found
 = other
 0
 1000
-not supported
+147

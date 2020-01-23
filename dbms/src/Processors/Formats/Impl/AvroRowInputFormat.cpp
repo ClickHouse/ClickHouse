@@ -76,7 +76,7 @@ class InputStreamReadBufferAdapter : public avro::InputStream
 public:
     InputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
 
-    bool next(const uint8_t ** data, size_t * len)
+    bool next(const uint8_t ** data, size_t * len) override
     {
         if (in.eof())
         {
@@ -91,11 +91,11 @@ public:
         return true;
     }
 
-    void backup(size_t len) { in.position() -= len; }
+    void backup(size_t len) override { in.position() -= len; }
 
-    void skip(size_t len) { in.tryIgnore(len); }
+    void skip(size_t len) override { in.tryIgnore(len); }
 
-    size_t byteCount() const { return in.count(); }
+    size_t byteCount() const override { return in.count(); }
 
 private:
     ReadBuffer & in;
@@ -105,9 +105,53 @@ static void deserializeNoop(IColumn &, avro::Decoder &)
 {
 }
 
+/// Insert value with conversion to the column of target type.
+template <typename T>
+static void insertNumber(IColumn & column, WhichDataType type, T value)
+{
+    switch (type.idx)
+    {
+        case TypeIndex::UInt8:
+            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::UInt16:
+            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            break;
+        case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::UInt32:
+            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            break;
+        case TypeIndex::DateTime64: [[fallthrough]];
+        case TypeIndex::UInt64:
+            assert_cast<ColumnUInt64 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Int8:
+            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Int16:
+            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Int32:
+            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Int64:
+            assert_cast<ColumnInt64 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Float32:
+            assert_cast<ColumnFloat32 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Float64:
+            assert_cast<ColumnFloat64 &>(column).insertValue(value);
+            break;
+        default:
+            throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
+    }
+}
+
+
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
 {
-    auto logical_type = root_node->logicalType().type();
     WhichDataType target(target_type);
     switch (root_node->type())
     {
@@ -123,32 +167,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             break;
         case avro::AVRO_INT:
-            if (target.isInt32())
+            return [target](IColumn & column, avro::Decoder & decoder)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<ColumnInt32 &>(column).insertValue(decoder.decodeInt());
-                };
-            }
-            if (target.isDate() && logical_type == avro::LogicalType::DATE)
-            {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<DataTypeDate::ColumnType &>(column).insertValue(decoder.decodeInt());
-                };
-            }
-            break;
+                insertNumber(column, target, decoder.decodeInt());
+            };
         case avro::AVRO_LONG:
-            if (target.isInt64())
-            {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<ColumnInt64 &>(column).insertValue(decoder.decodeLong());
-                };
-            }
             if (target.isDateTime64())
             {
                 auto date_time_scale = assert_cast<const DataTypeDateTime64 &>(*target_type).getScale();
+                auto logical_type = root_node->logicalType().type();
                 if ((logical_type == avro::LogicalType::TIMESTAMP_MILLIS && date_time_scale == 3)
                     || (logical_type == avro::LogicalType::TIMESTAMP_MICROS && date_time_scale == 6))
                 {
@@ -158,34 +185,29 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     };
                 }
             }
+            else
+            {
+                return [target](IColumn & column, avro::Decoder & decoder)
+                {
+                    insertNumber(column, target, decoder.decodeLong());
+                };
+            }
             break;
         case avro::AVRO_FLOAT:
-            if (target.isFloat32())
+            return [target](IColumn & column, avro::Decoder & decoder)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<ColumnFloat32 &>(column).insertValue(decoder.decodeFloat());
-                };
-            }
-            break;
+                insertNumber(column, target, decoder.decodeFloat());
+            };
         case avro::AVRO_DOUBLE:
-            if (target.isFloat64())
+            return [target](IColumn & column, avro::Decoder & decoder)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<ColumnFloat64 &>(column).insertValue(decoder.decodeDouble());
-                };
-            }
-            break;
+                insertNumber(column, target, decoder.decodeDouble());
+            };
         case avro::AVRO_BOOL:
-            if (target.isUInt8())
+            return [target](IColumn & column, avro::Decoder & decoder)
             {
-                return [](IColumn & column, avro::Decoder & decoder)
-                {
-                    assert_cast<ColumnUInt8 &>(column).insertValue(decoder.decodeBool());
-                };
-            }
-            break;
+                insertNumber(column, target, decoder.decodeBool());
+            };
         case avro::AVRO_ARRAY:
             if (target.isArray())
             {
@@ -304,14 +326,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             break;
         }
-        case avro::AVRO_MAP:
-        case avro::AVRO_RECORD:
+        case avro::AVRO_MAP: [[fallthrough]];
+        case avro::AVRO_RECORD: [[fallthrough]];
         default:
             break;
     }
 
     throw Exception(
-        "Type " + target_type->getName() + " is not compatible" + " with Avro " + avro::ValidSchema(root_node).toJson(false),
+        "Type " + target_type->getName() + " is not compatible with Avro " + avro::ValidSchema(root_node).toJson(false),
         ErrorCodes::ILLEGAL_COLUMN);
 }
 
@@ -394,7 +416,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             };
         }
         default:
-            throw Exception("Unsupported Avro type", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Unsupported Avro type " + root_node->name().fullname() + " (" + toString(int(root_node->type())) + ")", ErrorCodes::ILLEGAL_COLUMN);
     }
 }
 
@@ -406,16 +428,19 @@ AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro:
     {
         throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
     }
+
     field_mapping.resize(schema_root->leaves(), -1);
+
     for (size_t i = 0; i < schema_root->leaves(); ++i)
     {
         skip_fns.push_back(createSkipFn(schema_root->leafAt(i)));
         deserialize_fns.push_back(&deserializeNoop);
     }
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const auto & column = columns[i];
-        size_t field_index;
+        size_t field_index = 0;
         if (!schema_root->nameIndex(column.name, field_index))
         {
             throw Exception("Field " + column.name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
