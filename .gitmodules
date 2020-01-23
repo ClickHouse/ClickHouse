@@ -142,5 +142,5 @@
 	url = https://github.com/ClickHouse-Extras/ryu.git
 [submodule "contrib/avro"]
 	path = contrib/avro
-	url = https://github.com/apache/avro.git
+	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
