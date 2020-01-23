@@ -54,7 +54,8 @@ public:
         const bool allow_read_expired_keys_,
         const size_t max_update_queue_size_,
         const size_t update_queue_push_timeout_milliseconds_,
-        const size_t each_update_finish_timeout_seconds_);
+        const size_t each_update_finish_timeout_seconds_,
+        const size_t max_threads_for_updates);
 
     ~CacheDictionary() override;
 
@@ -84,7 +85,7 @@ public:
         return std::make_shared<CacheDictionary>(
                 database, name, dict_struct, source_ptr->clone(), dict_lifetime, size,
                 allow_read_expired_keys, max_update_queue_size,
-                update_queue_push_timeout_milliseconds, each_update_finish_timeout_seconds);
+                update_queue_push_timeout_milliseconds, each_update_finish_timeout_seconds, max_threads_for_updates);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -295,6 +296,7 @@ private:
     const size_t max_update_queue_size;
     const size_t update_queue_push_timeout_milliseconds;
     const size_t each_update_finish_timeout_seconds;
+    const size_t max_threads_for_updates;
 
     Logger * const log;
 
