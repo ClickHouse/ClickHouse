@@ -29,6 +29,19 @@ static Chunk convertToChunk(const Block & block)
     return chunk;
 }
 
+static const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+{
+    auto & info = chunk.getChunkInfo();
+    if (!info)
+        throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
+
+    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    if (!agg_info)
+        throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
+
+    return agg_info;
+}
+
 namespace
 {
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
@@ -77,13 +90,13 @@ public:
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<Int32>, NUM_BUCKETS> source_for_bucket;
+        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
         std::atomic<bool> is_cancelled = false;
 
         SharedData()
         {
-            for (auto & source : source_for_bucket)
-                source = -1;
+            for (auto & flag : is_bucket_processed)
+                flag = false;
         }
     };
 
@@ -116,7 +129,7 @@ protected:
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
-        shared_data->source_for_bucket[bucket_num] = source_number;
+        shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;
     }
@@ -125,7 +138,7 @@ private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
-    Int32 source_number;
+    Int32 source_number [[maybe_unused]];
     Arena * arena;
 };
 
@@ -249,16 +262,23 @@ private:
     {
         auto & output = outputs.front();
 
-        Int32 next_input_num = shared_data->source_for_bucket[current_bucket_num];
-        if (next_input_num < 0)
+        for (auto & input : inputs)
+        {
+            if (!input.isFinished() && input.hasData())
+            {
+                auto chunk = input.pull();
+                auto bucket = getInfoFromChunk(chunk)->bucket_num;
+                chunks[bucket] = std::move(chunk);
+            }
+        }
+
+        if (!shared_data->is_bucket_processed[current_bucket_num])
             return Status::NeedData;
 
-        auto next_input = std::next(inputs.begin(), next_input_num);
-        /// next_input can't be finished till data was not pulled.
-        if (!next_input->hasData())
+        if (!chunks[current_bucket_num])
             return Status::NeedData;
 
-        output.push(next_input->pull());
+        output.push(std::move(chunks[current_bucket_num]));
 
         ++current_bucket_num;
         if (current_bucket_num == NUM_BUCKETS)
@@ -286,6 +306,7 @@ private:
 
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
+    std::array<Chunk, NUM_BUCKETS> chunks;
 
     Processors processors;
 
