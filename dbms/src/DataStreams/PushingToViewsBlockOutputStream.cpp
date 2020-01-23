@@ -60,9 +60,16 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->database = inner_table_id.database_name;
             insert->table = inner_table_id.table_name;
+//
+//            Context local_context = *views_context;
+//            local_context.addViewSource(
+//                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
+//                                          storage->getSampleBlock()));
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
 
             auto list = std::make_shared<ASTExpressionList>();
-            for (auto & column : storage->getSampleBlock())
+            for (auto & column : header)
                 list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
