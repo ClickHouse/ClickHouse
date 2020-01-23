@@ -1,4 +1,5 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
@@ -34,8 +35,9 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
     const Context & context_,
     const BlockInputStreamPtr & input,
     const Block & result_header,
-    MatchColumnsMode mode)
-    : context(context_), header(result_header), conversion(header.columns())
+    MatchColumnsMode mode,
+    const ColumnDefaults & column_defaults_)
+    : context(context_), header(result_header), column_defaults(column_defaults_), conversion(header.columns())
 {
     children.emplace_back(input);
 
@@ -102,6 +104,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
 Block ConvertingBlockInputStream::readImpl()
 {
     Block src = children.back()->read();
+    std::set<size_t> default_columns;
 
     if (!src)
         return src;
@@ -113,9 +116,7 @@ Block ConvertingBlockInputStream::readImpl()
 
         if (conversion[res_pos] == USE_DEFAULT)
         {
-            // Create a column with default values
-            auto column_with_defaults = res_elem.type->createColumn()->cloneResized(src.rows());
-            res_elem.column = std::move(column_with_defaults);
+            default_columns.insert(res_pos);
             continue;
         }
 
@@ -128,6 +129,14 @@ Block ConvertingBlockInputStream::readImpl()
 
         res_elem.column = std::move(converted);
     }
+
+    // replace missing columns with default value or expression if any
+    if (!default_columns.empty())
+    {
+        res.erase(default_columns);
+        res = addMissingDefaults(res, header.getNamesAndTypesList(), column_defaults, context);
+    }
+
     return res;
 }
 
