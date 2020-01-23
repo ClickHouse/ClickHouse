@@ -527,7 +527,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     lsm->merge(callback);
     flushed_right_blocks.swap(lsm->sorted_files.front());
 
-    /// Get memory limit or aproximate it from row limit and bytes per row factor
+    /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
     UInt64 rows_limit = size_limits.max_rows;
     if (!memory_limit && rows_limit)

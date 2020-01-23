@@ -455,7 +455,7 @@ def make_changelog(new_tag, prev_tag, pull_requests_nums, repo, repo_folder, sta
     # Remove double whitespaces and trailing whitespaces
     changelog = re.sub(r' {2,}| +$', r''.format(repo), changelog)
 
-    print(changelog)
+    print(changelog.encode('utf-8'))
 
 
 if __name__ == '__main__':

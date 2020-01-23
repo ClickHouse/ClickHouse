@@ -21,8 +21,7 @@ class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorag
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         mysqlxx::Pool && pool_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
@@ -33,8 +32,6 @@ public:
         const Context & context_);
 
     std::string getName() const override { return "MySQL"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -48,8 +45,6 @@ public:
 
 private:
     friend class StorageMySQLBlockOutputStream;
-    std::string table_name;
-    std::string database_name;
 
     std::string remote_database_name;
     std::string remote_table_name;

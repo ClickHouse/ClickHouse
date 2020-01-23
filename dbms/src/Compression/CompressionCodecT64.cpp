@@ -516,13 +516,13 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception("Connot compress with T64", ErrorCodes::CANNOT_COMPRESS);
+    throw Exception("Cannot compress with T64", ErrorCodes::CANNOT_COMPRESS);
 }
 
 void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
-        throw Exception("Connot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
     src += 1;
@@ -553,7 +553,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception("Connot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
+    throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void CompressionCodecT64::useInfoAboutType(DataTypePtr data_type)

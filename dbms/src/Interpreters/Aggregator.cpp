@@ -157,7 +157,7 @@ Aggregator::Aggregator(const Params & params_)
     total_size_of_aggregate_states = 0;
     all_aggregates_has_trivial_destructor = true;
 
-    // aggreate_states will be aligned as below:
+    // aggregate_states will be aligned as below:
     // |<-- state_1 -->|<-- pad_1 -->|<-- state_2 -->|<-- pad_2 -->| .....
     //
     // pad_N will be used to match alignment requirement for each next state.
@@ -168,7 +168,7 @@ Aggregator::Aggregator(const Params & params_)
 
         total_size_of_aggregate_states += params.aggregates[i].function->sizeOfData();
 
-        // aggreate states are aligned based on maximum requirement
+        // aggregate states are aligned based on maximum requirement
         align_aggregate_states = std::max(align_aggregate_states, params.aggregates[i].function->alignOfData());
 
         // If not the last aggregate_state, we need pad it so that next aggregate_state will be aligned.
@@ -781,7 +781,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
     bool final,
-    size_t bucket) const
+    size_t bucket,
+    std::atomic<bool> * is_cancelled) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -792,6 +793,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst)) \
+            return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
     }
 
@@ -1482,12 +1485,15 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
-    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena) const
+    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> * is_cancelled) const
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
+        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
+            return;
+
         AggregatedDataVariants & current = *data[result_num];
 
         mergeDataImpl<Method>(

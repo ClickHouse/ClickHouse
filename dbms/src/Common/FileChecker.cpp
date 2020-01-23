@@ -1,5 +1,4 @@
 #include <common/JSON.h>
-#include <Poco/Path.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -13,28 +12,26 @@
 namespace DB
 {
 
-
-FileChecker::FileChecker(const std::string & file_info_path_)
+FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
 {
     setPath(file_info_path_);
 }
 
-void FileChecker::setPath(const std::string & file_info_path_)
+void FileChecker::setPath(const String & file_info_path_)
 {
     files_info_path = file_info_path_;
 
-    Poco::Path path(files_info_path);
-    tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
+    tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 }
 
-void FileChecker::update(const Poco::File & file)
+void FileChecker::update(const String & file_path)
 {
     initialize();
-    updateImpl(file);
+    updateImpl(file_path);
     save();
 }
 
-void FileChecker::update(const Files::const_iterator & begin, const Files::const_iterator & end)
+void FileChecker::update(const Strings::const_iterator & begin, const Strings::const_iterator & end)
 {
     initialize();
     for (auto it = begin; it != end; ++it)
@@ -44,9 +41,8 @@ void FileChecker::update(const Files::const_iterator & begin, const Files::const
 
 CheckResults FileChecker::check() const
 {
-    /** Read the files again every time you call `check` - so as not to violate the constancy.
-        * `check` method is rarely called.
-        */
+    // Read the files again every time you call `check` - so as not to violate the constancy.
+    // `check` method is rarely called.
 
     CheckResults results;
     Map local_map;
@@ -57,22 +53,21 @@ CheckResults FileChecker::check() const
 
     for (const auto & name_size : local_map)
     {
-        Poco::Path path = Poco::Path(files_info_path).parent().toString() + "/" + name_size.first;
-        Poco::File file(path);
-        if (!file.exists())
+        const String & name = name_size.first;
+        String path = parentPath(files_info_path) + name;
+        if (!disk->exists(path))
         {
-            results.emplace_back(path.getFileName(), false, "File " + file.path() + " doesn't exist");
+            results.emplace_back(name, false, "File " + path + " doesn't exist");
             break;
         }
 
-
-        size_t real_size = file.getSize();
+        auto real_size = disk->getFileSize(path);
         if (real_size != name_size.second)
         {
-            results.emplace_back(path.getFileName(), false, "Size of " + file.path() + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second));
+            results.emplace_back(name, false, "Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second));
             break;
         }
-        results.emplace_back(path.getFileName(), true, "");
+        results.emplace_back(name, true, "");
     }
 
     return results;
@@ -87,64 +82,54 @@ void FileChecker::initialize()
     initialized = true;
 }
 
-void FileChecker::updateImpl(const Poco::File & file)
+void FileChecker::updateImpl(const String & file_path)
 {
-    map[Poco::Path(file.path()).getFileName()] = file.getSize();
+    map[fileName(file_path)] = disk->getFileSize(file_path);
 }
 
 void FileChecker::save() const
 {
     {
-        WriteBufferFromFile out(tmp_files_info_path);
+        std::unique_ptr<WriteBuffer> out = disk->writeFile(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
-        writeCString("{\"yandex\":{", out);
+        writeCString("{\"yandex\":{", *out);
 
         auto settings = FormatSettings();
         for (auto it = map.begin(); it != map.end(); ++it)
         {
             if (it != map.begin())
-                writeString(",", out);
+                writeString(",", *out);
 
             /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
-            writeJSONString(escapeForFileName(it->first), out, settings);
-            writeString(":{\"size\":\"", out);
-            writeIntText(it->second, out);
-            writeString("\"}", out);
+            writeJSONString(escapeForFileName(it->first), *out, settings);
+            writeString(":{\"size\":\"", *out);
+            writeIntText(it->second, *out);
+            writeString("\"}", *out);
         }
 
-        writeCString("}}", out);
-        out.next();
+        writeCString("}}", *out);
+        out->next();
     }
 
-    Poco::File current_file(files_info_path);
-
-    if (current_file.exists())
-    {
-        std::string old_file_name = files_info_path + ".old";
-        current_file.renameTo(old_file_name);
-        Poco::File(tmp_files_info_path).renameTo(files_info_path);
-        Poco::File(old_file_name).remove();
-    }
-    else
-        Poco::File(tmp_files_info_path).renameTo(files_info_path);
+    disk->replaceFile(tmp_files_info_path, files_info_path);
 }
 
-void FileChecker::load(Map & local_map, const std::string & path)
+void FileChecker::load(Map & local_map, const String & path) const
 {
     local_map.clear();
 
-    if (!Poco::File(path).exists())
+    if (!disk->exists(path))
         return;
 
-    ReadBufferFromFile in(path);
+    std::unique_ptr<ReadBuffer> in = disk->readFile(path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.
-    while (!in.eof())
+    while (!in->eof())
     {
         char c;
-        readChar(c, in);
+        readChar(c, *in);
         if (!isspace(c))
             writeChar(c, out);
     }

@@ -135,7 +135,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (table->noPushingToViews() && !no_destination)
             out = table->write(query_ptr, context);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 
         /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
         /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).

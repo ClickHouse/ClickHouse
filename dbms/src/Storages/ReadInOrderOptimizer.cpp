@@ -23,7 +23,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
         throw Exception("Sizes of sort description and actions are mismatched", ErrorCodes::LOGICAL_ERROR);
 
     /// Do not analyze joined columns.
-    /// They may have aliases and come to descriprion as is.
+    /// They may have aliases and come to description as is.
     /// We can mismatch them with order key columns at stage of fetching columns.
     for (const auto & elem : syntax_result->array_join_result_to_source)
         forbidden_columns.insert(elem.first);

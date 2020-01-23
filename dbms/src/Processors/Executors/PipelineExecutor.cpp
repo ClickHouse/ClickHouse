@@ -259,7 +259,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     /// In this method we have ownership on node.
     auto & node = graph[pid];
 
-    bool need_traverse = false;
     bool need_expand_pipeline = false;
 
     std::vector<Edge *> updated_back_edges;
@@ -290,13 +289,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             case IProcessor::Status::NeedData:
             case IProcessor::Status::PortFull:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Idle;
                 break;
             }
             case IProcessor::Status::Finished:
             {
-                need_traverse = true;
                 node.status = ExecStatus::Finished;
                 break;
             }
@@ -325,7 +322,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             }
         }
 
-        if (need_traverse)
         {
             for (auto & edge_id : node.post_updated_input_ports)
             {
@@ -346,7 +342,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
     }
 
-    if (need_traverse)
     {
         for (auto & edge : updated_direct_edges)
         {
@@ -543,7 +538,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!task_queue.empty() && !threads_queue.empty() /*&& task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = threads_queue.pop_any();
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+
+                        if (threads_queue.has(thread_to_wake))
+                            threads_queue.pop(thread_to_wake);
+                        else
+                            thread_to_wake = threads_queue.pop_any();
+
                         lock.unlock();
                         wake_up_executor(thread_to_wake);
                     }
@@ -627,9 +628,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    if (!threads_queue.empty() /* && task_queue.quota() > threads_queue.size()*/)
+                    if (!threads_queue.empty() && !finished /* && task_queue.quota() > threads_queue.size()*/)
                     {
-                        auto thread_to_wake = threads_queue.pop_any();
+                        auto thread_to_wake = task_queue.getAnyThreadWithTasks(thread_num + 1 == num_threads ? 0 : (thread_num + 1));
+
+                        if (threads_queue.has(thread_to_wake))
+                            threads_queue.pop(thread_to_wake);
+                        else
+                            thread_to_wake = threads_queue.pop_any();
+
                         lock.unlock();
 
                         wake_up_executor(thread_to_wake);
@@ -774,7 +781,7 @@ String PipelineExecutor::dumpPipeline() const
 
     WriteBufferFromOwnString out;
     printPipeline(processors, statuses, out);
-    out.finish();
+    out.finalize();
 
     return out.str();
 }

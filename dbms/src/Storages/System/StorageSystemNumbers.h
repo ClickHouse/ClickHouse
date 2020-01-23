@@ -28,8 +28,6 @@ class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>
     friend struct ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -39,8 +37,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool hasEvenlyDistributedRead() const override { return true; }
+
 private:
-    const std::string name;
     bool multithreaded;
     bool even_distribution;
     std::optional<UInt64> limit;
