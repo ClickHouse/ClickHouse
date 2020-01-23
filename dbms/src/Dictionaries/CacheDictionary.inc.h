@@ -39,6 +39,7 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
+    std::cout << StackTrace().toString() << std::endl;
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
     std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
