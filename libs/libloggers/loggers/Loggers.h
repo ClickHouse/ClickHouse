@@ -24,7 +24,7 @@ public:
         return layer; /// layer setted in inheritor class BaseDaemonApplication.
     }
 
-    void setTextLog(std::shared_ptr<DB::TextLog> log);
+    void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
 
 protected:
     std::optional<size_t> layer;
@@ -38,5 +38,7 @@ private:
     std::string config_logger;
 
     std::weak_ptr<DB::TextLog> text_log;
+    int text_log_max_priority = -1;
+
     Poco::AutoPtr<DB::OwnSplitChannel> split;
 };
