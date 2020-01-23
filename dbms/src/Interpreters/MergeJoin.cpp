@@ -305,6 +305,7 @@ bool joinEquals(const Block & left_block, const Block & right_block, const Block
         size_t range_rows = range.left_length * range.right_length;
         if (range_rows > max_rows)
         {
+            /// We need progress. So we join at least one right row.
             range.right_length = max_rows / range.left_length;
             if (!range.right_length)
                 range.right_length = 1;
@@ -738,9 +739,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         if constexpr (is_all)
         {
-            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_rows);
-            if (!max_rows)
-                return false;
+            size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
 
             if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
             {
@@ -792,9 +791,7 @@ bool MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
 
         if constexpr (is_all)
         {
-            size_t max_rows = maxRangeRows(left_columns.size(), max_joined_block_rows);
-            if (!max_rows)
-                return false;
+            size_t max_rows = maxRangeRows(left_columns[0]->size(), max_joined_block_rows);
 
             if (!joinEquals<true>(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, max_rows))
             {
