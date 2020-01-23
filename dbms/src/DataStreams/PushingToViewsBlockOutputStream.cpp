@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include "AddingMissedBlockInputStream.h"
 
 namespace DB
 {
@@ -233,13 +234,14 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
 
             auto view_table = context.getTable(view.table_id);
 
+            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+
+            /// Add defaults to inner table in case it was altered after creation.
             if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_table.get()))
             {
                 StoragePtr inner_table = materialized_view->getTargetTable();
-                in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::NameOrDefault, inner_table->getColumns().getDefaults());
+                in = std::make_shared<AddingMissedBlockInputStream>(in, view.out->getHeader(), inner_table->getColumns().getDefaults(), context);
             }
-            else
-                in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
