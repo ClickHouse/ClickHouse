@@ -11,6 +11,11 @@
 
 namespace DB
 {
+    
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -33,8 +38,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
     String table = config.getString(config_prefix + ".table", default_table_name);
 
     String engine;
-    if (config.has(config_prefix + ".custom_engine"))
-        engine = config.getString(config_prefix + ".custom_engine");
+    if (config.has(config_prefix + ".engine"))
+    {
+        if (config.has(config_prefix + ".partition_by"))
+            throw Exception("If 'engine' is specified for system table, PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense", ErrorCodes::BAD_ARGUMENTS);
+        engine = config.getString(config_prefix + ".engine");
+    }
     else
     {
         String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
