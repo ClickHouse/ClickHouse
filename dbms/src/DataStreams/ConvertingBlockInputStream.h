@@ -2,7 +2,6 @@
 
 #include <unordered_map>
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -29,17 +28,14 @@ public:
         /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
-        Name,
-        /// Find columns in source by their names if present else use the default. Allow excessive columns in source.
-        NameOrDefault
+        Name
     };
 
     ConvertingBlockInputStream(
         const Context & context,
         const BlockInputStreamPtr & input,
         const Block & result_header,
-        MatchColumnsMode mode,
-        const ColumnDefaults & column_defaults = {});
+        MatchColumnsMode mode);
 
     String getName() const override { return "Converting"; }
     Block getHeader() const override { return header; }
@@ -49,12 +45,9 @@ private:
 
     const Context & context;
     Block header;
-    /// Only used in NameOrDefault mode
-    const ColumnDefaults column_defaults;
 
     /// How to construct result block. Position in source block, where to get each column.
     using Conversion = std::vector<size_t>;
-    const size_t USE_DEFAULT = static_cast<size_t>(-1);
     Conversion conversion;
 };
 

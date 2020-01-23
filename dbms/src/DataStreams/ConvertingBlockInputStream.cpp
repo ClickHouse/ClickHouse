@@ -1,10 +1,10 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Parsers/IAST.h>
+
 
 namespace DB
 {
@@ -35,9 +35,8 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
     const Context & context_,
     const BlockInputStreamPtr & input,
     const Block & result_header,
-    MatchColumnsMode mode,
-    const ColumnDefaults & column_defaults_)
-    : context(context_), header(result_header), column_defaults(column_defaults_), conversion(header.columns())
+    MatchColumnsMode mode)
+    : context(context_), header(result_header), conversion(header.columns())
 {
     children.emplace_back(input);
 
@@ -66,17 +65,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                     throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
                         ErrorCodes::THERE_IS_NO_COLUMN);
                 break;
-
-            case MatchColumnsMode::NameOrDefault:
-                if (input_header.has(res_elem.name))
-                    conversion[result_col_num] = input_header.getPositionByName(res_elem.name);
-                else
-                    conversion[result_col_num] = USE_DEFAULT;
-                break;
         }
-
-        if (conversion[result_col_num] == USE_DEFAULT)
-            continue;
 
         const auto & src_elem = input_header.getByPosition(conversion[result_col_num]);
 
@@ -104,7 +93,6 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
 Block ConvertingBlockInputStream::readImpl()
 {
     Block src = children.back()->read();
-    std::set<size_t> default_columns;
 
     if (!src)
         return src;
@@ -112,15 +100,8 @@ Block ConvertingBlockInputStream::readImpl()
     Block res = header.cloneEmpty();
     for (size_t res_pos = 0, size = conversion.size(); res_pos < size; ++res_pos)
     {
-        auto & res_elem = res.getByPosition(res_pos);
-
-        if (conversion[res_pos] == USE_DEFAULT)
-        {
-            default_columns.insert(res_pos);
-            continue;
-        }
-
         const auto & src_elem = src.getByPosition(conversion[res_pos]);
+        auto & res_elem = res.getByPosition(res_pos);
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
 
@@ -129,16 +110,7 @@ Block ConvertingBlockInputStream::readImpl()
 
         res_elem.column = std::move(converted);
     }
-
-    // replace missing columns with default value or expression if any
-    if (!default_columns.empty())
-    {
-        res.erase(default_columns);
-        res = addMissingDefaults(res, header.getNamesAndTypesList(), column_defaults, context);
-    }
-
     return res;
 }
 
 }
-
