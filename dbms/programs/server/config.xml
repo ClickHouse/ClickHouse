@@ -389,10 +389,12 @@
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
+         The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
     <text_log>
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <level></level>
     </text_log>
     -->
 

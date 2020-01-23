@@ -881,7 +881,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (auto & server : servers)
             server->start();
 
-        setTextLog(global_context->getTextLog());
+        {
+            String level_str = config().getString("text_log.level", "");
+            int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
+            setTextLog(global_context->getTextLog(), level);
+        }
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
