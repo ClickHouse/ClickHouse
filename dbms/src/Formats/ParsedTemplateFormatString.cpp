@@ -209,7 +209,7 @@ const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const cha
 String ParsedTemplateFormatString::dump() const
 {
     WriteBufferFromOwnString res;
-    res << "Delimiter " << 0 << ": ";
+    res << "\nDelimiter " << 0 << ": ";
     verbosePrintString(delimiters.front().c_str(), delimiters.front().c_str() + delimiters.front().size(), res);
 
     size_t num_columns = std::max(formats.size(), format_idx_to_column_idx.size());
