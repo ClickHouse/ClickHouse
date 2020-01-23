@@ -92,8 +92,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt32) +                       // thread_number
-        sizeof(Int64) +                        // size
-        sizeof(UInt64);                        // pointer
+        sizeof(Int64);                         // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
@@ -113,8 +112,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_number, out);
-    writePODBinary(0, out);
-    writePODBinary(0, out);
+    writePODBinary(Int64(0), out);
 
     out.next();
 }
@@ -176,10 +174,6 @@ void TraceCollector::run()
 {
     ReadBufferFromFileDescriptor in(pipe.fds_rw[0]);
 
-    /// FIXME: use condvar to wait for |trace_log|
-    while (!trace_log)
-        sleep(1);
-
     while (true)
     {
         char is_last;
@@ -212,8 +206,11 @@ void TraceCollector::run()
         Int64 size;
         readPODBinary(size, in);
 
-        TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace, size};
-        trace_log->add(element);
+        if (trace_log)
+        {
+            TraceLogElement element{std::time(nullptr), trace_type, thread_number, query_id, trace, size};
+            trace_log->add(element);
+        }
     }
 }
 
