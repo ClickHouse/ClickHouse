@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <DataStreams/IBlockInputStream.h>
+#include <Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -37,7 +38,8 @@ public:
         const Context & context,
         const BlockInputStreamPtr & input,
         const Block & result_header,
-        MatchColumnsMode mode);
+        MatchColumnsMode mode,
+        const ColumnDefaults & column_defaults = {});
 
     String getName() const override { return "Converting"; }
     Block getHeader() const override { return header; }
@@ -47,6 +49,8 @@ private:
 
     const Context & context;
     Block header;
+    /// Only used in NameOrDefault mode
+    const ColumnDefaults column_defaults;
 
     /// How to construct result block. Position in source block, where to get each column.
     using Conversion = std::vector<size_t>;
