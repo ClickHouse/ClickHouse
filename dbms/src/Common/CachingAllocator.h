@@ -102,26 +102,29 @@ public:
     {
         std::lock_guard cache_lock(mutex);
 
-        allocated_regions.clear();
+        used_regions.clear();
         unused_allocated_regions.clear();
         free_regions.clear();
 
         all_regions.clear_and_dispose(region_metadata_disposer);
     }
 
-    inline size_t getSizeInUse() const
+    /// @return Total size (in bytes) occupied by the cache (does NOT include metadata size).
+    inline size_t getSizeInUse() const noexcept
     {
         std::lock_guard lock(mutex);
         return total_size_in_use;
     }
 
-    inline size_t getUsedRegionsCount() const
+    /// @return Count of pairs (\c key, \c mapped) that are currently in use.
+    inline size_t getUsedRegionsCount() const noexcept
     {
         std::lock_guard lock(mutex);
-        return allocated_regions.size();
+        return used_regions.size();
     }
 
-    inline size_t reset()
+    /// Clears the cache.
+    inline void reset() noexcept
     {
         std::lock_guard lock(mutex);
 
@@ -129,7 +132,7 @@ public:
         chunks.clear();
 
         free_regions.clear();
-        allocated_regions.clear();
+        used_regions.clear();
         unused_allocated_regions.clear();
 
         all_regions.clear_and_dispose(region_metadata_disposer);
@@ -250,7 +253,7 @@ public:
             auto attempt_it = insertion_attempts.find(key);
 
             if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-                allocated_regions.insert(*region);
+                used_regions.insert(*region);
 
             if (!attempt->is_disposed)
                 disposer.dispose();
@@ -260,7 +263,7 @@ public:
         catch (...)
         {
             if (region->TAllocatedRegionHook::is_linked())
-                allocated_regions.erase(allocated_regions.iterator_to(*region));
+                used_regions.erase(used_regions.iterator_to(*region));
 
             freeAndCoalesce(*region);
 
@@ -286,7 +289,7 @@ public:
         out.num_regions = all_regions.size();
         out.num_free_regions = free_regions.size();
         out.num_regions_in_use = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
-        out.num_keyed_regions = allocated_regions.size();
+        out.num_keyed_regions = used_regions.size();
 
         out.hits = hits.load(std::memory_order_relaxed);
         out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
@@ -353,7 +356,7 @@ private:
     /**
      * Represented by a keymap (boost multiset).
      */
-    TAllocatedRegionsMap allocated_regions;
+    TAllocatedRegionsMap used_regions;
 
     /**
      * Represented by a LRU List (boost linked list).
@@ -625,9 +628,9 @@ private:
         {
             std::lock_guard cache_lock(mutex);
 
-            auto region_it = allocated_regions.find(key, RegionCompareByKey());
+            auto region_it = used_regions.find(key, RegionCompareByKey());
 
-            if (allocated_regions.end() != region_it)
+            if (used_regions.end() != region_it)
             {
                 ++hits;
 
@@ -666,7 +669,7 @@ private:
      * Inserts \c region into \c free_regions container, probably coalescing it with adjacent free regions (one to the
      * right and one to the left).
      *
-     * @param region Target region to insert. Must not be present in \c free_regions, \c allocated_regions and
+     * @param region Target region to insert. Must not be present in \c free_regions, \c used_regions and
      *      \c unused_allocated_regions.
      */
     inline void freeAndCoalesce(RegionMetadata & region) noexcept
@@ -705,7 +708,7 @@ private:
         unused_allocated_regions.erase(unused_allocated_regions.iterator_to(target));
 
         if (target.TAllocatedRegionHook::is_linked())
-            allocated_regions.erase(allocated_regions.iterator_to(target));
+            used_regions.erase(used_regions.iterator_to(target));
 
         ++evictions;
         evicted_bytes += target.size;
@@ -717,7 +720,7 @@ private:
      * Evicts region of at least \c requested_size from cache and returns it,
      * probably coalesced with nearby free regions.
      * While size is not enough, evicts adjacent regions at right, if any.
-     * Target region is removed from \c unused_allocated_regions and \c allocated_regions and inserted into
+     * Target region is removed from \c unused_allocated_regions and \c used_regions and inserted into
      * \c free_regions.
      *
      * @see \c evict(RegionMetadata&)
@@ -833,7 +836,7 @@ private:
 
     /**
      * Main allocation routine.
-     * @note Method does not insert allocated region to \c allocated_regions or \c unused_allocated_regions.
+     * @note Method does not insert allocated region to \c used_regions or \c unused_allocated_regions.
      * @return Desired region or \c nullptr.
      */
     RegionMetadata * allocate(size_t size)

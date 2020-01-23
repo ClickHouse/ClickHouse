@@ -55,7 +55,8 @@ public:
     }
 
     template <typename Init>
-    inline MemoryRegionPtr getOrSet(const Key& key, Init&& initialize) {
+    inline MemoryRegionPtr getOrSet(const Key& key, Init&& initialize)
+    {
         auto&& [region, was_produced] = Base::getOrSet(
             key,
             MarksWeightFunction{},
