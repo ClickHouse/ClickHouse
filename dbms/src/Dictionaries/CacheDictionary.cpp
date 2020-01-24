@@ -752,7 +752,8 @@ void CacheDictionary::updateThreadFunction()
 
         /// Word "bunch" must present in this log message, because it is being checked in tests.
         if (current_queue_size > 0)
-            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with " << current_queue_size + 1 << " keys" );
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
+                           << current_queue_size + 1 << " keys" );
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
