@@ -42,7 +42,10 @@ public:
         UInt64 num_rows = res_columns.at(0)->size();
         Chunk chunk(std::move(res_columns), num_rows);
 
-        return { Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk))) };
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk)));
+
+        return pipes;
     }
 };
 
