@@ -1012,7 +1012,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readTextWithSuffix(res, buf);
+    readTextWithSizeSuffix(res, buf);
     assertEOF(buf);
     return res;
 }
