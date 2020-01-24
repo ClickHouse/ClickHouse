@@ -166,7 +166,6 @@ struct ContextShared
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
-    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -300,11 +299,6 @@ struct ContextShared
         ddl_worker.reset();
 
         ext::Singleton<TraceCollector>()->stop();
-    }
-
-    bool hasTraceCollector()
-    {
-        return trace_collector != nullptr;
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -1699,11 +1693,6 @@ void Context::initializeSystemLogs()
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
-}
-
-bool Context::hasTraceCollector()
-{
-    return shared->hasTraceCollector();
 }
 
 void Context::initializeTraceCollector()

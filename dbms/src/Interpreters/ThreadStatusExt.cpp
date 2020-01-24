@@ -155,7 +155,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    if (!global_context || !global_context->hasTraceCollector())
+    if (!global_context)
         return;
 
     const auto & settings = query_context->getSettingsRef();
