@@ -77,7 +77,7 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 You cannot perform a `SELECT` query directly from the table. Instead, use one of the following methods:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](../../query_language/functions/other_functions.md#other_functions-joinget) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](../../query_language/functions/other_functions.md#joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Limitations and Settings
 
