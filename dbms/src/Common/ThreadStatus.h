@@ -203,6 +203,9 @@ protected:
 
     /// Set to non-nullptr only if we have enough capabilities.
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+
+private:
+    void setupState(const ThreadGroupStatusPtr & thread_group_);
 };
 
 }
