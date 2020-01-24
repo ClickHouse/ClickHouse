@@ -392,8 +392,8 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
 void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context)
 {
     BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
-    auto window_proxy_storage = std::make_shared<WindowViewProxyStorage>(StorageID("", "WindowViewProxyStorage"), 
-        window_view.getParentStorage(), std::move(streams), QueryProcessingStage::FetchColumns);
+    auto window_proxy_storage = std::make_shared<WindowViewProxyStorage>(
+        StorageID("", "WindowViewProxyStorage"), window_view.getParentStorage(), std::move(streams), QueryProcessingStage::FetchColumns);
     InterpreterSelectQuery select_block(
         window_view.getInnerQuery(), context, window_proxy_storage, QueryProcessingStage::WithMergeableState);
 
