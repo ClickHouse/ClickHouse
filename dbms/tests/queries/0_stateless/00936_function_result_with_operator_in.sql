@@ -23,7 +23,7 @@ SELECT 'a' IN splitByChar('c', 'abcdef');
 SELECT 'errors:';
 -- non-constant expressions in the right side of IN
 SELECT count() FROM samples WHERE 1 IN range(samples.value); -- { serverError 47 }
-SELECT count() FROM samples WHERE 1 IN range(rand()); -- { serverError 36 }
+SELECT count() FROM samples WHERE 1 IN range(rand() % 1000); -- { serverError 36 }
 
 -- index is not used
 SELECT count() FROM samples WHERE value IN range(3); -- { serverError 277 }

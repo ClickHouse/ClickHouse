@@ -45,7 +45,6 @@ public:
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
     void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
