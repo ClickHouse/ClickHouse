@@ -17,20 +17,23 @@ class AnalyzedJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 struct MiniLSM
 {
     using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
 
-    const String & path;
+    VolumePtr volume;
     const Block & sample_block;
     const SortDescription & sort_description;
     const size_t rows_in_block;
     const size_t max_size;
     std::vector<SortedFiles> sorted_files;
 
-    MiniLSM(const String & path_, const Block & sample_block_, const SortDescription & description,
+    MiniLSM(VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
             size_t rows_in_block_, size_t max_size_ = 16)
-        : path(path_)
+        : volume(volume_)
         , sample_block(sample_block_)
         , sort_description(description)
         , rows_in_block(rows_in_block_)
@@ -56,7 +59,7 @@ public:
 
 private:
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
-    /// max_bytes is prefered. If it isn't set we aproximate it as (max_rows * bytes/row).
+    /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
     {
         size_t operator()(const Block & block) const { return block.bytes(); }

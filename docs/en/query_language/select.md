@@ -14,11 +14,11 @@ SELECT [DISTINCT] expr_list
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
 [ORDER BY expr_list]
+[LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m]
 [UNION ALL ...]
 [INTO OUTFILE filename]
 [FORMAT format]
-[LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -112,8 +112,20 @@ In contrast to standard SQL, a synonym does not need to be specified after a sub
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
-The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
+#### FINAL Modifier {#select-from-final}
+
+Applicable when selecting data from tables from the [MergeTree](../operations/table_engines/mergetree.md)-engine family other than `GraphiteMergeTree`. When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
+
+Also supported for:
+- [Replicated](../operations/table_engines/replication.md) versions of `MergeTree` engines.
+- [View](../operations/table_engines/view.md), [Buffer](../operations/table_engines/buffer.md), [Distributed](../operations/table_engines/distributed.md), and [MaterializedView](../operations/table_engines/materializedview.md) engines that operate over other engines, provided they were created over `MergeTree`-engine tables.
+
+Queries that use `FINAL` are executed not as fast as similar queries that don't, because:
+
+- Query is executed in a single thread and data is merged during query execution.
+- Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
+
+In most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
@@ -1108,7 +1120,7 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
-### INTO OUTFILE Clause
+### INTO OUTFILE Clause {#into-outfile-clause}
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to redirect query output to the specified file.
 In contrast to MySQL, the file is created on the client side. The query will fail if a file with the same filename already exists.
@@ -1116,7 +1128,7 @@ This functionality is available in the command-line client and clickhouse-local 
 
 The default output format is TabSeparated (the same as in the command-line client batch mode).
 
-### FORMAT Clause
+### FORMAT Clause {#format-clause}
 
 Specify 'FORMAT format' to get data in any specified format.
 You can use this for convenience, or for creating dumps.

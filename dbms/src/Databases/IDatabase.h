@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Exception.h>
 
@@ -20,11 +21,15 @@ struct ConstraintsDescription;
 class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
+class ASTCreateQuery;
 using Dictionaries = std::set<String>;
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
 }
 
 class IDatabaseTablesIterator
@@ -51,13 +56,13 @@ public:
 
     DatabaseTablesSnapshotIterator(Tables && tables_) : tables(tables_), it(tables.begin()) {}
 
-    void next() { ++it; }
+    void next() override { ++it; }
 
-    bool isValid() const { return it != tables.end(); }
+    bool isValid() const override { return it != tables.end(); }
 
-    const String & name() const { return it->first; }
+    const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const { return it->second; }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 /// Copies list of dictionaries and iterates through such snapshot.
@@ -96,14 +101,15 @@ using DatabaseDictionariesIteratorPtr = std::unique_ptr<DatabaseDictionariesSnap
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
+    IDatabase() = delete;
+    IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
+
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(
-        Context & context,
-        bool has_force_restore_data_flag) = 0;
+    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(
@@ -112,8 +118,11 @@ public:
 
     /// Check the existence of the dictionary
     virtual bool isDictionaryExist(
-        const Context & context,
-        const String & name) const = 0;
+        const Context & /*context*/,
+        const String & /*name*/) const
+    {
+        return false;
+    }
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(
@@ -127,7 +136,10 @@ public:
     virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
-    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) = 0;
+    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & /*context*/, [[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
+    {
+        return std::make_unique<DatabaseDictionariesSnapshotIterator>();
+    }
 
     /// Get an iterator to pass through all the tables and dictionary tables.
     virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name = {})
@@ -140,39 +152,63 @@ public:
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
-        const Context & context,
-        const String & name,
-        const StoragePtr & table,
-        const ASTPtr & query) = 0;
+        const Context & /*context*/,
+        const String & /*name*/,
+        const StoragePtr & /*table*/,
+        const ASTPtr & /*query*/)
+    {
+        throw Exception("There is no CREATE TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Add the dictionary to the database. Record its presence in the metadata.
     virtual void createDictionary(
-        const Context & context,
-        const String & dictionary_name,
-        const ASTPtr & query) = 0;
+        const Context & /*context*/,
+        const String & /*dictionary_name*/,
+        const ASTPtr & /*query*/)
+    {
+        throw Exception("There is no CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
-        const Context & context,
-        const String & name) = 0;
+        const Context & /*context*/,
+        const String & /*name*/)
+    {
+        throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Delete the dictionary from the database. Delete the metadata.
     virtual void removeDictionary(
-        const Context & context,
-        const String & dictionary_name) = 0;
+        const Context & /*context*/,
+        const String & /*dictionary_name*/)
+    {
+        throw Exception("There is no DROP DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
-    virtual void attachTable(const String & name, const StoragePtr & table) = 0;
+    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/)
+    {
+        throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
-    /// load is false when we starting up and lazy_load is true, so we don't want to load dictionaries synchronously.
-    virtual void attachDictionary(const String & name, const Context & context, bool reload = true) = 0;
+    /// If dictionaries_lazy_load is false it also starts loading the dictionary asynchronously.
+    virtual void attachDictionary(const String & /*name*/, const Context & /*context*/)
+    {
+        throw Exception("There is no ATTACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
-    virtual StoragePtr detachTable(const String & name) = 0;
+    virtual StoragePtr detachTable(const String & /*name*/)
+    {
+        throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
-    /// Forget about the dictionary without deleting it, and return it. The database may not support this method.
-    virtual void detachDictionary(const String & name, const Context & context, bool reload = true) = 0;
+    /// Forget about the dictionary without deleting it. The database may not support this method.
+    virtual void detachDictionary(const String & /*name*/, const Context & /*context*/)
+    {
+        throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
@@ -192,42 +228,50 @@ public:
     virtual void alterTable(
         const Context & /*context*/,
         const String & /*name*/,
-        const ColumnsDescription & /*columns*/,
-        const IndicesDescription & /*indices*/,
-        const ConstraintsDescription & /*constraints*/,
-        const ASTModifier & /*engine_modifier*/)
+        const StorageInMemoryMetadata & /*metadata*/)
     {
-        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
-    virtual time_t getObjectMetadataModificationTime(
-        const Context & context,
-        const String & name) = 0;
+    virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
+    {
+        return static_cast<time_t>(0);
+    }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    virtual ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const = 0;
-
-    virtual ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const noexcept
     {
-        return tryGetCreateTableQuery(context, name);
+        return getCreateTableQueryImpl(context, name, false);
+    }
+
+    ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    {
+        return getCreateTableQueryImpl(context, name, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
-    virtual ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & name) const = 0;
-
-    virtual ASTPtr getCreateDictionaryQuery(const Context & context, const String & name) const
+    ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & name) const noexcept
     {
-        return tryGetCreateDictionaryQuery(context, name);
+        return getCreateDictionaryQueryImpl(context, name, false);
+    }
+
+    ASTPtr getCreateDictionaryQuery(const Context & context, const String & name) const
+    {
+        return getCreateDictionaryQueryImpl(context, name, true);
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
+    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
 
     /// Get name of database.
-    virtual String getDatabaseName() const = 0;
+    String getDatabaseName() const { return database_name; }
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
+    /// Returns path for persistent data storage for table if the database supports it, empty string otherwise. Table must exist
+    virtual String getTableDataPath(const String & /*table_name*/) const { return {}; }
+    /// Returns path for persistent data storage for CREATE/ATTACH query if the database supports it, empty string otherwise
+    virtual String getTableDataPath(const ASTCreateQuery & /*query*/) const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
@@ -237,9 +281,26 @@ public:
     virtual void shutdown() = 0;
 
     /// Delete data and metadata stored inside the database, if exists.
-    virtual void drop() {}
+    virtual void drop(const Context & /*context*/) {}
 
     virtual ~IDatabase() {}
+
+protected:
+    virtual ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    {
+        if (throw_on_error)
+            throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+        return nullptr;
+    }
+
+    virtual ASTPtr getCreateDictionaryQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    {
+        if (throw_on_error)
+            throw Exception("There is no SHOW CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
+        return nullptr;
+    }
+
+    String database_name;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

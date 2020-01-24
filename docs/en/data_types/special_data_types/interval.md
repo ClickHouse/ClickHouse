@@ -3,11 +3,11 @@
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../query_language/operators.md#operator-interval) operator.
 
 !!! warning "Warning"
-    You can't use the `Interval` data types for storing values in tables.
+    You can't use `Interval` data types for storing values in tables.
 
 Structure:
 
-- Time interval as unsigned integer value.
+- Time interval as an unsigned integer value.
 - Type of an interval.
 
 Supported interval types:
@@ -21,7 +21,7 @@ Supported interval types:
 - `QUARTER`
 - `YEAR`
 
-For each interval type, there is the separated data type. For example, the `DAY` interval is expressed as the `IntervalDay` data type:
+For each interval type, there is a separate data type. For example, the `DAY` interval is expressed as the `IntervalDay` data type:
 
 ```sql
 SELECT toTypeName(INTERVAL 4 DAY)
@@ -45,9 +45,9 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Intervals of different types can't be combined. You can't use intervals like `4 DAY 1 HOUR`, express intervals in the units that smaller or equal the the smallest unit of the interval. For example, `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
+Intervals with different types can't be combined. You can't use intervals like `4 DAY 1 HOUR`. Express intervals in units that are smaller or equal to the smallest unit of the interval, for example, the interval `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
 
-You can't perform arithmetical operations with the `Interval`-type values, but you can add intervals of different types consequently to some value. For example:
+You can't perform arithmetical operations with `Interval`-type values, but you can add intervals of different types consequently to values in `Date` or `DateTime` data types. For example:
 
 ```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
@@ -58,7 +58,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-The following query causes the exception:
+The following query causes an exception:
 
 ```sql
 select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)

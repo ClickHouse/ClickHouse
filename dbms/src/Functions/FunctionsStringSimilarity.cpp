@@ -1,5 +1,4 @@
 #include <Functions/FunctionsStringSimilarity.h>
-
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>

@@ -10,7 +10,12 @@ path_to_userfiles_from_defaut_config = "/var/lib/clickhouse/user_files/"   # sho
 def start_cluster():
     try:
         cluster.start()
+
         yield cluster
+
+    except Exception as ex:
+        print(ex)
+        raise ex
     finally:
         cluster.shutdown()
 
@@ -57,6 +62,7 @@ def test_linear_structure(start_cluster):
 
     test_requests = [("file{0..9}", "10"),
                      ("file?", "10"),
+                     ("nothing*", "0"),
                      ("file{0..9}{0..9}{0..9}", "10"),
                      ("file???", "10"),
                      ("file*", "20"),
@@ -92,7 +98,7 @@ def test_deep_structure(start_cluster):
     for i in range(10):
         for j in range(10):
             for k in range(10):
-                files.append("directory1/big_dir/file"+str(i)+str(j)+str(k))
+                files.append("directory1/big_dir/file" + str(i) + str(j) + str(k))
 
     for dir in dirs:
         files.append(dir+"file")
@@ -113,3 +119,15 @@ def test_deep_structure(start_cluster):
         assert node.query('''
             select count(*) from file('{}{}', 'TSV', 'text String, number Float64')
         '''.format(path_to_userfiles_from_defaut_config, pattern)) == '{}\n'.format(value)
+
+def test_table_function_and_virtual_columns(start_cluster):
+    node.exec_in_container(['bash', '-c', 'mkdir -p {}some/path/to/'.format(path_to_userfiles_from_defaut_config)])
+    node.exec_in_container(['bash', '-c', 'touch {}some/path/to/data.CSV'.format(path_to_userfiles_from_defaut_config)])
+    node.query("insert into table function file('some/path/to/data.CSV', CSV, 'n UInt8, s String') select number, concat('str_', toString(number)) from numbers(100000)")
+    assert node.query("select count() from file('some/path/to/data.CSV', CSV, 'n UInt8, s String')").rstrip() == '100000'
+    node.query("insert into table function file('nonexist.csv', 'CSV', 'val1 UInt32') values (1)")
+    assert node.query("select * from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()== '1'
+    assert "nonexist.csv" in node.query("select _path from file('nonexis?.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" in node.query("select _path from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" == node.query("select _file from file('nonexis?.csv', 'CSV', 'val1 UInt32')").rstrip()
+    assert "nonexist.csv" == node.query("select _file from file('nonexist.csv', 'CSV', 'val1 UInt32')").rstrip()

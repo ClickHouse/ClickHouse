@@ -21,9 +21,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <query><![CDATA[SELECT max(length(MobilePhoneModel)) FROM hashfile]]></query>
     <query><![CDATA[SELECT max(length(Params)) FROM hashfile]]></query>

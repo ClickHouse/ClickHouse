@@ -25,6 +25,11 @@ struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
+    virtual const std::string & getDatabase() const = 0;
+    virtual const std::string & getName() const = 0;
+    virtual const std::string & getFullName() const = 0;
+    const std::string & getLoadableName() const override { return getFullName(); }
+
     virtual std::string getTypeName() const = 0;
 
     virtual size_t getBytesAllocated() const = 0;
@@ -37,8 +42,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual bool isCached() const = 0;
-
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -47,7 +50,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    bool supportUpdates() const override { return !isCached(); }
+    bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {

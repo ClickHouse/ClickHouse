@@ -17,11 +17,10 @@
 #include <Common/setThreadName.h>
 #include <Common/config.h>
 #include <Common/SettingsChanges.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/BrotliReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -34,7 +33,6 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -301,31 +299,23 @@ void HTTPHandler::processQuery(
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
-    bool client_supports_http_compression = false;
-    CompressionMethod http_response_compression_method {};
+    CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
     {
+        /// If client supports brotli - it's preferred.
         /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
         /// NOTE parsing of the list of methods is slightly incorrect.
-        if (std::string::npos != http_response_compression_methods.find("gzip"))
-        {
-            client_supports_http_compression = true;
-            http_response_compression_method = CompressionMethod::Gzip;
-        }
-        else if (std::string::npos != http_response_compression_methods.find("deflate"))
-        {
-            client_supports_http_compression = true;
-            http_response_compression_method = CompressionMethod::Zlib;
-        }
-#if USE_BROTLI
-        else if (http_response_compression_methods == "br")
-        {
-            client_supports_http_compression = true;
+
+        if (std::string::npos != http_response_compression_methods.find("br"))
             http_response_compression_method = CompressionMethod::Brotli;
-        }
-#endif
+        else if (std::string::npos != http_response_compression_methods.find("gzip"))
+            http_response_compression_method = CompressionMethod::Gzip;
+        else if (std::string::npos != http_response_compression_methods.find("deflate"))
+            http_response_compression_method = CompressionMethod::Zlib;
     }
+
+    bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
@@ -345,8 +335,8 @@ void HTTPHandler::processQuery(
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        request, response, keep_alive_timeout,
-        client_supports_http_compression, http_response_compression_method, buffer_size_http);
+        request, response, keep_alive_timeout, client_supports_http_compression, http_response_compression_method);
+
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else
@@ -362,7 +352,8 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/";
+            const std::string tmp_path(context.getTemporaryVolume()->getNextDisk()->getPath());
+            const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
@@ -401,32 +392,9 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
-    std::unique_ptr<ReadBuffer> in_post;
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    if (!http_request_compression_method_str.empty())
-    {
-        if (http_request_compression_method_str == "gzip")
-        {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
-        }
-        else if (http_request_compression_method_str == "deflate")
-        {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
-        }
-#if USE_BROTLI
-        else if (http_request_compression_method_str == "br")
-        {
-            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
-        }
-#endif
-        else
-        {
-            throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
-                    ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        }
-    }
-    else
-        in_post = std::move(in_post_raw);
+    std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
+        std::make_unique<ReadBufferFromIStream>(istr), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -624,7 +592,11 @@ void HTTPHandler::processQuery(
     customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); },
+        [&response] (const String & content_type, const String & format)
+        {
+            response.setContentType(content_type);
+            response.add("X-ClickHouse-Format", format);
+        },
         [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
 
     if (used_output.hasDelayed())

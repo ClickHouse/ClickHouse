@@ -13,6 +13,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ namespace ErrorCodes
 
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription(
     {
@@ -258,21 +259,21 @@ protected:
                     res_columns[res_index++]->insert(database->getObjectMetadataPath(table_name));
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(context, table_name)));
+                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 {
                     Array dependencies_table_name_array;
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(database_name, table_name);
+                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
                         for (const auto & dependency : dependencies)
                         {
-                            dependencies_table_name_array.push_back(dependency.second);
-                            dependencies_database_name_array.push_back(dependency.first);
+                            dependencies_table_name_array.push_back(dependency.table_name);
+                            dependencies_database_name_array.push_back(dependency.database_name);
                         }
                     }
 

@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeString.h>
@@ -60,6 +61,9 @@ Block AddingDefaultsBlockInputStream::readImpl()
     for (const auto & column : column_defaults)
         if (evaluate_block.has(column.first))
             evaluate_block.erase(column.first);
+
+    if (!evaluate_block.columns())
+        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
     evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), column_defaults, context, false);
 

@@ -13,6 +13,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 namespace DB
 {
@@ -386,6 +387,8 @@ void MiniLSM::insert(const BlocksList & blocks)
     if (blocks.empty())
         return;
 
+    const std::string path(volume->getNextDisk()->getPath());
+
     SortedFiles sorted_blocks;
     if (blocks.size() > 1)
     {
@@ -414,6 +417,7 @@ void MiniLSM::merge(std::function<void(const Block &)> callback)
     BlockInputStreams inputs = makeSortedInputStreams(sorted_files, sample_block);
     MergingSortedBlockInputStream sorted_stream(inputs, sort_description, rows_in_block);
 
+    const std::string path(volume->getNextDisk()->getPath());
     SortedFiles out;
     flushStreamToFiles(path, sample_block, sorted_stream, out, callback);
 
@@ -463,7 +467,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
     makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
 
-    lsm = std::make_unique<MiniLSM>(table_join->getTemporaryPath(), right_sample_block, right_sort_description, max_rows_in_right_block);
+    lsm = std::make_unique<MiniLSM>(table_join->getTemporaryVolume(), right_sample_block, right_sort_description, max_rows_in_right_block);
 }
 
 void MergeJoin::setTotals(const Block & totals_block)
@@ -527,7 +531,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     lsm->merge(callback);
     flushed_right_blocks.swap(lsm->sorted_files.front());
 
-    /// Get memory limit or aproximate it from row limit and bytes per row factor
+    /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
     UInt64 rows_limit = size_limits.max_rows;
     if (!memory_limit && rows_limit)

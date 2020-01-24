@@ -83,8 +83,6 @@ public:
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
@@ -119,7 +117,7 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -233,7 +231,7 @@ private:
     std::atomic<bool> is_leader {false};
     zkutil::LeaderElectionPtr leader_election;
 
-    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
+    InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -486,7 +484,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       */
-    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
+    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -526,11 +524,16 @@ private:
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
+    void movePartitionToTable(const StoragePtr & source_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
     bool checkFixedGranualrityInZookeeper();
+
+    /// Wait for timeout seconds mutation is finished on replicas
+    void waitMutationToFinishOnReplicas(
+        const Strings & replicas, const String & mutation_id) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -539,17 +542,11 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & database_name_, const String & name_,
-        const ColumnsDescription & columns_,
-        const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
+        const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
         Context & context_,
         const String & date_column_name,
-        const ASTPtr & partition_by_ast_,
-        const ASTPtr & order_by_ast_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sample_by_ast_,
-        const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);

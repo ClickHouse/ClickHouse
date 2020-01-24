@@ -119,18 +119,73 @@ def test_globs_in_read_table(started_cluster):
     for filename in files:
         hdfs_api.write_data(globs_dir + filename, some_data)
 
-    test_requests = [("dir{1..5}/dir_dir/file1", 1),
-                     ("*_table_functio?", 1),
-                     ("dir/fil?", 1),
-                     ("table{3..8}_function", 1),
-                     ("table{2..8}_function", 2),
-                     ("dir/*", 1),
-                     ("dir/*?*?*?*?*", 1),
-                     ("dir/*?*?*?*?*?*", 0),
-                     ("some_dir/*/file", 2),
-                     ("some_dir/dir?/*", 2),
-                     ("*/*/*", 3),
-                     ("?", 0)]
+    test_requests = [("dir{1..5}/dir_dir/file1", 1, 1),
+                     ("*_table_functio?", 1, 1),
+                     ("dir/fil?", 1, 1),
+                     ("table{3..8}_function", 1, 1),
+                     ("table{2..8}_function", 2, 2),
+                     ("dir/*", 1, 1),
+                     ("dir/*?*?*?*?*", 1, 1),
+                     ("dir/*?*?*?*?*?*", 0, 0),
+                     ("some_dir/*/file", 2, 1),
+                     ("some_dir/dir?/*", 2, 1),
+                     ("*/*/*", 3, 2),
+                     ("?", 0, 0)]
 
-    for pattern, value in test_requests:
-        assert node1.query("select * from hdfs('hdfs://hdfs1:9000" + globs_dir + pattern + "', 'TSV', 'id UInt64, text String, number Float64')") == value * some_data
+    for pattern, paths_amount, files_amount in test_requests:
+        inside_table_func = "'hdfs://hdfs1:9000" + globs_dir + pattern + "', 'TSV', 'id UInt64, text String, number Float64'"
+        assert node1.query("select * from hdfs(" + inside_table_func + ")") == paths_amount * some_data
+        assert node1.query("select count(distinct _path) from hdfs(" + inside_table_func + ")").rstrip() == str(paths_amount)
+        assert node1.query("select count(distinct _file) from hdfs(" + inside_table_func + ")").rstrip() == str(files_amount)
+
+def test_read_write_gzip_table(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64')") == data
+
+def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64', 'gzip')") == data
+
+def test_read_write_table_with_parameter_none(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'none')") == data
+
+def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'auto')") == data
+
+def test_write_gz_storage(started_cluster):
+    hdfs_api = HDFSApi("root")
+
+    node1.query("create table GZHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage.gz', 'TSV')")
+    node1.query("insert into GZHDFSStorage values (1, 'Mark', 72.53)")
+    assert hdfs_api.read_gzip_data("/storage.gz") == "1\tMark\t72.53\n"
+    assert node1.query("select * from GZHDFSStorage") == "1\tMark\t72.53\n"
+
+def test_write_gzip_storage(started_cluster):
+    hdfs_api = HDFSApi("root")
+
+    node1.query("create table GZIPHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/gzip_storage', 'TSV', 'gzip')")
+    node1.query("insert into GZIPHDFSStorage values (1, 'Mark', 72.53)")
+    assert hdfs_api.read_gzip_data("/gzip_storage") == "1\tMark\t72.53\n"
+    assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"

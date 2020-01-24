@@ -64,7 +64,6 @@ public:
         const std::string & password_,
         const Settings & cmd_settings,
         const bool lite_output_,
-        const std::string & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
         Strings && skip_tags_,
@@ -86,7 +85,6 @@ public:
         , skip_names_regexp(std::move(skip_names_regexp_))
         , query_indexes(query_indexes_)
         , lite_output(lite_output_)
-        , profiles_file(profiles_file_)
         , input_files(input_files_)
         , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
@@ -139,7 +137,6 @@ private:
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 
     bool lite_output;
-    std::string profiles_file;
 
     Strings input_files;
     std::vector<XMLConfigurationPtr> tests_configurations;
@@ -197,13 +194,13 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
+        PerformanceTestInfo info(test_config, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, timeouts, interrupt_listener, info, global_context, query_indexes[info.path]);
 
         if (current.checkPreconditions())
         {
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
             LOG_INFO(
                 log,
                 "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
@@ -222,7 +219,7 @@ private:
                 return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
         }
         else
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fulfilled, skip run");
 
         return {"", current.checkSIGINT()};
     }
@@ -294,7 +291,7 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
     return input_files;
 }
 
-std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
+static std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
@@ -319,6 +316,9 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
     return result;
 }
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
+
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
@@ -329,7 +329,6 @@ try
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")
-        ("profiles-file", value<std::string>()->default_value(""), "Specify a file with global profiles")
         ("host,h", value<std::string>()->default_value("localhost"), "")
         ("port", value<UInt16>()->default_value(9000), "")
         ("secure,s", "Use TLS connection")
@@ -362,8 +361,8 @@ try
     po::notify(options);
 
     Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %s: %t"));
-    Poco::AutoPtr<Poco::ConsoleChannel> console_chanel(new Poco::ConsoleChannel);
-    Poco::AutoPtr<Poco::FormattingChannel> channel(new Poco::FormattingChannel(formatter, console_chanel));
+    Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
+    Poco::AutoPtr<Poco::FormattingChannel> channel(new Poco::FormattingChannel(formatter, console_channel));
 
     Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     Poco::Logger::root().setChannel(channel);
@@ -398,7 +397,6 @@ try
         options["password"].as<std::string>(),
         cmd_settings,
         options.count("lite") > 0,
-        options["profiles-file"].as<std::string>(),
         std::move(input_files),
         std::move(tests_tags),
         std::move(skip_tags),

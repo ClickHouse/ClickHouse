@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -129,7 +130,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
-std::string toString(const RelativeSize & x)
+static std::string toString(const RelativeSize & x)
 {
     return ASTSampleRatio::toString(x.numerator()) + "/" + ASTSampleRatio::toString(x.denominator());
 }
@@ -388,18 +389,18 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
+        DataTypePtr sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
 
-        if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-        else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
         else
-            throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
+            throw Exception("Invalid sampling column type in storage parameters: " + sampling_column_type->getName() + ". Must be unsigned integer type.",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
         if (settings.parallel_replicas_count > 1)
@@ -453,13 +454,25 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             std::shared_ptr<ASTFunction> lower_function;
             std::shared_ptr<ASTFunction> upper_function;
 
+            /// If sample and final are used together no need to calculate sampling expression twice.
+            /// The first time it was calculated for final, because sample key is a part of the PK.
+            /// So, assume that we already have calculated column.
+            ASTPtr sampling_key_ast = data.getSamplingKeyAST();
+            if (select.final())
+            {
+                sampling_key_ast = std::make_shared<ASTIdentifier>(data.sampling_expr_column_name);
+
+                /// We do spoil available_real_columns here, but it is not used later.
+                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(sampling_column_type));
+            }
+
             if (has_lower_limit)
             {
                 if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createLeftBounded(lower, true)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingKeyAST());
+                args->children.push_back(sampling_key_ast);
                 args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
@@ -476,7 +489,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.getSamplingKeyAST());
+                args->children.push_back(sampling_key_ast);
                 args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();
@@ -503,11 +516,16 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, available_real_columns);
             filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
-            /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
-            std::vector<String> add_columns = filter_expression->getRequiredColumns();
-            column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-            std::sort(column_names_to_read.begin(), column_names_to_read.end());
-            column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+            if (!select.final())
+            {
+                /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
+                /// Skip this if final was used, because such columns were already added from PK.
+                std::vector<String> add_columns = filter_expression->getRequiredColumns();
+                column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+                std::sort(column_names_to_read.begin(), column_names_to_read.end());
+                column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()),
+                                           column_names_to_read.end());
+            }
         }
     }
 
@@ -604,9 +622,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings);
     }
-    else if (settings.optimize_read_in_order && query_info.sorting_info)
+    else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
-        size_t prefix_size = query_info.sorting_info->prefix_order_descr.size();
+        size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
@@ -730,9 +748,13 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         use_uncompressed_cache = false;
 
     Pipes res;
+    if (0 == sum_marks)
+        return res;
 
-    if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
+    if (num_streams > 1)
     {
+        /// Parallel query execution.
+
         /// Reduce the number of num_streams if the data is small.
         if (sum_marks < num_streams * min_marks_for_concurrent_read && parts.size() < num_streams)
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
@@ -760,82 +782,23 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             res.emplace_back(std::move(source));
         }
     }
-    else if (sum_marks > 0)
+    else
     {
-        const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
+        /// Sequential query execution.
 
-        for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
         {
-            size_t need_marks = min_marks_per_stream;
+            RangesInDataPart & part = parts[part_index];
 
-            /// Loop over parts.
-            /// We will iteratively take part or some subrange of a part from the back
-            ///  and assign a stream to read from it.
-            while (need_marks > 0 && !parts.empty())
-            {
-                RangesInDataPart part = parts.back();
-                parts.pop_back();
+            auto source = std::make_shared<MergeTreeSelectProcessor>(
+                data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
+                query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io,
+                settings.max_read_buffer_size, true,
+                virt_columns, part.part_index_in_query);
 
-                size_t & marks_in_part = sum_marks_in_parts.back();
-
-                /// We will not take too few rows from a part.
-                if (marks_in_part >= min_marks_for_concurrent_read &&
-                    need_marks < min_marks_for_concurrent_read)
-                    need_marks = min_marks_for_concurrent_read;
-
-                /// Do not leave too few rows in the part.
-                if (marks_in_part > need_marks &&
-                    marks_in_part - need_marks < min_marks_for_concurrent_read)
-                    need_marks = marks_in_part;
-
-                MarkRanges ranges_to_get_from_part;
-
-                /// We take the whole part if it is small enough.
-                if (marks_in_part <= need_marks)
-                {
-                    /// Restore the order of segments.
-                    std::reverse(part.ranges.begin(), part.ranges.end());
-
-                    ranges_to_get_from_part = part.ranges;
-
-                    need_marks -= marks_in_part;
-                    sum_marks_in_parts.pop_back();
-                }
-                else
-                {
-                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
-                    while (need_marks > 0)
-                    {
-                        if (part.ranges.empty())
-                            throw Exception("Unexpected end of ranges while spreading marks among streams", ErrorCodes::LOGICAL_ERROR);
-
-                        MarkRange & range = part.ranges.back();
-
-                        const size_t marks_in_range = range.end - range.begin;
-                        const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                        ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                        range.begin += marks_to_get_from_range;
-                        marks_in_part -= marks_to_get_from_range;
-                        need_marks -= marks_to_get_from_range;
-                        if (range.begin == range.end)
-                            part.ranges.pop_back();
-                    }
-                    parts.emplace_back(part);
-                }
-
-                auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
-
-                res.emplace_back(std::move(source_processor));
-            }
+            res.emplace_back(std::move(source));
         }
-
-        if (!parts.empty())
-            throw Exception("Couldn't spread marks among streams", ErrorCodes::LOGICAL_ERROR);
     }
 
     return res;
@@ -853,7 +816,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     const Settings & settings) const
 {
     size_t sum_marks = 0;
-    SortingInfoPtr sorting_info = query_info.sorting_info;
+    const InputSortingInfoPtr & input_sorting_info = query_info.input_sorting_info;
     size_t adaptive_parts = 0;
     std::vector<size_t> sum_marks_in_parts(parts.size());
     const auto data_settings = data.getSettings();
@@ -1004,14 +967,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 parts.emplace_back(part);
             }
 
-            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, sorting_info->direction);
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_sorting_info->direction);
 
-            if (sorting_info->direction == 1)
+            if (input_sorting_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
+                    use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
             }
             else
@@ -1019,7 +982,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
-                    use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
+                    use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
 
                 pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
@@ -1029,9 +992,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < query_info.sorting_info->prefix_order_descr.size(); ++j)
+            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
                 sort_description.emplace_back(data.sorting_key_columns[j],
-                    sorting_info->direction, 1);
+                    input_sorting_info->direction, 1);
 
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
@@ -1085,8 +1048,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     Pipes pipes;
 
-    /// NOTE `merge_tree_uniform_read_distribution` is not used for FINAL
-
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
     {
         RangesInDataPart & part = parts[part_index];
@@ -1094,7 +1055,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-            query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
+            query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io,
+            settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
         Pipe pipe(std::move(source_processor));

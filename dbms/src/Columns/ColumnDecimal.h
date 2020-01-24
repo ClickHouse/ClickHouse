@@ -66,6 +66,7 @@ private:
     friend class COWHelper<ColumnVectorHelper, Self>;
 
 public:
+    using ValueType = T;
     using Container = DecimalPaddedPODArray<T>;
 
 private:
@@ -96,6 +97,7 @@ public:
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
     void insertData(const char * pos, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
+    virtual void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -144,7 +146,7 @@ public:
     }
 
 
-    void insert(const T value) { data.push_back(value); }
+    void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
     const Container & getData() const { return data; }
     const T & getElement(size_t n) const { return data[n]; }

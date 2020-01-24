@@ -21,8 +21,6 @@
 namespace DB
 {
 
-template <> struct NearestFieldTypeImpl<QueryLogElement::Type> { using Type = UInt64; };
-
 Block QueryLogElement::createBlock()
 {
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
@@ -51,6 +49,7 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
 
         {std::make_shared<DataTypeString>(),                                  "query"},
+        {std::make_shared<DataTypeInt32>(),                                   "exception_code"},
         {std::make_shared<DataTypeString>(),                                  "exception"},
         {std::make_shared<DataTypeString>(),                                  "stack_trace"},
 
@@ -109,6 +108,7 @@ void QueryLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(memory_usage);
 
     columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());
 

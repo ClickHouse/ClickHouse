@@ -28,8 +28,6 @@ class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>
     friend struct ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
 
     Pipes readWithProcessors(
         const Names & column_names,
@@ -41,8 +39,9 @@ public:
 
     bool supportProcessorsPipeline() const override { return true; }
 
+    bool hasEvenlyDistributedRead() const override { return true; }
+
 private:
-    const std::string name;
     bool multithreaded;
     bool even_distribution;
     std::optional<UInt64> limit;

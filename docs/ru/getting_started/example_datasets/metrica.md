@@ -49,4 +49,4 @@ $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
 ## Запросы
-Примеры запросов к этим таблицам (они называются `test.hits` и `test.visits`) можно найти среди [stateful тестов](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) и в некоторых [performance тестах](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/performance/test_hits) ClickHouse.
+Примеры запросов к этим таблицам (они называются `test.hits` и `test.visits`) можно найти среди [stateful тестов](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) и в некоторых [performance тестах](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/performance) ClickHouse.

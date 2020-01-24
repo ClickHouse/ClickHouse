@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
+#include <Processors/DelayedPortsProcessor.h>
 
 namespace DB
 {
@@ -165,7 +166,6 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
     for (size_t stream_num = 0; stream_num < streams.size(); ++stream_num)
         add_transform(streams[stream_num], StreamType::Main, stream_num);
 
-    add_transform(delayed_stream_port, StreamType::Main);
     add_transform(totals_having_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
 
@@ -185,7 +185,6 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetterWithStreamKind & get
 void QueryPipeline::addPipe(Processors pipe)
 {
     checkInitialized();
-    concatDelayedStream();
 
     if (pipe.empty())
         throw Exception("Can't add empty processors list to QueryPipeline.", ErrorCodes::LOGICAL_ERROR);
@@ -224,48 +223,33 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
 {
     checkInitialized();
 
-    if (delayed_stream_port)
-        throw Exception("QueryPipeline already has stream with non joined data.", ErrorCodes::LOGICAL_ERROR);
-
     checkSource(source, false);
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
-    delayed_stream_port = &source->getOutputs().front();
+    IProcessor::PortNumbers delayed_streams = { streams.size() };
+    streams.emplace_back(&source->getOutputs().front());
     processors.emplace_back(std::move(source));
+
+    auto processor = std::make_shared<DelayedPortsProcessor>(current_header, streams.size(), delayed_streams);
+    addPipe({ std::move(processor) });
 }
 
-void QueryPipeline::concatDelayedStream()
-{
-    if (!delayed_stream_port)
-        return;
-
-    auto resize = std::make_shared<ResizeProcessor>(current_header, getNumMainStreams(), 1);
-    auto stream = streams.begin();
-    for (auto & input : resize->getInputs())
-        connect(**(stream++), input);
-
-    auto concat = std::make_shared<ConcatProcessor>(current_header, 2);
-    connect(resize->getOutputs().front(), concat->getInputs().front());
-    connect(*delayed_stream_port, concat->getInputs().back());
-
-    streams = { &concat->getOutputs().front() };
-    processors.emplace_back(std::move(resize));
-    processors.emplace_back(std::move(concat));
-
-    delayed_stream_port = nullptr;
-}
-
-void QueryPipeline::resize(size_t num_streams, bool force)
+void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitialized();
-    concatDelayedStream();
 
     if (!force && num_streams == getNumStreams())
         return;
 
     has_resize = true;
 
-    auto resize = std::make_shared<ResizeProcessor>(current_header, getNumStreams(), num_streams);
+    ProcessorPtr resize;
+
+    if (strict)
+        resize = std::make_shared<StrictResizeProcessor>(current_header, getNumStreams(), num_streams);
+    else
+        resize = std::make_shared<ResizeProcessor>(current_header, getNumStreams(), num_streams);
+
     auto stream = streams.begin();
     for (auto & input : resize->getInputs())
         connect(**(stream++), input);
@@ -276,6 +260,12 @@ void QueryPipeline::resize(size_t num_streams, bool force)
         streams.emplace_back(&output);
 
     processors.emplace_back(std::move(resize));
+}
+
+void QueryPipeline::enableQuotaForCurrentStreams()
+{
+    for (auto & stream : streams)
+        stream->getProcessor().enableQuota();
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
@@ -437,7 +427,6 @@ void QueryPipeline::unitePipelines(
     std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context)
 {
     checkInitialized();
-    concatDelayedStream();
 
     addSimpleTransform([&](const Block & header)
     {
@@ -450,7 +439,6 @@ void QueryPipeline::unitePipelines(
     for (auto & pipeline : pipelines)
     {
         pipeline.checkInitialized();
-        pipeline.concatDelayedStream();
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -486,6 +474,12 @@ void QueryPipeline::unitePipelines(
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
         streams.insert(streams.end(), pipeline.streams.begin(), pipeline.streams.end());
+
+        table_locks.insert(table_locks.end(), std::make_move_iterator(pipeline.table_locks.begin()), std::make_move_iterator(pipeline.table_locks.end()));
+        interpreter_context.insert(interpreter_context.end(), pipeline.interpreter_context.begin(), pipeline.interpreter_context.end());
+        storage_holder.insert(storage_holder.end(), pipeline.storage_holder.begin(), pipeline.storage_holder.end());
+
+        max_threads = std::max(max_threads, pipeline.max_threads);
     }
 
     if (!extremes.empty())

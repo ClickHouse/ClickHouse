@@ -127,7 +127,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-### Column Compression Codecs
+### Column Compression Codecs {#codecs}
 
 By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -196,15 +196,16 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table use the Memory engine only.
+- A temporary table uses the Memory engine only.
 - The DB can't be specified for a temporary table. It is created outside of databases.
+- Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
+CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -213,6 +214,8 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
 ```
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
+
+It's possible to use tables with [ENGINE = Memory](../operations/table_engines/memory.md) instead of temporary tables.
 
 ## Distributed DDL queries (ON CLUSTER clause)
 
@@ -256,7 +259,9 @@ SELECT a, b, c FROM (SELECT ...)
 
 Materialized views store data transformed by the corresponding SELECT query.
 
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+When creating a materialized view without `TO [db].[table]`, you must specify ENGINE – the table engine for storing data.
+
+When creating a materialized view with `TO [db].[table]`, you must not use `POPULATE`. 
 
 A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 

@@ -370,10 +370,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Приблизительный размер (в байтах) кэша засечек, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
-Кэш общий для сервера, память выделяется по мере необходимости. Кэш не может быть меньше, чем 5368709120.
+Кэш общий для сервера, память выделяется по мере необходимости.
 
-!!! warning "Внимание"
-    Этот параметр может быть превышен при большом значении настройки [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime).
 
 **Пример**
 
@@ -580,6 +578,33 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
+## query_thread_log {#server_settings-query-thread-log}
+
+Настройка логирования потоков выполнения запросов, принятых с настройкой [log_query_threads=1](../settings/settings.md#settings-log-query-threads).
+
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query_thread_log](../system_tables.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+
+При настройке логирования используются следующие параметры:
+
+- `database` — имя базы данных;
+- `table` — имя таблицы, куда будет записываться лог;
+- `partition_by` — [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md) для таблицы с логами;
+- `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
+
+Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
+
+**Пример**
+
+```xml
+<query_thread_log>
+    <database>system</database>
+    <table>query_thread_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_thread_log>
+```
+
+
 ## remote_servers {#server_settings_remote_servers}
 
 Конфигурация кластеров, которые использует движок таблиц [Distributed](../../operations/table_engines/distributed.md) и табличная функция `cluster`.
@@ -597,7 +622,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
  - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 Временная зона сервера.
 
@@ -634,6 +659,16 @@ TCP порт для защищённого обмена данными с кли
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
+```
+
+## mysql_port {#server_settings-mysql_port}
+
+Порт для взаимодействия с клиентами по протоколу MySQL.
+
+Пример
+
+```xml
+<mysql_port>9004</mysql_port>
 ```
 
 ## tmp_path
@@ -702,12 +737,12 @@ ClickHouse использует ZooKeeper для хранения метадан
 
     Например:
 
-    ```xml
+```xml
     <node index="1">
         <host>example_host</host>
         <port>2181</port>
     </node>
-    ```
+```
 
     Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
 
