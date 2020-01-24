@@ -1,3 +1,4 @@
+import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -6,7 +7,7 @@ from helpers.cluster import ClickHouseCluster
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        instance = cluster.add_instance('dummy', clickhouse_path_dir='clickhouse_path')
+        instance = cluster.add_instance('dummy', clickhouse_path_dir='clickhouse_path', stay_alive=True)
         cluster.start()
 
         cluster_fail = ClickHouseCluster(__file__, name='fail')
@@ -34,3 +35,14 @@ def test_partially_dropped_tables(started_cluster):
              "./var/lib/clickhouse/metadata/default/sophisticated_default.sql\n"
     assert instance.query("SELECT n FROM should_be_restored") == "1\n2\n3\n"
     assert instance.query("SELECT count() FROM system.tables WHERE name='should_be_dropped'") == "0\n"
+
+
+def test_live_view_dependency(started_cluster):
+    instance = started_cluster.instances['dummy']
+    instance.query("CREATE DATABASE a_load_first")
+    instance.query("CREATE DATABASE b_load_second")
+    instance.query("CREATE TABLE b_load_second.mt (a Int32) Engine=MergeTree order by tuple()")
+    instance.query("CREATE LIVE VIEW a_load_first.lv AS SELECT sum(a) FROM b_load_second.mt", settings={'allow_experimental_live_view': 1})
+    instance.restart_clickhouse()
+    time.sleep(5)
+    instance.query("SELECT 1")
