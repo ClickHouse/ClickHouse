@@ -68,7 +68,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
             for (auto & column : header)
-                list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                /// But skip columns which storage doesn't have.
+                if (inner_table->hasColumn(column.name))
+                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
 
