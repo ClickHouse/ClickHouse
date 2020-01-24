@@ -957,26 +957,27 @@ inline T parse(const char * data, size_t size)
 
 template <typename T>
 inline std::enable_if_t<!is_integral_v<T>, void>
-readTextWithSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
-readTextWithSuffix(T & x, ReadBuffer & buf)
+readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
     readIntText(x, buf);
     if (buf.eof())
         return;
 
-    auto F = [&buf, &x] (long long base, int power_of_two) mutable
+    /// Updates x depending on the suffix
+    auto finish = [&buf, &x] (UInt64 base, int power_of_two) mutable
     {
         ++buf.position();
         if (buf.eof())
         {
-            x *= base;
+            x *= base; /// For decimal suffixes, such as k, M, G etc.
         }
         else if (*buf.position() == 'i')
         {
-            x = (x << power_of_two);
+            x = (x << power_of_two); /// For binary suffixes, such as ki, Mi, Gi, etc.
             ++buf.position();
         }
         return;
@@ -986,16 +987,16 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
     {
         case 'k': [[fallthrough]];
         case 'K':
-            F(1000, 10);
+            finish(1000, 10);
             break;
         case 'M':
-            F(1000000, 20);
+            finish(1000000, 20);
             break;
         case 'G':
-            F(1000000000, 30);
+            finish(1000000000, 30);
             break;
         case 'T':
-            F(1000000000000ULL, 40);
+            finish(1000000000000ULL, 40);
             break;
         default:
             return;
@@ -1003,12 +1004,11 @@ readTextWithSuffix(T & x, ReadBuffer & buf)
     return;
 }
 
-/// Read something from text format, but expect complete parse of given text
-/// For example: 723145 -- ok, 213MB -- not ok
-/// Integral values parsing with suffix (k, ki, M, Mi, G, Gi, T, Ti)
-/// For example: 133M = 133000000
+/// Read something from text format and trying to parse the suffix.
+/// If the suffix is not valid gives an error
+/// For example: 723145 -- ok, 213MB -- not ok, but 213Mi -- ok
 template <typename T>
-inline T parseWithSuffix(const char * data, size_t size)
+inline T parseWithSizeSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
@@ -1018,15 +1018,15 @@ inline T parseWithSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSuffix(const String & s)
+inline T parseWithSizeSuffix(const String & s)
 {
-    return parseWithSuffix<T>(s.data(), s.size());
+    return parseWithSizeSuffix<T>(s.data(), s.size());
 }
 
 template <typename T>
-inline T parseWithSuffix(const char * data)
+inline T parseWithSizeSuffix(const char * data)
 {
-    return parseWithSuffix<T>(data, strlen(data));
+    return parseWithSizeSuffix<T>(data, strlen(data));
 }
 
 template <typename T>

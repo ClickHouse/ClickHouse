@@ -62,7 +62,7 @@ void SettingNumber<Type>::set(const Field & x)
 template <typename Type>
 void SettingNumber<Type>::set(const String & x)
 {
-    set(parseWithSuffix<Type>(x));
+    set(parseWithSizeSuffix<Type>(x));
 }
 
 template <>
