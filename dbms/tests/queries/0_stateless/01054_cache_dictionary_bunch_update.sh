@@ -3,14 +3,6 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-CLICKHOUSE_CLIENT=`echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g'`
-
-cat /dev/null > 01054_output_thread1.txt
-cat /dev/null > 01054_output_thread2.txt
-cat /dev/null > 01054_output_thread3.txt
-cat /dev/null > 01054_output_thread4.txt
-cat /dev/null > 01054_output_main.txt
-
 $CLICKHOUSE_CLIENT --query="create database if not exists test_01054;"
 $CLICKHOUSE_CLIENT --query="drop table if exists test_01054.ints;"
 
