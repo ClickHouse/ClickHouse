@@ -18,7 +18,7 @@ class StorageSystemReplicas : public ext::shared_ptr_helper<StorageSystemReplica
 public:
     std::string getName() const override { return "SystemReplicas"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
