@@ -22,8 +22,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Вводите параметры `join_strictness` и `join_type` без кавычек, например, `Join(ANY, LEFT, col1)`. Они должны быть такими же как и в той операции `JOIN`, в которой таблица будет использоваться. Если параметры не совпадают, ClickHouse не генерирует исключение и может возвращать неверные данные.
 
-Engine Join позволяет использовать параметр [join_use_nulls](../settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../query_language/select.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../query_language/functions/other_functions.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
-
 ## Использование таблицы
 
 ### Пример
@@ -92,6 +90,8 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 - [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
+
+Движок `Join` позволяет использовать параметр [join_use_nulls](../settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../query_language/select.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../query_language/functions/other_functions.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
 
 ## Хранение данных
 
