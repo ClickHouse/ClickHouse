@@ -20,7 +20,7 @@ public:
     Block getTotals();
     Block getExtremes();
 
-    bool isFinished() { return finished_processing; }
+    bool isFinished() { return finished_processing && queue.size() == 0; }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
