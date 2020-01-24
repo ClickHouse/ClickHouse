@@ -39,7 +39,6 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
-    std::cout << StackTrace().toString() << std::endl;
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
     std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
@@ -344,7 +343,6 @@ void CacheDictionary::prepareAnswer(
         AbsentIdHandler && on_id_not_found) const
 {
     /// Prepare answer
-    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
     const auto now = std::chrono::system_clock::now();
 
     for (const auto & id : update_unit_ptr->requested_ids)
@@ -353,6 +351,8 @@ void CacheDictionary::prepareAnswer(
         const auto & cell_idx = find_result.cell_idx;
         auto & cell = cells[cell_idx];
         const auto was_id_updated = update_unit_ptr->found_ids_mask_ptr->at(id);
+
+        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if (was_id_updated)
         {
