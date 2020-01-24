@@ -22,8 +22,8 @@ public:
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
     };
 
-    LineReader(const Suggest * suggest, const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
-    ~LineReader();
+    LineReader(const String & history_file_path, char extender, char delimiter = 0);  /// if delimiter != 0, then it's multiline mode
+    virtual ~LineReader() {}
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
     /// If resulting line is empty, it means the user interrupted the input.
@@ -31,7 +31,7 @@ public:
     /// Typical delimiter is ';' (semicolon) and typical extender is '\' (backslash).
     String readLine(const String & first_prompt, const String & second_prompt);
 
-private:
+protected:
     enum InputStatus
     {
         ABORT = 0,
@@ -39,19 +39,17 @@ private:
         INPUT_LINE,
     };
 
-    String input;
-    String prev_line;
     const String history_file_path;
+    static constexpr char word_break_characters[] = " \t\n\r\"\\'`@$><=;|&{(.";
+
+    String input;
+
+private:
     const char extender;
     const char delimiter;
 
-    InputStatus readOneLine(const String & prompt);
-    void addToHistory(const String & line);
+    String prev_line;
 
-    /// Since CMake doesn't impose restrictions on includes between unrelated targets
-    /// it's possible that we include this file without USE_REPLXX defined.
-#ifdef __clang__
-    [[maybe_unused]]
-#endif
-    void * impl;
+    virtual InputStatus readOneLine(const String & prompt);
+    virtual void addToHistory(const String &) {}
 };

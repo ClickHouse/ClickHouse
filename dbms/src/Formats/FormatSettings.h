@@ -110,6 +110,16 @@ struct FormatSettings
     };
 
     Custom custom;
+
+    struct Avro
+    {
+        String schema_registry_url;
+        String output_codec;
+        UInt64 output_sync_interval = 16 * 1024;
+    };
+
+    Avro avro;
+
 };
 
 }
