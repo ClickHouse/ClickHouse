@@ -134,6 +134,13 @@
 [submodule "contrib/libc-headers"]
 	path = contrib/libc-headers
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
+[submodule "contrib/replxx"]
+	path = contrib/replxx
+	url = https://github.com/AmokHuginnsson/replxx.git
 [submodule "contrib/ryu"]
 	path = contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
+[submodule "contrib/avro"]
+	path = contrib/avro
+	url = https://github.com/ClickHouse-Extras/avro.git
+	ignore = untracked

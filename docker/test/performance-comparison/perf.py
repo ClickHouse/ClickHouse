@@ -1,14 +1,21 @@
 #!/usr/bin/python3
 
+import os
+import sys
 import itertools
 import clickhouse_driver
 import xml.etree.ElementTree as et
 import argparse
 import pprint
+import time
+import traceback
 
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
+parser.add_argument('--host', nargs='*', default=['127.0.0.1', '127.0.0.1'])
+parser.add_argument('--port', nargs='*', default=[9001, 9002])
+parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)))
 args = parser.parse_args()
 
 tree = et.parse(args.file[0])
@@ -25,7 +32,7 @@ if infinite_sign is not None:
     raise Exception('Looks like the test is infinite (sign 1)')
 
 # Open connections
-servers = [{'host': 'localhost', 'port': 9001, 'client_name': 'left'}, {'host': 'localhost', 'port': 9002, 'client_name': 'right'}]
+servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
 connections = [clickhouse_driver.Client(**server) for server in servers]
 
 # Check tables that should exist
@@ -62,7 +69,8 @@ for c in connections:
         try:
             c.execute(q)
         except:
-            print("Error:", sys.exc_info()[0], file=sys.stderr)
+            traceback.print_exc()
+            pass
 
 # Run create queries
 create_query_templates = [q.text for q in root.findall('create_query')]
@@ -86,10 +94,19 @@ test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates, parameter_combinations)
 
 for q in test_queries:
-    for run in range(0, 7):
+    # Track the time spent by the client to process this query, so that we can notice
+    # out the queries that take long to process on the client side, e.g. by sending
+    # excessive data.
+    start_seconds = time.perf_counter()
+    server_seconds = 0
+    for run in range(0, args.runs):
         for conn_index, c in enumerate(connections):
             res = c.execute(q)
-            print(tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            print('query\t' + tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            server_seconds += c.last_query.elapsed
+
+    client_seconds = time.perf_counter() - start_seconds
+    print('client-time\t{}\t{}\t{}'.format(tsv_escape(q), client_seconds, server_seconds))
 
 # Run drop queries
 drop_query_templates = [q.text for q in root.findall('drop_query')]

@@ -77,6 +77,31 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
 }
 
+namespace
+{
+
+void setupTmpPath(Logger * log, const std::string & path)
+{
+    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+
+    Poco::File(path).createDirectories();
+
+    /// Clearing old temporary files.
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    {
+        if (it->isFile() && startsWith(it.name(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            it->remove();
+        }
+        else
+            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+    }
+}
+
+}
+
 namespace DB
 {
 
@@ -331,22 +356,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of heavy queries.
+
+    /// Storage with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        global_context->setTemporaryPath(tmp_path);
-        Poco::File(tmp_path).createDirectories();
-
-        /// Clearing old temporary files.
-        Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
-        {
-            if (it->isFile() && startsWith(it.name(), "tmp"))
-            {
-                LOG_DEBUG(log, "Removing old temporary file " << it->path());
-                it->remove();
-            }
-        }
+        std::string tmp_policy = config().getString("tmp_policy", "");
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        for (const DiskPtr & disk : volume->disks)
+            setupTmpPath(log, disk->getPath());
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -436,8 +453,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(global_context->getTextLog());
-            buildLoggers(*config, logger());
+            // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
+            // in a lot of places. For now, disable updating log configuration without server restart.
+            //setTextLog(global_context->getTextLog());
+            //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
 
@@ -861,6 +880,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        setTextLog(global_context->getTextLog());
+        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         users_config_reloader->start();

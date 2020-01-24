@@ -79,21 +79,19 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-/*        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags
-                                        << "\nmax_packet_size: "
+        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags
+                                        << ", max_packet_size: "
                                         << handshake_response.max_packet_size
-                                        << "\ncharacter_set: "
-                                        << handshake_response.character_set
-                                        << "\nuser: "
+                                        << ", character_set: "
+                                        << static_cast<int>(handshake_response.character_set)
+                                        << ", user: "
                                         << handshake_response.username
-                                        << "\nauth_response length: "
+                                        << ", auth_response length: "
                                         << handshake_response.auth_response.length()
-                                        << "\nauth_response: "
-                                        << handshake_response.auth_response
-                                        << "\ndatabase: "
+                                        << ", database: "
                                         << handshake_response.database
-                                        << "\nauth_plugin_name: "
-                                        << handshake_response.auth_plugin_name);*/
+                                        << ", auth_plugin_name: "
+                                        << handshake_response.auth_plugin_name);
 
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))
@@ -284,7 +282,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     else
     {
         bool with_output = false;
-        std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
+        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void
+        {
             with_output = true;
         };
 
@@ -307,7 +306,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         Context query_context = connection_context;
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type, nullptr);
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type_and_format, {});
 
         if (!with_output)
             packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

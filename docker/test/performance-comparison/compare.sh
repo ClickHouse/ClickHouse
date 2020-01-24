@@ -23,8 +23,16 @@ function download
 
     la="$left_pr-$left_sha.tgz"
     ra="$right_pr-$right_sha.tgz"
-    wget -q -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O "$la" && tar -C left --strip-components=1 -zxvf "$la" &
-    wget -q -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O "$ra" && tar -C right --strip-components=1 -zxvf "$ra" &
+
+    # might have the same version on left and right
+    if ! [ "$la" = "$ra" ]
+    then
+        wget -q -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O "$la" && tar -C left --strip-components=1 -zxvf "$la" &
+        wget -q -nd -c "https://clickhouse-builds.s3.yandex.net/$right_pr/$right_sha/performance/performance.tgz" -O "$ra" && tar -C right --strip-components=1 -zxvf "$ra" &
+    else
+        wget -q -nd -c "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/performance/performance.tgz" -O "$la" && { tar -C left --strip-components=1 -zxvf "$la" & tar -C right --strip-components=1 -zxvf "$ra" & } &
+    fi
+
     cd db0 && wget -q -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_10m_single/partitions/hits_10m_single.tar" && tar -xvf hits_10m_single.tar &
     cd db0 && wget -q -nd -c "https://s3.mds.yandex.net/clickhouse-private-datasets/hits_100m_single/partitions/hits_100m_single.tar" && tar -xvf hits_100m_single.tar &
     cd db0 && wget -q -nd -c "https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar" && tar -xvf hits_v1.tar &
@@ -118,7 +126,8 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    rm test-times.tsv ||:
+    # FIXME remove some broken long tests
+    rm left/performance/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
 
     # Run the tests
     for test in left/performance/*.xml
@@ -126,14 +135,20 @@ function run_tests
         test_name=$(basename $test ".xml")
         echo test $test_name
         TIMEFORMAT=$(printf "time\t$test_name\t%%3R\t%%3U\t%%3S\n")
+        #time "$script_dir/perf.py" "$test" > >(tee "$test_name-raw.tsv") 2> >(tee "$test_name-err.log") || continue
         time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" || continue
-        right/clickhouse local --file "$test_name-raw.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
+        grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
+        grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
+        right/clickhouse local --file "$test_name-queries.tsv" --structure 'query text, run int, version UInt32, time float' --query "$(cat $script_dir/eqmed.sql)" > "$test_name-report.tsv"
     done
 }
 run_tests
 
 # Analyze results
 result_structure="left float, right float, diff float, rd Array(float), query text"
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff < 0.05 and rd[3] > 0.05 order by rd[3] desc" > flap-prone.tsv
-right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where diff > 0.05 and diff > rd[3] order by diff desc" > bad-perf.tsv
+right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) < 0.05 and rd[3] > 0.05 order by rd[3] desc" > unstable.tsv
+right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "select * from table where abs(diff) > 0.05 and abs(diff) > rd[3] order by diff desc" > changed-perf.tsv
+right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select client, server, floor(client/server, 3) p, query from table where p > 1.01 order by p desc" > slow-on-client.tsv
 grep Exception:[^:] *-err.log > run-errors.log
+
+./report.py > report.html

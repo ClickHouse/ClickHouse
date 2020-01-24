@@ -163,6 +163,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.query_start_time = current_time;
 
     elem.query = query_for_logging;
+    elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
@@ -496,6 +497,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
+                elem.exception_code = getCurrentExceptionCode();
                 elem.exception = getCurrentExceptionMessage(false);
 
                 QueryStatus * process_list_elem = context.getProcessListElement();
@@ -590,7 +592,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &, const String &)> set_content_type_and_format,
     std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
@@ -680,8 +682,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type)
-                set_content_type(out->getContentType());
+            if (set_content_type_and_format)
+                set_content_type_and_format(out->getContentType(), format_name);
 
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
@@ -742,8 +744,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type)
-                set_content_type(out->getContentType());
+            if (set_content_type_and_format)
+                set_content_type_and_format(out->getContentType(), format_name);
 
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);

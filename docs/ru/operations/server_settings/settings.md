@@ -622,7 +622,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
  - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 Временная зона сервера.
 
@@ -659,6 +659,16 @@ TCP порт для защищённого обмена данными с кли
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
+```
+
+## mysql_port {#server_settings-mysql_port}
+
+Порт для взаимодействия с клиентами по протоколу MySQL.
+
+Пример
+
+```xml
+<mysql_port>9004</mysql_port>
 ```
 
 ## tmp_path
