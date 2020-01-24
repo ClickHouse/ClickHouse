@@ -575,14 +575,17 @@ BlockIO executeQuery(
     BlockIO streams;
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
         internal, stage, !may_have_embedded_data, nullptr, allow_processors);
-    if (streams.in)
+
+    if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-        String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? getIdentifierName(ast_query_with_output->format) : context.getDefaultFormat();
+        String format_name = ast_query_with_output->format
+                ? getIdentifierName(ast_query_with_output->format)
+                : context.getDefaultFormat();
+
         if (format_name == "Null")
             streams.null_format = true;
     }
+
     return streams;
 }
 
