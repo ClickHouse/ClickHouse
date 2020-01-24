@@ -268,6 +268,6 @@ private:
     String dumpPipeline() const;
 };
 
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+using PipelineExecutorPtr = std::unique_ptr<PipelineExecutor>;
 
 }

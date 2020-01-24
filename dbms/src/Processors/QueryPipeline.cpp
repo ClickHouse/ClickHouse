@@ -630,7 +630,7 @@ PipelineExecutorPtr QueryPipeline::execute()
     if (!output_format)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
-    return std::make_shared<PipelineExecutor>(processors);
+    return std::make_unique<PipelineExecutor>(processors);
 }
 
 }

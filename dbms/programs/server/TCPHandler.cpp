@@ -30,6 +30,7 @@
 #include <common/logger_useful.h>
 
 #include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Executors/AsyncExecutor.h>
 
 #include "TCPHandler.h"
 
@@ -253,6 +254,10 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
+            /// Extend executor's lifetime.
+            /// It may decrease latency in case if query pipeline is executing, but we already got the result.
+            AsyncExecutorPtr executor;
+
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
                 processInsertQuery(connection_settings);
@@ -264,7 +269,7 @@ void TCPHandler::runImpl()
                 state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
-                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
+                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads, executor);
             else
                 processOrdinaryQuery();
 
@@ -274,6 +279,7 @@ void TCPHandler::runImpl()
             sendLogs();
             sendEndOfStream();
 
+            executor.reset();
             query_scope.reset();
             state.reset();
         }
@@ -541,7 +547,7 @@ void TCPHandler::processOrdinaryQuery()
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads, AsyncExecutorPtr & executor)
 {
     auto & pipeline = state.io.pipeline;
 
@@ -559,102 +565,63 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
     pipeline.setOutput(lazy_format);
 
+    executor = std::make_unique<AsyncExecutor>(pipeline.execute(), num_threads, CurrentThread::getGroup());
+
+    /// Finish lazy_format before in case of exception happened outside of executor.
+    /// Otherwise, some thread may write into lazy_format, and waiting for executor's thread will lock.
+    SCOPE_EXIT(lazy_format->finish());
+
+    while (!lazy_format->isFinished() && !executor->hasException())
     {
-        auto thread_group = CurrentThread::getGroup();
-        ThreadPool pool(1);
-        auto executor = pipeline.execute();
-        std::atomic_bool exception = false;
-
-        pool.scheduleOrThrowOnError([&]()
+        if (isQueryCancelled())
         {
-            /// ThreadStatus thread_status;
-
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-            );
-
-            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
-            setThreadName("QueryPipelineEx");
-
-            try
-            {
-                executor->execute(num_threads);
-            }
-            catch (...)
-            {
-                exception = true;
-                throw;
-            }
-        });
-
-        /// Wait in case of exception happened outside of pool.
-        SCOPE_EXIT(
-                lazy_format->finish();
-
-                try
-                {
-                    pool.wait();
-                }
-                catch (...)
-                {
-                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
-                    tryLogCurrentException(log);
-                }
-        );
-
-        while (!lazy_format->isFinished() && !exception)
-        {
-            if (isQueryCancelled())
-            {
-                /// A packet was received requesting to stop execution of the request.
-                executor->cancel();
-                break;
-            }
-
-            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
-            {
-                /// Some time passed and there is a progress.
-                after_send_progress.restart();
-                sendProgress();
-            }
-
-            sendLogs();
-
-            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
-            {
-                if (!state.io.null_format)
-                    sendData(block);
-            }
+            /// A packet was received requesting to stop execution of the request.
+            executor->cancel();
+            break;
         }
 
-        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
-        lazy_format->finish();
-        pool.wait();
-
-        /** If data has run out, we will send the profiling data and total values to
-          * the last zero block to be able to use
-          * this information in the suffix output of stream.
-          * If the request was interrupted, then `sendTotals` and other methods could not be called,
-          *  because we have not read all the data yet,
-          *  and there could be ongoing calculations in other threads at the same time.
-          */
-        if (!isQueryCancelled())
+        if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
         {
-            pipeline.finalize();
-
-            sendTotals(lazy_format->getTotals());
-            sendExtremes(lazy_format->getExtremes());
-            sendProfileInfo(lazy_format->getProfileInfo());
+            /// Some time passed and there is a progress.
+            after_send_progress.restart();
             sendProgress();
-            sendLogs();
         }
 
-        sendData({});
+        sendLogs();
+
+        if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
+        {
+            if (!state.io.null_format)
+                sendData(block);
+        }
     }
+
+    /// Finish lazy_format before in case of exception happened inside executor.
+    /// Otherwise, some thread may write into lazy_format, and waiting for executor's thread will lock.
+    lazy_format->finish();
+    executor->rethrowIfException();
+
+    /** If data has run out, we will send the profiling data and total values to
+      * the last zero block to be able to use
+      * this information in the suffix output of stream.
+      * If the request was interrupted, then `sendTotals` and other methods could not be called,
+      *  because we have not read all the data yet,
+      *  and there could be ongoing calculations in other threads at the same time.
+      */
+    if (!isQueryCancelled())
+    {
+        /// This may probably cause race.
+        /// TODO: recheck that finalize if thread-safe.
+        pipeline.finalize();
+
+        sendTotals(lazy_format->getTotals());
+        sendExtremes(lazy_format->getExtremes());
+        sendProfileInfo(lazy_format->getProfileInfo());
+        sendProgress();
+        sendLogs();
+    }
+
+    sendData({});
 
     state.io.onFinish();
 }
