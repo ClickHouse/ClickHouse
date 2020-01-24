@@ -1,9 +1,10 @@
 #pragma once
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <ext/shared_ptr_helper.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ public:
         setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
-    BlockInputStreams read(const Names & column_names,
+    Pipes readWithProcessors(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -38,7 +39,10 @@ public:
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 
-        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns))));
+        UInt64 num_rows = res_columns.at(0)->size();
+        Chunk chunk(std::move(res_columns), num_rows);
+
+        return { Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk))) };
     }
 };
 
