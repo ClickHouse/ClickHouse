@@ -1,5 +1,6 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemDisks.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -22,7 +23,7 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
     }));
 }
 
-BlockInputStreams StorageSystemDisks::read(
+Pipes StorageSystemDisks::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -49,15 +50,20 @@ BlockInputStreams StorageSystemDisks::read(
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
     }
 
-    Block res = getSampleBlock().cloneEmpty();
-    size_t col_num = 0;
-    res.getByPosition(col_num++).column = std::move(col_name);
-    res.getByPosition(col_num++).column = std::move(col_path);
-    res.getByPosition(col_num++).column = std::move(col_free);
-    res.getByPosition(col_num++).column = std::move(col_total);
-    res.getByPosition(col_num++).column = std::move(col_keep);
+    Columns columns;
+    columns.emplace_back(std::move(col_name));
+    columns.emplace_back(std::move(col_path));
+    columns.emplace_back(std::move(col_free));
+    columns.emplace_back(std::move(col_total));
+    columns.emplace_back(std::move(col_keep));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
+    UInt64 num_rows = columns.at(0)->size();
+    Chunk chunk(std::move(columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+
+    return pipes;
 }
 
 }
