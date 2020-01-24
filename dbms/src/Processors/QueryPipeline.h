@@ -30,6 +30,8 @@ public:
     bool initialized() { return !processors.empty(); }
 
     /// Type of logical data stream for simple transform.
+    /// Sometimes it's important to know which part of pipeline we are working for.
+    /// Example: ExpressionTransform need special logic for totals.
     enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
