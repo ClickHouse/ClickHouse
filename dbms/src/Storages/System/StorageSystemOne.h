@@ -21,7 +21,7 @@ class StorageSystemOne : public ext::shared_ptr_helper<StorageSystemOne>, public
 public:
     std::string getName() const override { return "SystemOne"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
