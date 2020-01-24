@@ -8,6 +8,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -52,7 +53,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 }
 
 
-BlockInputStreams StorageSystemReplicas::read(
+Pipes StorageSystemReplicas::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -122,7 +123,7 @@ BlockInputStreams StorageSystemReplicas::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-            return BlockInputStreams();
+            return Pipes();
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
@@ -169,19 +170,24 @@ BlockInputStreams StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.active_replicas);
     }
 
-    Block res = getSampleBlock().cloneEmpty();
-    size_t col_num = 0;
-    res.getByPosition(col_num++).column = col_database;
-    res.getByPosition(col_num++).column = col_table;
-    res.getByPosition(col_num++).column = col_engine;
-    size_t num_columns = res.columns();
-    while (col_num < num_columns)
-    {
-        res.getByPosition(col_num).column = std::move(res_columns[col_num]);
-        ++col_num;
-    }
+    Block header = getSampleBlock();
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
+    Columns columns;
+    columns.reserve(res_columns.size());
+
+    for (auto & col : res_columns)
+        columns.emplace_back(std::move(col));
+
+    columns[0] = std::move(col_database);
+    columns[1] = std::move(col_table);
+    columns[2] = std::move(col_engine);
+
+    UInt64 num_rows = columns.at(0)->size();
+    Chunk chunk(std::move(columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    return pipes;
 }
 
 
