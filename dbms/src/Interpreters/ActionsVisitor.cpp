@@ -61,7 +61,8 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
-static Block createBlockFromArray(const Array & array, const DataTypes & types)
+template<typename Collection>
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & types)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -69,7 +70,7 @@ static Block createBlockFromArray(const Array & array, const DataTypes & types)
         columns[i] = types[i]->createColumn();
 
     Row tuple_values;
-    for (const auto & value : array)
+    for (const auto & value : collection)
     {
         if (columns_num == 1)
         {
@@ -140,7 +141,7 @@ SetPtr makeExplicitSet(
     if (prepared_sets.count(set_key))
         return prepared_sets.at(set_key); /// Already prepared.
 
-    const auto right_arg_evaluated = evaluateConstantExpression(right_arg, context);
+    auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
     std::function<size_t(const DataTypePtr &)> getTypeDepth;
     getTypeDepth = [&getTypeDepth](const DataTypePtr & type) -> size_t
@@ -153,31 +154,35 @@ SetPtr makeExplicitSet(
         return 0;
     };
 
-    const auto & right_arg_type = right_arg_evaluated.second;
-    const auto & right_arg_value = right_arg_evaluated.first;
-
     const size_t left_type_depth = getTypeDepth(left_arg_type);
     const size_t right_type_depth = getTypeDepth(right_arg_type);
 
+    auto throw_unsupported_type = [](const auto & type)
+    {
+        throw Exception("Unsupported value type at the right-side of IN:"
+            + type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    };
+
     Block block;
-    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.	
+    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        block = createBlockFromArray(array, set_element_types);
+        block = createBlockFromCollection(array, set_element_types);
     }
-    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.	
+    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
     {
-        const Array & array = DB::safeGet<const Array &>(right_arg_value);
-        block = createBlockFromArray(array, set_element_types);
+        auto type_index = right_arg_type->getTypeId();
+        if (type_index == TypeIndex::Tuple)
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types);
+        else if (type_index == TypeIndex::Array)
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types);
+        else
+            throw_unsupported_type(right_arg_type);
     }
     else
-    {
-        throw Exception("Unsupported value type at the right-side of IN:"
-                        + right_arg_type->getName() + ".",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        throw_unsupported_type(right_arg_type);
 
     SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
 
