@@ -29,11 +29,12 @@ public:
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
+    /// Type of logical data stream for simple transform.
     enum class StreamType
     {
-        Main = 0,
-        Totals,
-        Extremes,
+        Main = 0, /// Stream for query data. There may be several streams of this type.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
