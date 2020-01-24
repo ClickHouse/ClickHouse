@@ -14,6 +14,11 @@ StoragePtr TableFunctionFile::getStorage(
     return StorageFile::create(source, global_context.getUserFilesPath(), args);
 }
 
+AccessType TableFunctionFile::getRequiredAccessType() const
+{
+    return AccessType::file;
+}
+
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFile>();

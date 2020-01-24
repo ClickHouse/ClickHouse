@@ -19,7 +19,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     {
         case Kind::QUOTA:
         {
-            context.checkQuotaManagementIsAllowed();
+            context.checkAccess(AccessType::DROP_QUOTA);
             if (query.if_exists)
                 access_control.tryRemove(access_control.find<Quota>(query.names));
             else
@@ -28,7 +28,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
         case Kind::ROW_POLICY:
         {
-            context.checkRowPolicyManagementIsAllowed();
+            context.checkAccess(AccessType::DROP_POLICY);
             Strings full_names;
             boost::range::transform(
                 query.row_policies_names, std::back_inserter(full_names),

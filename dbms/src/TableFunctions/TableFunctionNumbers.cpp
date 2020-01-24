@@ -31,6 +31,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
 
+        context.checkAccess(AccessType::numbers);
+
         auto res = StorageSystemNumbers::create(table_name, multithreaded, length, offset, false);
         res->startup();
         return res;

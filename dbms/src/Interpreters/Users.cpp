@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Users.h>
+#include <Dictionaries/IDictionary.h>
 #include <common/logger_useful.h>
 #include <Poco/MD5Engine.h>
 
@@ -112,6 +113,15 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
             access.grant(AccessFlags::databaseLevel(), database);
         access.grant(AccessFlags::databaseLevel(), "system"); /// Anyone has access to the "system" database.
     }
+
+    if (dictionaries)
+    {
+        access.fullRevoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+        for (const String & dictionary : *dictionaries)
+            access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
+    }
+    else if (databases)
+        access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
 
     if (config.has(config_elem + ".allow_quota_management"))
         is_quota_management_allowed = config.getBool(config_elem + ".allow_quota_management");

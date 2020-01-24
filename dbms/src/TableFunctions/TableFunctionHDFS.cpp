@@ -21,6 +21,11 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method);
 }
 
+AccessType TableFunctionHDFS::getRequiredAccessType() const
+{
+    return AccessType::hdfs;
+}
+
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {

@@ -11,9 +11,9 @@ namespace DB
 {
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
-    context.checkRowPolicyManagementIsAllowed();
     const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
     auto & access_control = context.getAccessControlManager();
+    context.checkAccess(query.alter ? AccessType::ALTER_POLICY : AccessType::CREATE_POLICY);
 
     if (query.alter)
     {

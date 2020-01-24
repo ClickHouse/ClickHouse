@@ -132,6 +132,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::remote);
+
     /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
     /// We need to mark them as the name of the database or table, because the default value is column.
     for (auto ast : args)

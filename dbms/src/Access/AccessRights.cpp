@@ -43,6 +43,8 @@ namespace
         const AccessFlags column_level_flags = AccessFlags::columnLevel();
         const AccessFlags show_flag = AccessType::SHOW;
         const AccessFlags exists_flag = AccessType::EXISTS;
+        const AccessFlags create_table_flag = AccessType::CREATE_TABLE;
+        const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
     };
 }
 
@@ -324,6 +326,9 @@ private:
             access |= helper.show_flag | helper.exists_flag;
         else if ((level >= DATABASE_LEVEL) && children)
             access |= helper.exists_flag;
+
+        if ((level == GLOBAL_LEVEL) && (access & helper.create_table_flag))
+            access |= helper.create_temporary_table_flag;
     }
 
     void calculateMinAndMaxAccess()

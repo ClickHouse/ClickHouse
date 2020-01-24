@@ -1,4 +1,5 @@
 #include <Access/AccessRightsElement.h>
+#include <Dictionaries/IDictionary.h>
 #include <Common/quoteString.h>
 
 
@@ -49,7 +50,7 @@ String AccessRightsElement::toString() const
 
     if (any_database)
         msg += "*.";
-    else if (!database.empty())
+    else if (!database.empty() && (database != IDictionary::NO_DATABASE_TAG))
         msg += backQuoteIfNeed(database) + ".";
 
     if (any_table)

@@ -61,6 +61,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
     else
         compression_method = "auto";
 
+    context.checkAccess(AccessType::s3);
+
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 
     /// Create table
