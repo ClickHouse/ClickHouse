@@ -575,14 +575,17 @@ BlockIO executeQuery(
     BlockIO streams;
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
         internal, stage, !may_have_embedded_data, nullptr, allow_processors);
-    if (streams.in)
+
+    if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-        String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? getIdentifierName(ast_query_with_output->format) : context.getDefaultFormat();
+        String format_name = ast_query_with_output->format
+                ? getIdentifierName(ast_query_with_output->format)
+                : context.getDefaultFormat();
+
         if (format_name == "Null")
             streams.null_format = true;
     }
+
     return streams;
 }
 
@@ -592,7 +595,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &, const String &)> set_content_type_and_format,
     std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
@@ -682,8 +685,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type)
-                set_content_type(out->getContentType());
+            if (set_content_type_and_format)
+                set_content_type_and_format(out->getContentType(), format_name);
 
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
@@ -744,8 +747,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type)
-                set_content_type(out->getContentType());
+            if (set_content_type_and_format)
+                set_content_type_and_format(out->getContentType(), format_name);
 
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);

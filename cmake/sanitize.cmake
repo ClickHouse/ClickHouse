@@ -53,6 +53,7 @@ if (SANITIZE)
         set (USE_CAPNP 0 CACHE BOOL "")
         set (USE_INTERNAL_ORC_LIBRARY 0 CACHE BOOL "")
         set (USE_ORC 0 CACHE BOOL "")
+        set (USE_AVRO 0 CACHE BOOL "")
         set (ENABLE_SSL 0 CACHE BOOL "")
 
     elseif (SANITIZE STREQUAL "thread")
