@@ -26,7 +26,6 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1119,13 +1118,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
                         stream = std::make_shared<InflatingExpressionBlockInputStream>(stream, expressions.before_join);
-
-                    if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
-                    {
-                        if (size_t rows_in_block = settings.partial_merge_join_rows_in_left_blocks)
-                            for (auto & stream : pipeline.streams)
-                                stream = std::make_shared<SquashingBlockInputStream>(stream, rows_in_block, 0, true);
-                    }
                 }
 
                 if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
