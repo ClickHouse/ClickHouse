@@ -3,4 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-${CLICKHOUSE_CURL_COMMAND} -I -sSg "${CLICKHOUSE_URL}?query=BADREQUEST" 2>/dev/null | grep -o 'X-ClickHouse-Exception-Code: 62'
+if [[ `${CLICKHOUSE_CURL_COMMAND} -I "${CLICKHOUSE_URL}&query=BADREQUEST" 2>&1 | grep -c 'X-ClickHouse-Exception-Code: 62'` -eq 1 ]]; then
+    echo "True"
+fi
+exit 0
