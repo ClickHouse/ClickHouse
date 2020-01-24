@@ -83,7 +83,7 @@ You cannot perform a `SELECT` query directly from the table. Instead, use one of
 
 When creating a table, the following settings are applied:
 
-- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- [join_use_nulls](../settings/settings.md#join_use_nulls)
 - [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
 - [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
