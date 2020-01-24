@@ -26,6 +26,8 @@ namespace DB
 {
 
 class ColumnsDescription;
+class AsyncExecutor;
+using AsyncExecutorPtr = std::unique_ptr<AsyncExecutor>;
 
 /// State of query processing.
 struct QueryState
