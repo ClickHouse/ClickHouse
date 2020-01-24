@@ -23,10 +23,6 @@ class StorageWindowView : public ext::shared_ptr_helper<StorageWindowView>, publ
 public:
     ~StorageWindowView() override;
     String getName() const override { return "WindowView"; }
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
-    String getSelectDatabaseName() const { return select_database_name; }
-    String getSelectTableName() const { return select_table_name; }
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
@@ -75,7 +71,7 @@ public:
 
     Block getHeader() const;
 
-    StoragePtr & getParentStorage();
+    StoragePtr & getParentStorage() { return parent_storage; }
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, const Context & context);
 
@@ -84,10 +80,7 @@ public:
     inline UInt32 getWindowUpperBound(UInt32 time_sec);
 
 private:
-    String select_database_name;
-    String select_table_name;
-    String table_name;
-    String database_name;
+    StorageID select_table_id = StorageID::createEmpty();
     ASTPtr inner_query;
     String window_column_name;
     String window_end_column_alias;
@@ -111,9 +104,7 @@ private:
     Int64 window_num_units;
     const DateLUTImpl & time_zone;
 
-    std::atomic<bool> has_target_table{false};
-    String target_database_name;
-    String target_table_name;
+    StorageID target_table_id = StorageID::createEmpty();
 
     static void noUsersThread(std::shared_ptr<StorageWindowView> storage, const UInt64 & timeout);
     inline void flushToTable();
@@ -125,15 +116,13 @@ private:
     std::atomic<bool> start_no_users_thread_called{false};
     UInt64 temporary_window_view_timeout;
 
-    Poco::Logger * log;
     Poco::Timestamp timestamp;
 
     BackgroundSchedulePool::TaskHolder toTableTask;
     BackgroundSchedulePool::TaskHolder toTableTask_preprocess;
 
     StorageWindowView(
-        const String & table_name_,
-        const String & database_name_,
+        const StorageID & table_id_,
         Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns);

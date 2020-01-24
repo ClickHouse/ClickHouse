@@ -84,18 +84,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
         else if (dynamic_cast<const StorageWindowView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr(), true);
-        else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
-
-        views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
-    }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());

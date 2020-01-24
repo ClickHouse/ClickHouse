@@ -12,14 +12,14 @@ namespace DB
 class WindowViewProxyStorage : public IStorage
 {
 public:
-    WindowViewProxyStorage(StoragePtr storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
-    : storage(std::move(storage_))
+    WindowViewProxyStorage(const StorageID & table_id_, StoragePtr storage_, BlockInputStreams streams_, QueryProcessingStage::Enum to_stage_)
+    : IStorage(table_id_)
+    , storage(std::move(storage_))
     , streams(std::move(streams_))
     , to_stage(to_stage_) {}
 
 public:
     std::string getName() const override { return "WindowViewProxyStorage(" + storage->getName() + ")"; }
-    std::string getTableName() const override { return storage->getTableName(); }
 
     bool isRemote() const override { return storage->isRemote(); }
     bool supportsSampling() const override { return storage->supportsSampling(); }
