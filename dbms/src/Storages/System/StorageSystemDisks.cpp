@@ -50,15 +50,15 @@ Pipes StorageSystemDisks::readWithProcessors(
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
     }
 
-    Columns columns;
-    columns.emplace_back(std::move(col_name));
-    columns.emplace_back(std::move(col_path));
-    columns.emplace_back(std::move(col_free));
-    columns.emplace_back(std::move(col_total));
-    columns.emplace_back(std::move(col_keep));
+    Columns res_columns;
+    res_columns.emplace_back(std::move(col_name));
+    res_columns.emplace_back(std::move(col_path));
+    res_columns.emplace_back(std::move(col_free));
+    res_columns.emplace_back(std::move(col_total));
+    res_columns.emplace_back(std::move(col_keep));
 
-    UInt64 num_rows = columns.at(0)->size();
-    Chunk chunk(std::move(columns), num_rows);
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));

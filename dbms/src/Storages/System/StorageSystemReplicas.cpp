@@ -172,18 +172,18 @@ Pipes StorageSystemReplicas::readWithProcessors(
 
     Block header = getSampleBlock();
 
-    Columns columns;
-    columns.reserve(res_columns.size());
+    Columns fin_columns;
+    fin_columns.reserve(res_columns.size());
 
     for (auto & col : res_columns)
-        columns.emplace_back(std::move(col));
+        fin_columns.emplace_back(std::move(col));
 
-    columns[0] = std::move(col_database);
-    columns[1] = std::move(col_table);
-    columns[2] = std::move(col_engine);
+    fin_columns[0] = std::move(col_database);
+    fin_columns[1] = std::move(col_table);
+    fin_columns[2] = std::move(col_engine);
 
-    UInt64 num_rows = columns.at(0)->size();
-    Chunk chunk(std::move(columns), num_rows);
+    UInt64 num_rows = fin_columns.at(0)->size();
+    Chunk chunk(std::move(fin_columns), num_rows);
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));

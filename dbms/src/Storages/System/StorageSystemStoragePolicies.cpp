@@ -64,16 +64,16 @@ Pipes StorageSystemStoragePolicies::readWithProcessors(
         }
     }
 
-    Columns columns;
-    columns.emplace_back(std::move(col_policy_name));
-    columns.emplace_back(std::move(col_volume_name));
-    columns.emplace_back(std::move(col_priority));
-    columns.emplace_back(std::move(col_disks));
-    columns.emplace_back(std::move(col_max_part_size));
-    columns.emplace_back(std::move(col_move_factor));
+    Columns res_columns;
+    res_columns.emplace_back(std::move(col_policy_name));
+    res_columns.emplace_back(std::move(col_volume_name));
+    res_columns.emplace_back(std::move(col_priority));
+    res_columns.emplace_back(std::move(col_disks));
+    res_columns.emplace_back(std::move(col_max_part_size));
+    res_columns.emplace_back(std::move(col_move_factor));
 
-    UInt64 num_rows = columns.at(0)->size();
-    Chunk chunk(std::move(columns), num_rows);
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
 
     Pipes pipes;
     pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
