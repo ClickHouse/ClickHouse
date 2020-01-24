@@ -168,7 +168,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
+For more details, see [GraphiteMergeTree](../table_engines/graphitemergetree.md).
 
 **Example**
 
@@ -368,7 +368,7 @@ For more information, see the section "[Creating replicated tables](../../operat
 
 ## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -420,7 +420,7 @@ We recommend using this option in Mac OS X, since the `getrlimit()` function ret
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../operations/table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -437,7 +437,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -512,7 +512,7 @@ Keys for server/client settings:
 
 ## part_log {#server_settings-part-log}
 
-Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
@@ -739,7 +739,7 @@ Path to temporary data for processing large queries.
 
 ## tmp_policy {#server-settings-tmp_policy}
 
-Policy from [`storage_configuration`](mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+Policy from [`storage_configuration`](../table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
 If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
 
 !!! note
@@ -750,7 +750,7 @@ If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is igno
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../table_engines/mergetree.md).
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
