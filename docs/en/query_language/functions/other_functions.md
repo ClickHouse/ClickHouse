@@ -895,7 +895,7 @@ Input table:
 
 ```sql
 CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
 INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 ```
 
