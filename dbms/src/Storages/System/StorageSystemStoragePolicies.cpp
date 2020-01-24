@@ -2,6 +2,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
     }));
 }
 
-BlockInputStreams StorageSystemStoragePolicies::read(
+Pipes StorageSystemStoragePolicies::readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & /*query_info*/,
         const Context & context,
@@ -63,18 +64,21 @@ BlockInputStreams StorageSystemStoragePolicies::read(
         }
     }
 
+    Columns columns;
+    columns.emplace_back(std::move(col_policy_name));
+    columns.emplace_back(std::move(col_volume_name));
+    columns.emplace_back(std::move(col_priority));
+    columns.emplace_back(std::move(col_disks));
+    columns.emplace_back(std::move(col_max_part_size));
+    columns.emplace_back(std::move(col_move_factor));
 
-    Block res = getSampleBlock().cloneEmpty();
+    UInt64 num_rows = columns.at(0)->size();
+    Chunk chunk(std::move(columns), num_rows);
 
-    size_t col_num = 0;
-    res.getByPosition(col_num++).column = std::move(col_policy_name);
-    res.getByPosition(col_num++).column = std::move(col_volume_name);
-    res.getByPosition(col_num++).column = std::move(col_priority);
-    res.getByPosition(col_num++).column = std::move(col_disks);
-    res.getByPosition(col_num++).column = std::move(col_max_part_size);
-    res.getByPosition(col_num++).column = std::move(col_move_factor);
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
+    return pipes;
 }
 
 }
