@@ -24,7 +24,9 @@ RUN sudo apt-get --yes --allow-unauthenticated update
 RUN sudo apt-get --yes --allow-unauthenticated install cmake clang-8 libllvm8 libclang-8-dev
 
 # repo versions doesn't work correctly with C++17
-RUN git clone https://github.com/woboq/woboq_codebrowser.git
+# also we push reports to s3, so we add index.html to subfolder urls
+# https://github.com/ClickHouse-Extras/woboq_codebrowser/commit/37e15eaf377b920acb0b48dbe82471be9203f76b
+RUN git clone https://github.com/ClickHouse-Extras/woboq_codebrowser
 RUN cd woboq_codebrowser && cmake . -DCMAKE_BUILD_TYPE=Release && make -j
 
 ENV CODEGEN=/woboq_codebrowser/generator/codebrowser_generator
@@ -40,6 +42,6 @@ CMD mkdir -p $BUILD_DIRECTORY && cd $BUILD_DIRECTORY && \
     cmake $SOURCE_DIRECTORY -DCMAKE_CXX_COMPILER=/usr/bin/clang\+\+-8 -DCMAKE_C_COMPILER=/usr/bin/clang-8 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && \
     mkdir -p $HTML_RESULT_DIRECTORY && \
     $CODEGEN -b $BUILD_DIRECTORY -a -o $HTML_RESULT_DIRECTORY -p ClickHouse:$SOURCE_DIRECTORY:$SHA && \
-    $CODEINDEX $HTML_RESULT_DIRECTORY && \
     cp -r $STATIC_DATA $HTML_RESULT_DIRECTORY/ &&\
+    $CODEINDEX $HTML_RESULT_DIRECTORY -d "data" && \
     mv $HTML_RESULT_DIRECTORY /test_output
