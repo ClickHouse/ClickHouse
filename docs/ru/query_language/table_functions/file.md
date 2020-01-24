@@ -91,4 +91,13 @@ SELECT count(*)
 FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
+## Виртуальные столбцы
+
+- `_path` — Путь к файлу.
+- `_file` — Имя файла.
+
+**Смотрите также**
+
+- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/file/) <!--hide-->

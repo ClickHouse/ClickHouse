@@ -37,3 +37,8 @@ target_link_libraries(boost_filesystem_internal PRIVATE boost_system_internal)
 if (USE_INTERNAL_PARQUET_LIBRARY)
     add_boost_lib(regex)
 endif()
+
+if (USE_INTERNAL_AVRO_LIBRARY)
+    add_boost_lib(iostreams)
+    target_link_libraries(boost_iostreams_internal PUBLIC ${ZLIB_LIBRARIES})
+endif()

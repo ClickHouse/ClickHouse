@@ -217,17 +217,157 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## trimLeft(s)
+## trim {#trim}
 
-Returns a string that removes the whitespace characters on left side.
+Removes all specified characters from the start or end of a string.
+By default removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string.
 
-## trimRight(s)
+**Syntax**
 
-Returns a string that removes the whitespace characters on right side.
+```sql
+trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
+```
 
-## trimBoth(s)
+**Parameters**
 
-Returns a string that removes the whitespace characters on either side.
+- `trim_character` — specified characters for trim. [String](../../data_types/string.md).
+- `input_string` — string for trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and (or) trailing specified characters.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+```
+
+Result:
+
+```text
+┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
+│ Hello, world!                                 │
+└───────────────────────────────────────────────┘
+```
+
+## trimLeft {#trimleft}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimLeft(input_string)
+```
+
+Alias: `ltrim(input_string)`.
+
+**Parameters** 
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimLeft('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimLeft('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
+
+## trimRight {#trimright}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimRight(input_string)
+```
+
+Alias: `rtrim(input_string)`.
+
+**Parameters**
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimRight('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimRight('     Hello, world!     ')─┐
+│      Hello, world!                   │
+└──────────────────────────────────────┘
+```
+
+## trimBoth  {#trimboth}
+
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+
+**Syntax** 
+
+```sql
+trimBoth(input_string)
+```
+
+Alias: `trim(input_string)`.
+
+**Parameters**
+
+- `input_string` — string to trim. [String](../../data_types/string.md).
+
+**Returned value**
+
+A string without leading and trailing common whitespaces.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT trimBoth('     Hello, world!     ')
+```
+
+Result:
+
+```text
+┌─trimBoth('     Hello, world!     ')─┐
+│ Hello, world!                       │
+└─────────────────────────────────────┘
+```
 
 ## CRC32(s)
 

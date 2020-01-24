@@ -1,16 +1,11 @@
 #include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/MergeJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
-#include <Storages/IStorage.h>
 
 #include <DataTypes/DataTypeNullable.h>
 
@@ -24,14 +19,14 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-AnalyzedJoin::AnalyzedJoin(const Settings & settings, const String & tmp_path_)
+AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
     , partial_merge_join(settings.partial_merge_join)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , tmp_path(tmp_path_)
+    , tmp_volume(tmp_volume_)
 {}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
@@ -100,14 +95,6 @@ NameSet AnalyzedJoin::getQualifiedColumnsSet() const
     NameSet out;
     for (const auto & names : original_names)
         out.insert(names.first);
-    return out;
-}
-
-NameSet AnalyzedJoin::getOriginalColumnsSet() const
-{
-    NameSet out;
-    for (const auto & names : original_names)
-        out.insert(names.second);
     return out;
 }
 
@@ -223,31 +210,6 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->key_names_left == y->key_names_left
         && x->key_names_right == y->key_names_right
         && x->columns_added_by_join == y->columns_added_by_join;
-}
-
-NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
-{
-    NamesAndTypesList names_and_type_list;
-    if (table_expression.subquery)
-    {
-        const auto & subquery = table_expression.subquery->children.at(0);
-        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context).getNamesAndTypesList();
-    }
-    else if (table_expression.table_function)
-    {
-        const auto table_function = table_expression.table_function;
-        auto query_context = const_cast<Context *>(&context.getQueryContext());
-        const auto & function_storage = query_context->executeTableFunction(table_function);
-        names_and_type_list = function_storage->getSampleBlockNonMaterialized().getNamesAndTypesList();
-    }
-    else if (table_expression.database_and_table_name)
-    {
-        DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
-        const auto & table = context.getTable(database_table.database, database_table.table);
-        names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
-    }
-
-    return names_and_type_list;
 }
 
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)

@@ -1755,7 +1755,7 @@ var runs = ["first (cold cache)", "second", "third"];
 var current_runs = ['0', '1'];
 
 try {
-    var state = JSON.parse(window.location.hash.substring(1));
+    var state = JSON.parse(decodeURIComponent(window.location.hash.substring(1)));
 
     current_data_size = state[0];
     current_systems = state[1];
@@ -2112,13 +2112,6 @@ function generate_diagram() {
 
 </script>
 
-<script type="text/javascript">
-function getParams() {
-    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
-}
-</script>
-
 <!-- Yandex.Metrika counter -->
 <script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
 <script type="text/javascript">
@@ -2127,8 +2120,7 @@ try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
           clickmap:true,
           trackLinks:true,
           accurateTrackBounce:true,
-          trackHash:true,
-          params: getParams()});
+          trackHash:true});
 } catch(e) { }
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>

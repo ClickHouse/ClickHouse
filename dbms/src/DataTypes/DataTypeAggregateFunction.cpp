@@ -339,7 +339,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
 {
     String function_name;
     AggregateFunctionPtr function;

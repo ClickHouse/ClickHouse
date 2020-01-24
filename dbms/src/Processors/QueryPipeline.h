@@ -6,6 +6,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -56,18 +57,19 @@ public:
 
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
-    bool hasDelayedStream() const { return delayed_stream_port; }
+
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams, bool force = false);
+    void resize(size_t num_streams, bool force = false, bool strict = false);
+
+    void enableQuotaForCurrentStreams();
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
     PipelineExecutorPtr execute();
 
-    size_t getNumStreams() const { return streams.size() + (hasDelayedStream() ? 1 : 0); }
-    size_t getNumMainStreams() const { return streams.size(); }
+    size_t getNumStreams() const { return streams.size(); }
 
     bool hasMoreThanOneStream() const { return getNumStreams() > 1; }
     bool hasTotals() const { return totals_having_port != nullptr; }
@@ -75,6 +77,8 @@ public:
     const Block & getHeader() const { return current_header; }
 
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addInterpreterContext(std::shared_ptr<Context> context) { interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { storage_holder.emplace_back(std::move(storage)); }
 
     /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
@@ -98,9 +102,6 @@ private:
     OutputPort * totals_having_port = nullptr;
     OutputPort * extremes_port = nullptr;
 
-    /// Special port for delayed stream.
-    OutputPort * delayed_stream_port = nullptr;
-
     /// If resize processor was added to pipeline.
     bool has_resize = false;
 
@@ -109,13 +110,18 @@ private:
 
     TableStructureReadLocks table_locks;
 
+    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holder;
+
     IOutputFormat * output_format = nullptr;
 
     size_t max_threads = 0;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);
-    void concatDelayedStream();
 
     template <typename TProcessorGetter>
     void addSimpleTransformImpl(const TProcessorGetter & getter);

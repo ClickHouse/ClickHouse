@@ -180,8 +180,6 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    const char * getHeaderFilePath() const override { return __FILE__; }
-
 private:
     enum class PatternActionType
     {
@@ -311,7 +309,7 @@ protected:
     /// Uses a DFA based approach in order to better handle patterns without
     /// time assertions.
     ///
-    /// NOTE: This implementation relies on the assumption that the pattern are *small*.
+    /// NOTE: This implementation relies on the assumption that the pattern is *small*.
     ///
     /// This algorithm performs in O(mn) (with m the number of DFA states and N the number
     /// of events) with a memory consumption and memory allocations in O(m). It means that

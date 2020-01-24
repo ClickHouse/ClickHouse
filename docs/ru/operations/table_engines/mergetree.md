@@ -40,7 +40,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
 ```
 
@@ -70,9 +70,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Пример:
 `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` — выражение, определяющее длительность хранения строк.
+- `TTL` — список правил, определяющих длительности хранения строк, а также задающих правила перемещения частей на определённые тома или диски.
 
-    Должно зависеть от столбца `Date` или `DateTime` и возвращать столбец `Date` или `DateTime`. Пример:`TTL date + INTERVAL 1 DAY`
+    Выражение должно возвращать столбец `Date` или `DateTime`. Пример: `TTL date + INTERVAL 1 DAY`.
+
+    Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` указывает действие, которое будет выполнено с частью, удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`). Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
 
     Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
@@ -361,11 +363,13 @@ hasToken  | ✗ | ✗ | ✗ | ✔ | ✗
 
 ## TTL для столбцов и таблиц {#table_engine-mergetree-ttl}
 
-Определяет время жизни значений.
+Определяет время жизни значений, а также правила перемещения данных на другой диск или том.
 
-Секция `TTL` может быть установлена как для всей таблицы, так и для каждого отдельного столбца. Если установлены оба `TTL`, то ClickHouse использует тот, что истекает раньше.
+Секция `TTL` может быть установлена как для всей таблицы, так и для каждого отдельного столбца. Правила `TTL` для таблицы позволяют указать целевые диски или тома для фонового перемещения на них частей данных.
 
-Таблица должна иметь столбец типа [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md). Для установки времени жизни данных, следует использовать операцию со столбцом с временем, например:
+Выражения должны возвращать тип [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
+
+Для задания времени жизни столбца, например:
 
 ```sql
 TTL time_column
@@ -420,7 +424,17 @@ ALTER TABLE example_table
 
 **TTL таблицы**
 
-Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
+Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, по срабатывании которых данные переместятся на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
+
+```sql
+TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
+```
+
+За каждым TTL выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату TTL выражения:
+
+- `DELETE` - удалить данные (действие по умолчанию);
+- `TO DISK 'aaa'` - переместить данные на диск `aaa`;
+- `TO VOLUME 'bbb'` - переместить данные на том `bbb`.
 
 Примеры:
 
@@ -433,7 +447,9 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH;
+TTL d + INTERVAL 1 MONTH [DELETE],
+    d + INTERVAL 1 WEEK TO VOLUME 'aaa',
+    d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
 Изменение TTL
@@ -475,21 +491,25 @@ ALTER TABLE example_table
 Структура конфигурации:
 
 ```xml
-<disks>
-    <disk_name_1> <!-- disk name -->
-        <path>/mnt/fast_ssd/clickhouse</path>
-    </disk_name_1>
-    <disk_name_2>
-        <path>/mnt/hdd1/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_2>
-    <disk_name_3>
-        <path>/mnt/hdd2/clickhouse</path>
-        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
-    </disk_name_3>
+<storage_configuration>
+    <disks>
+        <disk_name_1> <!-- disk name -->
+            <path>/mnt/fast_ssd/clickhouse</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
 
+        ...
+    </disks>
+    
     ...
-</disks>
+</storage_configuration>
 ```
 
 Теги:
@@ -503,26 +523,30 @@ ALTER TABLE example_table
 Общий вид конфигурации политик хранения:
 
 ```xml
-<policies>
-    <policy_name_1>
-        <volumes>
-            <volume_name_1>
-                <disk>disk_name_from_disks_configuration</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </volume_name_1>
-            <volume_name_2>
-                <!-- configuration -->
-            </volume_name_2>
-            <!-- more volumes -->
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </policy_name_1>
-    <policy_name_2>
-        <!-- configuration -->
-    </policy_name_2>
+<storage_configuration>
+    ...
+    <policies>
+        <policy_name_1>
+            <volumes>
+                <volume_name_1>
+                    <disk>disk_name_from_disks_configuration</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </volume_name_1>
+                <volume_name_2>
+                    <!-- configuration -->
+                </volume_name_2>
+                <!-- more volumes -->
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </policy_name_1>
+        <policy_name_2>
+            <!-- configuration -->
+        </policy_name_2>
 
-    <!-- more policies -->
-</policies>
+        <!-- more policies -->
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 Тэги:
@@ -536,29 +560,33 @@ ALTER TABLE example_table
 Примеры конфигураций:
 
 ```xml
-<policies>
-    <hdd_in_order> <!-- policy name -->
-        <volumes>
-            <single> <!-- volume name -->
-                <disk>disk1</disk>
-                <disk>disk2</disk>
-            </single>
-        </volumes>
-    </hdd_in_order>
+<storage_configuration>
+    ...
+    <policies>
+        <hdd_in_order> <!-- policy name -->
+            <volumes>
+                <single> <!-- volume name -->
+                    <disk>disk1</disk>
+                    <disk>disk2</disk>
+                </single>
+            </volumes>
+        </hdd_in_order>
 
-    <moving_from_ssd_to_hdd>
-        <volumes>
-            <hot>
-                <disk>fast_ssd</disk>
-                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-            </hot>
-            <cold>
-                <disk>disk1</disk>
-            </cold>            
-        </volumes>
-        <move_factor>0.2</move_factor>
-    </moving_from_ssd_to_hdd>
-</policies>
+        <moving_from_ssd_to_hdd>
+            <volumes>
+                <hot>
+                    <disk>fast_ssd</disk>
+                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                </hot>
+                <cold>
+                    <disk>disk1</disk>
+                </cold>            
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </moving_from_ssd_to_hdd>
+    </policies>
+    ...
+</storage_configuration>
 ```
 
 В приведенном примере, политика `hdd_in_order` реализует прицип [round-robin](https://ru.wikipedia.org/wiki/Round-robin_(%D0%B0%D0%BB%D0%B3%D0%BE%D1%80%D0%B8%D1%82%D0%BC)). Так как в политике есть всего один том (`single`), то все записи производятся на его диски по круговому циклу. Такая политика может быть полезна при наличии в системе нескольких похожих дисков, но при этом не сконфигурирован RAID. Учтите, что каждый отдельный диск ненадёжен и чтобы не потерять важные данные это необходимо скомпенсировать за счет хранения данных в трёх копиях.

@@ -6,7 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <IO/WriteHelpers.h>
@@ -42,7 +42,7 @@ enum ClusterOperation
 /// functions (eg. Hamming distance) using Clickhouse lambdas.
 
 // Centroids array has the same size as number of clusters.
-size_t find_centroid(Float64 x, std::vector<Float64> & centroids)
+inline size_t find_centroid(Float64 x, std::vector<Float64> & centroids)
 {
     // Centroids array has to have at least one element, and if it has only one element,
     // it is also the result of this Function.

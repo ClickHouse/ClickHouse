@@ -1,14 +1,14 @@
-#include <Poco/Version.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/MergingSortedTransform.h>
-#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
-#include <common/config_common.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace ProfileEvents
@@ -20,6 +20,13 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
+class MergeSorter;
+
 
 class BufferingToFileTransform : public IAccumulatingTransform
 {
@@ -89,11 +96,11 @@ MergeSortingTransform::MergeSortingTransform(
     const SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, const std::string & tmp_path_,
+    size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
-    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_) {}
 
 Processors MergeSortingTransform::expandPipeline()
@@ -166,10 +173,14 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
-        if (!enoughSpaceInDirectory(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
-            throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+        size_t size = sum_bytes_in_blocks + min_free_disk_space;
+        auto reservation = tmp_volume->reserve(size);
+        if (!reservation)
+            throw Exception("Not enough space for external sort in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
+        const std::string tmp_path(reservation->getDisk()->getPath());
         temporary_files.emplace_back(createTemporaryFile(tmp_path));
+
         const std::string & path = temporary_files.back()->path();
         merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);

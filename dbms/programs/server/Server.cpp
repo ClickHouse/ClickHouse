@@ -18,6 +18,7 @@
 #include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
+#include <common/coverage.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -50,6 +51,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
@@ -73,6 +75,31 @@ namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
+}
+
+namespace
+{
+
+void setupTmpPath(Logger * log, const std::string & path)
+{
+    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+
+    Poco::File(path).createDirectories();
+
+    /// Clearing old temporary files.
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    {
+        if (it->isFile() && startsWith(it.name(), "tmp"))
+        {
+            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            it->remove();
+        }
+        else
+            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+    }
+}
+
 }
 
 namespace DB
@@ -187,6 +214,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
+    registerDisks();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -243,6 +271,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 #endif
 
+    global_context->setRemoteHostFilter(config());
+
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
@@ -272,15 +302,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
-    /// Check that we have read and write access to all data paths
-    auto disk_selector = global_context->getDiskSelector();
-    for (const auto & [name, disk] : disk_selector.getDisksMap())
-    {
-        Poco::File disk_path(disk->getPath());
-        if (!disk_path.canRead() || !disk_path.canWrite())
-            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
-    }
-
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -293,7 +314,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         global_context->shutdown();
 
-        LOG_DEBUG(log, "Shutted down storages.");
+        LOG_DEBUG(log, "Shut down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -335,22 +356,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of heavy queries.
+
+    /// Storage with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        global_context->setTemporaryPath(tmp_path);
-        Poco::File(tmp_path).createDirectories();
-
-        /// Clearing old temporary files.
-        Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(tmp_path); it != dir_end; ++it)
-        {
-            if (it->isFile() && startsWith(it.name(), "tmp"))
-            {
-                LOG_DEBUG(log, "Removing old temporary file " << it->path());
-                it->remove();
-            }
-        }
+        std::string tmp_policy = config().getString("tmp_policy", "");
+        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        for (const DiskPtr & disk : volume->disks)
+            setupTmpPath(log, disk->getPath());
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -369,6 +382,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string user_files_path = config().getString("user_files_path", path + "user_files/");
         global_context->setUserFilesPath(user_files_path);
         Poco::File(user_files_path).createDirectories();
+    }
+
+    {
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
+        global_context->setDictionariesLibPath(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -434,10 +453,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
         main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
-            setTextLog(global_context->getTextLog());
-            buildLoggers(*config, logger());
+            // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
+            // in a lot of places. For now, disable updating log configuration without server restart.
+            //setTextLog(global_context->getTextLog());
+            //buildLoggers(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
         },
         /* already_loaded = */ true);
 
@@ -468,13 +496,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
-
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
-    if (config().has("max_table_size_to_drop"))
-        global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
-
-    if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Set up caches.
 
@@ -543,8 +564,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// It also cannot work with sanitizers.
     /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
-    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
-    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    /// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
     ///  and query profiler decide to unwind stack with libunwind at this moment.
     ///
     /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
@@ -668,6 +689,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                return address;
         };
 
+        /// This object will periodically calculate some metrics.
+        AsynchronousMetrics async_metrics(*global_context);
+        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+
         for (const auto & listen_host : listen_hosts)
         {
             auto create_server = [&](const char * port_name, auto && func)
@@ -707,13 +732,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                    handler_factory,
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening http://" + address.toString());
+                LOG_INFO(log, "Listening for http://" + address.toString());
             });
 
             /// HTTPS
@@ -725,12 +754,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
+                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening https://" + address.toString());
+                LOG_INFO(log, "Listening for https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -783,12 +812,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
+                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -799,12 +828,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
+                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -814,7 +843,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_SSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());
@@ -826,11 +854,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
+            });
+
+            /// Prometheus (if defined and not setup yet with http_port)
+            create_server("prometheus.port", [&](UInt16 port)
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+
+                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });
         }
 
@@ -839,6 +880,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        setTextLog(global_context->getTextLog());
+        buildLoggers(config(), logger());
 
         main_config_reloader->start();
         users_config_reloader->start();
@@ -908,12 +952,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// (they are effectively dangling objects, but they use global thread pool
                 ///  and global thread pool destructor will wait for threads, preventing server shutdown).
 
+                /// Dump coverage here, because std::atexit callback would not be called.
+                dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
                 _exit(Application::EXIT_OK);
             }
         });
 
         /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls, models_xmls;
         try
         {
             if (!config().getBool("dictionaries_lazy_load", true))
@@ -921,22 +968,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->tryCreateEmbeddedDictionaries();
                 global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
-
-            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
-            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
-
-            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
-            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
         }
         catch (...)
         {
             LOG_ERROR(log, "Caught exception while loading dictionaries.");
             throw;
         }
-
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
@@ -953,6 +994,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     return Application::EXIT_OK;
 }
 }
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {

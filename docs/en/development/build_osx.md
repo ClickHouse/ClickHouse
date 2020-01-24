@@ -11,7 +11,7 @@ $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/inst
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-$ brew install cmake ninja gcc icu4c openssl libtool gettext readline gperf
+$ brew install cmake ninja libtool gettext
 ```
 
 ## Checkout ClickHouse Sources
@@ -33,7 +33,7 @@ For the latest stable version, switch to the `stable` branch.
 ```bash
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
+$ cmake .. -DCMAKE_CXX_COMPILER=`which clang++` -DCMAKE_C_COMPILER=`which clang`
 $ ninja
 $ cd ..
 ```

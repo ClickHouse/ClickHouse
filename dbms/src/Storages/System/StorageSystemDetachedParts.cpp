@@ -24,17 +24,17 @@ class StorageSystemDetachedParts :
     friend struct ext::shared_ptr_helper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
-    std::string getTableName() const override { return "detached_parts"; }
-    std::string getDatabaseName() const override { return "system"; }
 
 protected:
     explicit StorageSystemDetachedParts()
+        : IStorage({"system", "detached_parts"})
     {
         setColumns(ColumnsDescription{{
             {"database", std::make_shared<DataTypeString>()},
             {"table", std::make_shared<DataTypeString>()},
             {"partition_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
             {"name", std::make_shared<DataTypeString>()},
+            {"disk", std::make_shared<DataTypeString>()},
             {"reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
             {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
             {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
@@ -66,6 +66,7 @@ protected:
                 new_columns[i++]->insert(info.table);
                 new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
                 new_columns[i++]->insert(p.dir_name);
+                new_columns[i++]->insert(p.disk);
                 new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
                 new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
                 new_columns[i++]->insert(p.valid_name ? p.max_block : Field());

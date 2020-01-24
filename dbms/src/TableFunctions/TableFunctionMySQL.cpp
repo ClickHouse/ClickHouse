@@ -2,11 +2,7 @@
 #if USE_MYSQL
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -19,9 +15,9 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/convertMySQLDataType.h>
 #include <IO/Operators.h>
+#include "registerTableFunctions.h"
 
 #include <mysqlxx/Pool.h>
 
@@ -119,8 +115,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         std::move(pool),
         remote_database_name,
         remote_table_name,

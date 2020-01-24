@@ -9,7 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
@@ -617,7 +617,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        RegionsNames::Language language = RegionsNames::Language::RU;
+        RegionsNames::Language language = RegionsNames::Language::ru;
 
         /// If the result language is specified
         if (arguments.size() == 2)

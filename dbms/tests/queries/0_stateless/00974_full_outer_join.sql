@@ -1,7 +1,7 @@
 SELECT
     q0.dt,
     q0.cnt,
-    q0.cnt2
+    q1.cnt2
 FROM
 (
     SELECT
