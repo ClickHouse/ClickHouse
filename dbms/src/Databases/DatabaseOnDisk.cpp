@@ -16,9 +16,10 @@
 #include <Common/escapeForFileName.h>
 
 #include <common/logger_useful.h>
-#include <Poco/DirectoryIterator.h>
+#include <Poco/File.h>
+#include <filesystem>
 
-
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -161,11 +162,11 @@ void DatabaseOnDisk::createTable(
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
-        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+        fs::rename(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        Poco::File(table_metadata_tmp_path).remove();
+        fs::remove(table_metadata_tmp_path);
         throw;
     }
 }
@@ -178,13 +179,13 @@ void DatabaseOnDisk::removeTable(const Context & /* context */, const String & t
 
     try
     {
-        Poco::File(table_metadata_path).remove();
+        fs::remove(table_metadata_path);
     }
     catch (...)
     {
         try
         {
-            Poco::File(table_metadata_path + ".tmp_drop").remove();
+            fs::remove(table_metadata_path + ".tmp_drop");
             return;
         }
         catch (...)
@@ -282,8 +283,8 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
 
 void DatabaseOnDisk::drop(const Context & context)
 {
-    Poco::File(context.getPath() + getDataPath()).remove(false);
-    Poco::File(getMetadataPath()).remove(false);
+    fs::remove(context.getPath() + getDataPath());
+    fs::remove(getMetadataPath());
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
@@ -304,22 +305,24 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_na
 
 void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & iterating_function) const
 {
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
+        const fs::path filename = dir_it->path().filename();
+        const std::string filename_str = filename.string();
         /// For '.svn', '.gitignore' directory and similar.
-        if (dir_it.name().at(0) == '.')
+        if (filename_str.at(0) == '.')
             continue;
 
         /// There are .sql.bak files - skip them.
-        if (endsWith(dir_it.name(), ".sql.bak"))
+        if (endsWith(filename_str, ".sql.bak"))
             continue;
 
         // There are files that we tried to delete previously
         static const char * tmp_drop_ext = ".sql.tmp_drop";
-        if (endsWith(dir_it.name(), tmp_drop_ext))
+        if (endsWith(filename_str, tmp_drop_ext))
         {
-            const std::string object_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            const std::string object_name = filename.stem().stem().string(); // dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
             if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
             {
                 /// TODO maybe complete table drop and remove all table data (including data on other volumes and metadata in ZK)
@@ -330,26 +333,26 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
             else
             {
                 LOG_INFO(log, "Removing file " << dir_it->path());
-                Poco::File(dir_it->path()).remove();
+                fs::remove(dir_it->path());
             }
             continue;
         }
 
         /// There are files .sql.tmp - delete
-        if (endsWith(dir_it.name(), ".sql.tmp"))
+        if (endsWith(filename_str, ".sql.tmp"))
         {
             LOG_INFO(log, "Removing file " << dir_it->path());
-            Poco::File(dir_it->path()).remove();
+            fs::remove(dir_it->path());
             continue;
         }
 
         /// The required files have names like `table_name.sql`
-        if (endsWith(dir_it.name(), ".sql"))
+        if (endsWith(filename_str, ".sql"))
         {
-            iterating_function(dir_it.name());
+            iterating_function(filename_str);
         }
         else
-            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + getMetadataPath(),
+            throw Exception("Incorrect file extension: " + filename_str + " in metadata directory " + getMetadataPath(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
 }
@@ -377,7 +380,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(const Context & context, const Str
     if (remove_empty && query.empty())
     {
         LOG_ERROR(log, "File " << metadata_file_path << " is empty. Removing.");
-        Poco::File(metadata_file_path).remove();
+        fs::remove(metadata_file_path);
         return nullptr;
     }
 
