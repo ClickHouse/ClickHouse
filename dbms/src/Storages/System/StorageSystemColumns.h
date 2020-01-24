@@ -17,7 +17,7 @@ class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>
 public:
     std::string getName() const override { return "SystemColumns"; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
