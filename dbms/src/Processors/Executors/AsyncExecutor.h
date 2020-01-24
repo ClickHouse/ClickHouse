@@ -4,6 +4,7 @@
 namespace DB
 {
 
+/// Executes query pipeline in a separate thread.
 class AsyncExecutor
 {
 public:
