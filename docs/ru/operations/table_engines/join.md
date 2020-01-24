@@ -85,7 +85,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 При создании таблицы, применяются следующие параметры :
 
-- [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
+- [join_use_nulls](../settings/settings.md#join_use_nulls)
 - [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
 - [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
 - [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
