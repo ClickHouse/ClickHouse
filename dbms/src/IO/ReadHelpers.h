@@ -972,28 +972,78 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
-/// Read something from text format, but expect complete parse of given text
-/// For example: 723145 -- ok, 213MB -- not ok
 template <typename T>
-inline T completeParse(const char * data, size_t size)
+inline std::enable_if_t<!is_integral_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<is_integral_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf)
+{
+    readIntText(x, buf);
+    if (buf.eof())
+        return;
+
+    /// Updates x depending on the suffix
+    auto finish = [&buf, &x] (UInt64 base, int power_of_two) mutable
+    {
+        ++buf.position();
+        if (buf.eof())
+        {
+            x *= base; /// For decimal suffixes, such as k, M, G etc.
+        }
+        else if (*buf.position() == 'i')
+        {
+            x = (x << power_of_two); /// For binary suffixes, such as ki, Mi, Gi, etc.
+            ++buf.position();
+        }
+        return;
+    };
+
+    switch (*buf.position())
+    {
+        case 'k': [[fallthrough]];
+        case 'K':
+            finish(1000, 10);
+            break;
+        case 'M':
+            finish(1000000, 20);
+            break;
+        case 'G':
+            finish(1000000000, 30);
+            break;
+        case 'T':
+            finish(1000000000000ULL, 40);
+            break;
+        default:
+            return;
+    }
+    return;
+}
+
+/// Read something from text format and trying to parse the suffix.
+/// If the suffix is not valid gives an error
+/// For example: 723145 -- ok, 213MB -- not ok, but 213Mi -- ok
+template <typename T>
+inline T parseWithSizeSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readText(res, buf);
+    readTextWithSizeSuffix(res, buf);
     assertEOF(buf);
     return res;
 }
 
 template <typename T>
-inline T completeParse(const String & s)
+inline T parseWithSizeSuffix(const String & s)
 {
-    return completeParse<T>(s.data(), s.size());
+    return parseWithSizeSuffix<T>(s.data(), s.size());
 }
 
 template <typename T>
-inline T completeParse(const char * data)
+inline T parseWithSizeSuffix(const char * data)
 {
-    return completeParse<T>(data, strlen(data));
+    return parseWithSizeSuffix<T>(data, strlen(data));
 }
 
 template <typename T>
