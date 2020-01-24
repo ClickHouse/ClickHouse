@@ -29,7 +29,7 @@ private:
     ExtraBlockPtr not_processed;
     size_t action_number = 0;
 
-    Block readExec(Chunk & chunk);
+    Block readExecute(Chunk & chunk);
 };
 
 }

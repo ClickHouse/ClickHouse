@@ -42,13 +42,13 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
         expression->executeOnTotals(block);
     }
     else
-        block = readExec(chunk);
+        block = readExecute(chunk);
 
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
 
-Block InflatingExpressionTransform::readExec(Chunk & chunk)
+Block InflatingExpressionTransform::readExecute(Chunk & chunk)
 {
     Block res;
     if (likely(!not_processed))
