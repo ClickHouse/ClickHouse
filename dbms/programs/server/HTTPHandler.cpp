@@ -17,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include <Common/config.h>
 #include <Common/SettingsChanges.h>
+#include <Disks/DiskSpaceMonitor.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -351,7 +352,8 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            std::string tmp_path_template = context.getTemporaryPath() + "http_buffers/";
+            const std::string tmp_path(context.getTemporaryVolume()->getNextDisk()->getPath());
+            const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
