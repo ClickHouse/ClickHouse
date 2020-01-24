@@ -6,31 +6,36 @@ To use profiler:
 
 - Setup the [trace_log](../server_settings/settings.md#server_settings-trace_log) section of the server configuration.
 
-    This section configures the [trace_log](../system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default.
+    This section configures the [trace_log](../system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for running server. After the server restart, ClickHouse doesn't clean up the table and all the stored virtual memory address became invalid.
 
 - Setup the [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) and [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings.
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
-Default sampling frequency is one sample per second. This frequency allows to catch enough precise information about ClickHouse servers operating. Working with this frequency, profiler doesn't affect ClickHouse server's efficiency. If you need to profile each individual query try to use higher sampling frequency.
+Default sampling frequency is one sample per second. This frequency allows to catch enough precise information about ClickHouse cluster operating. At the same time, working with this frequency, profiler doesn't affect ClickHouse server's efficiency. If you need to profile each individual query try to use higher sampling frequency.
 
 To analyze the `trace_log` system table:
 
 - Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting_started/install.md#install-from-deb-packages).
-- Allow introspection functions.
+- Allow introspection functions by the [allow_introspection_functions](../settings/settings.md#settings-allow_introspection_functions) setting.
 
     For security reasons introspection functions are disabled by default.
 
-- Use the addressToLine, addressToSymbol and demangle introspection functions to get function names and their positions in ClickHouse code.
+- Use the `addressToLine`, `addressToSymbol` and `demangle` [introspection functions](../../query_language/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-To get query profile, you need to aggregate the data from trace_log. You can aggregate by individual functions or by the whole stack traces.
-
-There is an instrument that allows to visualize trace_log info as a [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph).
+If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph).
 
 
 ## Example
 
-In this example we filter trace_log data by query identifier (query_id column) and the current date, then counting the same traces and for each trace getting representation which consists of the symbol name and corresponding source code function name and a position of this function in a code (a file name and a line number). Which we get by addressToSymbol, damangle и addressToLine functions.
+In this example we:
+
+- Filtering `trace_log` data by a query identifier and a current date.
+- Counting the same traces.
+- Using introspection functions, we getting a representation which consists of:
+        
+    - Names of symbols and corresponding source code functions.
+    - Positions of these functions in a code (a file name and a line number).
 
 ```sql
 SELECT 
