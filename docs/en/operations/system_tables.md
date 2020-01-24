@@ -395,6 +395,35 @@ Columns:
 - `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
 - `query_id` (String) – Query ID, if defined.
 
+## system.text_log {#system_tables-text_log}
+
+Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+
+Columns:
+
+- `event_date` (`Date`) - Date of the entry.
+- `event_time` (`DateTime`) - Time of the entry.
+- `microseconds` (`UInt32`) - Microseconds of the entry.
+- `thread_name` (String) — Name of the thread from which the logging was done.
+- `thread_number` (UInt32) — Internal thread ID.
+- `os_thread_id` (Int32) — OS thread ID.
+- `level` (`Enum8`) - Entry level.
+    - `'Fatal' = 1`
+    - `'Critical' = 2`
+    - `'Error' = 3`
+    - `'Warning' = 4`
+    - `'Notice' = 5`
+    - `'Information' = 6`
+    - `'Debug' = 7`
+    - `'Trace' = 8`
+- `query_id` (`String`) - ID of the query.
+- `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
+- `message` (`String`) - The message itself.
+- `revision` (`UInt32`) - ClickHouse revision.
+- `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
+- `source_line` (`UInt64`) - Source line from which the logging was done.
+
+
 ## system.query_log {#system_tables-query_log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
