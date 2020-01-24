@@ -20,11 +20,22 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {ast.database});
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+
+    context.checkAccess(getRequiredAccess());
 
     StoragePtr table = context.getTable(ast.database, ast.table);
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
+}
+
+
+AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
+{
+    const auto & optimize = query_ptr->as<const ASTOptimizeQuery &>();
+    AccessRightsElements required_access;
+    required_access.emplace_back(AccessType::OPTIMIZE, optimize.database, optimize.table);
+    return required_access;
 }
 
 }

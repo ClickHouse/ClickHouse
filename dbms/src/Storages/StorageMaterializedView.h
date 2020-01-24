@@ -17,6 +17,7 @@ class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterialize
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
+    bool isView() const override { return true; }
 
     ASTPtr getSelectQuery() const { return select->clone(); }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }

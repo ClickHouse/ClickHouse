@@ -249,7 +249,28 @@ const AccessRights & AccessRightsContext::calculateResultAccess(UInt64 readonly_
 
     result = granted_to_user;
 
-    /// TODO
+    static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
+        | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
+        | AccessType::DETACH_DATABASE | AccessType::DETACH_TABLE | AccessType::DETACH_VIEW | AccessType::TRUNCATE;
+    static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY | AccessType::DETACH_DICTIONARY;
+    static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
+    static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
+
+    if (readonly_)
+        result.fullRevoke(write_table_access | AccessType::SYSTEM);
+
+    if (readonly_ || !allow_ddl_)
+        result.fullRevoke(table_and_dictionary_ddl);
+
+    if (readonly_ == 1)
+    {
+        /// Table functions are forbidden in readonly mode.
+        /// For example, for readonly = 2 - allowed.
+        result.fullRevoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
+    }
+
+    if (!allow_introspection_)
+        result.fullRevoke(AccessType::INTROSPECTION);
 
     return result;
 }

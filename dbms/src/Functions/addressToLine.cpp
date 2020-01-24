@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 class FunctionAddressToLine : public IFunction
@@ -37,9 +36,7 @@ public:
     static constexpr auto name = "addressToLine";
     static FunctionPtr create(const Context & context)
     {
-        if (!context.getSettingsRef().allow_introspection_functions)
-            throw Exception("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
-
+        context.checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
     }
 

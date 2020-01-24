@@ -13,9 +13,9 @@ namespace DB
 {
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
-    context.checkQuotaManagementIsAllowed();
     const auto & query = query_ptr->as<const ASTCreateQuotaQuery &>();
     auto & access_control = context.getAccessControlManager();
+    context.checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (query.alter)
     {

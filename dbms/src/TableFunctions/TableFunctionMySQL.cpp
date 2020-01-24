@@ -55,6 +55,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
+    context.checkAccess(AccessType::mysql);
+
     bool replace_query = false;
     std::string on_duplicate_clause;
     if (args.size() >= 6)
