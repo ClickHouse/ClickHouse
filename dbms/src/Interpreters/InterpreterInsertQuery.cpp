@@ -119,7 +119,12 @@ BlockIO InterpreterInsertQuery::execute()
             out_streams_size = std::min(size_t(settings.max_insert_threads), in_streams.size());
         }
         else
-            in_streams.emplace_back(interpreter_select.execute().in);
+        {
+            res = interpreter_select.execute();
+            in_streams.emplace_back(res.in);
+            res.in = nullptr;
+            res.out = nullptr;
+        }
     }
 
     BlockOutputStreams out_streams;
