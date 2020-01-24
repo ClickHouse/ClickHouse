@@ -17,7 +17,7 @@ The result of the function depends on the type of argument. Uses uppercase lette
 
 For strings, all bytes are simply encoded as two hexadecimal numbers. 
 
-Numbers are converted to big engine ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes.
+Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes.
 
 For example:
 
