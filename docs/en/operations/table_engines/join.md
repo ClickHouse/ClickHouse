@@ -22,6 +22,8 @@ See the detailed description of the [CREATE TABLE](../../query_language/create.m
 
 Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters don't match, ClickHouse doesn't throw an exception and may return incorrect data.
 
+Engine Join allows use [join_use_nulls](../settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../query_language/select.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../query_language/functions/other_functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+
 ## Table Usage
 
 ### Example

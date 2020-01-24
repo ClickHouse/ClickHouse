@@ -869,17 +869,15 @@ Gets data from [Join](../../operations/table_engines/join.md#creating-a-table) t
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
-**Syntax** 
+**Syntax**
 
 ```sql
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Parameters** 
+**Parameters**
 
-- `join_storage_table_name` — [Identifier](../../syntax/#syntax-identifiers) indicates where search is performed. In most cases, this is the name of the database and/or table. Firstly, identifier is searched in the default database (see parameter `default_database` in the config file), and then in other databases. To override the default database, use the `USE db_name` command.
-    - Specify only the table name for tables with a unique name.
-    - Specify the database and then the table for non-unique tables. Use a dot as the separator.
+- `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -888,6 +886,8 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 Returns list of values corresponded to list of keys.
 
 If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting. 
+
+More info about `join_use_nulls` in [Join operation](../../operations/table_engines/join.md).
 
 **Example**
 
@@ -910,7 +910,7 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ```sql
-SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4)
+SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
 ```
 
 Result:
