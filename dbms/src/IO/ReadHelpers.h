@@ -746,6 +746,23 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+{
+    readPODBinary(x, buf);
+
+    if constexpr (sizeof(x) == 1)
+        return;
+    else if constexpr (sizeof(x) == 2)
+        x = __builtin_bswap16(x);
+    else if constexpr (sizeof(x) == 4)
+        x = __builtin_bswap32(x);
+    else if constexpr (sizeof(x) == 8)
+        x = __builtin_bswap64(x);
+}
+
+
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
