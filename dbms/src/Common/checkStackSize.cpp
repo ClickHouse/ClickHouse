@@ -1,6 +1,5 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <Core/Defines.h>
 #include <ext/scope_guard.h>
 #include <pthread.h>
 #include <cstdint>
@@ -24,7 +23,7 @@ namespace DB
 static thread_local void * stack_address = nullptr;
 static thread_local size_t max_stack_size = 0;
 
-CH_WEAK void checkStackSize()
+__attribute__((__weak__)) void checkStackSize()
 {
     using namespace DB;
 
