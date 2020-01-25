@@ -46,7 +46,22 @@ public:
         bool has_force_restore_data_flag;
     };
 
-    using Creator = std::function<StoragePtr(const Arguments & arguments)>;
+    struct StorageFeatures
+    {
+        bool supports_settings = false;
+        bool supports_skipping_indices = false;
+        bool supports_sort_order = false;
+        bool supports_ttl = false;
+    };
+
+    using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
+    struct Creator
+    {
+        CreatorFn creator_fn;
+        StorageFeatures features;
+    };
+
+    using Storages = std::unordered_map<std::string, Creator>;
 
     StoragePtr get(
         const ASTCreateQuery & query,
@@ -59,9 +74,14 @@ public:
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, Creator creator);
+    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
+        .supports_settings = false,
+        .supports_skipping_indices = false,
+        .supports_sort_order = false,
+        .supports_ttl = false,
+    });
 
-    const auto & getAllStorages() const
+    const Storages & getAllStorages() const
     {
         return storages;
     }
@@ -74,8 +94,18 @@ public:
         return result;
     }
 
+    using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
+    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    {
+        std::vector<String> result;
+        for (const auto& pair : storages)
+            if (feature_matcher_fn(pair.second.features))
+                result.push_back(pair.first);
+        return result;
+    }
+
+
 private:
-    using Storages = std::unordered_map<std::string, Creator>;
     Storages storages;
 };
 

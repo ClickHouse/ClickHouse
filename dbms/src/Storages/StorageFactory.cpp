@@ -31,9 +31,9 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
-void StorageFactory::registerStorage(const std::string & name, Creator creator)
+void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
-    if (!storages.emplace(name, std::move(creator)).second)
+    if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
@@ -93,24 +93,6 @@ StoragePtr StorageFactory::get(
 
             name = engine_def.name;
 
-            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
-            {
-                throw Exception(
-                    "Engine " + name + " doesn't support SETTINGS clause. "
-                    "Currently only the MergeTree family of engines, Kafka engine and Join engine support it",
-                    ErrorCodes::BAD_ARGUMENTS);
-            }
-
-            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
-                storage_def->ttl_table || !columns.getColumnTTLs().empty() ||
-                (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
-                && !endsWith(name, "MergeTree"))
-            {
-                throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY, TTL or SAMPLE BY clauses and skipping indices. "
-                    "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
-            }
-
             if (name == "View")
             {
                 throw Exception(
@@ -142,6 +124,45 @@ StoragePtr StorageFactory::get(
             throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
     }
 
+
+    auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+    {
+        if (!feature_matcher_fn(it->second.features)) {
+            String msg = "Engine " + name + " doesn't support " + feature_description + ". "
+                "Currently only the following engines have support for the feature: [";
+            auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
+            for (size_t index = 0; index < supporting_engines.size(); ++index)
+            {
+                if (index)
+                    msg += ", ";
+                msg += supporting_engines[index];
+            }
+            msg += "]";
+            throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+        }
+    };
+
+    //if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
+    if (storage_def->settings)
+        checkFeature(
+            "SETTINGS clause",
+            [](StorageFeatures features) { return features.supports_settings; });
+
+    if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+        checkFeature(
+            "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
+            [](StorageFeatures features) { return features.supports_sort_order; });
+
+    if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+        checkFeature(
+            "TTL clause",
+            [](StorageFeatures features) { return features.supports_ttl; });
+
+    if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
+        checkFeature(
+            "skipping indices",
+            [](StorageFeatures features) { return features.supports_skipping_indices; });
+
     Arguments arguments
     {
         .engine_name = name,
@@ -158,7 +179,7 @@ StoragePtr StorageFactory::get(
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
-    return it->second(arguments);
+    return it->second.creator_fn(arguments);
 }
 
 StorageFactory & StorageFactory::instance()
