@@ -16,7 +16,7 @@ public:
     ASTPtr format;
     ASTPtr settings_ast;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final override;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);

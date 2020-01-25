@@ -12,9 +12,9 @@ class ExecutableFunctionAdaptor final : public IExecutableFunction
 public:
     explicit ExecutableFunctionAdaptor(ExecutableFunctionImplPtr impl_) : impl(std::move(impl_)) {}
 
-    String getName() const final { return impl->getName(); }
+    String getName() const final override { return impl->getName(); }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) final;
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) final override;
 
     void createLowCardinalityResultCache(size_t cache_size) override;
 
@@ -39,19 +39,19 @@ class FunctionBaseAdaptor final : public IFunctionBase
 public:
     explicit FunctionBaseAdaptor(FunctionBaseImplPtr impl_) : impl(std::move(impl_)) {}
 
-    String getName() const final { return impl->getName(); }
+    String getName() const final override { return impl->getName(); }
 
-    const DataTypes & getArgumentTypes() const final { return impl->getArgumentTypes(); }
-    const DataTypePtr & getReturnType() const final { return impl->getReturnType(); }
+    const DataTypes & getArgumentTypes() const final override { return impl->getArgumentTypes(); }
+    const DataTypePtr & getReturnType() const final override { return impl->getReturnType(); }
 
-    ExecutableFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const final
+    ExecutableFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const final override
     {
         return std::make_shared<ExecutableFunctionAdaptor>(impl->prepare(sample_block, arguments, result));
     }
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const final { return impl->isCompilable(); }
+    bool isCompilable() const final override { return impl->isCompilable(); }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override
     {
@@ -60,20 +60,20 @@ public:
 
 #endif
 
-    bool isStateful() const final { return impl->isStateful(); }
-    bool isSuitableForConstantFolding() const final { return impl->isSuitableForConstantFolding(); }
+    bool isStateful() const final override { return impl->isStateful(); }
+    bool isSuitableForConstantFolding() const final override { return impl->isSuitableForConstantFolding(); }
 
-    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const final
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const final override
     {
         return impl->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments);
     }
 
-    bool isInjective(const Block & sample_block) final { return impl->isInjective(sample_block); }
-    bool isDeterministic() const final { return impl->isDeterministic(); }
-    bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
-    bool hasInformationAboutMonotonicity() const final { return impl->hasInformationAboutMonotonicity(); }
+    bool isInjective(const Block & sample_block) final override { return impl->isInjective(sample_block); }
+    bool isDeterministic() const final override { return impl->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const final override { return impl->isDeterministicInScopeOfQuery(); }
+    bool hasInformationAboutMonotonicity() const final override { return impl->hasInformationAboutMonotonicity(); }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const final
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const final override
     {
         return impl->getMonotonicityForRange(type, left, right);
     }
@@ -90,39 +90,39 @@ class FunctionOverloadResolverAdaptor final : public IFunctionOverloadResolver
 public:
     explicit FunctionOverloadResolverAdaptor(FunctionOverloadResolverImplPtr impl_) : impl(std::move(impl_)) {}
 
-    String getName() const final { return impl->getName(); }
+    String getName() const final override { return impl->getName(); }
 
-    bool isDeterministic() const final { return impl->isDeterministic(); }
+    bool isDeterministic() const final override { return impl->isDeterministic(); }
 
-    bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
+    bool isDeterministicInScopeOfQuery() const final override { return impl->isDeterministicInScopeOfQuery(); }
 
-    bool isStateful() const final { return impl->isStateful(); }
+    bool isStateful() const final override { return impl->isStateful(); }
 
-    bool isVariadic() const final { return impl->isVariadic(); }
+    bool isVariadic() const final override { return impl->isVariadic(); }
 
-    size_t getNumberOfArguments() const final { return impl->getNumberOfArguments(); }
+    size_t getNumberOfArguments() const final override { return impl->getNumberOfArguments(); }
 
-    void checkNumberOfArguments(size_t number_of_arguments) const final;
+    void checkNumberOfArguments(size_t number_of_arguments) const final override;
 
     FunctionBaseImplPtr buildImpl(const ColumnsWithTypeAndName & arguments) const
     {
         return impl->build(arguments, getReturnType(arguments));
     }
 
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const final
+    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const final override
     {
         return std::make_shared<FunctionBaseAdaptor>(buildImpl(arguments));
     }
 
-    void getLambdaArgumentTypes(DataTypes & arguments) const final
+    void getLambdaArgumentTypes(DataTypes & arguments) const final override
     {
         checkNumberOfArguments(arguments.size());
         impl->getLambdaArgumentTypes(arguments);
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return impl->getArgumentsThatAreAlwaysConstant(); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final override { return impl->getArgumentsThatAreAlwaysConstant(); }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const final
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const final override
     {
         return impl->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
     }
@@ -145,18 +145,18 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final override
     {
         return function->executeImpl(block, arguments, result, input_rows_count);
     }
-    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    void executeDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final override
     {
         return function->executeImplDryRun(block, arguments, result, input_rows_count);
     }
-    bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
+    bool useDefaultImplementationForNulls() const final override { return function->useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForConstants() const final override { return function->useDefaultImplementationForConstants(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const final override { return function->useDefaultImplementationForLowCardinalityColumns(); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final override { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
 
 private:

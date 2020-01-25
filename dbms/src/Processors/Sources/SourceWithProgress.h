@@ -48,11 +48,11 @@ public:
     using LocalLimits = IBlockInputStream::LocalLimits;
     using LimitsMode = IBlockInputStream::LimitsMode;
 
-    void setLimits(const LocalLimits & limits_) final { limits = limits_; }
-    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { quota = quota_; }
-    void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
-    void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
-    void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
+    void setLimits(const LocalLimits & limits_) final override { limits = limits_; }
+    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final override { quota = quota_; }
+    void setProcessListElement(QueryStatus * elem) final override { process_list_elem = elem; }
+    void setProgressCallback(const ProgressCallback & callback) final override { progress_callback = callback; }
+    void addTotalRowsApprox(size_t value) final override { total_rows_approx += value; }
 
 protected:
     /// Call this method to provide information about progress.
