@@ -1,5 +1,6 @@
 -- Create dictionary, since dictGet*() uses DB::Context in executeImpl()
 -- (To cover scope of the Context in DB::PushingToViewsBlockOutputStream::process)
+DROP TABLE IF EXISTS mv;
 DROP DATABASE IF EXISTS dict_in_01023;
 CREATE DATABASE dict_in_01023;
 
