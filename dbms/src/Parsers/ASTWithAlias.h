@@ -20,7 +20,7 @@ public:
 
     using IAST::IAST;
 
-    void appendColumnName(WriteBuffer & ostr) const final;
+    void appendColumnName(WriteBuffer & ostr) const final override;
     String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
     String tryGetAlias() const override { return alias; }
     void setAlias(const String & to) override { alias = to; }
