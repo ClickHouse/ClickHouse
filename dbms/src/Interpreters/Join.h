@@ -182,11 +182,11 @@ public:
     bool hasStreamWithNonJoinedRows() const override;
 
     /// Number of keys in all built JOIN maps.
-    size_t getTotalRowCount() const final;
+    size_t getTotalRowCount() const final override;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
-    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty; }
+    bool alwaysReturnsEmptySet() const final override { return isInnerOrRight(getKind()) && data->empty; }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
