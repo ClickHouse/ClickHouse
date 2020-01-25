@@ -127,7 +127,8 @@ StoragePtr StorageFactory::get(
 
     auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
     {
-        if (!feature_matcher_fn(it->second.features)) {
+        if (!feature_matcher_fn(it->second.features))
+        {
             String msg = "Engine " + name + " doesn't support " + feature_description + ". "
                 "Currently only the following engines have support for the feature: [";
             auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
