@@ -49,6 +49,12 @@
 #include <filesystem>
 
 
+namespace
+{
+static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+}
+
 namespace DB
 {
 
@@ -63,6 +69,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int TOO_MANY_ROWS;
+    extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
 }
 
 namespace ActionLocks
@@ -340,12 +347,15 @@ BlockInputStreams StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
+    UInt64 force = settings.force_optimize_skip_unused_shards;
     if (settings.optimize_skip_unused_shards)
     {
+        ClusterPtr smaller_cluster;
+        auto table_id = getStorageID();
+
         if (has_sharding_key)
         {
-            auto smaller_cluster = skipUnusedShards(cluster, query_info);
-            auto table_id = getStorageID();
+            smaller_cluster = skipUnusedShards(cluster, query_info);
 
             if (smaller_cluster)
             {
@@ -354,10 +364,27 @@ BlockInputStreams StorageDistributed::read(
                                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
                                " " << makeFormattedListOfShards(cluster));
             }
-            else
+        }
+
+        if (!smaller_cluster)
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
+                           (has_sharding_key ? "" : "(no sharding key)") << ": "
+                           "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
+                           "the query will be sent to all shards of the cluster");
+
+            if (force)
             {
-                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                               "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster");
+                std::stringstream exception_message;
+                if (has_sharding_key)
+                    exception_message << "No sharding key";
+                else
+                    exception_message << "Sharding key " << sharding_key_column_name << " is not used";
+
+                if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS)
+                    throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
+                if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key)
+                    throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
             }
         }
     }
@@ -548,11 +575,6 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
-    if (!has_sharding_key)
-    {
-        throw Exception("Internal error: cannot determine shards of a distributed table if no sharding expression is supplied", ErrorCodes::LOGICAL_ERROR);
-    }
-
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
     if (!select.prewhere() && !select.where())

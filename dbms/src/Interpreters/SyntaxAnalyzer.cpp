@@ -816,7 +816,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     SyntaxAnalyzerResult result;
     result.storage = storage;
     result.source_columns = source_columns_;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryPath()); /// TODO: move to select_query logic
+    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume()); /// TODO: move to select_query logic
 
     if (storage)
         collectSourceColumns(storage->getColumns(), result.source_columns, (select_query != nullptr));

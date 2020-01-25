@@ -28,6 +28,7 @@
 #include <common/config_common.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 
 namespace ProfileEvents
@@ -681,22 +682,25 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-        if (!enoughSpaceInDirectory(params.tmp_path, current_memory_usage + params.min_free_disk_space))
-            throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+        size_t size = current_memory_usage + params.min_free_disk_space;
+        auto reservation = params.tmp_volume->reserve(size);
+        if (!reservation)
+            throw Exception("Not enough space for external aggregation in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        writeToTemporaryFile(result);
+        const std::string tmp_path(reservation->getDisk()->getPath());
+        writeToTemporaryFile(result, tmp_path);
     }
 
     return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path)
 {
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTemporaryFile(params.tmp_path);
+    auto file = createTemporaryFile(tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
@@ -752,6 +756,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
         << " (" << (rows / elapsed_seconds) << " rows/sec., "
         << (uncompressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. uncompressed, "
         << (compressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. compressed)");
+}
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+{
+    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
 }
 
 

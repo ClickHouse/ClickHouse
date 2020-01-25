@@ -3132,7 +3132,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         };
 
-        bool force_ttl = (final && (hasTableTTL() || hasAnyColumnTTL()));
+        bool force_ttl = (final && (hasRowsTTL() || hasAnyColumnTTL()));
         const auto storage_settings_ptr = getSettings();
 
         if (!partition && final)

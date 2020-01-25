@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
-AnalyzedJoin::AnalyzedJoin(const Settings & settings, const String & tmp_path_)
+AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
@@ -27,7 +27,7 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings, const String & tmp_path_)
     , partial_merge_join(settings.partial_merge_join)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-    , tmp_path(tmp_path_)
+    , tmp_volume(tmp_volume_)
 {}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)

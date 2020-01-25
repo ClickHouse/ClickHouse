@@ -67,6 +67,13 @@ public:
         const String & config_prefix,
         const DiskSelector & disk_selector);
 
+    /// Next disk (round-robin)
+    ///
+    /// - Used with policy for temporary data
+    /// - Ignores all limitations
+    /// - Shares last access with reserve()
+    DiskPtr getNextDisk();
+
     /// Uses Round-robin to choose disk for reservation.
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
