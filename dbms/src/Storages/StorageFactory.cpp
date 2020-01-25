@@ -142,7 +142,6 @@ StoragePtr StorageFactory::get(
         }
     };
 
-    //if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
     if (storage_def->settings)
         checkFeature(
             "SETTINGS clause",
