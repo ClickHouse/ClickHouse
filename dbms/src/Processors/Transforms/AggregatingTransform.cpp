@@ -19,7 +19,7 @@ namespace
 {
     /// Convert block to chunk.
     /// Adds additional info about aggregation.
-    static Chunk convertToChunk(const Block & block)
+    Chunk convertToChunk(const Block & block)
     {
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
@@ -32,7 +32,7 @@ namespace
         return chunk;
     }
 
-    static const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+    const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
         auto & info = chunk.getChunkInfo();
         if (!info)
