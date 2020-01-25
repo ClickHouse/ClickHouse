@@ -27,6 +27,7 @@ protected:
     bool set_input_not_needed_after_read = false;
 
     virtual void transform(Chunk & chunk) = 0;
+    virtual bool needInputData() const { return true; }
     void stopReading() { no_more_data_needed = true; }
 
 public:

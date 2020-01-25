@@ -43,6 +43,7 @@ class AnalyzedJoin
     const SizeLimits size_limits;
     const size_t default_max_bytes;
     const bool join_use_nulls;
+    const size_t max_joined_block_rows = 0;
     const bool partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -89,6 +90,7 @@ public:
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
+    size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
