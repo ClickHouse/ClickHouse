@@ -15,36 +15,36 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Convert block to chunk.
-/// Adds additional info about aggregation.
-static Chunk convertToChunk(const Block & block)
-{
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
-
-    return chunk;
-}
-
-static const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
-{
-    auto & info = chunk.getChunkInfo();
-    if (!info)
-        throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
-    if (!agg_info)
-        throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
-
-    return agg_info;
-}
-
 namespace
 {
+    /// Convert block to chunk.
+    /// Adds additional info about aggregation.
+    static Chunk convertToChunk(const Block & block)
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = block.info.bucket_num;
+        info->is_overflows = block.info.is_overflows;
+
+        UInt64 num_rows = block.rows();
+        Chunk chunk(block.getColumns(), num_rows);
+        chunk.setChunkInfo(std::move(info));
+
+        return chunk;
+    }
+
+    static const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
+    {
+        auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
+
+        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        if (!agg_info)
+            throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
+
+        return agg_info;
+    }
+
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
     class SourceFromNativeStream : public ISource
     {
