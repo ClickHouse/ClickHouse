@@ -6,6 +6,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
