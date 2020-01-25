@@ -139,12 +139,12 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 
     SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
-    llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
+    llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final override
     {
         return symbols;
     }
 
-    llvm::orc::SymbolNameSet lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols) final
+    llvm::orc::SymbolNameSet lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols) final override
     {
         llvm::orc::SymbolNameSet missing;
         for (const auto & symbol : symbols)
