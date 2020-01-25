@@ -20,6 +20,9 @@ namespace DB
 class Context;
 class StorageDistributedDirectoryMonitor;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -81,6 +84,7 @@ public:
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void renameOnDisk(const String & new_path_to_table_data);
 
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
@@ -92,22 +96,20 @@ public:
     void startup() override;
     void shutdown() override;
 
-    Strings getDataPaths() const override { return {path}; }
+    Strings getDataPaths() const override;
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     size_t getShardCount() const;
-    const String & getPath() const { return path; }
+    std::pair<const std::string &, const std::string &> getPath();
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
     /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors();
-    /// ensure directory monitor thread creation by subdirectory name
-    void requireDirectoryMonitor(const std::string & name);
-    /// ensure connection pool creation and return it
-    ConnectionPoolPtr requireConnectionPool(const std::string & name);
+    void createDirectoryMonitors(const std::string & disk);
+    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
+    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
 
     void flushClusterNodesAllData();
 
@@ -131,24 +133,6 @@ public:
     bool has_sharding_key;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
-    String path;    /// Can be empty if data_path_ is empty. In this case, a directory for the data to be sent is not created.
-
-    struct ClusterNodeData
-    {
-        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
-        ConnectionPoolPtr conneciton_pool;
-
-        /// Creates connection_pool if not exists.
-        void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
-        /// Creates directory_monitor if not exists.
-        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker);
-
-        void flushAllData();
-
-        void shutdownAndDropAllData();
-    };
-    std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
-    std::mutex cluster_nodes_mutex;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
@@ -165,6 +149,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
+        const String & storage_policy_,
         const String & relative_data_path_,
         bool attach_);
 
@@ -176,10 +161,30 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
+        const String & storage_policy_,
         const String & relative_data_path_,
         bool attach);
 
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
+
+    void createStorage();
+
+    String storage_policy;
+    String relative_data_path;
+    /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
+    VolumePtr volume;
+
+    struct ClusterNodeData
+    {
+        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        ConnectionPoolPtr conneciton_pool;
+
+        void flushAllData();
+        void shutdownAndDropAllData();
+    };
+    std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
+    std::mutex cluster_nodes_mutex;
+
 };
 
 }

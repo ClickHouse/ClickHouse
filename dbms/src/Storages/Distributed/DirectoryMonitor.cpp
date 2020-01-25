@@ -80,12 +80,11 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
+    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
     /// It's important to initialize members before `thread` to avoid race.
     : storage(storage_)
     , pool(std::move(pool_))
-    , name(std::move(name_))
-    , path{storage.path + name + '/'}
+    , path{path_ + '/'}
     , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
     , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
@@ -692,10 +691,10 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
     return storage.getStorageID().getFullTableName() + ".DirectoryMonitor";
 }
 
-void StorageDistributedDirectoryMonitor::updatePath()
+void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
 {
     std::lock_guard lock{mutex};
-    path = storage.path + name + '/';
+    path = new_path;
     current_batch_file_path = path + "current_batch.txt";
 }
 
