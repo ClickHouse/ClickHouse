@@ -162,12 +162,3 @@
 /// A macro for suppressing warnings about unused variables or function results.
 /// Useful for structured bindings which have no standard way to declare this.
 #define UNUSED(...) (void)(__VA_ARGS__)
-
-/// A macro for declaring global symbols weak. Useful when certain global function
-/// may be substituted by different implementation by another application using
-/// ClickHouse as a library (i.e. checkStackSize()).
-#if defined(__GNUC__)
-    #define CH_WEAK __attribute__((weak))
-#else
-    #define CH_WEAK
-#endif
