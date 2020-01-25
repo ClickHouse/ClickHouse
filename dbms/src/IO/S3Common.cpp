@@ -34,21 +34,21 @@ class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 public:
     ~AWSLogger() final = default;
 
-    Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
+    Aws::Utils::Logging::LogLevel GetLogLevel() const final override { return Aws::Utils::Logging::LogLevel::Trace; }
 
-    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final
+    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final override
     {
         auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
     }
 
-    void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
+    void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final override
     {
         auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + message_stream.str(), level, prio);
     }
 
-    void Flush() final {}
+    void Flush() final override {}
 
 private:
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
