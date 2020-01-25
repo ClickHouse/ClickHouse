@@ -95,7 +95,7 @@ size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 void registerStorageJoin(StorageFactory & factory)
 {
-    factory.registerStorage("Join", [](const StorageFactory::Arguments & args)
+    auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
 
@@ -209,7 +209,9 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             join_any_take_last_row,
             args.context);
-    });
+    };
+
+    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
 template <typename T>

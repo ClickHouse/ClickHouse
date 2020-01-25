@@ -411,7 +411,7 @@ bool StorageKafka::streamToViews()
 
 void registerStorageKafka(StorageFactory & factory)
 {
-    factory.registerStorage("Kafka", [](const StorageFactory::Arguments & args)
+    auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
@@ -636,7 +636,9 @@ void registerStorageKafka(StorageFactory & factory)
         return StorageKafka::create(
             args.table_id, args.context, args.columns,
             brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
-    });
+    };
+
+    factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
 
