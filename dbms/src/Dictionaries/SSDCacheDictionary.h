@@ -294,7 +294,9 @@ public:
             const size_t read_buffer_size_,
             const size_t write_buffer_size_);
 
-    std::string getName() const override { return name; }
+    const std::string & getDatabase() const override { return name; }
+    const std::string & getName() const override { return name; }
+    const std::string & getFullName() const override { return getName(); }
 
     std::string getTypeName() const override { return "SSDCache"; }
 
