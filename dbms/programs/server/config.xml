@@ -3,27 +3,27 @@
   NOTE: User and query level settings are set up in "users.xml" file.
 -->
 <yandex>
-	<!-- The list of hosts allowed to use in URL-related storage engines and table functions.
-		If this section is not present in configuration, all hosts are allowed.
-	-->
-	<remote_url_allow_hosts>
-		<!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
-			Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
-            		If port is explicitly specified in URL, the host:port is checked as a whole.
-            		If host specified here without port, any port with this host allowed.
-            		"yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed. 
-			If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
-			If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked. 
-		-->
+    <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
+        If this section is not present in configuration, all hosts are allowed.
+    -->
+    <remote_url_allow_hosts>
+        <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
+            Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
+                    If port is explicitly specified in URL, the host:port is checked as a whole.
+                    If host specified here without port, any port with this host allowed.
+                    "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
+            If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
+            If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
+        -->
 
-		<!-- Regular expression can be specified. RE2 engine is used for regexps.
-			Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
-			(forgetting to do so is a common source of error).
-		-->
-	</remote_url_allow_hosts>
+        <!-- Regular expression can be specified. RE2 engine is used for regexps.
+            Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
+            (forgetting to do so is a common source of error).
+        -->
+    </remote_url_allow_hosts>
 
     <logger>
-        <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
+        <!-- Possible levels: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
@@ -34,6 +34,7 @@
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
+    <mysql_port>9004</mysql_port>
     <!-- For HTTPS and SSL over native protocol. -->
     <!--
     <https_port>8443</https_port>
@@ -131,6 +132,17 @@
 
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <!-- Policy from the <storage_configuration> for the temporary files.
+         If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
+
+         Notes:
+         - move_factor              is ignored
+         - keep_free_space_bytes    is ignored
+         - max_data_part_size_bytes is ignored
+         - you must have exactly one volume in that policy
+    -->
+    <!-- <tmp_policy>tmp</tmp_policy> -->
 
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
@@ -343,6 +355,11 @@
                 toStartOfHour(event_time)
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
+
+        <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
+             Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+          -->
+
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
@@ -377,10 +394,12 @@
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
+         The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
     <text_log>
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <level></level>
     </text_log>
     -->
 

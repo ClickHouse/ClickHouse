@@ -282,7 +282,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     else
     {
         bool with_output = false;
-        std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
+        std::function<void(const String &, const String &)> set_content_type_and_format = [&with_output](const String &, const String &) -> void
+        {
             with_output = true;
         };
 
@@ -305,7 +306,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         Context query_context = connection_context;
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type, nullptr);
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type_and_format, {});
 
         if (!with_output)
             packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

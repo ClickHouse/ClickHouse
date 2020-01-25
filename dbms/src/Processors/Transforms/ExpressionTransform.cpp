@@ -37,6 +37,8 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     if (on_totals)
     {
+        /// Drop totals if both out stream and joined stream doesn't have ones.
+        /// See comment in ExpressionTransform.h
         if (default_totals && !expression->hasTotalsInJoin())
             return;
 
