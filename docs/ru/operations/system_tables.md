@@ -695,6 +695,40 @@ WHERE changed
 └────────────────────────┴─────────────┴─────────┘
 ```
 
+## system.table_engines
+
+Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях. 
+
+Эта таблица содержит следующие столбцы (тип столбца показан в скобках):
+
+- `name` (String) — имя движка.
+- `supports_settings` (UInt8) — флаг, показывающий поддержку секции `SETTINGS`.
+- `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
+- `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+- `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.  
+
+Пример:
+
+```sql
+SELECT *
+FROM system.table_engines
+WHERE name in ('Kafka', 'MergeTree')
+```
+
+```text
+┌─name──────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┐
+│ Kafka     │                 1 │                         0 │                   0 │            0 │
+│ MergeTree │                 1 │                         1 │                   1 │            1 │
+└───────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┘
+```
+
+**Смотрите также**
+
+- [Секции движка](table_engines/mergetree/#sektsii-zaprosa) семейства MergeTree 
+- [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
+- [Настройки](table_engines/join/#limitations-and-settings) Join
+
+
 ## system.tables
 
 Содержит метаданные каждой таблицы, о которой знает сервер. Отсоединённые таблицы не отображаются в `system.tables`.
