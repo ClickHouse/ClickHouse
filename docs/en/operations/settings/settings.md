@@ -968,6 +968,24 @@ Possible values:
 
 Default value: 0.
 
+## optimize_skip_unused_shards {#settings-optimize_skip_unused_shards}
+
+Enables or disables skipping of unused shards for SELECT queries that has sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
+
+Default value: 0
+
+## force_optimize_skip_unused_shards {#settings-force_optimize_skip_unused_shards}
+
+Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
+
+Possible values:
+
+- 0 - Disabled (do not throws)
+- 1 - Disable query execution only if the table has sharding key
+- 2 - Disable query execution regardless sharding key is defined for the table
+
+Default value: 0
+
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
 Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn't perform a merge.
