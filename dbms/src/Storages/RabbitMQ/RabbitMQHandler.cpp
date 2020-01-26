@@ -69,16 +69,16 @@ void RabbitMQHandler::onData(AMQP::Connection *connection, const char *data, siz
     }
 }
 
-void RabbitMQHandler::onConnected(AMQP::Connection */*connection*/)
+void RabbitMQHandler::onConnected(AMQP::Connection * /*connection*/)
 {
     m_impl->connected = true;
 }
 
-void RabbitMQHandler::onError(AMQP::Connection * /*connection*/, const char */*message*/)
+void RabbitMQHandler::onError(AMQP::Connection * /*connection*/, const char * /*message*/)
 {
 }
 
-void RabbitMQHandler::onClosed(AMQP::Connection */*connection*/)
+void RabbitMQHandler::onClosed(AMQP::Connection * /*connection*/)
 {
     m_impl->quit  = true;
 }
