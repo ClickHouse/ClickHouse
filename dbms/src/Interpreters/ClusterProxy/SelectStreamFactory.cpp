@@ -127,12 +127,14 @@ BlockInputStreams SelectStreamFactory::createStreams()
 
     size_t split_size = settings.max_remote_shards_group_size;
     const auto& select_query = query_ast->as<ASTSelectQuery &>();
-    if (select_query.orderBy()) {
+    if (select_query.orderBy())
+    {
         split_size = 1;
     }
 
     size_t multiplexed_shards_count = 0;
-    auto create_multiplexed_stream = [&]() {
+    auto create_multiplexed_stream = [&]()
+    {
         auto stream = std::make_shared<RemoteShardsBlockInputStream>(
             std::move(multiplexed_shards), header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
@@ -144,7 +146,8 @@ BlockInputStreams SelectStreamFactory::createStreams()
         multiplexed_shards_count++;
     };
 
-    for (const auto & shard_info : cluster->getShardsInfo()) {
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
         createForShard(shard_info, result, multiplexed_shards);
 
         if (multiplexed_shards.size() == split_size)

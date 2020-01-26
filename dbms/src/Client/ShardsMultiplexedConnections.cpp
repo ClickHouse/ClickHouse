@@ -40,7 +40,8 @@ ShardsMultiplexedConnections::ShardsMultiplexedConnections(
     active_connection_count = replica_states.size();
 
     size_t offset = 0;
-    for (auto && shard : shard_queries_) {
+    for (auto && shard : shard_queries_)
+    {
         const auto length = shard.connections.size();
         shards.push_back(ShardReplicaRange{shard.query, offset, length});
         offset += length;
@@ -89,13 +90,15 @@ void ShardsMultiplexedConnections::sendQuery(
         const String & query_id,
         UInt64 stage,
         const ClientInfo * client_info,
-        bool with_pending_data) {
+        bool with_pending_data)
+{
     std::lock_guard lock(cancel_mutex);
 
     if (isQuerySent())
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
-    for (const auto& shard : shards) {
+    for (const auto& shard : shards)
+    {
         const size_t num_replicas = shard.count;
 
         if (0 == shard.count)
@@ -334,7 +337,8 @@ void ShardsMultiplexedConnections::invalidateReplica(ReplicaState & state)
     --active_connection_count;
 }
 
-bool ShardsMultiplexedConnections::isQuerySent() const {
+bool ShardsMultiplexedConnections::isQuerySent() const
+{
     return sent_queries_count == shards.size();
 }
 

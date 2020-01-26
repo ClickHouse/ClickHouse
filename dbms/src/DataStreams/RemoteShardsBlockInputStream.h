@@ -20,7 +20,8 @@ namespace DB
 class RemoteShardsBlockInputStream : public IBlockInputStream
 {
 public:
-    struct ShardQuery {
+    struct ShardQuery
+    {
         ConnectionPoolWithFailoverPtr pool;
         String query;
     };

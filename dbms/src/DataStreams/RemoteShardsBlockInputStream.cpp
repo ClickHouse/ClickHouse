@@ -280,7 +280,8 @@ void RemoteShardsBlockInputStream::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
 
     ShardsMultiplexedConnections::ShardQueries shards;
-    for (size_t i = 0; i < multiplexed_shards.size(); i++) {
+    for (size_t i = 0; i < multiplexed_shards.size(); i++)
+    {
         const auto& shard = multiplexed_shards[i];
 
         std::vector<IConnectionPool::Entry> current_connections;

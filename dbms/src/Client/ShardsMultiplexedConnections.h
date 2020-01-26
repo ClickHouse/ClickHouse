@@ -18,7 +18,8 @@ namespace DB
 class ShardsMultiplexedConnections final : private boost::noncopyable
 {
 public:
-    struct ShardQuery {
+    struct ShardQuery
+    {
         String query;
         std::vector<IConnectionPool::Entry> connections;
     };
@@ -91,12 +92,14 @@ private:
     bool isQuerySent() const;
 
     using ReplicaStates = std::vector<ReplicaState>;
-    struct ShardReplicaRange {
+    struct ShardReplicaRange
+    {
         String query;
         size_t start;
         size_t count;
 
-        size_t end() const {
+        size_t end() const
+        {
             return start + count;
         }
     };
