@@ -9,6 +9,7 @@
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataStreams/RemoteBlockInputStream.h>
+#include <Parsers/ASTSelectQuery.h>
 
 #include <common/logger_useful.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
@@ -124,6 +125,12 @@ BlockInputStreams SelectStreamFactory::createStreams()
     BlockInputStreams result;
     ShardQueries multiplexed_shards;
 
+    size_t split_size = settings.max_remote_shards_group_size;
+    const auto& select_query = query_ast->as<ASTSelectQuery &>();
+    if (select_query.orderBy()) {
+        split_size = 1;
+    }
+
     size_t multiplexed_shards_count = 0;
     auto create_multiplexed_stream = [&]() {
         auto stream = std::make_shared<RemoteShardsBlockInputStream>(
@@ -140,7 +147,7 @@ BlockInputStreams SelectStreamFactory::createStreams()
     for (const auto & shard_info : cluster->getShardsInfo()) {
         createForShard(shard_info, result, multiplexed_shards);
 
-        if (multiplexed_shards.size() == settings.max_remote_shards_group_size)
+        if (multiplexed_shards.size() == split_size)
             create_multiplexed_stream();
     }
 
