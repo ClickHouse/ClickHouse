@@ -93,7 +93,7 @@ StoragePtr StorageFactory::get(
 
             name = engine_def.name;
 
-            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
+            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join" && name != "RabbitMQ")
             {
                 throw Exception(
                     "Engine " + name + " doesn't support SETTINGS clause. "

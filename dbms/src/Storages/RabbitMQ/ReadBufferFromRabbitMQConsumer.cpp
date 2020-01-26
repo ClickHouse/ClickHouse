@@ -17,39 +17,43 @@ namespace DB
 
 /// this is to be modified
 
-    ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
+ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
+{
+}
+
+ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
+{
+}
+
+void ReadBufferFromRabbitMQConsumer::commit()
+{
+    handler->loop();
+}
+
+void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
+{
+    for (auto key : routing_keys)
     {
+        consumer->declareQueue(key);
+        consumer->consume(key, AMQP::noack).onReceived(
+                [](const AMQP::Message &message,
+                   uint64_t deliveryTag,
+                   bool redelivered)
+                {
+                    /// this shoud be done properly
+                    std::cout << "reading message " << message.body()
+                              << " with " << deliveryTag << " flag " << redelivered;
+
+                });
     }
+}
 
-    void ReadBufferFromRabbitMQConsumer::commit()
-    {
-        handler->loop();
-    }
+void ReadBufferFromRabbitMQConsumer::unsubscribe()
+{
+    messages.clear();
+    current = messages.begin();
+    BufferBase::set(nullptr, 0, 0);
 
-    void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
-    {
-        for (auto key : routing_keys)
-        {
-            consumer->declareQueue(key);
-            consumer->consume(key, AMQP::noack).onReceived(
-                    [](const AMQP::Message &message,
-                       uint64_t deliveryTag,
-                       bool redelivered)
-                    {
-                        /// this shoud be done properly
-                        std::cout << "reading message " << message.body()
-                                  << " with " << deliveryTag << " flag " << redelivered;
-
-                    });
-        }
-    }
-
-    void ReadBufferFromRabbitMQConsumer::unsubscribe()
-    {
-        messages.clear();
-        current = messages.begin();
-        BufferBase::set(nullptr, 0, 0);
-
-        handler->quit();
-    }
+    handler->quit();
+}
 }

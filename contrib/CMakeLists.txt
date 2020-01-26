@@ -337,3 +337,7 @@ if (USE_FASTOPS)
 endif()
 
 add_subdirectory(replxx-cmake)
+
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()

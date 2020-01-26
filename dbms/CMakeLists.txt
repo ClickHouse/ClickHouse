@@ -221,6 +221,27 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
 endif()
 
+if (USE_AMQPCPP)
+    add_headers_and_sources(dbms src/Storages/RabbitMQ)
+endif()
+
+list(APPEND dbms_sources
+        src/Storages/RabbitMQ/RabbitMQBlockInputStream.cpp
+        src/Storages/RabbitMQ/RabbitMQBlockOutputStream.cpp
+        src/Storages/RabbitMQ/RabbitMQHandler.cpp
+        src/Storages/RabbitMQ/RabbitMQSettings.cpp
+        src/Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.cpp
+        src/Storages/RabbitMQ/WriteBufferToRabbitMQProducer.cpp
+        src/Storages/RabbitMQ/StorageRabbitMQ.cpp)
+list(APPEND dbms_headers
+        src/Storages/RabbitMQ/RabbitMQBlockInputStream.h
+        src/Storages/RabbitMQ/RabbitMQBlockOutputStream.h
+        src/Storages/RabbitMQ/RabbitMQHandler.h
+        src/Storages/RabbitMQ/RabbitMQSettings.h
+        src/Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h
+        src/Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h
+        src/Storages/RabbitMQ/Buffer_fwd.h
+        src/Storages/RabbitMQ/StorageRabbitMQ.h)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -606,3 +627,8 @@ if (ENABLE_TESTS AND USE_GTEST)
     target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
     add_check(unit_tests_dbms)
 endif ()
+
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PRIVATE ${AMQPCPP_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${AMQPCPP_INCLUDE_DIR})
+endif()
