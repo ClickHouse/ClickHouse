@@ -141,7 +141,14 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
         sev._sigev_un._tid = thread_id;
 #endif
         if (timer_create(clock_type, &sev, &timer_id))
+        {
+            /// In Google Cloud Runner, the function "timer_create" is implemented incorrectly as of 2020-01-25.
+            if (errno == 0)
+                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
+                    ErrorCodes::CANNOT_CREATE_TIMER);
+
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+        }
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
