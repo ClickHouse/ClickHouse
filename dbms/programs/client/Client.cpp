@@ -513,6 +513,7 @@ private:
                 if (input.empty())
                     break;
 
+                has_vertical_output_suffix = false;
                 if (input.ends_with("\\G"))
                 {
                     input.resize(input.size() - 2);
