@@ -1,0 +1,113 @@
+################
+# Config
+################
+
+# C++ project
+language: cpp
+
+dist: trusty
+sudo: required
+group: edge
+
+
+################
+# Services
+################
+
+services:
+  - docker
+
+################
+# Build matrix
+################
+
+matrix:
+  include:
+
+  ################
+  # Linux / GCC
+  ################
+
+  - os: linux
+    compiler: gcc
+    env:
+      - COMPILER_PACKAGE=g++-5
+      - C_COMPILER=gcc-5
+      - CXX_COMPILER=g++-5
+      - CXXFLAGS=-std=c++11
+
+  - os: linux
+    compiler: gcc
+    env:
+      - COMPILER_PACKAGE=g++-6
+      - C_COMPILER=gcc-6
+      - CXX_COMPILER=g++-6
+
+  - os: linux
+    compiler: gcc
+    env:
+      - COMPILER_PACKAGE=g++-7
+      - C_COMPILER=gcc-7
+      - CXX_COMPILER=g++-7
+      
+  - os: linux
+    compiler: gcc
+    env:
+      - COMPILER_PACKAGE=g++-8
+      - C_COMPILER=gcc-8
+      - CXX_COMPILER=g++-8
+
+  ################
+  # Linux / Clang
+  ################
+
+  - os: linux
+    env:
+      - COMPILER_PACKAGE=clang-4.0
+      - C_COMPILER=clang-4.0
+      - CXX_COMPILER=clang++-4.0
+
+  - os: linux
+    env:
+      - COMPILER_PACKAGE=clang-5.0
+      - C_COMPILER=clang-5.0
+      - CXX_COMPILER=clang++-5.0
+      
+  - os: linux
+    env:
+      - COMPILER_PACKAGE=clang-6.0
+      - C_COMPILER=clang-6.0
+      - CXX_COMPILER=clang++-6.0
+
+before_install:
+
+  # Show OS/compiler version (this may not be the same OS as the Docker container)
+  - uname -a
+
+  # Use an artful container - gives us access to latest compilers.
+  - docker run -d --name ubuntu-test-container -v $(pwd):/travis ubuntu:bionic tail -f /dev/null
+  - docker ps
+
+
+install:
+
+  # Create our container
+  - docker exec -t ubuntu-test-container bash -c "apt-get update -y &&
+    apt-get --no-install-recommends install -y software-properties-common cmake
+    ninja-build libboost-all-dev libev-dev libuv1-dev ninja-build libssl-dev $COMPILER_PACKAGE &&
+    apt-get -y clean && rm -rf /var/lib/apt/lists/*"
+
+################
+# Build / Test
+################
+
+script:
+
+  # Run the container that we created and build the code
+  - docker exec -t ubuntu-test-container bash -c "cd /travis &&
+    export CC=/usr/bin/$C_COMPILER &&
+    export CXX=/usr/bin/$CXX_COMPILER &&
+    mkdir build.release && cd build.release &&
+    cmake ${CMAKE_OPTIONS} -DAMQP-CPP_BUILD_EXAMPLES=ON -DAMQP-CPP_LINUX_TCP=ON --config Release -GNinja .. &&
+    cmake --build . &&
+    cd .."

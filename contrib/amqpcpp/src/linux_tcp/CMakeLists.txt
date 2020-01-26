@@ -1,0 +1,18 @@
+add_sources(
+    addressinfo.h
+    includes.h
+    openssl.cpp
+    openssl.h
+    pipe.h
+    sslconnected.h
+    sslcontext.h
+    sslhandshake.h
+    sslwrapper.h
+    tcpclosed.h
+    tcpconnected.h
+    tcpconnection.cpp
+    tcpinbuffer.h
+    tcpoutbuffer.h
+    tcpresolver.h
+    tcpstate.h
+)
