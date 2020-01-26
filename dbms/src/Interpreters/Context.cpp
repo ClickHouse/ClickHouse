@@ -659,20 +659,6 @@ void Context::checkAccess(const AccessFlags & access, const std::string_view & d
 void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
 void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
 
-void Context::checkQuotaManagementIsAllowed()
-{
-    if (!is_quota_management_allowed)
-        throw Exception(
-            "User " + client_info.current_user + " doesn't have enough privileges to manage quotas", ErrorCodes::ACCESS_DENIED);
-}
-
-void Context::checkRowPolicyManagementIsAllowed()
-{
-    if (!is_row_policy_management_allowed)
-        throw Exception(
-            "User " + client_info.current_user + " doesn't have enough privileges to manage row policies", ErrorCodes::ACCESS_DENIED);
-}
-
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -709,9 +695,7 @@ void Context::calculateUserSettings()
 
     quota = getAccessControlManager().createQuotaContext(
         client_info.current_user, client_info.current_address.host(), client_info.quota_key);
-    is_quota_management_allowed = user->is_quota_management_allowed;
     row_policy = getAccessControlManager().getRowPolicyContext(client_info.current_user);
-    is_row_policy_management_allowed = user->is_row_policy_management_allowed;
     calculateAccessRights();
 }
 
@@ -753,44 +737,8 @@ void Context::setUser(const String & name, const String & password, const Poco::
     calculateUserSettings();
 }
 
-
-void Context::checkDatabaseAccessRights(const std::string & database_name) const
-{
-    auto lock = getLock();
-    checkDatabaseAccessRightsImpl(database_name);
-}
-
-bool Context::hasDatabaseAccessRights(const String & database_name) const
-{
-    auto lock = getLock();
-    return client_info.current_user.empty() || (database_name == "system") ||
-        shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
-}
-
-bool Context::hasDictionaryAccessRights(const String & dictionary_name) const
-{
-    auto lock = getLock();
-    return client_info.current_user.empty() ||
-        shared->users_manager->hasAccessToDictionary(client_info.current_user, dictionary_name);
-}
-
-void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
-{
-    if (client_info.current_user.empty() || (database_name == "system"))
-    {
-         /// An unnamed user, i.e. server, has access to all databases.
-         /// All users have access to the database system.
-        return;
-    }
-    if (!shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name))
-        throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
-}
-
-
 void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.database_name);
-    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
@@ -807,8 +755,6 @@ void Context::addDependency(const StorageID & from, const StorageID & where)
 
 void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
 {
-    checkDatabaseAccessRightsImpl(from.database_name);
-    checkDatabaseAccessRightsImpl(where.database_name);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
@@ -828,16 +774,6 @@ Dependencies Context::getDependencies(const StorageID & from) const
     auto lock = getLock();
 
     String db = resolveDatabase(from.database_name, current_database);
-
-    if (from.database_name.empty() && tryGetExternalTable(from.table_name))
-    {
-        /// Table is temporary. Access granted.
-    }
-    else
-    {
-        checkDatabaseAccessRightsImpl(db);
-    }
-
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
     if (iter == shared->view_dependencies.end())
         return {};
@@ -848,10 +784,7 @@ Dependencies Context::getDependencies(const StorageID & from) const
 bool Context::isTableExist(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it
         && it->second->isTableExist(*this, table_name);
@@ -860,10 +793,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it && it->second->isDictionaryExist(*this, dictionary_name);
 }
@@ -872,7 +802,6 @@ bool Context::isDatabaseExist(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
     return shared->databases.end() != shared->databases.find(db);
 }
 
@@ -882,28 +811,20 @@ bool Context::isExternalTableExist(const String & table_name) const
 }
 
 
-void Context::assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_access_rights) const
+void Context::assertTableDoesntExist(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    if (check_database_access_rights)
-        checkDatabaseAccessRightsImpl(db);
-
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
         throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 
-void Context::assertDatabaseExists(const String & database_name, bool check_database_access_rights) const
+void Context::assertDatabaseExists(const String & database_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    if (check_database_access_rights)
-        checkDatabaseAccessRightsImpl(db);
-
     if (shared->databases.end() == shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 }
@@ -912,10 +833,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 void Context::assertDatabaseDoesntExist(const String & database_name) const
 {
     auto lock = getLock();
-
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
     if (shared->databases.end() != shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
 }
@@ -1008,7 +926,6 @@ StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Excep
         }
 
         db = resolveDatabase(table_id.database_name, current_database);
-        checkDatabaseAccessRightsImpl(db);
 
         Databases::const_iterator it = shared->databases.find(db);
         if (shared->databases.end() == it)
