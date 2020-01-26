@@ -18,10 +18,15 @@ namespace DB
 class ShardsMultiplexedConnections final : private boost::noncopyable
 {
 public:
-    const size_t default_shard_idx = 0;
+    struct ShardQuery {
+        String query;
+        std::vector<IConnectionPool::Entry> connections;
+    };
+
+    using ShardQueries = std::vector<ShardQuery>;
 
     ShardsMultiplexedConnections(
-        std::vector<std::vector<IConnectionPool::Entry>> && shard_connections,
+        ShardQueries && shard_queries_,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Send all scalars to replicas.
@@ -31,9 +36,7 @@ public:
 
     /// Send request to replicas.
     void sendQuery(
-        size_t shard_idx,
         const ConnectionTimeouts & timeouts,
-        const String & query,
         const String & query_id = "",
         UInt64 stage = QueryProcessingStage::Complete,
         const ClientInfo * client_info = nullptr,
@@ -88,21 +91,15 @@ private:
     bool isQuerySent() const;
 
     using ReplicaStates = std::vector<ReplicaState>;
-    struct ReplicaRange {
-        using Iter = ReplicaStates::const_iterator;
-        Iter begin_;
-        Iter end_;
+    struct ShardReplicaRange {
+        String query;
+        size_t start;
+        size_t count;
 
-        Iter begin() const {
-            return begin_;
-        }
-
-        Iter end() const {
-            return end_;
+        size_t end() const {
+            return start + count;
         }
     };
-
-    const ReplicaRange& getShardReplicas(size_t shard_idx);
 
 private:
     const Settings & settings;
@@ -113,7 +110,7 @@ private:
     std::vector<ReplicaState> replica_states;
     std::unordered_map<int, size_t> fd_to_replica_state_idx;
 
-    std::unordered_map<size_t, ReplicaRange> shard_to_replica_range;
+    std::vector<ShardReplicaRange> shards;
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;

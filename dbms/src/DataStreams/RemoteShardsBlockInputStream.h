@@ -91,7 +91,6 @@ private:
 
     std::unique_ptr<ShardsMultiplexedConnections> multiplexed_connections;
 
-    std::vector<String> shard_queries;
     String query_id = "";
     Context context;
 

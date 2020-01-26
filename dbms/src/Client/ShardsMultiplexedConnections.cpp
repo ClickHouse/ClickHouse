@@ -13,19 +13,19 @@ namespace ErrorCodes
 }
 
 ShardsMultiplexedConnections::ShardsMultiplexedConnections(
-        std::vector<std::vector<IConnectionPool::Entry>> && shard_connections,
+        ShardQueries && shard_queries_,
         const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_)
 {
-    for (auto && connections : shard_connections)
+    for (auto && shard : shard_queries_)
     {
         /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
         /// `skip_unavailable_shards` was set. Then just return.
-        if (connections.empty())
+        if (shard.connections.empty())
             continue;
 
         // replica_states.reserve(connections.size());
-        for (auto && pool_entry : connections)
+        for (auto && pool_entry : shard.connections)
         {
             Connection * connection = &(*pool_entry);
             connection->setThrottler(throttler);
@@ -39,10 +39,10 @@ ShardsMultiplexedConnections::ShardsMultiplexedConnections(
     }
     active_connection_count = replica_states.size();
 
-    for (size_t i = 0, offset = 0; i < shard_connections.size(); i++) {
-        const auto begin = replica_states.begin() + offset;
-        const auto length = shard_connections[i].size();
-        shard_to_replica_range[i] = ReplicaRange{begin, begin + length};
+    size_t offset = 0;
+    for (auto && shard : shard_queries_) {
+        const auto length = shard.connections.size();
+        shards.push_back(ShardReplicaRange{shard.query, offset, length});
         offset += length;
     }
 }
@@ -85,9 +85,7 @@ void ShardsMultiplexedConnections::sendExternalTablesData(std::vector<ExternalTa
 }
 
 void ShardsMultiplexedConnections::sendQuery(
-        size_t shard_idx,
         const ConnectionTimeouts & timeouts,
-        const String & query,
         const String & query_id,
         UInt64 stage,
         const ClientInfo * client_info,
@@ -97,43 +95,48 @@ void ShardsMultiplexedConnections::sendQuery(
     if (isQuerySent())
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
-    Settings modified_settings = settings;
+    for (const auto& shard : shards) {
+        const size_t num_replicas = shard.count;
 
-    const auto & replicas = getShardReplicas(shard_idx);
-    for (auto & replica : replicas)
-    {
-        if (!replica.connection)
-            throw Exception("ShardsMultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
+        if (0 == shard.count)
+            throw Exception("ShardsMultiplexedConnections: Empty replica set", ErrorCodes::LOGICAL_ERROR);
 
-        if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+        Settings modified_settings = settings;
+        for (size_t i = shard.start; i < shard.end(); i++)
         {
-            /// Disable two-level aggregation due to version incompatibility.
-            modified_settings.group_by_two_level_threshold = 0;
-            modified_settings.group_by_two_level_threshold_bytes = 0;
-        }
-    }
+            auto& replica = replica_states[i];
 
-    const size_t offset = replicas.begin() - replica_states.begin();
-    const size_t num_replicas = replicas.end() - replicas.begin();
-    if (num_replicas > 1)
-    {
-        /// Use multiple replicas for parallel query processing.
-        modified_settings.parallel_replicas_count = num_replicas;
-        for (size_t i = 0; i < num_replicas; ++i)
+            if (!replica.connection)
+                throw Exception("ShardsMultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
+
+            if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+            {
+                /// Disable two-level aggregation due to version incompatibility.
+                modified_settings.group_by_two_level_threshold = 0;
+                modified_settings.group_by_two_level_threshold_bytes = 0;
+            }
+        }
+
+        if (num_replicas > 1)
         {
-            modified_settings.parallel_replica_offset = offset + i;
-            replica_states[offset + i].connection->sendQuery(timeouts, query, query_id,
-                                                    stage, &modified_settings, client_info, with_pending_data);
+            /// Use multiple replicas for parallel query processing.
+            modified_settings.parallel_replicas_count = num_replicas;
+            for (size_t i = shard.start; i < shard.end(); ++i)
+            {
+                modified_settings.parallel_replica_offset = i;
+                replica_states[i].connection->sendQuery(timeouts, shard.query, query_id,
+                                                        stage, &modified_settings, client_info, with_pending_data);
+            }
         }
-    }
-    else
-    {
-        /// Use single replica.
-        replica_states[offset].connection->sendQuery(timeouts, query, query_id, stage,
-                                                &modified_settings, client_info, with_pending_data);
-    }
+        else
+        {
+            /// Use single replica.
+            replica_states[shard.start].connection->sendQuery(timeouts, shard.query, query_id, stage,
+                                                    &modified_settings, client_info, with_pending_data);
+        }
 
-    sent_queries_count++;
+        sent_queries_count++;
+    }
 }
 
 Packet ShardsMultiplexedConnections::receivePacket()
@@ -332,11 +335,7 @@ void ShardsMultiplexedConnections::invalidateReplica(ReplicaState & state)
 }
 
 bool ShardsMultiplexedConnections::isQuerySent() const {
-    return sent_queries_count == shard_to_replica_range.size();
-}
-
-const ShardsMultiplexedConnections::ReplicaRange& ShardsMultiplexedConnections::getShardReplicas(size_t shard_idx) {
-    return shard_to_replica_range[shard_idx];
+    return sent_queries_count == shards.size();
 }
 
 }

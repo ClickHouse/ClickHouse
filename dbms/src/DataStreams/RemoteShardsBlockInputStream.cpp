@@ -34,10 +34,6 @@ RemoteShardsBlockInputStream::RemoteShardsBlockInputStream(
 {
     if (settings)
         context.setSettings(*settings);
-
-    for (const auto& shard : multiplexed_shards) {
-        shard_queries.push_back(shard.query);
-    }
 }
 
 RemoteShardsBlockInputStream::~RemoteShardsBlockInputStream()
@@ -283,8 +279,10 @@ void RemoteShardsBlockInputStream::sendQuery()
     const Settings & settings = context.getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
 
-    std::vector<std::vector<IConnectionPool::Entry>> shard_connections;
-    for (const auto& shard : multiplexed_shards) {
+    ShardsMultiplexedConnections::ShardQueries shards;
+    for (size_t i = 0; i < multiplexed_shards.size(); i++) {
+        const auto& shard = multiplexed_shards[i];
+
         std::vector<IConnectionPool::Entry> current_connections;
         if (main_table)
         {
@@ -296,18 +294,16 @@ void RemoteShardsBlockInputStream::sendQuery()
         else
             current_connections = shard.pool->getMany(timeouts, &settings, pool_mode);
 
-        shard_connections.push_back(current_connections);
+        if (settings.skip_unavailable_shards && 0 == current_connections.size())
+            continue;
+
+        shards.push_back({shard.query, current_connections});
     }
 
-    multiplexed_connections = std::make_unique<ShardsMultiplexedConnections>(std::move(shard_connections), settings, throttler);
-
-    if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
-        return;
-
+    multiplexed_connections = std::make_unique<ShardsMultiplexedConnections>(std::move(shards), settings, throttler);
     established = true;
 
-    for (size_t i = 0; i < shard_queries.size(); i++)
-        multiplexed_connections->sendQuery(i, timeouts, shard_queries[i], query_id, stage, &context.getClientInfo(), true);
+    multiplexed_connections->sendQuery(timeouts, query_id, stage, &context.getClientInfo(), true);
 
     established = false;
     sent_query = true;
@@ -329,7 +325,7 @@ void RemoteShardsBlockInputStream::tryCancel(const char * reason)
 
 bool RemoteShardsBlockInputStream::isQueryPending() const
 {
-    return sent_query && (finished_shards_count < shard_queries.size());
+    return sent_query && (finished_shards_count < multiplexed_shards.size());
 }
 
 bool RemoteShardsBlockInputStream::hasThrownException() const
