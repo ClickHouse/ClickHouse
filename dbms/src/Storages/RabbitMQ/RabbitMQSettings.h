@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
     class ASTStorage;
 
     struct RabbitMQSettings : public SettingsCollection<RabbitMQSettings>

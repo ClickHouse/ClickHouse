@@ -20,8 +20,6 @@ class StorageRabbitMQ : public ext::shared_ptr_helper<StorageRabbitMQ>, public I
     friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
 public:
     std::string getName() const override { return "RabbitMQ"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsSettings() const override { return true; }
 
@@ -41,9 +39,9 @@ public:
             const Context & context) override;
 
     void rename(const String & /* new_path_to_db */,
-            const String & new_database_name,
-            const String & new_table_name,
-            TableStructureWriteLockHolder &) override;
+                const String & new_database_name,
+                const String & new_table_name,
+                TableStructureWriteLockHolder &) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();

@@ -5,15 +5,15 @@
 namespace DB
 {
 
-    ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
-            ConsumerPtr consumer_,
-            RabbitMQHandler * handler_)
-            : ReadBuffer(nullptr, 0)
-            , consumer(consumer_)
-            , handler(handler_)
-            , current(messages.begin())
-    {
-    }
+ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
+        ConsumerPtr consumer_,
+        RabbitMQHandler * handler_)
+        : ReadBuffer(nullptr, 0)
+        , consumer(consumer_)
+        , handler(handler_)
+        , current(messages.begin())
+{
+}
 
 /// this is to be modified
 
