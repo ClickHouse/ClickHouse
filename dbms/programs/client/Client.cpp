@@ -2,6 +2,12 @@
 #include "ConnectionParameters.h"
 #include "Suggest.h"
 
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -19,7 +25,6 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
-#include <common/config_common.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
@@ -205,7 +210,7 @@ private:
 
     ConnectionParameters connection_parameters;
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
 
@@ -233,7 +238,7 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> & /*args*/) override
     {
         try
         {
@@ -496,13 +501,23 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-            LineReader lr(&Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#if USE_REPLXX
+            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#else
+            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+#endif
 
             do
             {
                 auto input = lr.readLine(prompt(), ":-] ");
                 if (input.empty())
                     break;
+
+                if (input.ends_with("\\G"))
+                {
+                    input.resize(input.size() - 2);
+                    has_vertical_output_suffix = true;
+                }
 
                 try
                 {

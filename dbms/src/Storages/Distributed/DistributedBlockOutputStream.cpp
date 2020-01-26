@@ -1,6 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -563,11 +564,12 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     /// write first file, hardlink the others
     for (const auto & dir_name : dir_names)
     {
-        const auto & path = storage.getPath() + dir_name + '/';
+        const auto & [disk, data_path] = storage.getPath();
+        const std::string path(disk + data_path + dir_name + '/');
 
         /// ensure shard subdirectory creation and notify storage
         if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(dir_name);
+            storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;

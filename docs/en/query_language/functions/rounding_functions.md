@@ -161,8 +161,6 @@ roundBankers(10.755, 2) = 11,76
 
 - [round](#rounding_functions-round)
 
-
-
 ## roundToExp2(num)
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
@@ -180,9 +178,3 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
-
-## roundBankers(x\[, N\])
-
-Rounds a value to a specified number of decimal places.
-
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function always return the number having the nearest even digit (banker's rounding).
