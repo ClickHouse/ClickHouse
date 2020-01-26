@@ -27,12 +27,12 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
+#include <Access/User.h>
 #include <Access/SettingsConstraints.h>
 #include <Access/QuotaContext.h>
 #include <Access/RowPolicyContext.h>
 #include <Access/AccessRightsContext.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/UsersManager.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -140,7 +140,6 @@ struct ContextShared
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     AccessControlManager access_control_manager;
-    std::unique_ptr<UsersManager> users_manager;            /// Known users.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -234,8 +233,6 @@ struct ContextShared
             std::cerr.flush();
             std::terminate();
         }
-
-        initialize();
     }
 
 
@@ -317,12 +314,6 @@ struct ContextShared
             return;
 
         trace_collector = std::make_unique<TraceCollector>(trace_log);
-    }
-
-private:
-    void initialize()
-    {
-        users_manager = std::make_unique<UsersManager>();
     }
 };
 
@@ -665,7 +656,6 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     auto lock = getLock();
     shared->users_config = config;
     shared->access_control_manager.loadFromConfig(*shared->users_config);
-    shared->users_manager->loadFromConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -718,14 +708,14 @@ void Context::setProfile(const String & profile)
 
 std::shared_ptr<const User> Context::getUser(const String & user_name) const
 {
-    return shared->users_manager->getUser(user_name);
+    return shared->access_control_manager.getUser(user_name);
 }
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
     auto lock = getLock();
 
-    user = shared->users_manager->authorizeAndGetUser(name, password, address.host());
+    user = shared->access_control_manager.authorizeAndGetUser(name, password, address.host());
 
     client_info.current_user = name;
     client_info.current_address = address;

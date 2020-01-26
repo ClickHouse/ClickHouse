@@ -2,6 +2,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
+#include <Access/User.h>
 #include <Access/QuotaContextFactory.h>
 #include <Access/RowPolicyContextFactory.h>
 #include <Access/AccessRightsContext.h>
@@ -31,6 +32,24 @@ AccessControlManager::AccessControlManager()
 
 AccessControlManager::~AccessControlManager()
 {
+}
+
+
+UserPtr AccessControlManager::getUser(const String & user_name) const
+{
+    return read<User>(user_name);
+}
+
+
+UserPtr AccessControlManager::authorizeAndGetUser(
+    const String & user_name,
+    const String & password,
+    const Poco::Net::IPAddress & address) const
+{
+    auto user = getUser(user_name);
+    user->allowed_client_hosts.checkContains(address, user_name);
+    user->authentication.checkPassword(password, user_name);
+    return user;
 }
 
 

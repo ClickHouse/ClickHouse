@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Access/AccessFlags.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 

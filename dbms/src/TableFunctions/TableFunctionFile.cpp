@@ -1,5 +1,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/ColumnsDescription.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionFile.h>
 #include "registerTableFunctions.h"

@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 

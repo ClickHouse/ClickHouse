@@ -6,6 +6,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include "registerTableFunctions.h"

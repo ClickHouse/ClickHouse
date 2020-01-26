@@ -4,6 +4,7 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
+#include <Access/AccessFlags.h>
 #include <boost/range/algorithm/sort.hpp>
 
 

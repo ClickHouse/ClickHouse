@@ -10,6 +10,8 @@
 
 #include <Storages/StorageFile.h>
 
+#include <Access/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 

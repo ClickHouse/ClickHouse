@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Access/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <DataStreams/OneBlockInputStream.h>

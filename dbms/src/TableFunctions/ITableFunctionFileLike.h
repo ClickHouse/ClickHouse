@@ -5,7 +5,7 @@
 
 namespace DB
 {
-
+enum class AccessType;
 class ColumnsDescription;
 
 /*

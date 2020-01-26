@@ -7,6 +7,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
