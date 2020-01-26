@@ -95,6 +95,8 @@ if (CMAKE_GENERATOR STREQUAL "Ninja")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
 
+include (cmake/add_warning.cmake)
+
 if (NOT MSVC)
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 endif ()
@@ -224,8 +226,8 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause lot of warnings in includes (on macro expansion).
-if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
+# Using system libs can cause a lot of warnings in includes (on macro expansion).
+if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
@@ -326,7 +328,6 @@ include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
 include (cmake/find/rt.cmake)
 include (cmake/find/execinfo.cmake)
-include (cmake/find/readline_edit.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
@@ -351,6 +352,7 @@ include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
+include (cmake/find/avro.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/StorageID.h>
 
 namespace DB
 {
@@ -41,13 +42,10 @@ void StorageFactory::registerStorage(const std::string & name, Creator creator)
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    const String & table_name,
-    const String & database_name,
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    bool attach,
     bool has_force_restore_data_flag) const
 {
     String name;
@@ -151,13 +149,12 @@ StoragePtr StorageFactory::get(
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,
-        .table_name = table_name,
-        .database_name = database_name,
+        .table_id = StorageID(query.database, query.table, query.uuid),
         .local_context = local_context,
         .context = context,
         .columns = columns,
         .constraints = constraints,
-        .attach = attach,
+        .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 

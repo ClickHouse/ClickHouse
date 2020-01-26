@@ -17,20 +17,23 @@ class AnalyzedJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 struct MiniLSM
 {
     using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
 
-    const String & path;
+    VolumePtr volume;
     const Block & sample_block;
     const SortDescription & sort_description;
     const size_t rows_in_block;
     const size_t max_size;
     std::vector<SortedFiles> sorted_files;
 
-    MiniLSM(const String & path_, const Block & sample_block_, const SortDescription & description,
+    MiniLSM(VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
             size_t rows_in_block_, size_t max_size_ = 16)
-        : path(path_)
+        : volume(volume_)
         , sample_block(sample_block_)
         , sort_description(description)
         , rows_in_block(rows_in_block_)
@@ -48,15 +51,22 @@ public:
     MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block) override;
-    void joinBlock(Block &) override;
+    void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 
 private:
+    struct NotProcessed : public ExtraBlock
+    {
+        size_t left_position;
+        size_t right_position;
+        size_t right_block;
+    };
+
     /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
-    /// max_bytes is prefered. If it isn't set we aproximate it as (max_rows * bytes/row).
+    /// max_bytes is prefered. If it isn't set we approximate it as (max_rows * bytes/row).
     struct BlockByteWeight
     {
         size_t operator()(const Block & block) const { return block.bytes(); }
@@ -85,28 +95,35 @@ private:
     size_t right_blocks_bytes = 0;
     bool is_in_memory = true;
     const bool nullable_right_side;
-    const bool is_all;
+    const bool is_all_join;
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
+    const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
 
     void changeLeftColumns(Block & block, MutableColumns && columns);
     void addRightColumns(Block & block, MutableColumns && columns);
 
+    template <bool is_all>
+    ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+                             size_t left_position, size_t right_position, size_t right_block_number);
+
     void mergeRightBlocks();
 
     template <bool in_memory>
     size_t rightBlocksCount();
-    template <bool in_memory>
-    void joinSortedBlock(Block & block);
+    template <bool in_memory, bool is_all>
+    void joinSortedBlock(Block & block, ExtraBlockPtr & not_processed);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
 
-    void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
-    void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+    template <bool is_all>
+    bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
+    template <bool is_all>
+    bool innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
     bool saveRightBlock(Block && block);
     void flushRightBlocks();

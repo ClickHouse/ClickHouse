@@ -330,7 +330,7 @@ public:
     ///
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(const String & database_, const String & table_,
+    MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata,
                   Context & context_,
@@ -395,9 +395,6 @@ public:
             || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
-
-    String getDatabaseName() const override { return database_name; }
-    String getTableName() const override { return table_name; }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -506,9 +503,9 @@ public:
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
 
-    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
-    /// but not from the disk.
-    DataPartsVector grabOldParts();
+    /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    DataPartsVector grabOldParts(bool force = false);
 
     /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
     void rollbackDeletingParts(const DataPartsVector & parts);
@@ -517,7 +514,8 @@ public:
     void removePartsFinally(const DataPartsVector & parts);
 
     /// Delete irrelevant parts from memory and disk.
-    void clearOldPartsFromFilesystem();
+    /// If 'force' - don't wait for old_parts_lifetime.
+    void clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
@@ -578,8 +576,10 @@ public:
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
-    bool hasTableTTL() const { return ttl_table_ast != nullptr; }
+
     bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
+    bool hasAnyMoveTTL() const { return !move_ttl_entries.empty(); }
+    bool hasRowsTTL() const { return !rows_ttl_entry.isEmpty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
@@ -626,6 +626,7 @@ public:
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(IStorage * source_table) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
@@ -675,10 +676,12 @@ public:
     /// Reserves space at least 1MB preferring best destination according to `ttl_infos`.
     ReservationPtr reserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move) const;
+                                                                time_t time_of_move,
+                                                                size_t min_volume_index = 0) const;
     ReservationPtr tryReserveSpacePreferringTTLRules(UInt64 expected_size,
                                                                 const MergeTreeDataPart::TTLInfos & ttl_infos,
-                                                                time_t time_of_move) const;
+                                                                time_t time_of_move,
+                                                                size_t min_volume_index = 0) const;
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
@@ -734,14 +737,21 @@ public:
 
         /// Checks if given part already belongs destination disk or volume for this rule.
         bool isPartInDestination(const StoragePolicyPtr & policy, const MergeTreeDataPart & part) const;
+
+        bool isEmpty() const { return expression == nullptr; }
     };
 
-    const TTLEntry * selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    std::optional<TTLEntry> selectTTLEntryForTTLInfos(const MergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName column_ttl_entries_by_name;
 
-    TTLEntry ttl_table_entry;
+    TTLEntry rows_ttl_entry;
+
+    /// This mutex is required for background move operations which do not obtain global locks.
+    mutable std::mutex move_ttl_entries_mutex;
+
+    /// Vector rw operations have to be done under "move_ttl_entries_mutex".
     std::vector<TTLEntry> move_ttl_entries;
 
     String sampling_expr_column_name;
@@ -783,8 +793,6 @@ protected:
 
     bool require_part_metadata;
 
-    String database_name;
-    String table_name;
     String relative_data_path;
 
 
@@ -898,6 +906,8 @@ protected:
 
     void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
                            const ASTPtr & new_ttl_table_ast, bool only_check = false);
+
+    void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.

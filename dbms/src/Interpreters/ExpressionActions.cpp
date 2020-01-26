@@ -346,7 +346,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 }
 
 
-void ExpressionAction::execute(Block & block, bool dry_run) const
+void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_processed) const
 {
     size_t input_rows_count = block.rows();
 
@@ -477,7 +477,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block);
+            join->joinBlock(block, not_processed);
             break;
         }
 
@@ -762,6 +762,21 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
     }
 }
 
+/// @warning It's a tricky method that allows to continue ONLY ONE action in reason of one-to-many ALL JOIN logic.
+void ExpressionActions::execute(Block & block, ExtraBlockPtr & not_processed, size_t & start_action) const
+{
+    size_t i = start_action;
+    start_action = 0;
+    for (; i < actions.size(); ++i)
+    {
+        actions[i].execute(block, false, not_processed);
+        checkLimits(block);
+
+        if (not_processed)
+            start_action = i;
+    }
+}
+
 bool ExpressionActions::hasTotalsInJoin() const
 {
     for (const auto & action : actions)
@@ -954,7 +969,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// remote table (doesn't know anything about it).
     ///
     /// If we have combination of two previous cases, our heuristic from (1) can choose absolutely different columns,
-    /// so generated streams with these actions will have different headers. To avoid this we addionaly rename our "redundant" column
+    /// so generated streams with these actions will have different headers. To avoid this we additionally rename our "redundant" column
     /// to DUMMY_COLUMN_NAME with help of COPY_COLUMN action and consequent remove of original column.
     /// It doesn't affect any logic, but all streams will have same "redundant" column in header called "_dummy".
 

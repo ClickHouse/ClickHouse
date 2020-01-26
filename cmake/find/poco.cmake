@@ -14,6 +14,7 @@ if (NOT ENABLE_LIBRARIES)
     set (ENABLE_POCO_REDIS ${ENABLE_LIBRARIES} CACHE BOOL "")
     set (ENABLE_POCO_ODBC ${ENABLE_LIBRARIES} CACHE BOOL "")
     set (ENABLE_POCO_SQL ${ENABLE_LIBRARIES} CACHE BOOL "")
+    set (ENABLE_POCO_JSON ${ENABLE_LIBRARIES} CACHE BOOL "")
 endif ()
 
 set (POCO_COMPONENTS Net XML SQL Data)
@@ -33,6 +34,9 @@ endif ()
 if (NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC)
     list (APPEND POCO_COMPONENTS DataODBC)
     list (APPEND POCO_COMPONENTS SQLODBC)
+endif ()
+if (NOT DEFINED ENABLE_POCO_JSON OR ENABLE_POCO_JSON)
+    list (APPEND POCO_COMPONENTS JSON)
 endif ()
 
 if (NOT USE_INTERNAL_POCO_LIBRARY)
@@ -112,6 +116,11 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         endif ()
     endif ()
 
+    if (NOT DEFINED ENABLE_POCO_JSON OR ENABLE_POCO_JSON)
+        set (Poco_JSON_LIBRARY PocoJSON)
+        set (Poco_JSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/poco/JSON/include/")
+    endif ()
+
     if (OPENSSL_FOUND AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         set (Poco_NetSSL_LIBRARY PocoNetSSL ${OPENSSL_LIBRARIES})
         set (Poco_Crypto_LIBRARY PocoCrypto ${OPENSSL_LIBRARIES})
@@ -145,8 +154,11 @@ endif ()
 if (Poco_SQLODBC_LIBRARY AND ODBC_FOUND)
     set (USE_POCO_SQLODBC 1)
 endif ()
+if (Poco_JSON_LIBRARY)
+    set (USE_POCO_JSON 1)
+endif ()
 
-message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_Crypto_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_SQL_LIBRARY},${Poco_SQLODBC_LIBRARY},${Poco_MongoDB_LIBRARY},${Poco_Redis_LIBRARY}; MongoDB=${USE_POCO_MONGODB}, Redis=${USE_POCO_REDIS}, DataODBC=${USE_POCO_DATAODBC}, NetSSL=${USE_POCO_NETSSL}")
+message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_Crypto_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_SQL_LIBRARY},${Poco_SQLODBC_LIBRARY},${Poco_MongoDB_LIBRARY},${Poco_Redis_LIBRARY},${Poco_JSON_LIBRARY}; MongoDB=${USE_POCO_MONGODB}, Redis=${USE_POCO_REDIS}, DataODBC=${USE_POCO_DATAODBC}, NetSSL=${USE_POCO_NETSSL}, JSON=${USE_POCO_JSON}")
 
 # How to make sutable poco:
 # use branch:

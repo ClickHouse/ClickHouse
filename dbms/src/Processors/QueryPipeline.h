@@ -29,11 +29,14 @@ public:
     void init(Pipe pipe); /// Simple init for single pipe
     bool initialized() { return !processors.empty(); }
 
+    /// Type of logical data stream for simple transform.
+    /// Sometimes it's important to know which part of pipeline we are working for.
+    /// Example: ExpressionTransform need special logic for totals.
     enum class StreamType
     {
-        Main = 0,
-        Totals,
-        Extremes,
+        Main = 0, /// Stream for query data. There may be several streams of this type.
+        Totals,  /// Stream for totals. No more then one.
+        Extremes, /// Stream for extremes. No more then one.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -57,18 +60,19 @@ public:
 
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
-    bool hasDelayedStream() const { return delayed_stream_port; }
+
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams, bool force = false);
+    void resize(size_t num_streams, bool force = false, bool strict = false);
+
+    void enableQuotaForCurrentStreams();
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
     PipelineExecutorPtr execute();
 
-    size_t getNumStreams() const { return streams.size() + (hasDelayedStream() ? 1 : 0); }
-    size_t getNumMainStreams() const { return streams.size(); }
+    size_t getNumStreams() const { return streams.size(); }
 
     bool hasMoreThanOneStream() const { return getNumStreams() > 1; }
     bool hasTotals() const { return totals_having_port != nullptr; }
@@ -101,9 +105,6 @@ private:
     OutputPort * totals_having_port = nullptr;
     OutputPort * extremes_port = nullptr;
 
-    /// Special port for delayed stream.
-    OutputPort * delayed_stream_port = nullptr;
-
     /// If resize processor was added to pipeline.
     bool has_resize = false;
 
@@ -124,7 +125,6 @@ private:
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);
-    void concatDelayedStream();
 
     template <typename TProcessorGetter>
     void addSimpleTransformImpl(const TProcessorGetter & getter);

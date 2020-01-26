@@ -188,6 +188,9 @@ void WriteBufferFromHTTPServerResponse::finalize()
     if (offset())
     {
         next();
+
+        if (out)
+            out.reset();
     }
     else
     {
