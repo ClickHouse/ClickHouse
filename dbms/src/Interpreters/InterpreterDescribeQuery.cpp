@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Access/AccessFlags.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>

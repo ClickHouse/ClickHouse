@@ -4,6 +4,7 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>

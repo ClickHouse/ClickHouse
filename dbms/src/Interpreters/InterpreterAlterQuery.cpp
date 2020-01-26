@@ -11,6 +11,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>

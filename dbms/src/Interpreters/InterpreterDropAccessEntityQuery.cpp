@@ -2,6 +2,7 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
+#include <Access/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <boost/range/algorithm/transform.hpp>

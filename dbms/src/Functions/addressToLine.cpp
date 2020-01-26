@@ -13,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 #include <mutex>

@@ -1,5 +1,6 @@
 #include <Storages/StorageURL.h>
 #include <Storages/ColumnsDescription.h>
+#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionURL.h>
 #include <Poco/URI.h>

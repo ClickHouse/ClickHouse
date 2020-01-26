@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/DDLWorker.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 
 

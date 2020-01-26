@@ -6,7 +6,6 @@
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -43,9 +42,13 @@ namespace DB
 
 struct ContextShared;
 class Context;
+struct User;
 class AccessRightsContext;
 class QuotaContext;
 class RowPolicyContext;
+class AccessFlags;
+struct AccessRightsElement;
+class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;

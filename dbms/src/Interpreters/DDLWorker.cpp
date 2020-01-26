@@ -16,6 +16,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/getFQDNOrHostName.h>

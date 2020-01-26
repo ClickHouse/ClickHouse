@@ -18,6 +18,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Access/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 

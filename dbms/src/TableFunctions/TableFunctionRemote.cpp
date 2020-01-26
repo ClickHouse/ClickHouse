@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>

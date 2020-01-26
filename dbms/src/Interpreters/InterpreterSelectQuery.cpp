@@ -37,6 +37,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/AccessFlags.h>
 #include <Access/RowPolicyContext.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>

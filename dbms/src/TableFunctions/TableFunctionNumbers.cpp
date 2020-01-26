@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
 
