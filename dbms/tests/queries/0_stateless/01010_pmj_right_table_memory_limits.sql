@@ -35,6 +35,7 @@ ORDER BY n
 SETTINGS max_bytes_in_join = 10000000;
 
 SET partial_merge_join_optimizations = 1;
+SET partial_merge_join_rows_in_left_blocks = 100000;
 
 SELECT number * 200000 as n, j FROM numbers(5)
 LEFT JOIN (
