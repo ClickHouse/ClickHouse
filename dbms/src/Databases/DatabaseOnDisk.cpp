@@ -16,7 +16,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <common/logger_useful.h>
-#include <Poco/File.h>
+#include <Poco/DirectoryIterator.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -179,7 +179,7 @@ void DatabaseOnDisk::removeTable(const Context & /* context */, const String & t
 
     try
     {
-        fs::remove(table_metadata_path);
+        Poco::File(table_metadata_path).remove();
     }
     catch (...)
     {
