@@ -22,6 +22,8 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
+#include <DataTypes/DataTypeString.h>
+
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 
@@ -43,6 +45,8 @@ namespace
     {
     public:
         StorageS3BlockInputStream(
+            bool need_path,
+            bool need_file,
             const String & format,
             const String & name_,
             const Block & sample_block,
@@ -53,6 +57,9 @@ namespace
             const String & bucket,
             const String & key)
             : name(name_)
+            , with_file_column(need_file)
+            , with_path_column(need_path)
+            , file_path(bucket + "/" + key)
         {
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
@@ -65,12 +72,34 @@ namespace
 
         Block readImpl() override
         {
-            return reader->read();
+            auto res = reader->read();
+            if (res)
+            {
+                if (with_path_column)
+                    res.insert({DataTypeString().createColumnConst(res.rows(), file_path)->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                            "_path"});  /// construction with const is for probably generating less code
+                if (with_file_column)
+                {
+                    size_t last_slash_pos = file_path.find_last_of('/');
+                    res.insert({DataTypeString().createColumnConst(res.rows(), file_path.substr(
+                            last_slash_pos + 1))->convertToFullColumnIfConst(), std::make_shared<DataTypeString>(),
+                                "_file"});
+                }
+            }
+            return res;
         }
 
         Block getHeader() const override
         {
-            return reader->getHeader();
+            auto res = reader->getHeader();
+            if (res)
+            {
+                if (with_path_column)
+                    res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+                if (with_file_column)
+                    res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+            }
+            return res;
         }
 
         void readPrefixImpl() override
@@ -87,6 +116,9 @@ namespace
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
         BlockInputStreamPtr reader;
+        bool with_file_column = false;
+        bool with_path_column = false;
+        String file_path;
     };
 
     class StorageS3BlockOutputStream : public IBlockOutputStream
@@ -222,10 +254,21 @@ BlockInputStreams StorageS3::read(
     unsigned num_streams)
 {
     BlockInputStreams result;
+    bool need_path_column = false;
+    bool need_file_column = false;
+    for (const auto & column : column_names)
+    {
+        if (column == "_path")
+            need_path_column = true;
+        if (column == "_file")
+            need_file_column = true;
+    }
 
     for (const String & key : LSWithRegexpMatching(*client, uri))
     {
         BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
+            need_path_column,
+            need_file_column,
             format_name,
             getName(),
             getHeaderBlock(column_names),
