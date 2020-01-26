@@ -20,6 +20,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsRequest.h>
@@ -218,25 +219,31 @@ BlockInputStreams StorageS3::read(
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
-    LSWithRegexpMatching(*client, uri); /// FIXME
+    BlockInputStreams result;
 
-    BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
-        format_name,
-        getName(),
-        getHeaderBlock(column_names),
-        context,
-        max_block_size,
-        chooseCompressionMethod(uri.endpoint, compression_method),
-        client,
-        uri.bucket,
-        uri.key);
+    for (const String & key : LSWithRegexpMatching(*client, uri))
+    {
+        BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
+            format_name,
+            getName(),
+            getHeaderBlock(column_names),
+            context,
+            max_block_size,
+            chooseCompressionMethod(uri.endpoint, compression_method),
+            client,
+            uri.bucket,
+            key);
 
-    auto column_defaults = getColumns().getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+        auto column_defaults = getColumns().getDefaults();
+        if (column_defaults.empty())
+            result.emplace_back(std::move(block_input));
+        else
+            result.emplace_back(std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context));
+    }
+
+    return narrowBlockInputStreams(result, num_streams);
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
