@@ -39,5 +39,4 @@ void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
         storage_def.set(storage_def.settings, settings_ast);
     }
 }
-
 }

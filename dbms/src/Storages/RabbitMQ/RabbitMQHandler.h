@@ -1,9 +1,7 @@
 #pragma once
-
 #include <memory>
 #include <amqpcpp.h>
 #include <Poco/Net/StreamSocket.h>
-
 
 namespace DB
 {
@@ -38,11 +36,9 @@ private:
 
     virtual void onData(AMQP::Connection *connection, const char *data, size_t size);
 
-    /**
     virtual void onConnected(AMQP::Connection *connection);
     virtual void onError(AMQP::Connection *connection, const char *message);
     virtual void onClosed(AMQP::Connection *connection);
-    */
 
 private:
     std::shared_ptr<RabbitMQHandlerImpl> m_impl;

@@ -149,7 +149,8 @@ namespace DB
         }
     }
 
-    void StorageRabbitMQ::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+    void StorageRabbitMQ::rename(const String & /* new_path_to_db */,
+                                 const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
     {
         table_name = new_table_name;
         database_name = new_database_name;
@@ -187,15 +188,11 @@ namespace DB
 
     ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
     {
-        RabbitMQHandler handler("localhost", 5672);
-        AMQP::Connection connection(&handler, AMQP::Login("guest", "guest"), "/");
-//        AMQP::Channel channel(&connection);
         auto producer = std::make_shared<AMQP::Channel>(&connection);
 
         return std::make_shared<WriteBufferToRabbitMQProducer>(
-                producer, &handler, routing_keys[0],
-                row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(),
-                1, 1024);
+                producer, &connection_handler, routing_keys[0],
+                row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024);
     }
 
 
@@ -206,6 +203,7 @@ namespace DB
 
         return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer, &connection_handler);
     }
+
 
     void registerStorageRabbitMQ(StorageFactory & factory)
     {
@@ -224,18 +222,18 @@ namespace DB
                 /** Arguments of engine is following:
                   * - RabbitMQ broker list for RabbitMQHandler constructor
                   * - List of routing keys to bind producer->exchange->queue <-> consumer
-                  * - Number of consumers
-                  * - Message format (string)
-                  * - Row delimiter
-                  * - Max block size for background consumption
-                  * - Skip (at least) unreadable messages number
+                  * - Number of consumers (optional for now)
+                  * - Message format (string) (optional for now)
+                  * - Row delimiter (optional for now)
+                  * - Max block size for background consumption (optional for now)
+                  * - Skip (at least) unreadable messages number (optional for now)
                   */
 
 
                 // Check arguments and settings
 #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)            \
             /* One of the four required arguments is not specified */      \
-            if (args_count < ARG_NUM && ARG_NUM < 3 &&                    \
+            if (args_count < ARG_NUM && ARG_NUM < 2 &&                    \
                 !rabbitmq_settings.PAR_NAME.changed)                          \
             {                                                              \
                 throw Exception(                                           \
@@ -310,7 +308,9 @@ namespace DB
                 }
             }
 
-//            // Get and check message format name
+            /// The parameters below are parsed now with the thought of being useful in the future
+
+//            // Get and check message format name (optional)
             String format = rabbitmq_settings.rabbitmq_format.value;
             if (args_count >= 4)
             {
@@ -393,6 +393,4 @@ namespace DB
                     num_consumers, max_block_size, skip_broken);
         });
     }
-
-
 }

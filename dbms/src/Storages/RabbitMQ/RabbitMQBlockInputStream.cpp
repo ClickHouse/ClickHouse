@@ -49,5 +49,4 @@ void RabbitMQBlockInputStream::commit()
 
     buffer->commit();
 }
-
 }

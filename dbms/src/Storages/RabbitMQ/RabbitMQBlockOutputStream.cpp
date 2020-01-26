@@ -1,9 +1,7 @@
 #include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-
 #include <Formats/FormatFactory.h>
-
 
 namespace DB
 {
@@ -37,7 +35,8 @@ namespace DB
         if (!buffer)
             throw Exception("Failed to create RabbitMQ producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-        child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this]{ buffer->count_row(); });
+        child = FormatFactory::instance().getOutput(
+                storage.getFormatName(), *buffer, getHeader(), context, [this]{ buffer->count_row(); });
     }
 
     void RabbitMQBlockOutputStream::write(const Block & block)

@@ -32,5 +32,4 @@ namespace DB
 
         ConsumerBufferPtr buffer;
     };
-
 }

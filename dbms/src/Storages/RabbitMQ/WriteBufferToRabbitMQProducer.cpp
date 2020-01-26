@@ -41,27 +41,23 @@ namespace DB
 
             payload.append(chunks.back(), 0, offset() - trunk_delim);
 
-            while (true)
+            try
             {
-                try
+                const std::function<void()> publish = [&]()
                 {
-                    producer->onReady([&]()
-                                    {
-                                        if(handler->connected())
-                                        {
-                                            producer->publish("", routing_key, payload);
-                                            handler->quit();
-                                        }
-                                    });
-                    handler->loop();
-                }
-                catch (AMQP::Exception & e)
-                {
-                    // TODO: catch here queue overflow
-                    throw e;
-                }
-
-                break;
+                    if(handler->connected())
+                    {
+                        producer->publish("", routing_key, payload);
+                        handler->quit();
+                    }
+                };
+                producer->onReady(publish);
+                handler->loop();
+            }
+            catch (AMQP::Exception & e)
+            {
+                //TODO: catch here queue overflow
+                throw e;
             }
 
             rows = 0;
@@ -77,5 +73,4 @@ namespace DB
         chunks.back().resize(chunk_size);
         set(chunks.back().data(), chunk_size);
     }
-
 }

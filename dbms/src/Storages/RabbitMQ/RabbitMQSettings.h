@@ -1,7 +1,5 @@
 #pragma once
-
 #include <Core/SettingsCollection.h>
-
 
 namespace DB
 {
@@ -24,5 +22,4 @@ namespace DB
 
     void loadFromQuery(ASTStorage & storage_def);
     };
-
 }

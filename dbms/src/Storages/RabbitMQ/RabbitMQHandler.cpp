@@ -4,6 +4,7 @@
 namespace DB
 {
 
+/// to connect to rabbitmq server
 RabbitMQHandler::RabbitMQHandler(const std::string& host, uint16_t port) :
         m_impl(new RabbitMQHandlerImpl)
 {
@@ -12,7 +13,8 @@ RabbitMQHandler::RabbitMQHandler(const std::string& host, uint16_t port) :
     m_impl->socket.setKeepAlive(true);
 }
 
-/// These functions are to be implemented
+
+///     These functions are to be implemented
 
 RabbitMQHandler::~RabbitMQHandler()
 {
@@ -67,9 +69,23 @@ void RabbitMQHandler::onData(AMQP::Connection *connection, const char *data, siz
     }
 }
 
+void RabbitMQHandler::onConnected(AMQP::Connection */*connection*/)
+{
+    m_impl->connected = true;
+}
+
+void RabbitMQHandler::onError(AMQP::Connection * /*connection*/, const char */*message*/)
+{
+}
+
+void RabbitMQHandler::onClosed(AMQP::Connection */*connection*/)
+{
+    m_impl->quit  = true;
+}
+
+
 bool RabbitMQHandler::connected() const
 {
     return m_impl->connected;
 }
-
 }

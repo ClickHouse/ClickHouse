@@ -1,5 +1,4 @@
 #pragma once
-
 #include <DataStreams/IBlockOutputStream.h>
 #include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
@@ -24,5 +23,4 @@ private:
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };
-
 }

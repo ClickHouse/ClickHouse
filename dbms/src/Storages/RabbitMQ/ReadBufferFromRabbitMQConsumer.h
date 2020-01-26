@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Core/Names.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
@@ -43,5 +42,4 @@ namespace DB
         Messages::const_iterator current;
 
     };
-
 }
