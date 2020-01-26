@@ -22,6 +22,10 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsRequest.h>
+
+#include <Common/parseGlobs.h>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -158,6 +162,56 @@ StorageS3::StorageS3(
 }
 
 
+namespace {
+
+/* "Recursive" directory listing with matched paths as a result.
+ * Have the same method in StorageFile.
+ */
+Strings LSWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
+{
+    if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
+    {
+        throw std::logic_error("Something went wrong."); /// FIXME
+    }
+
+    const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
+    if (key_prefix.size() == globbed_uri.key.size())
+    {
+        return {globbed_uri.key};
+    }
+
+    Aws::S3::Model::ListObjectsRequest request;
+    request.SetBucket(globbed_uri.bucket);
+    request.SetPrefix(key_prefix);
+
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
+    Strings result;
+    Aws::S3::Model::ListObjectsOutcome outcome;
+    do
+    {
+        outcome = client.ListObjects(request);
+        if (!outcome.IsSuccess())
+        {
+            throw std::runtime_error("Something went wrong"); /// FIXME
+        }
+
+        for (const auto & row : outcome.GetResult().GetContents())
+        {
+            String key = row.GetKey();
+            if (re2::RE2::FullMatch(key, matcher))
+                result.emplace_back(std::move(key));
+        }
+
+        request.SetMarker(outcome.GetResult().GetNextMarker());
+    }
+    while (outcome.GetResult().GetIsTruncated());
+
+    return result;
+}
+
+}
+
+
 BlockInputStreams StorageS3::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
@@ -166,6 +220,8 @@ BlockInputStreams StorageS3::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
+    LSWithRegexpMatching(*client, uri); /// FIXME
+
     BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
         format_name,
         getName(),
