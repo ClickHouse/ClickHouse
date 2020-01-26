@@ -102,14 +102,12 @@ public:
             ResultArrayType<Out> & out, std::vector<bool> & found,
             std::chrono::system_clock::time_point now) const;
 
-    // TODO:: getString
-
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
 
     struct Attribute
     {
         template <typename T>
-        using Container = PaddedPODArray<T>;
+        using Container = std::vector<T>;
 
         AttributeUnderlyingType type;
         std::variant<
@@ -134,6 +132,8 @@ public:
     size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes,
             const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
+    //size_t appendDefaults();
+
     void flush();
 
     void remove();
@@ -147,16 +147,14 @@ public:
     size_t getElementCount() const;
 
 private:
-    template <typename Out>
-    void getValueFromMemory(
-            const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
+    template <typename SetFunc>
+    void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc set) const;
+
+    template <typename SetFunc>
+    void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc set) const;
 
     template <typename Out>
-    void getValueFromStorage(
-            const size_t attribute_index, const PaddedPODArray<Index> & indices, ResultArrayType<Out> & out) const;
-
-    template <typename Out>
-    void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
+    void readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const;
 
     const size_t file_id;
     const size_t max_size;
@@ -211,14 +209,12 @@ public:
     ~CacheStorage();
 
     template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    using ResultArrayType = CachePartition::ResultArrayType<T>;
 
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
             ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
             std::chrono::system_clock::time_point now) const;
-
-    // getString();
 
     void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
              std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
@@ -229,8 +225,6 @@ public:
             const DictionaryLifetime lifetime, const std::vector<AttributeValueVariant> & null_values);
 
     PaddedPODArray<Key> getCachedIds() const;
-
-    //BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const;
 
     std::exception_ptr getLastException() const { return last_update_exception; }
 
@@ -339,7 +333,7 @@ public:
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
     template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    using ResultArrayType = CacheStorage::ResultArrayType<T>;
 
 #define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
@@ -423,7 +417,7 @@ private:
     void getItemsNumberImpl(
             const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
     template <typename DefaultGetter>
-    void getItemsString(const size_t attribute_index, const PaddedPODArray<Key> & ids,
+    void getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
             ColumnString * out, DefaultGetter && get_default) const;
     
     const std::string name;
