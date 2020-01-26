@@ -3,14 +3,19 @@ TEST_SMALL
 -1
 6
 0
-5	6	7
-1	100	-100
+database
+none
+1	100	-100	clickhouse
+2	3	4	database
+5	6	7	columns
 UPDATE DICTIONARY
 118
 VALUE FROM DISK
 -100
+clickhouse
 VALUE FROM RAM BUFFER
 8
+
 VALUES FROM DISK AND RAM BUFFER
 118
 HAS
