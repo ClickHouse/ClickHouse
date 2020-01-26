@@ -216,7 +216,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
         try
         {
-            res = users_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
+            res = users_manager.getUser(entry.user_name)->access.isGranted(DB::AccessType::ALL, entry.database_name);
         }
         catch (const Poco::Exception &)
         {

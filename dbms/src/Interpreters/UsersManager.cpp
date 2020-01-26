@@ -55,25 +55,4 @@ UserPtr UsersManager::getUser(const String & user_name) const
     return it->second;
 }
 
-bool UsersManager::hasAccessToDatabase(const std::string & user_name, const std::string & database_name) const
-{
-    auto it = users.find(user_name);
-
-    if (users.end() == it)
-        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
-
-    auto user = it->second;
-    return !user->databases.has_value() || user->databases->count(database_name);
-}
-
-bool UsersManager::hasAccessToDictionary(const std::string & user_name, const std::string & dictionary_name) const
-{
-    auto it = users.find(user_name);
-
-    if (users.end() == it)
-        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
-
-    auto user = it->second;
-    return !user->dictionaries.has_value() || user->dictionaries->count(dictionary_name);
-}
 }
