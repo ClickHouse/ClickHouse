@@ -309,7 +309,7 @@ private:
     const size_t size_overlap_mask;
 
     /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr size_t max_collision_length = 1;
+    static constexpr size_t max_collision_length = 10;
 
     const size_t zero_cell_idx{getCellIdx(0)};
     std::map<std::string, size_t> attribute_index_by_name;
