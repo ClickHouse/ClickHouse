@@ -684,6 +684,9 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
 
+    features.supports_replication = true;
+    features.supports_deduplication = true;
+
     factory.registerStorage("ReplicatedMergeTree", create, features);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);

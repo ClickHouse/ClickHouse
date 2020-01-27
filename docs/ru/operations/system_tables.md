@@ -706,20 +706,23 @@ WHERE changed
 - `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
 - `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
 - `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.  
+- `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
+- `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
 Пример:
 
 ```sql
 SELECT *
 FROM system.table_engines
-WHERE name in ('Kafka', 'MergeTree')
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```
 
 ```text
-┌─name──────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┐
-│ Kafka     │                 1 │                         0 │                   0 │            0 │
-│ MergeTree │                 1 │                         1 │                   1 │            1 │
-└───────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┘
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
 ```
 
 **Смотрите также**
