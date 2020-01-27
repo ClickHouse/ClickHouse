@@ -111,60 +111,56 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
-        }
-    }
 
-    auto it = storages.find(name);
-    if (it == storages.end())
-    {
-        auto hints = getHints(name);
-        if (!hints.empty())
-            throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
-        else
-            throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
-    }
-
-
-    auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
-    {
-        if (!feature_matcher_fn(it->second.features))
-        {
-            String msg = "Engine " + name + " doesn't support " + feature_description + ". "
-                "Currently only the following engines have support for the feature: [";
-            auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
-            for (size_t index = 0; index < supporting_engines.size(); ++index)
+            auto it = storages.find(name);
+            if (it == storages.end())
             {
-                if (index)
-                    msg += ", ";
-                msg += supporting_engines[index];
+                auto hints = getHints(name);
+                if (!hints.empty())
+                    throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
+                else
+                    throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
-            msg += "]";
-            throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+
+            auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+            {
+                if (!feature_matcher_fn(it->second.features))
+                {
+                    String msg = "Engine " + name + " doesn't support " + feature_description + ". "
+                        "Currently only the following engines have support for the feature: [";
+                    auto supporting_engines = getAllRegisteredNamesByFeatureMatcherFn(feature_matcher_fn);
+                    for (size_t index = 0; index < supporting_engines.size(); ++index)
+                    {
+                        if (index)
+                            msg += ", ";
+                        msg += supporting_engines[index];
+                    }
+                    msg += "]";
+                    throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
+                }
+            };
+
+            if (storage_def->settings)
+                checkFeature(
+                    "SETTINGS clause",
+                    [](StorageFeatures features) { return features.supports_settings; });
+
+            if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+                checkFeature(
+                    "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
+                    [](StorageFeatures features) { return features.supports_sort_order; });
+
+            if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+                checkFeature(
+                    "TTL clause",
+                    [](StorageFeatures features) { return features.supports_ttl; });
+
+            if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
+                checkFeature(
+                    "skipping indices",
+                    [](StorageFeatures features) { return features.supports_skipping_indices; });
         }
-    };
-
-    if (storage_def)
-    {
-        if (storage_def->settings)
-            checkFeature(
-                "SETTINGS clause",
-                [](StorageFeatures features) { return features.supports_settings; });
-
-        if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
-            checkFeature(
-                "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
-                [](StorageFeatures features) { return features.supports_sort_order; });
-
-        if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
-            checkFeature(
-                "TTL clause",
-                [](StorageFeatures features) { return features.supports_ttl; });
     }
-
-    if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
-        checkFeature(
-            "skipping indices",
-            [](StorageFeatures features) { return features.supports_skipping_indices; });
 
     Arguments arguments
     {
@@ -182,7 +178,7 @@ StoragePtr StorageFactory::get(
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
-    return it->second.creator_fn(arguments);
+    return storages.at(name).creator_fn(arguments);
 }
 
 StorageFactory & StorageFactory::instance()
