@@ -464,7 +464,7 @@ void PipelineExecutor::execute(size_t num_threads)
             if (node.execution_state->exception)
                 std::rethrow_exception(node.execution_state->exception);
     }
-    catch (Exception & exception)
+    catch (...)
     {
 #ifndef N_DEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n" << dumpPipeline());
