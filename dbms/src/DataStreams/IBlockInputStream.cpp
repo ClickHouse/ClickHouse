@@ -54,7 +54,7 @@ Block IBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!checkTimeLimit())
+    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -200,33 +200,6 @@ void IBlockInputStream::updateExtremes(Block & block)
             old_extremes = std::move(new_extremes);
         }
     }
-}
-
-
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
-bool IBlockInputStream::checkTimeLimit()
-{
-    if (limits.speed_limits.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(limits.timeout_overflow_mode,
-            "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
-            ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
 }
 
 
