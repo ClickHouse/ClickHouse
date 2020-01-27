@@ -99,7 +99,7 @@ def get_processlist(client_cmd):
 
 
 def get_stacktraces(server_pid):
-    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {} 2>/dev/null".format(server_pid)
+    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
