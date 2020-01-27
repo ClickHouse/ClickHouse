@@ -23,7 +23,14 @@ namespace DB
 static thread_local void * stack_address = nullptr;
 static thread_local size_t max_stack_size = 0;
 
-void checkStackSize()
+/** It works fine when interpreters are instantiated by ClickHouse code in properly prepared threads,
+  *  but there are cases when ClickHouse runs as a library inside another application.
+  * If application is using user-space lightweight threads with manually allocated stacks,
+  *  current implementation is not reasonable, as it has no way to properly check the remaining
+  *  stack size without knowing the details of how stacks are allocated.
+  * We mark this function as weak symbol to be able to replace it in another ClickHouse-based products.
+  */
+__attribute__((__weak__)) void checkStackSize()
 {
     using namespace DB;
 

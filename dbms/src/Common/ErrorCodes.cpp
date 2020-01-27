@@ -478,6 +478,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS = 504;
     extern const int CANNOT_DELETE_DIRECTORY = 505;
     extern const int UNEXPECTED_ERROR_CODE = 506;
+    extern const int UNABLE_TO_SKIP_UNUSED_SHARDS = 507;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
