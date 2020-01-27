@@ -8,9 +8,11 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <port/clock.h>
 
-namespace DB {
+namespace DB
+{
 
-class SeekableReadBuffer : public ReadBuffer {
+class SeekableReadBuffer : public ReadBuffer
+{
 public:
     SeekableReadBuffer(Position ptr, size_t size)
         : ReadBuffer(ptr, size) {}
