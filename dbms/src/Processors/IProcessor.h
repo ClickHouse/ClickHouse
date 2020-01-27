@@ -224,7 +224,7 @@ public:
     bool isCancelled() const { return is_cancelled; }
     void cancel()
     {
-        onCancell();
+        onCancel();
         is_cancelled = true;
     }
 
@@ -280,7 +280,7 @@ public:
     bool hasQuota() const { return has_quota; }
 
 protected:
-    virtual void onCancell() {}
+    virtual void onCancel() {}
 
 private:
     std::atomic<bool> is_cancelled{false};
