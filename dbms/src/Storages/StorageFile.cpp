@@ -204,11 +204,12 @@ class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
     StorageFileBlockInputStream(std::shared_ptr<StorageFile> storage_,
-        const Context & context, UInt64 max_block_size,
+        const Context & context_, UInt64 max_block_size_,
         std::string file_path_, bool need_path, bool need_file,
-        const CompressionMethod compression_method,
+        const CompressionMethod compression_method_,
         BlockInputStreamPtr prepared_reader = nullptr)
-        : storage(std::move(storage_)), reader(std::move(prepared_reader))
+        : storage(std::move(storage_)), reader(std::move(prepared_reader)),
+        context(context_), max_block_size(max_block_size_), compression_method(compression_method_)
     {
         if (storage->use_table_fd)
         {
@@ -314,6 +315,10 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
+
+    const Context & context;    /// TODO Untangle potential issues with context lifetime.
+    UInt64 max_block_size;
+    const CompressionMethod compression_method;
 
     std::shared_lock<std::shared_mutex> shared_lock;
     std::unique_lock<std::shared_mutex> unique_lock;
