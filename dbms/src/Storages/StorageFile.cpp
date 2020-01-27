@@ -255,6 +255,7 @@ public:
                 compression_method);
 
             reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+            reader->readPrefix();
         }
 
         auto res = reader->read();
@@ -277,6 +278,7 @@ public:
         /// Close file prematurally if stream was ended.
         if (!res)
         {
+            reader->readSuffix();
             reader.reset();
             read_buf.reset();
         }
@@ -297,16 +299,6 @@ public:
         }
 
         return res;
-    }
-
-    void readPrefixImpl() override
-    {
-        reader->readPrefix();
-    }
-
-    void readSuffixImpl() override
-    {
-        reader->readSuffix();
     }
 
 private:
