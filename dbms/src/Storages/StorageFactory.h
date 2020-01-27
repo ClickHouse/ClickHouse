@@ -52,6 +52,8 @@ public:
         bool supports_skipping_indices = false;
         bool supports_sort_order = false;
         bool supports_ttl = false;
+        bool supports_replication = false;
+        bool supports_deduplication = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -79,6 +81,8 @@ public:
         .supports_skipping_indices = false,
         .supports_sort_order = false,
         .supports_ttl = false,
+        .supports_replication = false,
+        .supports_deduplication = false,
     });
 
     const Storages & getAllStorages() const

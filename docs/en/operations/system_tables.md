@@ -755,20 +755,23 @@ This table contains the following columns (the column type is shown in brackets)
 - `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes). 
 - `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
 - `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.  
+- `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+- `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
 
 Example:
 
 ```sql
 SELECT *
 FROM system.table_engines
-WHERE name in ('Kafka', 'MergeTree')
+WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```
 
 ```text
-┌─name──────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┐
-│ Kafka     │                 1 │                         0 │                   0 │            0 │
-│ MergeTree │                 1 │                         1 │                   1 │            1 │
-└───────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┘
+┌─name──────────────────────────┬─supports_settings─┬─supports_skipping_indices─┬─supports_sort_order─┬─supports_ttl─┬─supports_replication─┬─supports_deduplication─┐
+│ Kafka                         │                 1 │                         0 │                   0 │            0 │                    0 │                      0 │
+│ MergeTree                     │                 1 │                         1 │                   1 │            1 │                    0 │                      0 │
+│ ReplicatedCollapsingMergeTree │                 1 │                         1 │                   1 │            1 │                    1 │                      1 │
+└───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
 ```
 
 **See also**

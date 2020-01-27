@@ -12,7 +12,9 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
             {"supports_settings", std::make_shared<DataTypeUInt8>()},
             {"supports_skipping_indices", std::make_shared<DataTypeUInt8>()},
             {"supports_sort_order", std::make_shared<DataTypeUInt8>()},
-            {"supports_ttl", std::make_shared<DataTypeUInt8>()}};
+            {"supports_ttl", std::make_shared<DataTypeUInt8>()},
+            {"supports_replication", std::make_shared<DataTypeUInt8>()},
+            {"supports_deduplication", std::make_shared<DataTypeUInt8>()}};
 }
 
 void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
@@ -24,6 +26,8 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Con
         res_columns[2]->insert(pair.second.features.supports_skipping_indices);
         res_columns[3]->insert(pair.second.features.supports_sort_order);
         res_columns[4]->insert(pair.second.features.supports_ttl);
+        res_columns[5]->insert(pair.second.features.supports_replication);
+        res_columns[6]->insert(pair.second.features.supports_deduplication);
     }
 }
 
