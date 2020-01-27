@@ -189,6 +189,7 @@ protected:
                 }
 
                 UInt64 num_rows = res_columns.at(0)->size();
+                done = true;
                 return Chunk(std::move(res_columns), num_rows);
             }
 
