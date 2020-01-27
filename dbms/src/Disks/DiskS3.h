@@ -71,8 +71,6 @@ public:
     void removeRecursive(const String & path) override;
 
 private:
-    String getS3Path(const String & path) const;
-
     String getRandomName() const;
 
     bool tryReserve(UInt64 bytes);

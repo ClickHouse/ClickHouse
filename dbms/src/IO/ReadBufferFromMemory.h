@@ -23,8 +23,7 @@ public:
     ReadBufferFromMemory(const signed char * buf, size_t size)
         : SeekableReadBuffer(const_cast<char *>(reinterpret_cast<const char *>(buf)), size, 0) {}
 
-protected:
-    off_t doSeek(off_t, int) override { return 0; }
+    off_t seek(off_t, int) override { return 0; }
 };
 
 }

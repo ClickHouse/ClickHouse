@@ -85,7 +85,7 @@ private:
             compressed(*plain)
         {
             if (offset)
-                plain->seek(offset);
+                plain->seek(offset, SEEK_SET);
         }
 
         std::unique_ptr<SeekableReadBuffer> plain;
@@ -109,7 +109,7 @@ public:
     explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
-        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Append))
+        marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
     }
 
