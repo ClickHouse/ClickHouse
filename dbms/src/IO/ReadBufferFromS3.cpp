@@ -59,7 +59,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int)
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_DEBUG(log, "Read S3 object. "
+    LOG_TRACE(log, "Read S3 object. "
                    "Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
 
     Aws::S3::Model::GetObjectRequest req;

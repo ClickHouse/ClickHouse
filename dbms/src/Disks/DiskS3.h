@@ -7,7 +7,6 @@
 
 #    include <aws/s3/S3Client.h>
 #    include <Poco/DirectoryIterator.h>
-#    include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
