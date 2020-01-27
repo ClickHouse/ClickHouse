@@ -25,7 +25,6 @@ using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class ReadBuffer;
 class SeekableReadBuffer;
 class WriteBuffer;
 
