@@ -159,6 +159,10 @@ roundBankers(10.35, 1) = 10.4
 roundBankers(10.755, 2) = 11,76
 ```
 
+**See Also** 
+
+- [round](#rounding_functions-round)
+
 ## roundToExp2(num)
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
