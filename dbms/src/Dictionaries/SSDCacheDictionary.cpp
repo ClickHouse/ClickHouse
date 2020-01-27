@@ -424,13 +424,14 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         }
     }
 
-    auto set_value = [&](const size_t index, ReadBuffer & buf)
+    getValueFromMemory(indices, [&](const size_t index, ReadBuffer & buf)
     {
-        readValueFromBuffer(attribute_index, out, index, buf);
-    };
-
-    getValueFromMemory(indices, set_value);
-    getValueFromStorage(indices, set_value);
+        readValueFromBuffer(attribute_index, out[index], buf);
+    });
+    getValueFromStorage(indices, [&](const size_t index, ReadBuffer & buf)
+    {
+        readValueFromBuffer(attribute_index, out[index], buf);
+    });
 }
 
 template <typename SetFunc>
@@ -561,7 +562,7 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
 }
 
 template <typename Out>
-void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const
+void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const
 {
     for (size_t i = 0; i < attribute_index; ++i)
     {
@@ -569,9 +570,7 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
         {
 #define DISPATCH(TYPE) \
         case AttributeUnderlyingType::ut##TYPE: \
-            { \
-                buf.ignore(sizeof(TYPE)); \
-            } \
+            buf.ignore(sizeof(TYPE)); \
             break;
 
             DISPATCH(UInt8)
@@ -601,7 +600,7 @@ void CachePartition::readValueFromBuffer(const size_t attribute_index, Out & dst
     }
 
     //if constexpr (!std::is_same_v<ColumnString, Out>)
-    readBinary(dst[index], buf);
+    readBinary(dst, buf);
     /*else
     {
         LOG_DEBUG(&Poco::Logger::get("kek"), "string READ");
@@ -1018,8 +1017,7 @@ CachePartition::Attributes CacheStorage::createAttributesFromBlock(
         case AttributeUnderlyingType::ut##TYPE: \
             { \
                 CachePartition::Attribute::Container<TYPE> values(column->size()); \
-                const auto raw_data = column->getRawData(); \
-                memcpy(&values[0], raw_data.data, raw_data.size * sizeof(TYPE)); \
+                memcpy(&values[0], column->getRawData().data, sizeof(TYPE) * values.size()); \
                 attributes.emplace_back(); \
                 attributes.back().type = structure[i]; \
                 attributes.back().values = std::move(values); \

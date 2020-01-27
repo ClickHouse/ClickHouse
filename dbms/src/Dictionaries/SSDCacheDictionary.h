@@ -154,7 +154,7 @@ private:
     void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc set) const;
 
     template <typename Out>
-    void readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const;
+    void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
 
     const size_t file_id;
     const size_t max_size;
