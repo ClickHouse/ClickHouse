@@ -54,6 +54,7 @@ struct QueryLogElement
 
     String query;
 
+    Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
 

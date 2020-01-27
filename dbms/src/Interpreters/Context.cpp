@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
@@ -95,6 +96,7 @@ namespace ErrorCodes
     extern const int SCALAR_ALREADY_EXISTS;
     extern const int UNKNOWN_SCALAR;
     extern const int NOT_ENOUGH_PRIVILEGES;
+    extern const int UNKNOWN_POLICY;
 }
 
 
@@ -123,11 +125,13 @@ struct ContextShared
     String interserver_scheme;                              /// http or https
 
     String path;                                            /// Path to the data directory, with a slash at the end.
-    String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     ConfigurationPtr config;                                /// Global configuration settings.
+
+    String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
+    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
@@ -151,9 +155,9 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    /// Storage disk chooser
+    /// Storage disk chooser for MergeTree engines
     mutable std::unique_ptr<DiskSelector> merge_tree_disk_selector;
-    /// Storage policy chooser
+    /// Storage policy chooser for MergeTree engines
     mutable std::unique_ptr<StoragePolicySelector> merge_tree_storage_policy_selector;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
@@ -527,12 +531,6 @@ String Context::getPath() const
     return shared->path;
 }
 
-String Context::getTemporaryPath() const
-{
-    auto lock = getLock();
-    return shared->tmp_path;
-}
-
 String Context::getFlagsPath() const
 {
     auto lock = getLock();
@@ -551,13 +549,19 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
+VolumePtr Context::getTemporaryVolume() const
+{
+    auto lock = getLock();
+    return shared->tmp_volume;
+}
+
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
 
     shared->path = path;
 
-    if (shared->tmp_path.empty())
+    if (shared->tmp_path.empty() && !shared->tmp_volume)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -570,10 +574,31 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-void Context::setTemporaryPath(const String & path)
+VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     auto lock = getLock();
-    shared->tmp_path = path;
+
+    if (policy_name.empty())
+    {
+        shared->tmp_path = path;
+        if (!shared->tmp_path.ends_with('/'))
+            shared->tmp_path += '/';
+
+        auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
+        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+    }
+    else
+    {
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector()[policy_name];
+        if (tmp_policy->getVolumes().size() != 1)
+             throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        shared->tmp_volume = tmp_policy->getVolume(0);
+    }
+
+    if (!shared->tmp_volume->disks.size())
+         throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    return shared->tmp_volume;
 }
 
 void Context::setFlagsPath(const String & path)
