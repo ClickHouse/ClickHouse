@@ -66,50 +66,49 @@ namespace
             local_path(path), ref_count(0), total_size(0), references(0)
         {
             if (create)
-            	return;
+                return;
 
-            char x; // To skip separators.
             ReadBufferFromFile buf(path, 1024); /* reasonable buffer size for small file */
             readIntText(ref_count, buf);
-            readChar(x, buf);
+            assertChar('\t', buf);
             readIntText(total_size, buf);
-            readChar(x, buf);
-            references = std::vector<std::pair<String, size_t>> (ref_count);
+            assertChar('\n', buf);
+            references.resize(ref_count);
             for (UInt32 i = 0; i < ref_count; ++i)
             {
                 String ref;
                 size_t size;
                 readIntText(size, buf);
-                readChar(x, buf);
+                assertChar('\t', buf);
                 readEscapedString(ref, buf);
-                readChar(x, buf);
+                assertChar('\n', buf);
                 references[i] = std::make_pair(ref, size);
             }
         }
 
         void addReference(const String & ref, size_t size)
         {
-            ref_count++;
+            ++ref_count;
             total_size += size;
             references.emplace_back(ref, size);
         }
 
         void save()
         {
-        	WriteBufferFromFile buf(local_path, 1024);
-        	writeIntText(ref_count, buf);
-        	writeChar('\t', buf);
-        	writeIntText(total_size, buf);
-        	writeChar('\n', buf);
-        	for (UInt32 i = 0; i < ref_count; ++i)
-        	{
-        		auto ref_and_size = references[i];
-        		writeIntText(ref_and_size.second, buf);
-        		writeChar('\t', buf);
-        		writeEscapedString(ref_and_size.first, buf);
-        		writeChar('\n', buf);
+            WriteBufferFromFile buf(local_path, 1024);
+            writeIntText(ref_count, buf);
+            writeChar('\t', buf);
+            writeIntText(total_size, buf);
+            writeChar('\n', buf);
+            for (UInt32 i = 0; i < ref_count; ++i)
+            {
+                auto ref_and_size = references[i];
+                writeIntText(ref_and_size.second, buf);
+                writeChar('\t', buf);
+                writeEscapedString(ref_and_size.first, buf);
+                writeChar('\n', buf);
             }
-        	buf.finalize();
+            buf.finalize();
         }
     };
 
@@ -135,7 +134,8 @@ namespace
         {
         }
 
-        off_t seek(off_t off, int) override {
+        off_t seek(off_t off, int) override
+        {
             if (!initialized)
             {
                 if (off < 0 || metadata.total_size <= static_cast<UInt64>(off))
@@ -158,9 +158,9 @@ namespace
                 auto size = metadata.references[i].second;
                 if (size > offset)
                 {
-                	auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, ref, buf_size);
-                	buf->seek(offset, SEEK_SET);
-                	return buf;
+                    auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, ref, buf_size);
+                    buf->seek(offset, SEEK_SET);
+                    return buf;
                 }
                 offset -= size;
             }
@@ -333,7 +333,7 @@ bool DiskS3::exists(const String & path) const
 
 bool DiskS3::isFile(const String & path) const
 {
-	return Poco::File(metadata_path + path).isFile();
+    return Poco::File(metadata_path + path).isFile();
 }
 
 bool DiskS3::isDirectory(const String & path) const
