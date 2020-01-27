@@ -49,13 +49,13 @@ public:
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
-        const size_t size_,
-        const bool allow_read_expired_keys_,
-        const size_t max_update_queue_size_,
-        const size_t update_queue_push_timeout_milliseconds_,
-        const size_t each_update_finish_timeout_seconds_,
-        const size_t max_threads_for_updates);
+        DictionaryLifetime dict_lifetime_,
+        size_t size_,
+        bool allow_read_expired_keys_,
+        size_t max_update_queue_size_,
+        size_t update_queue_push_timeout_milliseconds_,
+        size_t each_update_finish_timeout_seconds_,
+        size_t max_threads_for_updates);
 
     ~CacheDictionary() override;
 
@@ -309,7 +309,7 @@ private:
     const size_t size_overlap_mask;
 
     /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr size_t max_collision_length = 10;
+    static constexpr size_t max_collision_length = 1;
 
     const size_t zero_cell_idx{getCellIdx(0)};
     std::map<std::string, size_t> attribute_index_by_name;
@@ -331,13 +331,13 @@ private:
 
     /// Field and methods correlated with update expired and not found keys
 
+    using FoundIdsMaskPtr = std::shared_ptr<std::unordered_map<Key, UInt8>>;
+
     struct UpdateUnit
     {
-        UpdateUnit(
-                std::vector<Key> requested_ids_):
-            requested_ids(std::move(requested_ids_)) {}
+        UpdateUnit(std::vector<Key> requested_ids_) : requested_ids(std::move(requested_ids_)) {}
 
-        std::shared_ptr<std::unordered_map<Key, UInt8>> found_ids_mask_ptr{nullptr};
+        FoundIdsMaskPtr found_ids_mask_ptr{nullptr};
         std::atomic<bool> is_done{false};
         std::exception_ptr current_exception{nullptr};
         std::vector<Key> requested_ids;
@@ -347,8 +347,6 @@ private:
     using UpdateQueue = ConcurrentBoundedQueue<UpdateUnitPtr>;
 
     mutable UpdateQueue update_queue;
-
-    ThreadFromGlobalPool update_thread;
 
     std::atomic<size_t> global_update_thread_number{0};
     ThreadPool update_pool;
@@ -364,8 +362,6 @@ private:
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
     void prepareAnswer(UpdateUnitPtr, PresentIdHandler &&, AbsentIdHandler &&) const;
-
-    void updateMultiThreadFunction();
     };
 
 }
