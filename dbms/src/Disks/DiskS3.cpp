@@ -81,8 +81,8 @@ namespace
                 size_t size;
                 readIntText(size, buf);
                 readChar(x, buf);
-	            readEscapedString(ref, buf);
-	            readChar(x, buf);
+                readEscapedString(ref, buf);
+                readChar(x, buf);
                 references[i] = std::make_pair(ref, size);
             }
         }
