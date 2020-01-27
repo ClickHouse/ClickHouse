@@ -1,5 +1,6 @@
 #include <ext/map.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include "PolygonDictionary.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
@@ -20,13 +21,17 @@ IPolygonDictionary::IPolygonDictionary(
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_)
+        const DictionaryLifetime dict_lifetime_,
+        InputType input_type_,
+        PointType point_type_)
         : database(database_)
         , name(name_)
         , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
+        , input_type(input_type_)
+        , point_type(point_type_)
 {
     createAttributes();
     loadData();
@@ -199,9 +204,11 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block)
         else
             attributes[i] = column.column;
     }
+    /** Multi-polygons could cause bigger sizes, but this is better than nothing. */
     polygons.reserve(polygons.size() + rows);
+    ids.reserve(ids.size() + rows);
     const auto & key = block.safeGetByPosition(0).column;
-    extractMultiPolygons(key, polygons);
+    extractPolygons(key);
 }
 
 void IPolygonDictionary::loadData()
@@ -211,6 +218,9 @@ void IPolygonDictionary::loadData()
     while (const auto block = stream->read())
         blockToAttributes(block);
     stream->readSuffix();
+
+    for (auto & polygon : polygons)
+        bg::correct(polygon);
 }
 
 void IPolygonDictionary::calculateBytesAllocated()
@@ -222,8 +232,8 @@ void IPolygonDictionary::calculateBytesAllocated()
 
 std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns &key_columns)
 {
-    if (key_columns.size() != DIM)
-        throw Exception{"Expected " + std::to_string(DIM) + " columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
+    if (key_columns.size() != 2)
+        throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
     const auto column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
     const auto column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
     if (!column_x || !column_y)
@@ -241,7 +251,6 @@ void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, Padd
     size_t row = 0;
     for (const auto & pt : extractPoints(key_columns))
     {
-        // TODO: Check whether this will be optimized by the compiler.
         size_t trash = 0;
         out[row] = find(pt, trash);
         ++row;
@@ -439,78 +448,197 @@ inline void makeDifferences(IColumn::Offsets & values)
         values[i] -= values[i - 1];
 }
 
+struct Offset
+{
+    Offset() = default;
+    IColumn::Offsets ring_sizes, polygon_sizes, multi_polygon_sizes;
+    IColumn::Offset  current_ring = 0, current_polygon = 0, current_multi_polygon = 0;
+};
+
+struct Data
+{
+    std::vector<IPolygonDictionary::Polygon> & dest;
+    std::vector<size_t> & ids;
+
+    void addPolygon(bool new_multi_polygon = false) {
+        dest.emplace_back();
+        ids.push_back((ids.size() ? ids.back() + new_multi_polygon : 0));
+    }
+};
+
+void addNewMultiPolygon(Data &, Offset & offset)
+{
+    ++offset.current_multi_polygon;
+    if (offset.current_multi_polygon == offset.multi_polygon_sizes.size())
+        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
 }
 
-void IPolygonDictionary::extractMultiPolygons(const ColumnPtr &column, std::vector<MultiPolygon> &dest)
+void addNewPolygon(Data & data, Offset & offset)
 {
-    IColumn::Offsets polygons, rings, points;
+    ++offset.current_polygon;
+    if (offset.current_polygon == offset.polygon_sizes.size())
+        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+
+    if (--offset.multi_polygon_sizes[offset.current_multi_polygon] == 0)
+    {
+        addNewMultiPolygon(data, offset);
+        data.addPolygon(true);
+    }
+    else
+        data.addPolygon();
+}
+
+void addNewRing(Data & data, Offset & offset)
+{
+    ++offset.current_ring;
+    if (offset.current_ring == offset.ring_sizes.size())
+        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+
+    if (--offset.polygon_sizes[offset.current_polygon] == 0)
+        addNewPolygon(data, offset);
+    else
+    {
+        /** An outer ring is added automatically with a new polygon, thus we need the else statement here.
+         *  This also implies that if we are at this point we have to add an inner ring.
+         */
+        auto & last_polygon = data.dest.back();
+        last_polygon.inners().emplace_back();
+    }
+}
+
+void addNewPointFromMultiPolygon(const IPolygonDictionary::Point & pt, Data & data, Offset & offset)
+{
+    if (offset.ring_sizes[offset.current_ring] == 0)
+        addNewRing(data, offset);
+
+    auto & last_polygon = data.dest.back();
+    auto & last_ring = (last_polygon.inners().empty() ? last_polygon.outer() : last_polygon.inners().back());
+    last_ring.push_back(pt);
+
+    --offset.ring_sizes[offset.current_ring];
+}
+
+void addNewPointFromSimplePolygon(const IPolygonDictionary::Point & pt, Data & data, Offset & offset)
+{
+    if (offset.polygon_sizes[offset.current_polygon] == 0)
+    {
+        ++offset.current_polygon;
+        if (offset.current_polygon == offset.polygon_sizes.size())
+            throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
+
+    }
+    auto & last_polygon = data.dest.back();
+    last_polygon.outer().push_back(pt);
+    --offset.polygon_sizes[offset.current_polygon];
+}
+
+const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
+{
     const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
         throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
+    offset.multi_polygon_sizes.assign(ptr_multi_polygons->getOffsets());
+    makeDifferences(offset.multi_polygon_sizes);
 
     const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
-    polygons.assign(ptr_multi_polygons->getOffsets());
+    offset.polygon_sizes.assign(ptr_polygons->getOffsets());
+    makeDifferences(offset.polygon_sizes);
 
     const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
-    rings.assign(ptr_polygons->getOffsets());
+    offset.ring_sizes.assign(ptr_rings->getOffsets());
+    makeDifferences(offset.ring_sizes);
 
-    const auto ptr_points = typeid_cast<const ColumnArray*>(&ptr_rings->getData());
-    if (!ptr_points)
-        throw Exception{"Expected a column containing arrays of Float64s when reading points", ErrorCodes::TYPE_MISMATCH};
-    points.assign(ptr_rings->getOffsets());
+    return ptr_rings->getDataPtr().get();
+}
 
+const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
+{
+    const auto ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
+    if (!ptr_polygons)
+        throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
+    offset.polygon_sizes.assign(ptr_polygons->getOffsets());
+    return ptr_polygons->getDataPtr().get();
+}
+
+void getPointsReprByArrays(const IColumn * column, std::vector<IPolygonDictionary::Point> & dest)
+{
+    const auto ptr_points = typeid_cast<const ColumnArray*>(column);
     const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
-        throw Exception{"Expected a column containing Float64s when reading coordinates", ErrorCodes::TYPE_MISMATCH};
-    const auto & coordinates = ptr_points->getOffsets();
-    makeDifferences(polygons);
-    makeDifferences(rings);
-    makeDifferences(points);
-    IColumn::Offset point_offset = 0, ring_offset = 0, polygon_offset = 0;
-    dest.emplace_back();
-    dest.back().emplace_back();
-    for (size_t i = 0; i < coordinates.size(); ++i)
+        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+    const auto & offsets = ptr_points->getOffsets();
+    for (size_t i = 0; i < offsets.size(); ++i)
     {
+        if (offsets[i] - (i == 0 ? 0 : offsets[i - 1]) != 2)
+            throw Exception{"All points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+        dest.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
+    }
+}
 
-        if (coordinates[i] - (i == 0 ? 0 : coordinates[i - 1]) != DIM)
-            throw Exception{"All points should be " + std::to_string(DIM) + "-dimensional", ErrorCodes::BAD_ARGUMENTS};
-        if (points[point_offset] == 0)
-        {
-            ++point_offset;
-            --rings[ring_offset];
-            if (rings[ring_offset] == 0)
-            {
-                ++ring_offset;
-                if (ring_offset == rings.size())
-                    throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-                --polygons[polygon_offset];
-                if (polygons[polygon_offset] == 0)
-                {
-                    dest.emplace_back();
-                    ++polygon_offset;
-                    if (polygon_offset == polygons.size())
-                        throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-                }
-                else
-                    dest.back().emplace_back();
-            }
-            else
-                if (!dest.back().back().outer().empty())
-                    dest.back().back().inners().emplace_back();
-        }
-        if (point_offset == points.size())
-            throw Exception{"Incorrect polygon formatting", ErrorCodes::BAD_ARGUMENTS};
-        --points[point_offset];
-        auto & ring = (dest.back().back().inners().empty() ? dest.back().back().outer() : dest.back().back().inners().back());
-        ring.emplace_back(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1));
+void getPointReprByTuples(const IColumn * column, std::vector<IPolygonDictionary::Point> & dest)
+{
+    const auto ptr_points = typeid_cast<const ColumnTuple*>(column);
+    if (!ptr_points)
+        throw Exception{"Expected a column of tuples representing points", ErrorCodes::TYPE_MISMATCH};
+    if (ptr_points->tupleSize() != 2)
+        throw Exception{"Points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
+    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
+    if (!column_x || !column_y)
+        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+    for (size_t i = 0; i < column_x->size(); ++i)
+    {
+        dest.emplace_back(column_x->getElement(i), column_y->getElement(i));
+    }
+}
+
+}
+
+void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
+{
+    Data data = {polygons, ids};
+    Offset offset;
+
+    const IColumn * points_collection;
+    switch (input_type)
+    {
+        case InputType::MultiPolygon:
+            points_collection = unrollMultiPolygons(column, offset);
+            break;
+        case InputType::SimplePolygon:
+            points_collection = unrollSimplePolygons(column, offset);
+            break;
     }
 
-    for (auto & multi_polygon : dest)
-        bg::correct(multi_polygon);
+    /** Adding the first empty polygon */
+    data.addPolygon(true);
+
+    std::vector<Point> points;
+    switch (point_type)
+    {
+        case PointType::Array:
+            getPointsReprByArrays(points_collection, points);
+            break;
+        case PointType::Tuple:
+            getPointReprByTuples(points_collection, points);
+            break;
+    }
+    for (auto & point : points)
+    {
+        switch (input_type)
+        {
+            case InputType::MultiPolygon:
+                addNewPointFromMultiPolygon(point, data, offset);
+                break;
+            case InputType::SimplePolygon:
+                addNewPointFromSimplePolygon(point, data, offset);
+                break;
+        }
+    }
 }
 
 SimplePolygonDictionary::SimplePolygonDictionary(
@@ -518,8 +646,10 @@ SimplePolygonDictionary::SimplePolygonDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_)
-    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_)
+    const DictionaryLifetime dict_lifetime_,
+    InputType input_type_,
+    PointType point_type_)
+    : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
 }
 
@@ -530,7 +660,9 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
             this->name,
             this->dict_struct,
             this->source_ptr->clone(),
-            this->dict_lifetime);
+            this->dict_lifetime,
+            this->input_type,
+            this->point_type);
 }
 
 bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
@@ -545,7 +677,7 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
             if (!found || new_area < area)
             {
                 found = true;
-                id = i;
+                id = ids[i];
                 area = new_area;
             }
         }
@@ -570,8 +702,31 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
             throw Exception{"The 'key' should consist of a single attribute for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
         // TODO: Once arrays are fully supported this should be changed to a more reasonable check.
-        if ((*dict_struct.key)[0].type->getName() != "Array(Array(Array(Array(Float64))))")
-            throw Exception{"The 'key' attribute should be a 4-dimensional array of Float64s for a dictionary of layout 'polygon'",
+        const auto type_name = (*dict_struct.key)[0].type->getName();
+        IPolygonDictionary::InputType input_type;
+        IPolygonDictionary::PointType point_type;
+        if (type_name == "Array(Array(Array(Array(Float64))))")
+        {
+            input_type = IPolygonDictionary::InputType::MultiPolygon;
+            point_type = IPolygonDictionary::PointType::Array;
+        }
+        else if (type_name == "Array(Array(Array(Tuple(Float64, Float64))))")
+        {
+            input_type = IPolygonDictionary::InputType::MultiPolygon;
+            point_type = IPolygonDictionary::PointType::Tuple;
+        }
+        else if (type_name == "Array(Array(Float64))")
+        {
+            input_type = IPolygonDictionary::InputType::SimplePolygon;
+            point_type = IPolygonDictionary::PointType::Array;
+        }
+        else if (type_name == "Array(Tuple(Float64, Float64))")
+        {
+            input_type = IPolygonDictionary::InputType::SimplePolygon;
+            point_type = IPolygonDictionary::PointType::Tuple;
+        }
+        else
+            throw Exception{"The key type is not one of the allowed types for a dictionary of layout 'polygon'",
                             ErrorCodes::BAD_ARGUMENTS};
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -581,7 +736,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime);
+        return std::make_unique<SimplePolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
     };
     factory.registerLayout("polygon", create_layout, true);
 }
