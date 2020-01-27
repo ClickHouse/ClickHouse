@@ -46,7 +46,7 @@ void ISource::work()
     try
     {
         current_chunk.chunk = generate();
-        if (!current_chunk.chunk)
+        if (!current_chunk.chunk || isCancelled())
             finished = true;
         else
             has_input = true;
