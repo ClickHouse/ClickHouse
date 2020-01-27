@@ -504,6 +504,10 @@ if (USE_POCO_NETSSL)
     dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
+if (USE_POCO_JSON)
+    dbms_target_link_libraries (PRIVATE ${Poco_JSON_LIBRARY})
+endif()
+
 dbms_target_link_libraries (PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
@@ -520,6 +524,11 @@ if (USE_PARQUET)
     if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
     endif ()
+endif ()
+
+if (USE_AVRO)
+    dbms_target_link_libraries(PRIVATE ${AVROCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${AVROCPP_INCLUDE_DIR})
 endif ()
 
 if (OPENSSL_CRYPTO_LIBRARY)
