@@ -66,7 +66,7 @@ namespace
             local_path(path), ref_count(0), total_size(0), references(0)
         {
             if (create)
-	            return;
+            	return;
 
             char x; // To skip separators.
             ReadBufferFromFile buf(path, 1024); /* reasonable buffer size for small file */
@@ -94,21 +94,22 @@ namespace
             references.emplace_back(ref, size);
         }
 
-        void save() {
-	        WriteBufferFromFile buf(local_path, 1024);
-	        writeIntText(ref_count, buf);
-	        writeChar('\t', buf);
-	        writeIntText(total_size, buf);
-	        writeChar('\n', buf);
-            for (UInt32 i = 0; i < ref_count; ++i)
-            {
-                auto ref_and_size = references[i];
-                writeIntText(ref_and_size.second, buf);
-                writeChar('\t', buf);
-                writeEscapedString(ref_and_size.first, buf);
-                writeChar('\n', buf);
+        void save()
+        {
+        	WriteBufferFromFile buf(local_path, 1024);
+        	writeIntText(ref_count, buf);
+        	writeChar('\t', buf);
+        	writeIntText(total_size, buf);
+        	writeChar('\n', buf);
+        	for (UInt32 i = 0; i < ref_count; ++i)
+        	{
+        		auto ref_and_size = references[i];
+        		writeIntText(ref_and_size.second, buf);
+        		writeChar('\t', buf);
+        		writeEscapedString(ref_and_size.first, buf);
+        		writeChar('\n', buf);
             }
-            buf.finalize();
+        	buf.finalize();
         }
     };
 
@@ -155,11 +156,11 @@ namespace
                 current_buf_idx = i;
                 auto ref = metadata.references[i].first;
                 auto size = metadata.references[i].second;
-	            if (size > offset)
-	            {
-                    auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, ref, buf_size);
-                    buf->seek(offset, SEEK_SET);
-                    return buf;
+                if (size > offset)
+                {
+                	auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, ref, buf_size);
+                	buf->seek(offset, SEEK_SET);
+                	return buf;
                 }
                 offset -= size;
             }
