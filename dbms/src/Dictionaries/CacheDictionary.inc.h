@@ -174,7 +174,7 @@ void CacheDictionary::getItemsString(
     /// save on some allocations
     out->getOffsets().reserve(rows);
 
-    auto & attribute_array = std::get<ContainerPtrType < StringRef>>(attribute.arrays);
+    auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
 
     auto found_outdated_values = false;
 
@@ -237,8 +237,8 @@ void CacheDictionary::getItemsString(
 
             auto insert_value_routine = [&]()
             {
-                const auto &cell_idx = find_result.cell_idx;
-                const auto &cell = cells[cell_idx];
+                const auto & cell_idx = find_result.cell_idx;
+                const auto & cell = cells[cell_idx];
                 const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 
                 if (!cell.isDefault())
