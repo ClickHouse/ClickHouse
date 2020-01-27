@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
@@ -46,8 +48,55 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(const Context &)
 {
-    Poco::File(getMetadataPath()).remove(false);
-    //TODO check all tables dropped
+
+    //constexpr size_t max_attempts = 5;
+    //for (size_t i = 0; i < max_attempts; ++i)
+    //{
+    //    auto it = tables_to_drop.begin();
+    //    while (it != tables_to_drop.end())
+    //    {
+    //        if (it->table.unique())
+    //        {
+    //            /// No queries use table, it can be safely dropped
+    //            dropTableFinally(*it);
+    //            it = tables_to_drop.erase(it);
+    //        }
+    //        ++it;
+    //    }
+    //
+    //    if (tables_to_drop.empty())
+    //    {
+    //        Poco::File(getMetadataPath()).remove(false);
+    //        return;
+    //    }
+    //}
+    //throw Exception("Cannot drop database", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+    /// IDatabase::drop() is called under global context lock (TODO can it be fixed?)
+
+    auto it = std::find_if(tables_to_drop.begin(), tables_to_drop.end(), [](const TableToDrop & elem)
+    {
+        return !elem.table.unique();
+    });
+    if (it != tables_to_drop.end())
+        throw Exception("Cannot drop database " + getDatabaseName() +
+                        ". It contains table " + it->table->getStorageID().getNameForLogs() +
+                        ", which is used by " + std::to_string(it->table.use_count() - 1) + " queries. "
+                        "Client should retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
+
+    for (auto & table : tables_to_drop)
+    {
+        try
+        {
+            dropTableFinally(table);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot drop table. Metadata " + table.data_path + " will be removed forcefully. "
+                                   "Garbage may be left in /store directory and ZooKeeper.");
+        }
+    }
+    Poco::File(getMetadataPath()).remove(true);
 }
 
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -130,22 +179,43 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
 {
     iterateMetadataFiles(context, [](const String &) {}, [&](const String & file_name)
     {
+        /// Process .sql.tmp_drop files with metadata of partially dropped tables
         String full_path = getMetadataPath() + file_name;
         LOG_INFO(log, "Trying load partially dropped table from " << full_path);
+        ASTPtr ast;
+        const ASTCreateQuery * create = nullptr;
         try
         {
-            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/false);
-            if (!ast) //TODO why?
+            ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ false, /*remove_empty*/false);
+            create = typeid_cast<ASTCreateQuery *>(ast.get());
+            if (!create || create->uuid == UUIDHelpers::Nil)
+            {
+                LOG_WARNING(log, "Cannot parse metadata of partially dropped table from " << full_path
+                            << ". Removing metadata. Garbage may be left in /store directory and ZooKeeper.");
+                if (Poco::File(full_path).exists())
+                    Poco::File(full_path).remove();
                 return;
-            auto & query = ast->as<ASTCreateQuery &>();
-            auto [_, table] = createTableFromAST(query, database_name, getTableDataPath(query), context, has_force_restore_data_flag);
+            }
+            auto [_, table] = createTableFromAST(*create, database_name, getTableDataPath(*create), context, has_force_restore_data_flag);
             time_t drop_time = Poco::File(full_path).getLastModified().epochTime();
-            tables_to_drop.push_back({table, context.getPath() + getTableDataPath(query), drop_time});
+            tables_to_drop.push_back({table, context.getPath() + getTableDataPath(*create), drop_time});
         }
-        catch (Exception & e)
+        catch (...)
         {
-            e.addMessage("Cannot complete table drop " + full_path);
-            //TODO may be remove data dir (if UUID successfully parsed) and .tmp_drop metadata?
+            if (!create)
+                throw;
+            auto table_data_relative_path = getTableDataPath(*create);
+            if (table_data_relative_path.empty())
+                throw;
+
+            Poco::File table_data{context.getPath() + table_data_relative_path};
+            tryLogCurrentException(log, "Cannot load partially dropped table from: " + full_path +
+                                   ". Parsed query: " + serializeAST(*create) +
+                                   ". Removing metadata and " + table_data.path() +
+                                   ". Garbage may be left in ZooKeeper.");
+            if (table_data.exists())
+                table_data.remove(true);
+            Poco::File{full_path}.remove();
         }
     });
 
@@ -157,7 +227,6 @@ void DatabaseAtomic::shutdown()
 {
     drop_task->deactivate();
     DatabaseWithDictionaries::shutdown();
-    //TODO try drop tables
 }
 
 void DatabaseAtomic::dropTableDataTask()
@@ -192,15 +261,7 @@ void DatabaseAtomic::dropTableDataTask()
     {
         try
         {
-            LOG_INFO(log, "Trying to drop table " + table.table->getStorageID().getNameForLogs());
-            table.table->drop();
-            table.table->is_dropped = true;
-            Poco::File table_data_dir{table.data_path};
-            if (table_data_dir.exists())
-                table_data_dir.remove(true);
-
-            String metadata_tmp_drop = getObjectMetadataPath(table.table->getStorageID().getTableName()) + drop_suffix;
-            Poco::File(metadata_tmp_drop).remove();
+            dropTableFinally(table);
         }
         catch (...)
         {
@@ -214,6 +275,19 @@ void DatabaseAtomic::dropTableDataTask()
     }
 
     drop_task->scheduleAfter(reschedule_time_ms);
+}
+
+void DatabaseAtomic::dropTableFinally(const DatabaseAtomic::TableToDrop & table) const
+{
+    LOG_INFO(log, "Trying to drop table " + table.table->getStorageID().getNameForLogs());
+    table.table->drop();
+    table.table->is_dropped = true;
+    Poco::File table_data_dir{table.data_path};
+    if (table_data_dir.exists())
+        table_data_dir.remove(true);
+
+    String metadata_tmp_drop = getObjectMetadataPath(table.table->getStorageID().getTableName()) + drop_suffix;
+    Poco::File(metadata_tmp_drop).remove();
 }
 
 

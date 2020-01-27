@@ -105,7 +105,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
-            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
+            TableStructureWriteLockHolder table_lock;
+            if (database_and_table.first->getEngineName() != "Atomic")
+                table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
 
             database_and_table.first->dropTable(context, table_name);
         }
