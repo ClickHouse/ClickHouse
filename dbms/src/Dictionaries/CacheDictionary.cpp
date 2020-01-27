@@ -62,13 +62,13 @@ CacheDictionary::CacheDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    const size_t size_,
-    const bool allow_read_expired_keys_,
-    const size_t max_update_queue_size_,
-    const size_t update_queue_push_timeout_milliseconds_,
-    const size_t each_update_finish_timeout_seconds_,
-    const size_t max_threads_for_updates_)
+    DictionaryLifetime dict_lifetime_,
+    size_t size_,
+    bool allow_read_expired_keys_,
+    size_t max_update_queue_size_,
+    size_t update_queue_push_timeout_milliseconds_,
+    size_t each_update_finish_timeout_seconds_,
+    size_t max_threads_for_updates_)
     : database(database_)
     , name(name_)
     , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
@@ -93,9 +93,7 @@ CacheDictionary::CacheDictionary(
 
     createAttributes();
     for (size_t i = 0; i < max_threads_for_updates; ++i)
-    {
         update_pool.scheduleOrThrowOnError([this] { updateThreadFunction(); });
-    }
 }
 
 CacheDictionary::~CacheDictionary()
@@ -750,22 +748,18 @@ void CacheDictionary::updateThreadFunction()
         /// when this thread pops from the queue and other threads push to the queue.
         const size_t current_queue_size = update_queue.size();
 
-        /// Word "bunch" must present in this log message, because it is being checked in tests.
         if (current_queue_size > 0)
             LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
-                           << current_queue_size + 1 << " keys" );
+                            << current_queue_size+1 << " keys" );
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
-
         update_request.emplace_back(first_popped);
 
         UpdateUnitPtr current_unit_ptr;
 
         while (update_queue.tryPop(current_unit_ptr))
-        {
             update_request.emplace_back(std::move(current_unit_ptr));
-        }
 
         /// Here we prepare total count of all requested ids
         /// not to do useless allocations later.
@@ -777,7 +771,7 @@ void CacheDictionary::updateThreadFunction()
         concatenated_requested_ids.reserve(total_requested_keys_count);
         for (auto & unit_ptr: update_request)
             std::for_each(std::begin(unit_ptr->requested_ids), std::end(unit_ptr->requested_ids),
-                    [&] (const Key & key) {concatenated_requested_ids.push_back(key);});
+                          [&] (const Key & key) {concatenated_requested_ids.push_back(key);});
 
         try
         {
@@ -813,61 +807,6 @@ void CacheDictionary::updateThreadFunction()
 
             is_update_finished.notify_all();
         }
-    }
-}
-
-void CacheDictionary::updateMultiThreadFunction()
-{
-    setThreadName("AsyncUpdater");
-
-    const size_t thread_number = global_update_thread_number.fetch_add(1);
-
-    while (!finished)
-    {
-        UpdateUnitPtr first_popped;
-        update_queue.pop(first_popped);
-
-        if (finished)
-            break;
-
-        LOG_TRACE(log, "update with thread number " << thread_number);
-
-        auto start = std::chrono::system_clock::now();
-
-        try
-        {
-            auto found_ids_mask_ptr = std::make_shared<std::unordered_map<Key, UInt8>>(first_popped->requested_ids.size());
-
-            /// Copy shared_ptr to let this map be alive until other thread finish his stuff.
-            /// It is thread safe because writing to the map happens before reading from multiple threads.
-            first_popped->found_ids_mask_ptr = found_ids_mask_ptr;
-
-            for (const auto id : first_popped->requested_ids)
-                found_ids_mask_ptr->insert({id, 0});
-
-            /// Update a bunch of ids.
-            update(first_popped->requested_ids, *found_ids_mask_ptr);
-
-            /// Notify all threads about finished updating the bunch of ids
-            /// where their own ids were included.
-            std::unique_lock<std::mutex> lock(update_mutex);
-
-            first_popped->is_done = true;
-            is_update_finished.notify_all();
-        }
-        catch (...)
-        {
-            std::unique_lock<std::mutex> lock(update_mutex);
-
-            first_popped->current_exception = std::current_exception();
-            is_update_finished.notify_all();
-        }
-
-        auto end = std::chrono::system_clock::now();
-
-        auto duration = end - start;
-
-        LOG_FATAL(log, "full update  " << std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() << " ms");
     }
 }
 
