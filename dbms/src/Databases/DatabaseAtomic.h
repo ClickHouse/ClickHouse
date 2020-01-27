@@ -37,14 +37,6 @@ public:
     void shutdown() override;
 
 private:
-    void dropTableDataTask();
-
-private:
-    static constexpr time_t drop_delay_s = 10;
-    static constexpr size_t reschedule_time_ms = 5000;
-
-    //TODO store path in DatabaseWithOwnTables::tables
-    std::map<String, String> table_name_to_path;
     struct TableToDrop
     {
         StoragePtr table;
@@ -53,6 +45,17 @@ private:
         //time_t last_attempt_time;
     };
     using TablesToDrop = std::list<TableToDrop>;
+
+    void dropTableDataTask();
+    void dropTableFinally(const TableToDrop & table) const;
+
+private:
+    static constexpr time_t drop_delay_s = 10;
+    static constexpr size_t reschedule_time_ms = 5000;
+
+    //TODO store path in DatabaseWithOwnTables::tables
+    std::map<String, String> table_name_to_path;
+
     TablesToDrop tables_to_drop;
     std::mutex tables_to_drop_mutex;
 
