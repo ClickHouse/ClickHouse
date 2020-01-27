@@ -26,12 +26,24 @@ namespace bg = boost::geometry;
 class IPolygonDictionary : public IDictionaryBase
 {
 public:
+    enum class InputType
+    {
+        MultiPolygon,
+        SimplePolygon
+    };
+    enum class PointType
+    {
+        Array,
+        Tuple,
+    };
     IPolygonDictionary(
             const std::string & database_,
             const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
-            DictionaryLifetime dict_lifetime_);
+            DictionaryLifetime dict_lifetime_,
+            InputType input_type_,
+            PointType point_type_);
 
     const std::string & getDatabase() const override;
     const std::string & getName() const override;
@@ -154,7 +166,6 @@ public:
     // TODO: Refactor the whole dictionary design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
-protected:
     /** The number of dimensions used. Change with great caution, some extra work will be required. */
     static constexpr size_t DIM = 2;
     /** A point in Euclidean coordinates. */
@@ -164,13 +175,15 @@ protected:
     /** A multi_polygon in boost is a collection of polygons. */
     using MultiPolygon = bg::model::multi_polygon<Polygon>;
 
+protected:
     /** Returns true if the given point can be found in the polygon dictionary.
      *  If true id is set to the index of a polygon containing the given point.
      *  Overridden in different implementations of this interface.
      */
     virtual bool find(const Point & point, size_t & id) const = 0;
 
-    std::vector<MultiPolygon> polygons;
+    std::vector<Polygon> polygons;
+    std::vector<size_t> ids;
 
     const std::string database;
     const std::string name;
@@ -178,6 +191,9 @@ protected:
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+
+    const InputType input_type;
+    const PointType point_type;
 
 private:
     /** Helper functions for loading the data from the configuration.
@@ -239,21 +255,10 @@ private:
      *      - A ring is represented by a nonempty array of points.
      *      - A point is represented by an array of coordinates.
      */
-    static void extractMultiPolygons(const ColumnPtr & column, std::vector<MultiPolygon> & dest);
+    void extractPolygons(const ColumnPtr & column);
 
     /** Extracts a list of points from two columns representing their x and y coordinates. */
     static std::vector<Point> extractPoints(const Columns &key_columns);
-
-    /** Converts an array containing two Float64s to a point. */
-    static Point fieldToPoint(const Field & field);
-
-    /** Converts an array of arrays of points to a polygon. The first array represents the outer ring and zero or more
-     * following arrays represent the rings that are excluded from the polygon.
-     */
-    static Polygon fieldToPolygon(const Field & field);
-
-    /** Converts an array of polygons (see above) to a multi-polygon. */
-    static MultiPolygon fieldToMultiPolygon(const Field & field);
 };
 
 /** Simple implementation of the polygon dictionary. Doesn't generate anything during its construction.
@@ -269,7 +274,9 @@ public:
             const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
-            DictionaryLifetime dict_lifetime_);
+            DictionaryLifetime dict_lifetime_,
+            InputType input_type_,
+            PointType point_type_);
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
