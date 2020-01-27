@@ -3914,8 +3914,8 @@ Names MergeTreeData::getColumnsRequiredForTTL() const
         res.insert(columns_vec.begin(), columns_vec.end());
     };
 
-    if (hasTableTTL())
-        add_columns_to_set(ttl_table_entry.expression);
+    if (hasRowsTTL())
+        add_columns_to_set(rows_ttl_entry.expression);
 
     for (const auto & [_, entry] : column_ttl_entries_by_name)
         add_columns_to_set(entry.expression);
@@ -3928,7 +3928,7 @@ Names MergeTreeData::getColumnsRequiredForTTL() const
 
 Names MergeTreeData::getColumnsUpdatedByTTL() const
 {
-    if (hasTableTTL())
+    if (hasRowsTTL())
         return getColumns().getAllPhysical().getNames();
 
     Names res;
