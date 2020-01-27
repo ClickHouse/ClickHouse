@@ -603,7 +603,7 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
     Data data = {polygons, ids};
     Offset offset;
 
-    const IColumn * points_collection;
+    const IColumn * points_collection = nullptr;
     switch (input_type)
     {
         case InputType::MultiPolygon:
