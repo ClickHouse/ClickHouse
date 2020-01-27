@@ -181,7 +181,10 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_, columns_)
+    : IStorage(table_id_, ColumnsDescription({
+            {"_path", std::make_shared<DataTypeString>()},
+            {"_file", std::make_shared<DataTypeString>()}
+        }, true))
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
