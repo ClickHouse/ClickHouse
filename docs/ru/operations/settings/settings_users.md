@@ -62,7 +62,7 @@
     Пример создания пароля в командной строке:
 
     ```
-    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | openssl dgst -sha1 -binary | openssl dgst -sha1
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
     ```
 
     Первая строка результата — пароль. Вторая строка — соответствующий ему двойной хэш SHA1.
