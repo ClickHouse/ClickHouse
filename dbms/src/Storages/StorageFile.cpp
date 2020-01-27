@@ -286,7 +286,8 @@ public:
 
     Block getHeader() const override
     {
-        auto res = reader->getHeader();
+        auto res = storage->getSampleBlock();
+
         if (res && file_path)
         {
             if (with_path_column)
@@ -294,6 +295,7 @@ public:
             if (with_file_column)
                 res.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
         }
+
         return res;
     }
 
