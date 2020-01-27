@@ -348,7 +348,6 @@ private:
 
     mutable UpdateQueue update_queue;
 
-    std::atomic<size_t> global_update_thread_number{0};
     ThreadPool update_pool;
 
     void updateThreadFunction();
