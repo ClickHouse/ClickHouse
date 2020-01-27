@@ -62,8 +62,8 @@ private:
         }
         catch (...)
         {
-            has_exception = true;
             exception = std::current_exception();
+            has_exception = true;
         }
     }
 };
