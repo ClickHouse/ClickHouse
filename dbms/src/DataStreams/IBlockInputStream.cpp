@@ -54,7 +54,7 @@ Block IBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+    if (!checkTimeLimit())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -200,6 +200,12 @@ void IBlockInputStream::updateExtremes(Block & block)
             old_extremes = std::move(new_extremes);
         }
     }
+}
+
+
+bool IBlockInputStream::checkTimeLimit()
+{
+    return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }
 
 
