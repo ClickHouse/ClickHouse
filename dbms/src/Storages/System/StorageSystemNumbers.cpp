@@ -37,6 +37,8 @@ protected:
 
         next += step;
 
+        progress({column->size(), column->byteSize()});
+
         return { Columns {std::move(column)}, block_size };
     }
 
@@ -92,6 +94,8 @@ protected:
         UInt64 * end = &vec[block_size];
         while (pos < end)
             *pos++ = curr++;
+
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column)}, block_size };
     }
