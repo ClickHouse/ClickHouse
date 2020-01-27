@@ -143,20 +143,23 @@ StoragePtr StorageFactory::get(
         }
     };
 
-    if (storage_def->settings)
-        checkFeature(
-            "SETTINGS clause",
-            [](StorageFeatures features) { return features.supports_settings; });
+    if (storage_def)
+    {
+        if (storage_def->settings)
+            checkFeature(
+                "SETTINGS clause",
+                [](StorageFeatures features) { return features.supports_settings; });
 
-    if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
-        checkFeature(
-            "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
-            [](StorageFeatures features) { return features.supports_sort_order; });
+        if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+            checkFeature(
+                "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
+                [](StorageFeatures features) { return features.supports_sort_order; });
 
-    if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
-        checkFeature(
-            "TTL clause",
-            [](StorageFeatures features) { return features.supports_ttl; });
+        if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
+            checkFeature(
+                "TTL clause",
+                [](StorageFeatures features) { return features.supports_ttl; });
+    }
 
     if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
         checkFeature(
