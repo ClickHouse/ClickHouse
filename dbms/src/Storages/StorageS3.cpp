@@ -198,12 +198,13 @@ StorageS3::StorageS3(
 }
 
 
-namespace {
+namespace
+{
 
 /* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
-Strings LSWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
+Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
 {
     if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
     {
@@ -267,7 +268,7 @@ BlockInputStreams StorageS3::read(
             need_file_column = true;
     }
 
-    for (const String & key : LSWithRegexpMatching(*client, uri))
+    for (const String & key : listFilesWithRegexpMatching(*client, uri))
     {
         BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
             need_path_column,
