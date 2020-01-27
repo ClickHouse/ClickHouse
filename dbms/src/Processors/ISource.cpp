@@ -11,7 +11,7 @@ ISource::ISource(Block header)
 
 ISource::Status ISource::prepare()
 {
-    if (finished)
+    if (finished || isCancelled())
     {
         output.finish();
         return Status::Finished;
