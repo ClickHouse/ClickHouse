@@ -224,8 +224,8 @@ public:
     bool isCancelled() const { return is_cancelled; }
     void cancel()
     {
-        onCancel();
         is_cancelled = true;
+        onCancel();
     }
 
     virtual ~IProcessor() = default;
