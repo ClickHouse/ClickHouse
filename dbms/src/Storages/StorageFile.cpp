@@ -228,7 +228,6 @@ public:
             }
 
             storage->table_fd_was_used = true;
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd), compression_method);
         }
         else
         {
@@ -236,11 +235,7 @@ public:
             file_path = std::make_optional(file_path_);
             with_file_column = need_file;
             with_path_column = need_path;
-            read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(file_path.value()), compression_method);
         }
-
-        if (!reader)
-            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
     }
 
     String getName() const override
@@ -250,7 +245,20 @@ public:
 
     Block readImpl() override
     {
+        /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
+        if (!reader)
+        {
+            read_buf = wrapReadBufferWithCompressionMethod(storage->use_table_fd
+                ? std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd)
+                : std::make_unique<ReadBufferFromFile>(file_path.value()),
+                compression_method);
+
+            reader = FormatFactory::instance().getInput(storage->format_name, *read_buf, storage->getSampleBlock(), context, max_block_size);
+        }
+
         auto res = reader->read();
+
+        /// Enrich with virtual columns.
         if (res && file_path)
         {
             if (with_path_column)
@@ -264,6 +272,14 @@ public:
                             std::make_shared<DataTypeString>(), "_file"});
             }
         }
+
+        /// Close file prematurally if stream was ended.
+        if (!res)
+        {
+            reader.reset();
+            read_buf.reset();
+        }
+
         return res;
     }
 
@@ -315,13 +331,13 @@ BlockInputStreams StorageFile::read(
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
+
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
-    {
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
             throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    }
+
     blocks_input.reserve(paths.size());
     bool need_path_column = false;
     bool need_file_column = false;
