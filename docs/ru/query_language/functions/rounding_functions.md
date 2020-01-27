@@ -75,7 +75,7 @@ round(3.55, 1) = 3.6
 round(3.65, 1) = 3.6
 ```
 
-**См. также** 
+**Смотрите также** 
 
 - [roundBankers](#roundbankers)
 
@@ -156,6 +156,10 @@ roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
 roundBankers(10.755, 2) = 11,76
 ```
+
+**Смотрите также** 
+
+- [round](#rounding_functions-round)
 
 
 ## roundToExp2(num)
