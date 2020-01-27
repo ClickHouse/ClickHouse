@@ -28,8 +28,7 @@ private:
     String key;
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     size_t minimum_upload_part_size;
-    String buffer_string;
-    std::unique_ptr<WriteBufferFromString> temporary_buffer;
+    std::unique_ptr<WriteBufferFromOwnString> temporary_buffer;
     size_t last_part_size;
 
     /// Upload in S3 is made in parts.
@@ -38,6 +37,10 @@ private:
     std::vector<String> part_tags;
 
     Logger * log = &Logger::get("WriteBufferFromS3");
+
+protected:
+    // Total size of all uploaded parts.
+    size_t total_size = 0;
 
 public:
     explicit WriteBufferFromS3(std::shared_ptr<Aws::S3::S3Client> client_ptr_,

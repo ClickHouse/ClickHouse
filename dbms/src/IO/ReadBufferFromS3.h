@@ -35,9 +35,6 @@ private:
 
     Logger * log = &Logger::get("ReadBufferFromS3");
 
-protected:
-    off_t doSeek(off_t off, int whence) override;
-
 public:
     explicit ReadBufferFromS3(std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
@@ -45,6 +42,8 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
+
+    off_t seek(off_t off, int whence) override;
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

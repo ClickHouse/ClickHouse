@@ -17,13 +17,7 @@ public:
     SeekableReadBuffer(Position ptr, size_t size, size_t offset)
         : ReadBuffer(ptr, size, offset) {}
 
-    off_t seek(off_t off, int whence = SEEK_SET) {
-        return doSeek(off, whence);
-    };
-
-protected:
-    /// Children implementation should be able to seek backwards
-    virtual off_t doSeek(off_t off, int whence) = 0;
+    virtual off_t seek(off_t off, int whence) = 0;
 };
 
 }

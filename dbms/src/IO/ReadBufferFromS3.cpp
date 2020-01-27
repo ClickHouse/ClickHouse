@@ -49,7 +49,7 @@ bool ReadBufferFromS3::nextImpl()
     return true;
 }
 
-off_t ReadBufferFromS3::doSeek(off_t offset_, int) {
+off_t ReadBufferFromS3::seek(off_t offset_, int) {
     if (!initialized && offset_)
         offset = offset_;
 
@@ -57,11 +57,14 @@ off_t ReadBufferFromS3::doSeek(off_t offset_, int) {
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize() {
+    LOG_DEBUG(log, "Read S3 object. "
+                   "Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
+
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     if (offset != 0)
-        req.SetRange(std::to_string(offset) + "-");
+        req.SetRange("bytes=" + std::to_string(offset) + "-");
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
