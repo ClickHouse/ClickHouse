@@ -74,7 +74,7 @@ namespace
             readChar(x, buf);
             readIntText(total_size, buf);
             readChar(x, buf);
-	        references = std::vector<std::pair<String, size_t>> (ref_count);
+            references = std::vector<std::pair<String, size_t>> (ref_count);
             for (UInt32 i = 0; i < ref_count; ++i)
             {
                 String ref;
