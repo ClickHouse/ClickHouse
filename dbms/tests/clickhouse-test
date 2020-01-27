@@ -450,26 +450,27 @@ def main(args):
             total_tests_run += tests_n
 
     if args.hung_check:
-        clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
-        server_pid = get_server_pid(clickhouse_tcp_port)
-        if server_pid:
-            print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-            processlist = get_processlist(args.client_with_database)
-            if processlist:
-                print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
-                print(processlist)
+        processlist = get_processlist(args.client_with_database)
+        if processlist:
+            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+            print(processlist)
 
-                print("\nStacktraces of all threads:")
+            clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
+            server_pid = get_server_pid(clickhouse_tcp_port)
+            if server_pid:
+                print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
+                print("\nCollecting stacktraces from all running threads:")
                 print(get_stacktraces(server_pid))
-                exit_code = 1
             else:
-                print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+                print(
+                    colored(
+                        "\nUnable to locate ClickHouse server process listening at TCP port {}. "
+                        "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
+                        args, "red", attrs=["bold"]))
+
+            exit_code = 1
         else:
-            print(
-                colored(
-                    "\nUnable to locate ClickHouse server process listening at TCP port {}. "
-                    "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
-                    args, "red", attrs=["bold"]))
+            print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if total_tests_run == 0:
         print("No tests were run.")
