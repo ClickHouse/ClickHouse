@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 
@@ -138,6 +139,9 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
 {
+    if (relative_data_path.empty())
+        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     const auto settings = getSettings();
     setProperties(metadata);
 
@@ -626,7 +630,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             {
                 auto new_ttl_entry = create_ttl_entry(ast);
                 if (!only_check)
-                    column_ttl_entries_by_name.emplace(name, new_ttl_entry);
+                    column_ttl_entries_by_name[name] = new_ttl_entry;
             }
         }
     }
@@ -634,36 +638,35 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
     if (new_ttl_table_ast)
     {
         std::vector<TTLEntry> update_move_ttl_entries;
-        ASTPtr update_ttl_table_ast = nullptr;
-        TTLEntry update_ttl_table_entry;
+        TTLEntry update_rows_ttl_entry;
 
         bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
-            ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
-            if (ttl_element.destination_type == PartDestinationType::DELETE)
+            const auto * ttl_element = ttl_element_ptr->as<ASTTTLElement>();
+            if (!ttl_element)
+                throw Exception("Unexpected AST element in TTL expression", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+            if (ttl_element->destination_type == PartDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
+                auto new_rows_ttl_entry = create_ttl_entry(ttl_element->children[0]);
                 if (!only_check)
-                {
-                    update_ttl_table_ast = ttl_element.children[0];
-                    update_ttl_table_entry = new_ttl_table_entry;
-                }
+                    update_rows_ttl_entry = new_rows_ttl_entry;
 
                 seen_delete_ttl = true;
             }
             else
             {
-                auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+                auto new_ttl_entry = create_ttl_entry(ttl_element->children[0]);
 
                 new_ttl_entry.entry_ast = ttl_element_ptr;
-                new_ttl_entry.destination_type = ttl_element.destination_type;
-                new_ttl_entry.destination_name = ttl_element.destination_name;
+                new_ttl_entry.destination_type = ttl_element->destination_type;
+                new_ttl_entry.destination_name = ttl_element->destination_name;
                 if (!new_ttl_entry.getDestination(getStoragePolicy()))
                 {
                     String message;
@@ -681,8 +684,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 
         if (!only_check)
         {
-            ttl_table_entry = update_ttl_table_entry;
-            ttl_table_ast = update_ttl_table_ast;
+            rows_ttl_entry = update_rows_ttl_entry;
+            ttl_table_ast = new_ttl_table_ast;
 
             auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
             move_ttl_entries = update_move_ttl_entries;

@@ -146,6 +146,20 @@ if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
     add_subdirectory (icu-cmake)
 endif ()
 
+if(USE_INTERNAL_SNAPPY_LIBRARY)
+    set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
+    if (NOT MAKE_STATIC_LIBRARIES)
+        set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
+    endif()
+
+    add_subdirectory(snappy)
+
+    set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
+    if(SANITIZE STREQUAL "undefined")
+        target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
+    endif()
+endif()
+
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
@@ -189,20 +203,6 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     endif()
 
 else()
-    if(USE_INTERNAL_SNAPPY_LIBRARY)
-        set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
-        if (NOT MAKE_STATIC_LIBRARIES)
-            set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
-        endif()
-
-        add_subdirectory(snappy)
-
-        set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-        if(SANITIZE STREQUAL "undefined")
-            target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
-        endif()
-    endif()
-
     add_subdirectory(arrow-cmake)
 
     # The library is large - avoid bloat.
@@ -210,6 +210,10 @@ else()
     target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
     target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
+endif()
+
+if (USE_INTERNAL_AVRO_LIBRARY)
+    add_subdirectory(avro-cmake)
 endif()
 
 if (USE_INTERNAL_POCO_LIBRARY)
@@ -332,6 +336,4 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-if (USE_INTERNAL_REPLXX)
-    add_subdirectory (replxx-cmake)
-endif()
+add_subdirectory(replxx-cmake)

@@ -105,6 +105,9 @@ public:
     /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
+    /// Returns true if the storage supports parallel insert.
+    virtual bool supportsParallelInsert() const { return false; }
+
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
@@ -113,6 +116,8 @@ public:
 
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
     virtual bool noPushingToViews() const { return false; }
+
+    virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
