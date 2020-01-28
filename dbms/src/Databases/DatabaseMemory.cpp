@@ -9,6 +9,7 @@ namespace DB
 
 DatabaseMemory::DatabaseMemory(const String & name_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
+    , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
 void DatabaseMemory::createTable(

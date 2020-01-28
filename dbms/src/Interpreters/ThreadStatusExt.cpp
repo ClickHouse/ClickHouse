@@ -54,11 +54,40 @@ void CurrentThread::defaultThreadDeleter()
     current_thread->detachQuery(true, true);
 }
 
-void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
+void ThreadStatus::initializeQuery()
 {
     assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
 
-    /// Attach or init current thread to thread group and copy useful information from it
+    thread_group = std::make_shared<ThreadGroupStatus>();
+
+    performance_counters.setParent(&thread_group->performance_counters);
+    memory_tracker.setParent(&thread_group->memory_tracker);
+    thread_group->memory_tracker.setDescription("(for query)");
+
+    thread_group->thread_numbers.emplace_back(thread_number);
+    thread_group->os_thread_ids.emplace_back(os_thread_id);
+    thread_group->master_thread_number = thread_number;
+    thread_group->master_thread_os_id = os_thread_id;
+
+    initPerformanceCounters();
+    thread_state = ThreadState::AttachedToQuery;
+}
+
+void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
+{
+    if (thread_state == ThreadState::AttachedToQuery)
+    {
+        if (check_detached)
+            throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
+        return;
+    }
+
+    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
+
+    if (!thread_group_)
+        throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
+
+    /// Attach current thread to thread group and copy useful information from it
     thread_group = thread_group_;
 
     performance_counters.setParent(&thread_group->performance_counters);
@@ -67,15 +96,15 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     {
         std::lock_guard lock(thread_group->mutex);
 
-        /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_numbers.emplace_back(thread_number);
-        thread_group->os_thread_ids.emplace_back(os_thread_id);
-
         logs_queue_ptr = thread_group->logs_queue_ptr;
         query_context = thread_group->query_context;
 
         if (!global_context)
             global_context = thread_group->global_context;
+
+        /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
+        thread_group->thread_numbers.emplace_back(thread_number);
+        thread_group->os_thread_ids.emplace_back(os_thread_id);
     }
 
     if (query_context)
@@ -83,7 +112,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         query_id = query_context->getCurrentQueryId();
         initQueryProfiler();
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
         /// Set "nice" value if required.
         Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
@@ -101,31 +130,6 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     initPerformanceCounters();
 
     thread_state = ThreadState::AttachedToQuery;
-}
-
-void ThreadStatus::initializeQuery()
-{
-    setupState(std::make_shared<ThreadGroupStatus>());
-
-    /// No need to lock on mutex here
-    thread_group->memory_tracker.setDescription("(for query)");
-    thread_group->master_thread_number = thread_number;
-    thread_group->master_thread_os_id = os_thread_id;
-}
-
-void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
-{
-    if (thread_state == ThreadState::AttachedToQuery)
-    {
-        if (check_detached)
-            throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
-        return;
-    }
-
-    if (!thread_group_)
-        throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
-
-    setupState(thread_group_);
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -160,15 +164,23 @@ void ThreadStatus::initQueryProfiler()
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.query_profiler_real_time_period_ns > 0)
-        query_profiler_real = std::make_unique<QueryProfilerReal>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+    try
+    {
+        if (settings.query_profiler_real_time_period_ns > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
-    if (settings.query_profiler_cpu_time_period_ns > 0)
-        query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+        if (settings.query_profiler_cpu_time_period_ns > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+    }
+    catch (...)
+    {
+        /// QueryProfiler is optional.
+        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
+    }
 }
 
 void ThreadStatus::finalizeQueryProfiler()
