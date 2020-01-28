@@ -3,6 +3,7 @@ set -ex
 
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
+PUBLISH_DIR="${BASE_DIR}/../publish"
 IMAGE="clickhouse/website"
 if [[ -z "$1" ]]
 then
@@ -17,6 +18,17 @@ if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
     python "${BASE_DIR}/build.py" "--enable-stable-releases"
+    set +x
+    rm -rf "${PUBLISH_DIR}" || true
+    git clone git@github.com:ClickHouse/clickhouse.github.io.git "${PUBLISH_DIR}"
+    cd "${PUBLISH_DIR}"
+    git rm -rf *
+    git commit -a -m "wipe old release"
+    cp -R "${BUILD_DIR}"/* .
+    git add *
+    git commit -a -m "add new release at $(date)"
+    git push origin master
+    set -x
     cd "${BUILD_DIR}"
     docker build -t "${FULL_NAME}" "${BUILD_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
