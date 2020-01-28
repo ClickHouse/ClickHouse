@@ -225,24 +225,6 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms src/Storages/RabbitMQ)
 endif()
 
-list(APPEND dbms_sources
-        src/Storages/RabbitMQ/RabbitMQBlockInputStream.cpp
-        src/Storages/RabbitMQ/RabbitMQBlockOutputStream.cpp
-        src/Storages/RabbitMQ/RabbitMQHandler.cpp
-        src/Storages/RabbitMQ/RabbitMQSettings.cpp
-        src/Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.cpp
-        src/Storages/RabbitMQ/WriteBufferToRabbitMQProducer.cpp
-        src/Storages/RabbitMQ/StorageRabbitMQ.cpp)
-list(APPEND dbms_headers
-        src/Storages/RabbitMQ/RabbitMQBlockInputStream.h
-        src/Storages/RabbitMQ/RabbitMQBlockOutputStream.h
-        src/Storages/RabbitMQ/RabbitMQHandler.h
-        src/Storages/RabbitMQ/RabbitMQSettings.h
-        src/Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h
-        src/Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h
-        src/Storages/RabbitMQ/Buffer_fwd.h
-        src/Storages/RabbitMQ/StorageRabbitMQ.h)
-
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
