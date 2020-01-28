@@ -723,7 +723,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp_path
+## tmp_path {#server-settings-tmp_path}
 
 Path to temporary data for processing large queries.
 
@@ -736,6 +736,17 @@ Path to temporary data for processing large queries.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
+
+## tmp_policy {#server-settings-tmp_policy}
+
+Policy from [`storage_configuration`](mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+
+!!! note
+    - `move_factor` is ignored
+    - `keep_free_space_bytes` is ignored
+    - `max_data_part_size_bytes` is ignored
+    - you must have exactly one volume in that policy
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 

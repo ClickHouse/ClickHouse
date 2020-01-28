@@ -166,6 +166,8 @@ void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorAvro(FormatFactory & factory);
+void registerOutputFormatProcessorAvro(FormatFactory & factory);
 void registerInputFormatProcessorTemplate(FormatFactory & factory);
 void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -ex
+
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 IMAGE="clickhouse/website"

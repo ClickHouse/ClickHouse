@@ -70,7 +70,7 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl)
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    if (storage.hasTableTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
+    if (storage.hasRowsTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
@@ -80,7 +80,7 @@ Block TTLBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    if (storage.hasTableTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
+    if (storage.hasRowsTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
         removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
@@ -106,10 +106,10 @@ void TTLBlockInputStream::readSuffixImpl()
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
-    storage.ttl_table_entry.expression->execute(block);
+    storage.rows_ttl_entry.expression->execute(block);
 
     const IColumn * ttl_column =
-        block.getByName(storage.ttl_table_entry.result_column).column.get();
+        block.getByName(storage.rows_ttl_entry.result_column).column.get();
 
     const auto & column_names = header.getNames();
     MutableColumns result_columns;
