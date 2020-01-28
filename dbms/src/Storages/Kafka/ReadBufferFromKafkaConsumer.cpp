@@ -134,6 +134,11 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     consumer->unsubscribe();
 }
 
+
+bool ReadBufferFromKafkaConsumer::hasMorePolledMessages() const {
+    return (!stalled) && (current != messages.end());
+}
+
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
