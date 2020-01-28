@@ -154,6 +154,11 @@ void ThreadStatus::finalizePerformanceCounters()
 
 void ThreadStatus::initQueryProfiler()
 {
+#if !defined(USE_PHDR_CACHE)
+    /// FIXME: query profiler won't work without PHDR cache.
+    ///        Refactor code for a better detection without macros.
+    return;
+#else
     /// query profilers are useless without trace collector
     if (!global_context)
         return;
@@ -169,6 +174,7 @@ void ThreadStatus::initQueryProfiler()
         query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
             /* thread_id */ os_thread_id,
             /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+#endif
 }
 
 void ThreadStatus::finalizeQueryProfiler()
