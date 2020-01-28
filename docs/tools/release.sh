@@ -25,6 +25,8 @@ then
     git rm -rf *
     git commit -a -m "wipe old release"
     cp -R "${BUILD_DIR}"/* .
+    echo -n "clickhouse.tech" > CNAME
+    cp "${BASE_DIR}/../../LICENSE" .
     git add *
     git commit -a -m "add new release at $(date)"
     git push origin master
