@@ -6,8 +6,8 @@
 #include <IO/WriteHelpers.h>
 
 #if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsuggest-override"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
 
 template <typename T>
@@ -94,36 +94,36 @@ TYPED_TEST(DiskTest, writeFile)
 
 TYPED_TEST(DiskTest, readFile)
 {
-	const auto & disk = this->getDisk();
+    const auto & disk = this->getDisk();
 
-	{
-		std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
-		writeString("test data", *out);
-	}
+    {
+        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
+        writeString("test data", *out);
+    }
 
-	// Test SEEK_SET
-	{
-		DB::String data;
-		std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
-		in->seek(5, SEEK_SET);
-		readString(data, *in);
-		EXPECT_EQ("data", data);
-	}
+    // Test SEEK_SET
+    {
+        DB::String data;
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        in->seek(5, SEEK_SET);
+        readString(data, *in);
+        EXPECT_EQ("data", data);
+    }
 
-	// Test SEEK_CUR
-	{
-		std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
-		String buf(4, '0');
+    // Test SEEK_CUR
+    {
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        String buf(4, '0');
 
-		in->readStrict(buf.data(), 4);
-		EXPECT_EQ("test", buf);
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("test", buf);
 
-		// Skip whitespace
-		in->seek(1, SEEK_CUR);
+        // Skip whitespace
+        in->seek(1, SEEK_CUR);
 
-		in->readStrict(buf.data(), 4);
-		EXPECT_EQ("data", buf);
-	}
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
 }
 
 
