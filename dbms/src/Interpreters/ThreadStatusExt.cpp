@@ -154,27 +154,29 @@ void ThreadStatus::finalizePerformanceCounters()
 
 void ThreadStatus::initQueryProfiler()
 {
-#if !defined(USE_PHDR_CACHE)
-    /// FIXME: query profiler won't work without PHDR cache.
-    ///        Refactor code for a better detection without macros.
-    return;
-#else
     /// query profilers are useless without trace collector
     if (!global_context)
         return;
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.query_profiler_real_time_period_ns > 0)
-        query_profiler_real = std::make_unique<QueryProfilerReal>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+    try
+    {
+        if (settings.query_profiler_real_time_period_ns > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
-    if (settings.query_profiler_cpu_time_period_ns > 0)
-        query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
-#endif
+        if (settings.query_profiler_cpu_time_period_ns > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
+                /* thread_id */ os_thread_id,
+                /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+    }
+    catch (...)
+    {
+        /// QueryProfiler is optional.
+        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
+    }
 }
 
 void ThreadStatus::finalizeQueryProfiler()
