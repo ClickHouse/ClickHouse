@@ -14,7 +14,7 @@ The Distributed engine accepts parameters:
 
   See also:
   - `insert_distributed_sync` setting
-  - [MergeTree](../mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+  - [MergeTree](mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 Example:
 
