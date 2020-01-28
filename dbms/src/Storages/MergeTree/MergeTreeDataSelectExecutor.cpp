@@ -1272,8 +1272,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
         settings.merge_tree_min_bytes_for_seek,
-        part->index_granularity_info.index_granularity_bytes,
-        part->index_granularity_info.fixed_index_granularity);
+        part->index_granularity_info.fixed_index_granularity,
+        part->index_granularity_info.index_granularity_bytes);
 
     size_t granules_dropped = 0;
 
