@@ -271,7 +271,7 @@ public:
             return l == r;
         if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
             return l == DecimalField<Decimal128>(r, 0);
-        if constexpr (std::is_same_v<T, Null>)
+        if constexpr (std::is_same_v<U, Null>)
             return false;
         return cantCompare(l, r);
     }
