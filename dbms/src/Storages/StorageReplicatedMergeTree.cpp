@@ -988,7 +988,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     {
         do_fetch = !tryExecutePartMutation(entry);
     }
-    else if (entry.type == LogEntry::FINISH_ALTER)
+    else if (entry.type == LogEntry::ALTER_METADATA)
     {
         executeMetadataAlter(entry);
     }
@@ -3345,6 +3345,7 @@ void StorageReplicatedMergeTree::alter(
 
     //std::cerr << " Columns preparation to alter:" << getColumns().getAllPhysical().toString() << std::endl;
 
+    ReplicatedMergeTreeLogEntryData entry;
     /// /columns and /metadata nodes
     std::vector<ChangedNode> changed_nodes;
     {
@@ -3392,41 +3393,31 @@ void StorageReplicatedMergeTree::alter(
         for (const auto & node : changed_nodes)
             ops.emplace_back(zkutil::makeSetRequest(node.shared_path, node.new_value, -1));
 
+        entry.type = LogEntry::ALTER_METADATA;
+        entry.source_replica = replica_name;
+
+        WriteBufferFromString wb(entry.mutation_commands);
+        maybe_mutation_commands.writeText(wb);
+        wb.finalize();
+
+        entry.create_time = time(nullptr);
+
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
         Coordination::Responses results = getZooKeeper()->multi(ops);
 
         for (size_t i = 0; i < changed_nodes.size(); ++i)
             changed_nodes[i].new_version = dynamic_cast<const Coordination::SetResponse &>(*results[i]).stat.version;
+
+        String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
+        entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
     }
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
     table_lock_holder.release();
 
-    ReplicatedMergeTreeLogEntryData entry;
-    entry.type = LogEntry::FINISH_ALTER;
-    entry.source_replica = replica_name;
-
-    ////std::cerr << " Columns before mutation:" << getColumns().getAllPhysical().toString() << std::endl;
-
-    entry.new_part_name = "";
-    entry.create_time = time(nullptr);
-
-    String path_created = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
-    entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-
-    ////std::cerr << "Waiting for replicas\n";
     auto unwaited = waitForAllReplicasToProcessLogEntry(entry, false);
-
-    ////std::cerr << "Replicas done";
-
-    if (!maybe_mutation_commands.empty())
-    {
-        ////std::cerr << "We have mutation commands:" << maybe_mutation_commands.size() << std::endl;
-        Context copy_context = query_context;
-        copy_context.getSettingsRef().mutations_sync = 2;
-        ReplicatedMergeTreeMutationEntry mutation_entry = mutateImpl(maybe_mutation_commands, copy_context);
-        ////std::cerr << "Mutation finished\n";
-    }
 
     if (!unwaited.empty())
     {

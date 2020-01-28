@@ -149,6 +149,10 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
     }
+    if (entry->type == LogEntry::ALTER_METADATA)
+    {
+        alter_znodes_in_queue.push_back(entry->znode_name);
+    }
 }
 
 
@@ -218,6 +222,16 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         {
             current_parts.remove(drop_range_part_name);
             virtual_parts.remove(drop_range_part_name);
+        }
+
+        if (entry->type == LogEntry::ALTER_METADATA)
+        {
+            if (alter_znodes_in_queue.front() != entry->znode_name)
+            {
+                /// TODO(alesap) Better
+                throw Exception("Processed incorrect alter.", ErrorCodes::LOGICAL_ERROR);
+            }
+            alter_znodes_in_queue.pop_front();
         }
     }
     else
@@ -1009,15 +1023,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         }
     }
 
-    if (entry.type == LogEntry::FINISH_ALTER)
+    if (entry.type == LogEntry::ALTER_METADATA)
     {
-        //std::cerr << "Entry finish alter\n";
-        if (mutations_by_znode.count(entry.required_mutation_znode) && !mutations_by_znode.at(entry.required_mutation_znode).is_done) {
-            String reason = "Not altering storage because mutation " + entry.required_mutation_znode + " is not ready yet (mutation is beeing processed).";
-            LOG_TRACE(log, reason);
-            out_postpone_reason = reason;
-            return false;
-        }
+        return entry.znode_name == alter_znodes_in_queue.front();
     }
 
     return true;
