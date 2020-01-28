@@ -2,21 +2,20 @@
 
 #if USE_AWS_S3
 
-#include <IO/WriteBufferFromS3.h>
-#include <IO/WriteHelpers.h>
+#    include <IO/WriteBufferFromS3.h>
+#    include <IO/WriteHelpers.h>
 
-#include <common/logger_useful.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/UploadPartRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#    include <aws/s3/model/CreateMultipartUploadRequest.h>
+#    include <aws/s3/model/UploadPartRequest.h>
+#    include <common/logger_useful.h>
 
-#include <utility>
+#    include <utility>
 
 
 namespace DB
 {
-
 // S3 protocol does not allow to have multipart upload with more than 10000 parts.
 // In case server does not return an error on exceeding that number, we print a warning
 // because custom S3 implementation may allow relaxed requirements on that.
@@ -34,15 +33,14 @@ WriteBufferFromS3::WriteBufferFromS3(
     const String & bucket_,
     const String & key_,
     size_t minimum_upload_part_size_,
-    size_t buffer_size_
-)
+    size_t buffer_size_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
     , client_ptr(std::move(client_ptr_))
-    , minimum_upload_part_size {minimum_upload_part_size_}
-    , temporary_buffer {std::make_unique<WriteBufferFromOwnString>()}
-    , last_part_size {0}
+    , minimum_upload_part_size{minimum_upload_part_size_}
+    , temporary_buffer{std::make_unique<WriteBufferFromOwnString>()}
+    , last_part_size{0}
 {
     initiate();
 }
@@ -132,9 +130,7 @@ void WriteBufferFromS3::writePart(const String & data)
     auto outcome = client_ptr->UploadPart(req);
 
     LOG_TRACE(
-        log,
-        "Writing part. Bucket: " << bucket << ", Key: " << key
-        << ", Upload_id: " << upload_id << ", Data size: " << data.size());
+        log, "Writing part. Bucket: " << bucket << ", Key: " << key << ", Upload_id: " << upload_id << ", Data size: " << data.size());
 
     if (outcome.IsSuccess())
     {
@@ -144,7 +140,7 @@ void WriteBufferFromS3::writePart(const String & data)
         LOG_DEBUG(
             log,
             "Writing part finished. "
-            << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
+                << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -153,9 +149,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
 void WriteBufferFromS3::complete()
 {
-    LOG_DEBUG(
-        log,
-        "Completing multipart upload. Bucket: " + bucket + ", Key: " + key + ", Upload_id: " + upload_id);
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: " + bucket + ", Key: " + key + ", Upload_id: " + upload_id);
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);

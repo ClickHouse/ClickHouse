@@ -2,18 +2,17 @@
 
 #if USE_AWS_S3
 
-#include <IO/ReadBufferFromS3.h>
-#include <IO/ReadBufferFromIStream.h>
+#    include <IO/ReadBufferFromIStream.h>
+#    include <IO/ReadBufferFromS3.h>
 
-#include <common/logger_useful.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/S3Client.h>
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/GetObjectRequest.h>
+#    include <common/logger_useful.h>
 
-#include <utility>
+#    include <utility>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
@@ -23,16 +22,8 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-    const String & bucket_,
-    const String & key_,
-    size_t buffer_size_
-)
-    : SeekableReadBuffer(nullptr, 0)
-    , client_ptr(std::move(client_ptr_))
-    , bucket(bucket_)
-    , key(key_)
-    , buffer_size(buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_)
+    : SeekableReadBuffer(nullptr, 0), client_ptr(std::move(client_ptr_)), bucket(bucket_), key(key_), buffer_size(buffer_size_)
 {
 }
 
@@ -53,17 +44,14 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-	if (initialized)
-		throw Exception("Seek is allowed only before first read attempt from the buffer.",
-		                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+    if (initialized)
+        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-	if (whence != SEEK_SET)
-		throw Exception("Only SEEK_SET mode is allowed.",
-		                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-	if (offset_ < 0)
-		throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_),
-		                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+    if (offset_ < 0)
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
     offset = offset_;
 
@@ -72,8 +60,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. "
-                   "Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
+    LOG_TRACE(log, "Read S3 object. Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
