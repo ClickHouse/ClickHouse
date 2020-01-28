@@ -843,8 +843,8 @@ def test_kafka_flush_by_time(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    # 60 = 2 polls 30 secs each, 1 msg per sec.
-    assert int(result) > 60, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+    # 40 = 2 polls 30 secs each (up to 1 msg per sec, in practive it's lower)
+    assert int(result) > 40, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
 
 
 @pytest.mark.timeout(600)
@@ -890,6 +890,54 @@ def test_kafka_flush_by_block_size(kafka_cluster):
     # 100 = first poll should return 100 messages (and rows)
     # not waiting for stream_flush_interval_ms
     assert int(result) == 100, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+
+
+@pytest.mark.timeout(600)
+def test_kafka_lot_of_partitions_partial_commit_of_bulk(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+
+    topic_list = []
+    topic_list.append(NewTopic(name="topic_with_multiple_partitions2", num_partitions=10, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'topic_with_multiple_partitions2',
+                     kafka_group_name = 'topic_with_multiple_partitions2',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 211;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    count = 0
+    for dummy_msg in range(1000):
+        rows = []
+        for dummy_row in range(random.randrange(3,10)):
+            count = count + 1
+            rows.append(json.dumps({'key': count, 'value': count}))
+        messages.append("\n".join(rows))
+    kafka_produce('topic_with_multiple_partitions2', messages)
+
+    time.sleep(60)
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+    assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(count) )
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
 
 if __name__ == '__main__':
     cluster.start()

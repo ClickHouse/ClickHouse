@@ -35,6 +35,8 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
+    bool hasMorePolledMessages() const;
+
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
     String currentKey() const { return current[-1].get_key(); }
