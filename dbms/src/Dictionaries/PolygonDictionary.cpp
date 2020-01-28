@@ -461,7 +461,8 @@ struct Data
     std::vector<IPolygonDictionary::Polygon> & dest;
     std::vector<size_t> & ids;
 
-    void addPolygon(bool new_multi_polygon = false) {
+    void addPolygon(bool new_multi_polygon = false)
+    {
         dest.emplace_back();
         ids.push_back((ids.empty() ? 0 : ids.back() + new_multi_polygon));
     }
