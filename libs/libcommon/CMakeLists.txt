@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common
+set (COMMON_SRCS
     src/argsToConfig.cpp
     src/coverage.cpp
     src/DateLUT.cpp
@@ -65,7 +65,19 @@ add_library (common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
+)
 
+if (ENABLE_REPLXX)
+    set (COMMON_SRCS
+        src/ReplxxLineReader.cpp
+        include/common/ReplxxLineReader.h
+
+        ${COMMON_SRCS}
+    )
+endif ()
+
+add_library (common
+    ${COMMON_SRCS}
     ${CONFIG_COMMON})
 
 if (USE_INTERNAL_MEMCPY)
@@ -92,8 +104,8 @@ if(CCTZ_LIBRARY)
     target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
 endif()
 
-if (USE_REPLXX)
-    target_link_libraries(common PRIVATE replxx)
+if (ENABLE_REPLXX)
+    target_link_libraries(common PUBLIC replxx)
 endif ()
 
 target_link_libraries (common
