@@ -47,8 +47,8 @@ namespace
 
     /**
      * S3 metadata file layout:
-     * Number of references to S3 objects, Total size of all S3 objects.
-     * Each reference to S3 object and size.
+     * Number of S3 objects, Total size of all S3 objects.
+     * Each S3 object represents path where object located in S3 and size of object.
      */
     struct Metadata
     {
@@ -136,7 +136,7 @@ namespace
     };
 
     // Reads data from S3.
-    // It supports multiple S3 references and reads them one by one.
+    // It supports reading from multiple S3 paths that resides in Metadata.
     class ReadIndirectBufferFromS3 : public BufferWithOwnMemory<SeekableReadBuffer>
     {
     public:
@@ -235,7 +235,7 @@ namespace
         std::unique_ptr<ReadBufferFromS3> current_buf;
     };
 
-    /// Stores data in S3 and appends the object key (reference) to metadata file on local FS.
+    /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
     class WriteIndirectBufferFromS3 : public WriteBufferFromS3
     {
     public:
