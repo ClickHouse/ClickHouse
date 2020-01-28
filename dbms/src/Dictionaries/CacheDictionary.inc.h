@@ -342,17 +342,18 @@ void CacheDictionary::prepareAnswer(
         PresentIdHandler && on_cell_updated,
         AbsentIdHandler && on_id_not_found) const
 {
+    const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
     /// Prepare answer
     const auto now = std::chrono::system_clock::now();
 
     for (const auto & id : update_unit_ptr->requested_ids)
     {
         const auto find_result = findCellIdx(id, now);
+        assert(find_result.valid);
         const auto & cell_idx = find_result.cell_idx;
         auto & cell = cells[cell_idx];
         const auto was_id_updated = update_unit_ptr->found_ids_mask_ptr->at(id);
-
-        const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if (was_id_updated)
         {
