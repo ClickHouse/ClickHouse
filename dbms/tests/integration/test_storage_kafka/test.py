@@ -12,6 +12,7 @@ import json
 import subprocess
 import kafka.errors
 from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka.admin import NewTopic
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -726,6 +727,169 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 
     assert result == 1, 'Messages from kafka get duplicated!'
 
+
+@pytest.mark.timeout(180)
+def test_kafka_virtual_columns2(kafka_cluster):
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="virt2_0", num_partitions=2, replication_factor=1))
+    topic_list.append(NewTopic(name="virt2_1", num_partitions=2, replication_factor=1))
+
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        CREATE TABLE test.kafka (value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'virt2_0,virt2_1',
+                     kafka_group_name = 'virt2',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+        ''')
+
+    producer = KafkaProducer(bootstrap_servers="localhost:9092")
+
+    # TODO: due to extremely high value of poll interval in tests we need to
+    # to sleep for extremely long period of time to simulate few polls in same bulk
+    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802000)
+    producer.flush()
+    time.sleep(31)
+
+    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803000)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804000)
+    producer.flush()
+    time.sleep(31)
+
+    producer.send(topic='virt2_1', value=json.dumps({'value': 5}), partition=0, key='k5', timestamp_ms=1577836805000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 6}), partition=0, key='k6', timestamp_ms=1577836806000)
+    producer.flush()
+    time.sleep(31)
+
+    producer.send(topic='virt2_1', value=json.dumps({'value': 7}), partition=1, key='k7', timestamp_ms=1577836807000)
+    producer.send(topic='virt2_1', value=json.dumps({'value': 8}), partition=1, key='k8', timestamp_ms=1577836808000)
+    producer.flush()
+
+    time.sleep(40)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+
+    expected = '''\
+1	k1	virt2_0	0	0	1577836801
+2	k2	virt2_0	0	1	1577836802
+3	k3	virt2_0	1	0	1577836803
+4	k4	virt2_0	1	1	1577836804
+5	k5	virt2_1	0	0	1577836805
+6	k6	virt2_1	0	1	1577836806
+7	k7	virt2_1	1	0	1577836807
+8	k8	virt2_1	1	1	1577836808
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.timeout(600)
+def test_kafka_flush_by_time(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'flush_by_time',
+                     kafka_group_name = 'flush_by_time',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    cancel = threading.Event()
+
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            messages.append(json.dumps({'key': 0, 'value': 0}))
+            kafka_produce('flush_by_time', messages)
+            time.sleep(1)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    # TODO: due to extremely high value of poll & flush interval in tests we need to
+    # to sleep for extremely long period of time to simulate few polls in same bulk
+    time.sleep(95)
+
+    result = instance.query('SELECT count() FROM test.view')
+
+    print(result)
+    cancel.set()
+    kafka_thread.join()
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # 60 = 2 polls 30 secs each, 1 msg per sec.
+    assert int(result) > 60, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
+
+
+@pytest.mark.timeout(600)
+def test_kafka_flush_by_block_size(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'flush_by_block_size',
+                     kafka_group_name = 'flush_by_block_size',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    for _ in range(101):
+        messages.append(json.dumps({'key': 0, 'value': 0}))
+    kafka_produce('flush_by_block_size', messages)
+
+    time.sleep(10)
+
+    result = instance.query('SELECT count() FROM test.view')
+    print(result)
+
+    kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # 100 = first poll should return 100 messages (and rows)
+    # not waiting for stream_flush_interval_ms
+    assert int(result) == 100, 'Messages from kafka should be flushed at least every stream_flush_interval_ms!'
 
 if __name__ == '__main__':
     cluster.start()
