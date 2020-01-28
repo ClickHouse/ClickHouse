@@ -59,7 +59,7 @@ void KafkaBlockInputStream::readPrefixImpl()
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (!buffer)
+    if (!buffer || finished)
         return Block();
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
@@ -151,8 +151,17 @@ Block KafkaBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();
-        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+        if (total_rows >= max_block_size || !checkTimeLimit())
+        {
+            finished = true;
             break;
+        }
+        else if (!new_rows)
+        {
+            break;
+        }
+
+
     }
 
     if (total_rows == 0)
