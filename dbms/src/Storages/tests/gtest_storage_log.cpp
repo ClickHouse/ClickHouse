@@ -5,6 +5,7 @@
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -12,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
 #include <Common/typeid_cast.h>
-#include <Disks/tests/gtest_disk.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
