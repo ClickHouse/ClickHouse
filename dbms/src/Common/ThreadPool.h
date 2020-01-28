@@ -153,6 +153,8 @@ public:
         {
             try
             {
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
                 DB::ThreadStatus thread_status;
                 std::apply(func, args);
             }
