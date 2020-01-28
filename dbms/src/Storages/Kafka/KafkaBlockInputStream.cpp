@@ -151,6 +151,9 @@ Block KafkaBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();
+        if (buffer->hasMorePolledMessages()) {
+            continue;
+        }
         if (total_rows >= max_block_size || !checkTimeLimit())
         {
             finished = true;
