@@ -540,6 +540,7 @@ public:
 
     Strings getAllTriedToLoadNames() const
     {
+        std::lock_guard lock{mutex};
         Strings names;
         for (auto & [name, info] : infos)
             if (info.triedToLoad())
