@@ -38,11 +38,6 @@ public:
             const ASTPtr & query,
             const Context & context) override;
 
-    void rename(const String & /* new_path_to_db */,
-                const String & new_database_name,
-                const String & new_table_name,
-                TableStructureWriteLockHolder &) override;
-
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
@@ -55,38 +50,36 @@ public:
 
 protected:
     StorageRabbitMQ(
-            const std::string & table_name_,
-            const std::string & database_name_,
+            const StorageID & table_id_,
             Context & context_,
             const ColumnsDescription & columns_,
-            const String & brokers_, const Names & routing_keys_,
+            const String & host_port_, const Names & routing_keys_,
+            const String & user_name_, const String & password_,
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 
 private:
-    String table_name;
-    String database_name;
     Context global_context;
-    const String brokers;
+
+    const String host_port;
     Names routing_keys;
+    const String user_name;
+    const String password;
+    RabbitMQHandler connection_handler;
+    AMQP::Connection connection;
+
     const String format_name;
     char row_delimiter;
-    size_t num_consumers; /// total number of consumers
-    UInt64 max_block_size; /// maximum block size for insertion into this table
-
-    size_t num_created_consumers = 0; /// number of actually created consumers.
+    size_t num_consumers;
+    UInt64 max_block_size;
+    size_t num_created_consumers = 0;
+    size_t skip_broken;
 
     Poco::Logger * log;
     Poco::Semaphore semaphore;
 
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    size_t skip_broken;
-
     ConsumerBufferPtr createReadBuffer();
-
-    RabbitMQHandler connection_handler;
-    AMQP::Connection connection;
-
 };
 }

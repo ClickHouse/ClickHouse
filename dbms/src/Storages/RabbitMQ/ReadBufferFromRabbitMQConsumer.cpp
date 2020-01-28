@@ -17,13 +17,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 /// this is to be modified
 
-ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
-{
-}
-
-ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
-{
-}
+ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer() = default;
 
 void ReadBufferFromRabbitMQConsumer::commit()
 {
@@ -36,14 +30,13 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
     {
         consumer->declareQueue(key);
         consumer->consume(key, AMQP::noack).onReceived(
-                [](const AMQP::Message &message,
-                   uint64_t deliveryTag,
-                   bool redelivered)
+                [](const AMQP::Message & /* message */,
+                   uint64_t /* deliveryTag */,
+                   bool /* redelivered */)
                 {
-                    /// this shoud be done properly
-                    std::cout << "reading message " << message.body()
-                              << " with " << deliveryTag << " flag " << redelivered;
-
+                    /** std::string  message =
+                            "Received message with deliveryTag" + std::to_string(deliveryTag);
+                    LOG_TRACE(log, message); */
                 });
     }
 }

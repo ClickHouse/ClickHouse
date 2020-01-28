@@ -2,6 +2,7 @@
 #include <memory>
 #include <amqpcpp.h>
 #include <Poco/Net/StreamSocket.h>
+#include <common/Types.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ namespace DB
  * extends from the ConnectionHandler base class. This is a class with a number of methods that are
  * called by the library every time it wants to send out data, or when it needs to inform you that an error occured.
  *
- * Probably will be combined with classes RabbitMQBlockInput(Output)Stream
+ *  Probably will be combined with classes RabbitMQBlockInput(Output)Stream
  */
 
 class RabbitMQHandlerImpl;
@@ -19,23 +20,21 @@ class RabbitMQHandler: public AMQP::ConnectionHandler
 {
 public:
 
-    RabbitMQHandler(const std::string& host, uint16_t port);
+    RabbitMQHandler(const std::pair<std::string, UInt16> &);
+
     virtual ~RabbitMQHandler();
 
     void loop();
     void quit();
-
     bool connected() const;
-
-private:
 
     RabbitMQHandler(const RabbitMQHandler&) = delete;
     RabbitMQHandler& operator=(const RabbitMQHandler&) = delete;
 
+private:
+
     void close();
-
     virtual void onData(AMQP::Connection *connection, const char *data, size_t size);
-
     virtual void onConnected(AMQP::Connection *connection);
     virtual void onError(AMQP::Connection *connection, const char *message);
     virtual void onClosed(AMQP::Connection *connection);

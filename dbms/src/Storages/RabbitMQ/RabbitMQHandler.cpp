@@ -5,14 +5,13 @@ namespace DB
 {
 
 /// to connect to rabbitmq server
-RabbitMQHandler::RabbitMQHandler(const std::string& host, uint16_t port) :
+RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_host_port) :
         m_impl(new RabbitMQHandlerImpl)
 {
-    const Poco::Net::SocketAddress address(host, port);
+    const Poco::Net::SocketAddress address(parsed_host_port.first, parsed_host_port.second);
     m_impl->socket.connect(address);
     m_impl->socket.setKeepAlive(true);
 }
-
 
 ///     These functions are to be implemented
 

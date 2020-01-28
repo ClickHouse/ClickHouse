@@ -8,9 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-
     extern int CANNOT_CREATE_IO_BUFFER;
-
 }
 
 /// These functions are to be implemeneted

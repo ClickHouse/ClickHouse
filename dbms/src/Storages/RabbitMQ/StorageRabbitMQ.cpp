@@ -22,6 +22,7 @@
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
+#include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -30,8 +31,6 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/config_version.h>
@@ -39,9 +38,9 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/parseAddress.h>
 
 #include <amqpcpp.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
 
 namespace DB
 {
@@ -61,37 +60,38 @@ namespace ErrorCodes
 }
 
 StorageRabbitMQ::StorageRabbitMQ(
-        const std::string & table_name_,
-        const std::string & database_name_,
+        const StorageID & table_id_,
         Context & context_,
         const ColumnsDescription & columns_,
-        const String & brokers_,
+        const String & host_port_,
         const Names & routing_keys_,
+        const String & user_name_,
+        const String & password_,
         const String & format_name_,
         char row_delimiter_,
         size_t num_consumers_,
         UInt64 max_block_size_,
         size_t skip_broken_)
-        : IStorage(
+        : IStorage(table_id_,
         ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
                             {"_key", std::make_shared<DataTypeString>()},
                             {"_offset", std::make_shared<DataTypeUInt64>()},
                             {"_partition", std::make_shared<DataTypeUInt64>()},
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
-        , table_name(table_name_)
-        , database_name(database_name_)
         , global_context(context_.getGlobalContext())
-        , brokers(global_context.getMacros()->expand(brokers_))
+        , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
+        , user_name(global_context.getMacros()->expand(user_name_))
+        , password(global_context.getMacros()->expand(password_))
+        , connection_handler(parseAddress(host_port, 5672))
+        , connection(&connection_handler, AMQP::Login(user_name_, password_), "/")
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
         , max_block_size(max_block_size_)
-        , log(&Logger::get("StorageRabbitMQ (" + table_name_ + ")"))
-        , semaphore(0, num_consumers_)
         , skip_broken(skip_broken_)
-        , connection_handler("localhost", 5672) /// is to be changed with parsed values of rabbitmq broker list
-        , connection(&connection_handler, AMQP::Login("guest", "guest"), "/") /// is to be changed
+        , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , semaphore(0, num_consumers_)
 {
     setColumns(columns_);
 }
@@ -142,20 +142,11 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown()
 {
-    // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto buffer = popReadBuffer();
     }
 }
-
-void StorageRabbitMQ::rename(const String & /* new_path_to_db */,
-                             const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
-}
-
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
@@ -198,7 +189,6 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-
     auto consumer = std::make_shared<AMQP::Channel>(&connection);
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer, &connection_handler);
@@ -220,21 +210,22 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
             /** Arguments of engine is following:
-              * - RabbitMQ broker list for RabbitMQHandler constructor
-              * - List of routing keys to bind producer->exchange->queue <-> consumer
-              * - Number of consumers (optional for now)
-              * - Message format (string) (optional for now)
-              * - Row delimiter (optional for now)
-              * - Max block size for background consumption (optional for now)
-              * - Skip (at least) unreadable messages number (optional for now)
+              * - RabbitMQ host:port (default: localhost:5672)
+              * - List of routing keys to bind producer->exchange->queue <-> consumer (default: "")
+              * - user name to connect to rabbitmq server (default: guest)
+              * - password for the user name to connect to rabbitmq server (default: guest)
+              * optional (at least for now):
+              * - Number of consumers
+              * - Message format (string)
+              * - Row delimiter
+              * - Max block size for background consumption
+              * - Skip (at least) unreadable messages number
               */
 
-
             // Check arguments and settings
-#define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)            \
-        /* One of the four required arguments is not specified */      \
-        if (args_count < ARG_NUM && ARG_NUM < 2 &&                    \
-            !rabbitmq_settings.PAR_NAME.changed)                          \
+#define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)                               \
+        /* One of the four required arguments is not specified */                         \
+        if (args_count < ARG_NUM && ARG_NUM < 2 && !rabbitmq_settings.PAR_NAME.changed)    \
         {                                                              \
             throw Exception(                                           \
                 "Required parameter '" #PAR_NAME "' "                  \
@@ -253,28 +244,30 @@ void registerStorageRabbitMQ(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS);                            \
         }
 
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_broker_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_routing_key_list)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_format)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_row_delimiter)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_num_consumers)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_max_block_size)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(7, rabbitmq_skip_broken_messages)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_user_name)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_password)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_format)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(7, rabbitmq_num_consumers)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(8, rabbitmq_max_block_size)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(9, rabbitmq_skip_broken_messages)
 
 #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
         // Get and check broker list
-        String brokers = rabbitmq_settings.rabbitmq_broker_list;
+        String host_port = rabbitmq_settings.rabbitmq_host_port;
         if (args_count >= 1)
         {
             const auto * ast = engine_args[0]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
-                brokers = safeGet<String>(ast->value);
+                host_port = safeGet<String>(ast->value);
             }
             else
             {
-                throw Exception(String("RabbitMQ broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(String("RabbitMQ host:port must be a string"), ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
@@ -287,17 +280,47 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         Names routing_keys;
-        boost::split(routing_keys, routing_key_list , [](char c){ return c == ','; });
+        boost::split(routing_keys, routing_key_list, [](char c){ return c == ','; });
         for (String & key : routing_keys)
         {
             boost::trim(key);
         }
 
-        //             Parse number_of_consumers (optional)
-        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        // Get and check user name
+        String user_name = rabbitmq_settings.rabbitmq_user_name;
         if (args_count >= 3)
         {
             const auto * ast = engine_args[2]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                user_name = safeGet<String>(ast->value);
+            }
+            else
+            {
+                throw Exception(String("RabbitMQ user name must be a string"), ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
+        // Get and check password for user name
+        String password = rabbitmq_settings.rabbitmq_password;
+        if (args_count >= 4)
+        {
+            const auto * ast = engine_args[3]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                user_name = safeGet<String>(ast->value);
+            }
+            else
+            {
+                throw Exception(String("RabbitMQ password must be a string"), ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
+        // Parse number_of_consumers (optional)
+        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        if (args_count >= 5)
+        {
+            const auto * ast = engine_args[4]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -312,11 +335,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
 //            // Get and check message format name (optional)
         String format = rabbitmq_settings.rabbitmq_format.value;
-        if (args_count >= 4)
+        if (args_count >= 6)
         {
-            engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
-            const auto * ast = engine_args[3]->as<ASTLiteral>();
+            const auto * ast = engine_args[5]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 format = safeGet<String>(ast->value);
@@ -329,11 +352,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         // Parse row delimiter (optional)
         char row_delimiter = rabbitmq_settings.rabbitmq_row_delimiter;
-        if (args_count >= 5)
+        if (args_count >= 7)
         {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+            engine_args[6] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[6], args.local_context);
 
-            const auto * ast = engine_args[4]->as<ASTLiteral>();
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             String arg;
             if (ast && ast->value.getType() == Field::Types::String)
             {
@@ -359,24 +382,23 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
 //             Parse max block size (optional)
         UInt64 max_block_size = static_cast<size_t>(rabbitmq_settings.rabbitmq_max_block_size);
-        if (args_count >= 6)
+        if (args_count >= 8)
         {
-            const auto * ast = engine_args[5]->as<ASTLiteral>();
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
             }
             else
             {
-                // TODO: no check if the integer is really positive
                 throw Exception("Maximum block size must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
         size_t skip_broken = static_cast<size_t>(rabbitmq_settings.rabbitmq_skip_broken_messages);
-        if (args_count >= 7)
+        if (args_count >= 9)
         {
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
+            const auto * ast = engine_args[8]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -388,9 +410,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         return StorageRabbitMQ::create(
-                args.table_name, args.database_name, args.context, args.columns,
-                brokers, routing_keys, format, row_delimiter,
-                num_consumers, max_block_size, skip_broken);
+                args.table_id, args.context, args.columns,
+                host_port, routing_keys, user_name, password,
+                format, row_delimiter, num_consumers, max_block_size, skip_broken);
     });
 }
 }
