@@ -151,4 +151,4 @@ right/clickhouse local --file '*-report.tsv' -S "$result_structure" --query "sel
 right/clickhouse local --file '*-client-time.tsv' -S "query text, client float, server float" -q "select client, server, floor(client/server, 3) p, query from table where p > 1.01 order by p desc" > slow-on-client.tsv
 grep Exception:[^:] *-err.log > run-errors.log
 
-./report.py > report.html
+$script_dir/report.py > report.html
