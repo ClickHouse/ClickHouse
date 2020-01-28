@@ -425,6 +425,7 @@ void IPolygonDictionary::getItemsImpl(
     {
         size_t id = 0;
         const auto found = find(points[i], id);
+        id = ids[id];
         if (!found)
         {
             set_value(i, static_cast<OutputType>(get_default(i)));
@@ -462,7 +463,7 @@ struct Data
 
     void addPolygon(bool new_multi_polygon = false) {
         dest.emplace_back();
-        ids.push_back((ids.size() ? ids.back() + new_multi_polygon : 0));
+        ids.push_back((ids.empty() ? 0 : ids.back() + new_multi_polygon));
     }
 };
 
@@ -677,7 +678,7 @@ bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
             if (!found || new_area < area)
             {
                 found = true;
-                id = ids[i];
+                id = i;
                 area = new_area;
             }
         }
