@@ -26,11 +26,23 @@ namespace bg = boost::geometry;
 class IPolygonDictionary : public IDictionaryBase
 {
 public:
+    /** Controls the different types of polygons allowed as input.
+     *  The structure of a multi-polygon is as follows:
+     *      - A multi-polygon is represented by a nonempty array of polygons.
+     *      - A polygon is represented by a nonempty array of rings. The first element represents the outer ring. Zero
+     *        or more following rings are cut out from the polygon.
+     *      - A ring is represented by a nonempty array of points.
+     *      - A point is represented by its coordinates stored in an according structure (see below).
+     *  A simple polygon is represented by an one-dimensional array of points, stored in the according structure.
+     */
     enum class InputType
     {
         MultiPolygon,
         SimplePolygon
     };
+    /** Controls the different types allowed for providing the coordinates of points.
+     *  Right now a point can be represented by either an array or a tuple of two Float64 values.
+     */
     enum class PointType
     {
         Array,
@@ -166,14 +178,10 @@ public:
     // TODO: Refactor the whole dictionary design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
-    /** The number of dimensions used. Change with great caution, some extra work will be required. */
-    static constexpr size_t DIM = 2;
-    /** A point in Euclidean coordinates. */
-    using Point = bg::model::point<Float64, DIM, bg::cs::cartesian>;
+    /** A two-dimensional point in Euclidean coordinates. */
+    using Point = bg::model::point<Float64, 2, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
-    /** A multi_polygon in boost is a collection of polygons. */
-    using MultiPolygon = bg::model::multi_polygon<Polygon>;
 
 protected:
     /** Returns true if the given point can be found in the polygon dictionary.
@@ -183,6 +191,9 @@ protected:
     virtual bool find(const Point & point, size_t & id) const = 0;
 
     std::vector<Polygon> polygons;
+    /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
+     *  corresponding to the row in which any other attributes for this entry are located.
+     */
     std::vector<size_t> ids;
 
     const std::string database;
@@ -246,14 +257,8 @@ private:
     size_t element_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    /** Extracts a list of multi-polygons from a column of 4-dimensional arrays of Float64 values. The results are
-     *  written to dest.
-     *  The structure is as follows:
-     *      - A multi-polygon is represented by a nonempty array of polygons.
-     *      - A polygon is represented by a nonempty array of rings. The first element represents the outer ring. Zero
-     *        or more following rings are cut out from the polygon.
-     *      - A ring is represented by a nonempty array of points.
-     *      - A point is represented by an array of coordinates.
+    /** Extracts a list of polygons from a column according to input_type and point_type.
+     *  The polygons are appended to the dictionary with the corresponding ids.
      */
     void extractPolygons(const ColumnPtr & column);
 
