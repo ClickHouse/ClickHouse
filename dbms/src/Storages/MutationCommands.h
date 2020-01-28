@@ -46,7 +46,7 @@ struct MutationCommand
 
     /// For reads, drops and etc.
     String column_name;
-    DataTypePtr data_type;
+    DataTypePtr data_type; /// Maybe empty if we just want to drop column
 
     /// If from_zookeeper, than consider more Alter commands as mutation commands
     static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool from_zookeeper=false);

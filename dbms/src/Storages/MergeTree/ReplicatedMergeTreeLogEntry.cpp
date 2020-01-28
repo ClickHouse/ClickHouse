@@ -65,10 +65,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
-        case FINISH_ALTER: /// Just make local /metadata and /columns consistent with global
+        case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
             out << "alter\n";
-            out << required_mutation_znode << "\n";
-            out << "finish\n";
+            out << "sync_mode\n";
+            out << alter_sync_mode << "\n";
+            out << "mutatation_commands\n";
+            out << mutation_commands << '\n';
             break;
 
         default:
@@ -160,8 +162,11 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     }
     else if (type_str == "alter")
     {
-        type = FINISH_ALTER;
-        in >> required_mutation_znode >> "\nfinish\n";
+        type = ALTER_METADATA;
+        in >> "sync_mode\n";
+        in >> alter_sync_mode;
+        in >> "mutatation_commands\n";
+        in >> mutation_commands;
     }
 
     //std::cerr << "Read backn\n";
