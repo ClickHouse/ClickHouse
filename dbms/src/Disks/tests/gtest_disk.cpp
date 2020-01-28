@@ -1,9 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <Disks/DiskLocal.h>
-#include <Disks/DiskMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "gtest_disk.h"
 
 #if !__clang__
 #    pragma GCC diagnostic push
