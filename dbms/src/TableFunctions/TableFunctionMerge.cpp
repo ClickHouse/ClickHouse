@@ -68,8 +68,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     auto res = StorageMerge::create(
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
         source_database,
         table_name_regexp,

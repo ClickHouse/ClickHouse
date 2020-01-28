@@ -112,7 +112,7 @@ void FileChecker::save() const
         out->next();
     }
 
-    disk->moveFile(tmp_files_info_path, files_info_path);
+    disk->replaceFile(tmp_files_info_path, files_info_path);
 }
 
 void FileChecker::load(Map & local_map, const String & path) const

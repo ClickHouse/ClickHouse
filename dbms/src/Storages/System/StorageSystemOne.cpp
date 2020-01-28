@@ -11,7 +11,7 @@ namespace DB
 
 
 StorageSystemOne::StorageSystemOne(const std::string & name_)
-    : name(name_)
+    : IStorage({"system", name_})
 {
     setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
 }

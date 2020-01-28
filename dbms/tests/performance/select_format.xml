@@ -44,6 +44,7 @@
                 <value>XML</value>
                 <value>ODBCDriver2</value>
                 <value>MySQLWire</value>
+                <value>Avro</value>
             </values>
         </substitution>
     </substitutions>

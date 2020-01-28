@@ -195,7 +195,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
                 << ", e.displayText() = " << e.displayText()
                 << (with_stacktrace ? getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
-                << " (version " << VERSION_STRING << VERSION_OFFICIAL;
+                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
         catch (...) {}
     }

@@ -20,13 +20,10 @@ protected:
     virtual void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const = 0;
 
 public:
-    IStorageSystemOneBlock(const String & name_) : name(name_)
+    IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
     {
         setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
-
-    std::string getTableName() const override { return name; }
-    std::string getDatabaseName() const override { return "system"; }
 
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -43,9 +40,6 @@ public:
 
         return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns))));
     }
-
-private:
-    const String name;
 };
 
 }

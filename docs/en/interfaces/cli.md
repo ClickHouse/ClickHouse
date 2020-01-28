@@ -53,7 +53,7 @@ Only a single query is run, so everything after the semicolon is ignored.
 
 You can specify `\G` instead of or after the semicolon. This indicates Vertical format. In this format, each value is printed on a separate line, which is convenient for wide tables. This unusual feature was added for compatibility with the MySQL CLI.
 
-The command line is based on 'readline' (and 'history' or 'libedit', or without a library, depending on the build). In other words, it uses the familiar keyboard shortcuts and keeps a history.
+The command line is based on 'replxx' (similar to 'readline'). In other words, it uses the familiar keyboard shortcuts and keeps a history.
 The history is written to `~/.clickhouse-client-history`.
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.

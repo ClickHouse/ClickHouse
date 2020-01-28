@@ -1755,7 +1755,7 @@ var runs = ["first (cold cache)", "second", "third"];
 var current_runs = ['0', '1'];
 
 try {
-    var state = JSON.parse(window.location.hash.substring(1));
+    var state = JSON.parse(decodeURIComponent(window.location.hash.substring(1)));
 
     current_data_size = state[0];
     current_systems = state[1];

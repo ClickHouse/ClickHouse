@@ -45,7 +45,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 您可以指定 `\G` 来替代分号或者在分号后面，这表示 `Vertical` 的格式。在这种格式下，每一个值都会打印在不同的行中，这种方式对于宽表来说很方便。这个不常见的特性是为了兼容 MySQL 命令而加的。
 
-命令行客户端是基于 `readline` 库（`history` 库或者 `libedit` 库, 或不基于其他库, 这取决于客户端是如何编译的）。换句话说，它可以使用我们熟悉的快捷键方式来操作以及保留历史命令。
+命令行客户端是基于 `replxx`。换句话说，它可以使用我们熟悉的快捷键方式来操作以及保留历史命令。
 历史命令会写入在 `~/.clickhouse-client-history` 中。
 
 默认情况下，输出的格式是 `PrettyCompact`。您可以通过 FORMAT 设置根据不同查询来修改格式，或者通过在查询末尾指定 `\G` 字符，或通过在命令行中使用 `--format` or `--vertical` 参数，或使用客户端的配置文件。

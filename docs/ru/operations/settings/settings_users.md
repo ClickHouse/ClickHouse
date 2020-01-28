@@ -39,6 +39,8 @@
 
     Например, `<password>qwerty</password>`. Пароль можно оставить пустым.
 
+<a id="password_sha256_hex"></a>
+
 - Чтобы назначить пароль в виде SHA256, поместите хэш в элемент `password_sha256_hex`.
 
     Например, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
@@ -50,6 +52,20 @@
     ```
 
     Первая строка результата — пароль. Вторая строка — соответствующий ему хэш SHA256.
+
+<a id="password_double_sha1_hex"></a>
+
+- Для совместимости с клиентами MySQL, пароль можно задать с помощью двойного хэша SHA1, поместив его в элемент `password_double_sha1_hex`.
+
+    Например, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+
+    Пример создания пароля в командной строке:
+
+    ```
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+    ```
+
+    Первая строка результата — пароль. Вторая строка — соответствующий ему двойной хэш SHA1.
 
 ### user_name/networks
 

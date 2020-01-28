@@ -58,12 +58,6 @@ $ export CC=gcc-9
 $ export CXX=g++-9
 ```
 
-## Install Required Libraries from Packages
-
-```bash
-$ sudo apt-get install libreadline-dev
-```
-
 ## Checkout ClickHouse Sources
 
 ```bash

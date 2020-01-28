@@ -413,14 +413,15 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 StorageLog::StorageLog(
     DiskPtr disk_,
     const String & relative_path_,
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     size_t max_compress_block_size_)
-    : disk(std::move(disk_)), table_path(relative_path_), database_name(database_name_), table_name(table_name_),
-    max_compress_block_size(max_compress_block_size_),
-    file_checker(disk, table_path + "sizes.json")
+    : IStorage(table_id_)
+    , disk(std::move(disk_))
+    , table_path(relative_path_)
+    , max_compress_block_size(max_compress_block_size_)
+    , file_checker(disk, table_path + "sizes.json")
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -512,14 +513,13 @@ void StorageLog::rename(const String & new_path_to_table_data, const String & ne
     disk->moveDirectory(table_path, new_path_to_table_data);
 
     table_path = new_path_to_table_data;
-    database_name = new_database_name;
-    table_name = new_table_name;
     file_checker.setPath(table_path + "sizes.json");
 
     for (auto & file : files)
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
 
     marks_file_path = table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME;
+    renameInMemory(new_database_name, new_table_name);
 }
 
 void StorageLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
@@ -633,7 +633,7 @@ void registerStorageLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageLog::create(
-            args.context.getDefaultDisk(), args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            args.context.getDefaultDisk(), args.relative_data_path, args.table_id, args.columns, args.constraints,
             args.context.getSettings().max_compress_block_size);
     });
 }

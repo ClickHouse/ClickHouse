@@ -1030,6 +1030,7 @@ public:
             LOG_TRACE(log, "Authentication method match.");
         }
 
+        bool sent_public_key = false;
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
@@ -1050,6 +1051,7 @@ public:
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
+            sent_public_key = true;
 
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);
@@ -1069,13 +1071,15 @@ public:
          */
         if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
         {
-            LOG_TRACE(log, "Received nonempty password");
+            LOG_TRACE(log, "Received nonempty password.");
             auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
             unsigned char plaintext[RSA_size(&private_key)];
             int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
             if (plaintext_size == -1)
             {
+                if (!sent_public_key)
+                    LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
                 throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
 

@@ -18,6 +18,8 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
 
     Tokens tokens(structure.c_str(), structure.c_str() + structure.size());
     IParser::Pos token_iterator(tokens);
+    const Settings & settings = context.getSettingsRef();
+    token_iterator.max_depth = settings.max_parser_depth;
 
     ParserColumnDeclarationList parser;
     ASTPtr columns_list_raw;
