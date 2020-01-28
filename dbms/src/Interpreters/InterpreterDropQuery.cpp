@@ -222,6 +222,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
                 executeToDictionary(database_name, current_dictionary, kind, false, false, false);
             }
 
+            //FIXME get rid of global context lock here
             auto context_lock = context.getLock();
 
             /// Someone could have time to delete the database before us.
@@ -231,13 +232,13 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             if (!context.getDatabase(database_name)->empty(context))
                 throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
-            /// Delete database information from the RAM
-            context.detachDatabase(database_name);
-
             database->shutdown();
 
             /// Delete the database.
             database->drop(context);
+
+            /// Delete database information from the RAM
+            context.detachDatabase(database_name);
 
             /// Old ClickHouse versions did not store database.sql files
             Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");

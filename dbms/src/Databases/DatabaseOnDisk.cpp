@@ -351,7 +351,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context,
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
         {
-            Poco::File(getMetadataPath() + file_name).renameTo(context.getPath() + getMetadataPath() + object_name + ".sql");
+            Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
             process_metadata_file(object_name + ".sql");
         }
