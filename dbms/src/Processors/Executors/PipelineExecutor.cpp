@@ -474,13 +474,11 @@ void PipelineExecutor::execute(size_t num_threads)
         throw;
     }
 
-    if (cancelled)
-    {
-        if (process_list_element && process_list_element->isKilled())
-            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    if (process_list_element && process_list_element->isKilled())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
 
+    if (cancelled)
         return;
-    }
 
     bool all_processors_finished = true;
     for (auto & node : graph)
