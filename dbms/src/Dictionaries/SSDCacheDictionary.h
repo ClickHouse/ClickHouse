@@ -95,7 +95,8 @@ public:
     ~CachePartition();
 
     template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>,
+        std::conditional_t<std::is_same_v<String, T>, ColumnString, PaddedPODArray<T>>>;
 
     template <typename Out>
     void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
@@ -148,13 +149,13 @@ public:
 
 private:
     template <typename SetFunc>
-    void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc set) const;
+    void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
     template <typename SetFunc>
-    void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc set) const;
+    void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
     template <typename Out>
-    void readValueFromBuffer(const size_t attribute_index, Out & dst, ReadBuffer & buf) const;
+    void readValueFromBuffer(const size_t attribute_index, Out & dst, const size_t index, ReadBuffer & buf) const;
 
     const size_t file_id;
     const size_t max_size;
