@@ -27,16 +27,17 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log)
+void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
 {
     text_log = log;
+    text_log_max_priority = max_priority;
 }
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
     if (split)
         if (auto log = text_log.lock())
-            split->addTextLog(log);
+            split->addTextLog(log, text_log_max_priority);
 
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
