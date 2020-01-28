@@ -17,6 +17,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
 
@@ -49,10 +51,21 @@ bool ReadBufferFromS3::nextImpl()
     return true;
 }
 
-off_t ReadBufferFromS3::seek(off_t offset_, int)
+off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (!initialized && offset_)
-        offset = offset_;
+	if (initialized)
+		throw Exception("Seek is allowed only before first read attempt from the buffer.",
+		                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+	if (whence != SEEK_SET)
+		throw Exception("Only SEEK_SET mode is allowed.",
+		                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+
+	if (offset_ < 0)
+		throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_),
+		                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+
+    offset = offset_;
 
     return offset;
 }
