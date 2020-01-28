@@ -91,6 +91,9 @@ class StoragePolicySelector;
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class Volume;
+using VolumePtr = std::shared_ptr<Volume>;
+
 #if USE_EMBEDDED_COMPILER
 
 class CompiledExpressionCache;
@@ -195,16 +198,18 @@ public:
     ~Context();
 
     String getPath() const;
-    String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    VolumePtr getTemporaryVolume() const;
+
     void setPath(const String & path);
-    void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 

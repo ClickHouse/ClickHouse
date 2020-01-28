@@ -3,11 +3,23 @@
 
 **The Distributed engine does not store data itself**, but allows distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
-The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
+
+The Distributed engine accepts parameters:
+
+- the cluster name in the server's config file
+- the name of a remote database
+- the name of a remote table
+- (optionally) sharding key
+- (optionally) policy name, it will be used to store temporary files for async send
+
+  See also:
+  - `insert_distributed_sync` setting
+  - [MergeTree](../mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+
 Example:
 
 ```sql
-Distributed(logs, default, hits[, sharding_key])
+Distributed(logs, default, hits[, sharding_key[, policy_name]])
 ```
 
 Data will be read from all servers in the 'logs' cluster, from the default.hits table located on every server in the cluster.

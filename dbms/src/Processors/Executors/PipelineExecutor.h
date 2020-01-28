@@ -149,32 +149,37 @@ private:
                 ++quota_;
         }
 
-        ExecutionState * pop(size_t thread_num)
+        size_t getAnyThreadWithTasks(size_t from_thread = 0)
         {
             if (size_ == 0)
-                throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
 
             for (size_t i = 0; i < queues.size(); ++i)
             {
-                if (!queues[thread_num].empty())
-                {
-                    ExecutionState * state = queues[thread_num].front();
-                    queues[thread_num].pop();
+                if (!queues[from_thread].empty())
+                    return from_thread;
 
-                    --size_;
-
-                    if (state->has_quota)
-                        ++quota_;
-
-                    return state;
-                }
-
-                ++thread_num;
-                if (thread_num >= queues.size())
-                    thread_num = 0;
+                ++from_thread;
+                if (from_thread >= queues.size())
+                    from_thread = 0;
             }
 
-            throw Exception("TaskQueue is not empty.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("TaskQueue is empty.", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        ExecutionState * pop(size_t thread_num)
+        {
+            auto thread_with_tasks = getAnyThreadWithTasks(thread_num);
+
+            ExecutionState * state = queues[thread_with_tasks].front();
+            queues[thread_with_tasks].pop();
+
+            --size_;
+
+            if (state->has_quota)
+                ++quota_;
+
+            return state;
         }
 
         size_t size() const { return size_; }
