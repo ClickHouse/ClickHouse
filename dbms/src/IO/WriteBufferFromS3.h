@@ -4,17 +4,17 @@
 
 #if USE_AWS_S3
 
-#include <memory>
-#include <vector>
-#include <Core/Types.h>
-#include <IO/HTTPCommon.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
+#    include <memory>
+#    include <vector>
+#    include <Core/Types.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <IO/HTTPCommon.h>
+#    include <IO/WriteBuffer.h>
+#    include <IO/WriteBufferFromString.h>
 
 namespace Aws::S3
 {
-    class S3Client;
+class S3Client;
 }
 
 namespace DB
@@ -43,11 +43,12 @@ protected:
     size_t total_size = 0;
 
 public:
-    explicit WriteBufferFromS3(std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-            const String & bucket_,
-            const String & key_,
-            size_t minimum_upload_part_size_,
-            size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferFromS3(
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        const String & bucket_,
+        const String & key_,
+        size_t minimum_upload_part_size_,
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
 
