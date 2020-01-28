@@ -1,4 +1,5 @@
 #include <Common/ThreadStatus.h>
+
 #include <Common/CurrentThread.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
@@ -7,11 +8,11 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 
-#if defined(__linux__)
-#include <sys/time.h>
-#include <sys/resource.h>
+#if defined(OS_LINUX)
+#   include <Common/hasLinuxCapability.h>
 
-#include <Common/hasLinuxCapability.h>
+#   include <sys/time.h>
+#   include <sys/resource.h>
 #endif
 
 
@@ -37,10 +38,13 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (thread_group)
     {
         std::lock_guard lock(thread_group->mutex);
+
         thread_group->query_context = query_context;
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
+
+    initQueryProfiler();
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -77,6 +81,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     if (query_context)
     {
         query_id = query_context->getCurrentQueryId();
+        initQueryProfiler();
 
 #if defined(OS_LINUX)
         /// Set "nice" value if required.
@@ -94,7 +99,6 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     }
 
     initPerformanceCounters();
-    initQueryProfiler();
 
     thread_state = ThreadState::AttachedToQuery;
 }
