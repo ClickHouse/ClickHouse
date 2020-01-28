@@ -402,6 +402,8 @@ public:
     std::chrono::steady_clock::duration closeSessions() const;
 
     /// For methods below you may need to acquire a lock by yourself.
+    /// NOTE: It's dangerous. While holding Context lock you should not take any other locks or call methods, which may take any locks,
+    /// until you are sure that all locks are always taken in right order.
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     const Context & getQueryContext() const;
