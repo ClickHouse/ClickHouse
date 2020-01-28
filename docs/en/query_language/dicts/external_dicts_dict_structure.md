@@ -41,7 +41,7 @@ In xml-file attributes are described in the structure section:
 
 In DDL-query attributes are described the body of `CREATE` query:
 - `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
-- `AttrName AttrType` —  [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes)
+- `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes)
 
 ## Key {#ext_dict_structure-key}
 
@@ -149,6 +149,7 @@ CREATE DICTIONARY somename (
 )
 ```
 
+
 Configuration fields:
 
 Tag | Description | Required
@@ -157,8 +158,38 @@ Tag | Description | Required
 `type`| ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../data_types/nullable.md) is not supported. | Yes
 `null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field. | Yes
 `expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression. | No
-`hierarchical` | Hierarchical support. Mirrored to the parent identifier.<br/><br/>Default value: `false`. | No
+<a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-external-dicts).<br/><br/>Default value: `false`. | No
 `injective` | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No
 `is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`. | No
+
+## Hierarchical Dictionaries {#hierarchical-external-dicts}
+
+ClickHouse supports hierarchical dictionaries with `UInt64` keys.
+
+Consider the following structure:
+
+```text
+Russia
+  Moscow
+Great Britain
+  London
+```
+
+This hierarchy can be expressed as the following dictionary table.
+
+Key | Hierarchical attribute | Name
+----|------------------------|------
+1 | 0 | Russia
+2 | 1 | Moscow
+3 | 0 | Great Britain
+4 | 3 | London
+
+Hierarchical dictionaries should contain a special attribute that contains the value of a parent key for the current key.
+
+To configure a hierarchical dictionary, use the [hierarchical](#hierarchical-dict-attr) configuration property for an attribute storing the values of  parent keys.
+
+## See Also
+
+- [Functions for working with external dictionaries](../functions/ext_dict_functions.md).
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
