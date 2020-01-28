@@ -49,7 +49,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 !!!note "Note"
     `INDEX` — экспериментальная возможность, смотрите [Индексы пропуска данных](#table_engine-mergetree-data_skipping-indexes).
 
-### Секции запроса
+### Секции запроса {#mergetree-query-clauses}
 
 - `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. `MergeTree` не имеет параметров.
 
