@@ -567,7 +567,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
         });
 
         var hostParts = window.location.host.split('.');
-        if (hostParts.length > 2 && hostParts[0] != 'test') {
+        if (hostParts.length > 2 && hostParts[0] != 'test' && hostParts[1] != 'github') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
 
